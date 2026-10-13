@@ -3,6 +3,7 @@
 import { REASONS } from "../lib/reasons";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { resolveHandshake } from "./actions";
+import { shortId } from "../lib/format";
 
 /** X1: the one action on the R-05 dispute queue — releases a frozen doorstep handshake (rider's job
  *  lock + the customer's masked delivery code) once support has called both parties. Reason required —
@@ -17,8 +18,8 @@ export function ResolveHandshakeButton({ orderId, connected }: { orderId: string
       triggerLabel="Resolve…"
       triggerVariant="solid"
       disabled={!connected}
-      title={`Resolve the payment dispute on order ${orderId.slice(0, 8)}?`}
-      consequence="The biker can take new deliveries again and the customer's delivery code unlocks. Only confirm once you've verified the amount with both parties."
+      title={`Resolve the payment dispute on order ${shortId(orderId)}?`}
+      consequence="The customer's delivery code unlocks. Confirm only once both parties agree the amount."
       reasons={REASONS.handshakeResolve}
       notePlaceholder="What did the biker and customer say? (optional)"
       confirmLabel="Resolve dispute"

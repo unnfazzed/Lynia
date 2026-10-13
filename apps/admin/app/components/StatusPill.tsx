@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { enumLabel } from "../lib/format";
 
 export type PillKind = "good" | "bad" | "mut" | "";
 
@@ -39,5 +40,5 @@ const STATUS_KIND: Record<string, PillKind> = {
 
 export function StatusPill({ status }: { status: string }) {
   const kind = STATUS_KIND[status] ?? "mut";
-  return <Pill kind={kind}>{status.replace(/_/g, " ")}</Pill>;
+  return <Pill kind={kind}>{enumLabel(status)}</Pill>;
 }

@@ -6,13 +6,7 @@ import { Pill } from "../../components/StatusPill";
 import { AutoRefresh } from "../../components/AutoRefresh";
 import { IconPhone } from "../../components/icons";
 import { KitchenOrderActions } from "./KitchenOrderActions";
-
-const money = (usd: number) => `$${usd.toFixed(2)}`;
-
-/** "14:32" — the time of the latest unanswered call. */
-function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-}
+import { fmtTime, money } from "../../lib/format";
 
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 
@@ -52,7 +46,7 @@ function OrderCard({ o, connected }: { o: KitchenConfirmationRow; connected: boo
           <Phone phone={o.restaurant.phone} label={o.restaurant.name} />
           {o.noAnswerCalls.length > 0 && lastNoAnswer ? (
             <div style={{ fontSize: 12, color: tokens.color.danger, marginTop: tokens.space.xs }}>
-              No answer ×{o.noAnswerCalls.length} (last {clock(lastNoAnswer)})
+              No answer ×{o.noAnswerCalls.length} (last {fmtTime(lastNoAnswer)})
             </div>
           ) : null}
         </div>

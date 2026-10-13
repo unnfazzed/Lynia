@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { enumLabel, fmtDateTime, fmtTime, money, shortId, timeAgo } from "./format";
+import { enumLabel, fmtDateTime, fmtDayMonth, fmtTime, money, shortId, timeAgo } from "./format";
 
 describe("format", () => {
   it("prints times in Harare (UTC+2), not the server's zone", () => {
     // 22:30 UTC on 13 Oct is 00:30 on 14 Oct in Harare.
     expect(fmtTime("2026-10-13T22:30:00Z")).toBe("00:30");
     expect(fmtDateTime("2026-10-13T22:30:00Z")).toBe("14 Oct, 00:30");
+    expect(fmtDayMonth("2026-10-13T22:30:00Z")).toBe("14 Oct");
   });
 
   it("prints negative money with a leading minus sign and thousands separators", () => {

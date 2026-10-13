@@ -5,6 +5,8 @@ import { DataTable, type Column } from "../components/DataTable";
 import { FilterNav } from "../components/FilterNav";
 import { StatusPill, Pill } from "../components/StatusPill";
 import { IconPackage } from "../components/icons";
+import { AutoRefresh } from "../components/AutoRefresh";
+import { money, shortId, timeAgo } from "../lib/format";
 
 interface Order {
   id: string;
@@ -29,15 +31,6 @@ const TYPES: Array<{ value: string; label: string }> = [
   { value: "merchant", label: "food" },
 ];
 
-/** Compact "N min/hr ago" for the Created column (server-rendered once; no hydration risk). */
-function timeAgo(iso: string): string {
-  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  return `${Math.round(hrs / 24)} d ago`;
-}
 const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))];
 
 /** Kit's Note column (orders.html) — the one-line "why" beside a row. The only note the list response
@@ -75,12 +68,12 @@ export default async function OrdersPage({
   };
 
   const columns: Column<Order>[] = [
-    { key: "id", header: "Order", className: "mono", cell: (o) => o.id.slice(0, 8) },
+    { key: "id", header: "Order", className: "mono", cell: (o) => shortId(o.id) },
     { key: "type", header: "Type", cell: (o) => (o.orderType === "merchant" ? <Pill kind="mut">food</Pill> : <Pill kind="mut">parcel</Pill>) },
     { key: "route", header: "Route / merchant", cell: (o) => (o.orderType === "merchant" ? o.merchant ?? o.route : o.route) },
     { key: "status", header: "Status", cell: (o) => <StatusPill status={o.status} /> },
     { key: "rider", header: "Biker", className: "mut", cell: (o) => o.rider ?? "—" },
-    { key: "fare", header: "Fare", className: "num", cell: (o) => `$${o.agreedFare ?? o.proposedFare}` },
+    { key: "fare", header: "Fare", className: "num", cell: (o) => money(o.agreedFare ?? o.proposedFare) },
     // Distance + Note are kit columns (orders.html `<thead>`: Order · Route · Status · Rider · Fare ·
     // Distance · Note · Created). Both read fields the list response already carries — no extra query.
     { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm.toFixed(1)} km` : "—") },
@@ -97,6 +90,7 @@ export default async function OrdersPage({
       </header>
 
       {!connected ? <OfflineBanner reason={reason} /> : null}
+      {connected ? <AutoRefresh intervalMs={30_000} /> : null}
 
       <FilterNav items={TYPES} active={activeType} hrefFor={hrefForType} />
       <FilterNav items={FILTERS} active={active} hrefFor={hrefForStatus} />
@@ -107,7 +101,7 @@ export default async function OrdersPage({
           rows={orders ?? []}
           rowKey={(o) => o.id}
           getRowHref={(o) => `/orders/${o.id}`}
-          rowLabel={(o) => `Open order ${o.id.slice(0, 8)}`}
+          rowLabel={(o) => `Open order ${shortId(o.id)}`}
           empty={
             connected ? (
               <EmptyState

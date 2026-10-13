@@ -4,6 +4,7 @@ import { tokens } from "@lynia/shared";
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { cancelOrder, adjustFare, adjudicateDelivered } from "../actions";
+import { money, shortId } from "../../lib/format";
 
 /**
  * Admin order mutations (item 1) as reason-coded <ConfirmModal>s over the audit seam. On confirm each
@@ -33,7 +34,7 @@ export function FareAdjust({
       title="Adjust fare / record refund"
       consequence={
         <span>
-          Order <b>{id}</b> · current fare <b>${agreedOrProposed}</b>. Any cash refund between customer and biker
+          Order <b>{shortId(id)}</b> · current fare <b>{money(agreedOrProposed)}</b>. Any cash refund between customer and biker
           happens outside the app — this only corrects the recorded fare. If the order is already completed, the
           biker&apos;s prepaid commission balance is adjusted automatically in the same step to match the corrected
           fare.
@@ -81,7 +82,7 @@ export function AdjudicateDelivered({
               note alone.{" "}
             </b>
           ) : null}
-          Overturns the <b>undelivered</b> outcome on order <b>{id}</b> to <b>delivered</b>
+          Overturns the <b>undelivered</b> outcome on order <b>{shortId(id)}</b> to <b>delivered</b>
           {hasEvidence ? " — only when the proof above confirms the drop and the recipient withheld the code" : ""}. The
           biker is credited a completed trip and commission; the customer is notified and can report a problem via the
           app at any time. Recorded in the audit log.
@@ -108,7 +109,7 @@ export function CancelOrder({ id, connected }: { id: string; connected: boolean 
       title="Cancel this order?"
       consequence={
         <span>
-          Order <b>{id}</b> will be cancelled for both sides. The customer is notified and can re-broadcast. This
+          Order <b>{shortId(id)}</b> will be cancelled for both sides. The customer is notified and can re-broadcast. This
           action never strikes the biker — a strike is only recorded when a biker cancels their own job, never from
           an ops-initiated cancellation.
         </span>

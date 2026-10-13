@@ -6,6 +6,7 @@ import { FilterNav } from "../components/FilterNav";
 import { Pill } from "../components/StatusPill";
 import { IconBike } from "../components/icons";
 import { PlateConfirmButton } from "./PlateConfirm";
+import { shortId } from "../lib/format";
 
 interface Rider {
   profileId: string;
@@ -77,7 +78,7 @@ function strikesCell(r: Rider) {
 function riderName(r: Rider) {
   return (
     <a href={`/riders/${r.profileId}`} style={{ color: "var(--accent-text)", textDecoration: "none", fontWeight: 500 }}>
-      {r.name || r.profileId.slice(0, 8)}
+      {r.name || shortId(r.profileId)}
     </a>
   );
 }
@@ -135,7 +136,7 @@ export default async function RidersPage({
     {
       key: "action",
       header: "Action",
-      cell: (r) => <PlateConfirmButton id={r.profileId} name={r.name || r.profileId.slice(0, 8)} plate={r.bikeReg} connected={connected} path="/riders" />,
+      cell: (r) => <PlateConfirmButton id={r.profileId} name={r.name || shortId(r.profileId)} plate={r.bikeReg} connected={connected} path="/riders" />,
     },
   ];
 
@@ -177,7 +178,7 @@ export default async function RidersPage({
           // Directory rows are pure links to the profile; KYC rows carry an inline Approve form, so no
           // stretched row-link there (it would sit under the button).
           getRowHref={kycMode || plateMode ? undefined : (r) => `/riders/${r.profileId}`}
-          rowLabel={kycMode || plateMode ? undefined : (r) => `Open ${r.name || r.profileId.slice(0, 8)}`}
+          rowLabel={kycMode || plateMode ? undefined : (r) => `Open ${r.name || shortId(r.profileId)}`}
           empty={
             connected ? (
               plateMode ? (

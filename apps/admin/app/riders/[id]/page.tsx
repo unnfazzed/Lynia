@@ -7,23 +7,18 @@ import { KeyValue } from "../../components/KeyValue";
 import { StatusPill, Pill } from "../../components/StatusPill";
 import { RiderActions } from "./RiderActions";
 import { PlateConfirmButton } from "../PlateConfirm";
-import { WalletCreditButton, WalletFreezeActions } from "./WalletActions";
+import { WalletCreditButton } from "./WalletActions";
+import { OrderLink } from "../../components/links";
+import { enumLabel, fmtDateTime, money } from "../../lib/format";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
-
-/** Format a wallet balance, rendering a negative (owed) balance as "−$X.XX" to match the ledger's
- *  signed amounts (rather than a raw "$-X.XX"). */
-function fmtBalance(b: string): string {
-  const v = Number(b);
-  return v < 0 ? `−$${Math.abs(v).toFixed(2)}` : `$${b}`;
-}
 
 /** Humanize a commission-ledger entry type for the wallet ledger table. */
 const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
   ride_commission: "Ride commission",
   topup: "Top-up",
-  grace: "Grace credit",
+  grace: "Starting credit",
   adjustment: "Adjustment",
   reversal: "Reversal",
 };
@@ -95,26 +90,27 @@ export default async function RiderProfilePage({
   const walletFrozen = wallet?.frozen;
 
   const ledgerCols: Column<WalletLedgerEntry>[] = [
-    { key: "at", header: "When", className: "mut", cell: (l) => new Date(l.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) },
-    { key: "type", header: "Type", cell: (l) => LEDGER_TYPE_LABEL[l.type] ?? l.type },
+    { key: "at", header: "When", className: "mut", cell: (l) => fmtDateTime(l.at) },
+    { key: "type", header: "Type", cell: (l) => LEDGER_TYPE_LABEL[l.type] ?? enumLabel(l.type) },
+    { key: "order", header: "Order", cell: (l) => (l.orderId ? <OrderLink id={l.orderId} /> : "—") },
     {
       key: "amount",
       header: "Amount",
       className: "num",
       cell: (l) => {
         const v = Number(l.amount);
-        return <span style={{ color: v < 0 ? tokens.color.danger : tokens.color.accentText, fontWeight: 600 }}>{v < 0 ? "−" : "+"}${Math.abs(v).toFixed(2)}</span>;
+        return <span style={{ color: v < 0 ? tokens.color.danger : tokens.color.accentText, fontWeight: 600 }}>{v < 0 ? money(v) : `+${money(v)}`}</span>;
       },
     },
-    { key: "balanceAfter", header: "Balance", className: "num", cell: (l) => `$${l.balanceAfter}` },
+    { key: "balanceAfter", header: "Balance", className: "num", cell: (l) => money(l.balanceAfter) },
     { key: "note", header: "Note", className: "mut", cell: (l) => l.note ?? "—" },
   ];
 
   const tripCols: Column<TripRow>[] = [
-    { key: "id", header: "Order", className: "mono", cell: (t) => t.id },
+    { key: "id", header: "Order", cell: (t) => <OrderLink id={t.id} /> },
     { key: "route", header: "Route", cell: (t) => t.route },
     { key: "status", header: "Status", cell: (t) => <StatusPill status={t.status} /> },
-    { key: "fare", header: "Fare", className: "num", cell: (t) => `$${t.fare}` },
+    { key: "fare", header: "Fare", className: "num", cell: (t) => money(t.fare) },
     { key: "when", header: "When", className: "mut", cell: (t) => t.when },
   ];
 
@@ -136,7 +132,7 @@ export default async function RiderProfilePage({
         <h1 style={{ fontSize: 18 }}>{r.name}</h1>
         <span style={{ display: "flex", gap: 6 }}>
           {riderPill(r)}
-          <Pill kind={r.kyc === "verified" ? "good" : "mut"}>{r.kyc}</Pill>
+          <Pill kind={r.kyc === "verified" ? "good" : "mut"}>{enumLabel(r.kyc)}</Pill>
         </span>
         <Conn connected={connected} />
       </header>
@@ -165,9 +161,7 @@ export default async function RiderProfilePage({
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>On hold.</b> Reliability score {r.reliabilityScore}{" "}is below the threshold to go online — and
-            completing deliveries is the only way it recovers, which going online would let them do. Without
-            &ldquo;Clear hold&rdquo; below, this biker is stuck permanently.
+            <b>On hold.</b> Reliability score {r.reliabilityScore}. Use &ldquo;Clear hold&rdquo; below to lift it.
           </span>
         </div>
       ) : null}
@@ -192,11 +186,97 @@ export default async function RiderProfilePage({
         <KpiCard
           label="Cancel strikes"
           value={r.strikes}
-          hint={r.status === "cooldown" ? `cooldown ${r.cooldown}` : "3 strikes = auto-cooldown"}
+          hint={r.status === "cooldown" ? `cooldown ${r.cooldown}` : "cancels on record"}
           size={22}
         />
         {/* Commission/balance is shown once, authoritatively, in the Prepaid-wallet card below — not
             repeated as a KPI + a Details row (which read as three different figures for one number). */}
+      </section>
+
+      {/* DOC-16-03: prepaid commission wallet — balance, the manual-credit rail, and the ledger. */}
+      <section className="card" style={{ marginBottom: tokens.space.lg }}>
+        <div className="block-title">
+          Prepaid wallet ·{" "}
+          <a href="/cash" style={{ color: tokens.color.accentText, fontWeight: 400, fontSize: 12, textDecoration: "none" }}>
+            commission overview →
+          </a>
+          <span className="right">
+            balance{" "}
+            <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>
+              {wallet ? money(wallet.balance) : "—"}
+            </b>
+            {walletFrozen ? (
+              <>
+                {" · "}
+                <Pill kind="bad">{enumLabel("commission_freeze")}</Pill>
+              </>
+            ) : null}
+          </span>
+        </div>
+        {!wallet && <SubsectionUnavailable noun="wallet view" />}
+
+        {/* Kit riders.html:70 — the frozen-wallet warnbar. */}
+        {walletFrozen ? (
+          <div className="warnbar">
+            <IconAlert />
+            <span className="t">
+              <b>Wallet frozen.</b> Only an admin can clear it.
+            </span>
+          </div>
+        ) : null}
+
+        {/* Kit riders.html:256-257 — while frozen, the credit form is replaced by a disabled empty state
+            rather than left clickable. */}
+        {walletFrozen ? (
+          <div style={{ marginBottom: tokens.space.md }}>
+            <EmptyState
+              icon={<IconAlert />}
+              title="Credits are disabled"
+              line="Clear the wallet freeze before crediting."
+            />
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
+            {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
+                ops act without seeing the current balance. */}
+            <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
+            {wallet && (
+              <span style={{ fontSize: 12, color: tokens.color.muted }}>
+                Each credit is reason-coded and lands on the ledger below.
+              </span>
+            )}
+          </div>
+        )}
+
+        <DataTable
+          columns={ledgerCols}
+          rows={wallet?.ledger ?? []}
+          rowKey={(l) => l.id}
+          empty={
+            <div className="mut" style={{ textAlign: "center", padding: 20 }}>
+              {wallet ? "No wallet activity yet — no top-ups or ride commission recorded." : "Wallet view unavailable."}
+            </div>
+          }
+        />
+        {/* LC-D07: the ledger is paged server-side (20/page) — disclose it and link further back instead
+            of silently truncating. `walletCursor` clears to reset to the newest page. */}
+        {wallet && (wallet.nextCursor || walletCursor) ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
+            <span>Showing 20 entries per page.</span>
+            <span style={{ display: "flex", gap: 12 }}>
+              {walletCursor ? (
+                <a href={`/riders/${id}`} style={{ color: tokens.color.accentText }}>
+                  ↺ Back to latest
+                </a>
+              ) : null}
+              {wallet.nextCursor ? (
+                <a href={`/riders/${id}?walletCursor=${encodeURIComponent(wallet.nextCursor)}`} style={{ color: tokens.color.accentText }}>
+                  Load older →
+                </a>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
       </section>
 
       <div className="detail-grid">
@@ -237,7 +317,7 @@ export default async function RiderProfilePage({
                   label: "KYC",
                   value: (
                     <span>
-                      {r.kyc} ·{" "}
+                      {enumLabel(r.kyc)} ·{" "}
                       <a href="/riders?kyc=pending" style={{ color: tokens.color.accentText }}>
                         {r.kyc === "verified" ? "view queue" : "in queue"}
                       </a>
@@ -273,100 +353,6 @@ export default async function RiderProfilePage({
         </div>
       </div>
 
-      {/* DOC-16-03: prepaid commission wallet — balance, the manual-credit rail, and the ledger. */}
-      <section className="card" style={{ marginTop: tokens.space.lg }}>
-        <div className="block-title">
-          Prepaid wallet ·{" "}
-          <a href="/cash" style={{ color: tokens.color.accentText, fontWeight: 400, fontSize: 12, textDecoration: "none" }}>
-            commission overview →
-          </a>
-          <span className="right">
-            balance{" "}
-            <b style={{ color: wallet && Number(wallet.balance) < 0 ? tokens.color.danger : tokens.color.ink }}>
-              {wallet ? fmtBalance(wallet.balance) : "—"}
-            </b>
-            {walletFrozen ? (
-              <>
-                {" · "}
-                <Pill kind="bad">commission_freeze</Pill>
-              </>
-            ) : null}
-          </span>
-        </div>
-        {!wallet && <SubsectionUnavailable noun="wallet view" />}
-
-        {/* Kit riders.html:70 — the frozen-wallet warnbar. */}
-        {walletFrozen ? (
-          <div className="warnbar">
-            <IconAlert />
-            <span className="t">
-              <b>Wallet frozen.</b> A <span className="mono">commission_freeze</span> hold is in place —
-              admin-clear only, never self-cleared. Top-ups stay disabled until an admin clears it.
-            </span>
-          </div>
-        ) : null}
-
-        {/* Kit riders.html:256-257 — while frozen, the credit form is replaced by a disabled empty state
-            rather than left clickable. */}
-        {walletFrozen ? (
-          <div style={{ marginBottom: tokens.space.md }}>
-            <EmptyState
-              icon={<IconAlert />}
-              title="Credits are disabled"
-              line="Clear the commission_freeze hold before crediting this wallet."
-            />
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: tokens.space.md, flexWrap: "wrap" }}>
-            {/* Only offer a credit once the balance loaded — crediting blind (wallet view failed) would let
-                ops act without seeing the current balance. */}
-            <WalletCreditButton id={r.id} name={r.name} connected={connected && wallet !== null} />
-            {wallet && (
-              <span style={{ fontSize: 12, color: tokens.color.muted }}>
-                Manual credits are the launch top-up rail — each is reason-coded and lands on the ledger below.
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Kit riders.html:226-228 — the commission_freeze hold actions. Both unwired today; the
-            component states that inline and keeps its triggers disabled. */}
-        <div style={{ marginBottom: tokens.space.md }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: tokens.color.muted, marginBottom: 8 }}>
-            Wallet freeze
-          </div>
-          <WalletFreezeActions id={r.id} name={r.name} frozen={walletFrozen} />
-        </div>
-        <DataTable
-          columns={ledgerCols}
-          rows={wallet?.ledger ?? []}
-          rowKey={(l) => l.id}
-          empty={
-            <div className="mut" style={{ textAlign: "center", padding: 20 }}>
-              {wallet ? "No wallet activity yet — no top-ups or ride commission recorded." : "Wallet view unavailable."}
-            </div>
-          }
-        />
-        {/* LC-D07: the ledger is paged server-side (20/page) — disclose it and link further back instead
-            of silently truncating. `walletCursor` clears to reset to the newest page. */}
-        {wallet && (wallet.nextCursor || walletCursor) ? (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: tokens.color.muted, marginTop: 12 }}>
-            <span>Showing 20 entries per page.</span>
-            <span style={{ display: "flex", gap: 12 }}>
-              {walletCursor ? (
-                <a href={`/riders/${id}`} style={{ color: tokens.color.accentText }}>
-                  ↺ Back to latest
-                </a>
-              ) : null}
-              {wallet.nextCursor ? (
-                <a href={`/riders/${id}?walletCursor=${encodeURIComponent(wallet.nextCursor)}`} style={{ color: tokens.color.accentText }}>
-                  Load older →
-                </a>
-              ) : null}
-            </span>
-          </div>
-        ) : null}
-      </section>
     </main>
   );
 }

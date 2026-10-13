@@ -5,6 +5,7 @@ import { tokens } from "@lynia/shared";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { REASONS } from "../lib/reasons";
 import { IconWifiOff } from "../components/icons";
+import { money } from "../lib/format";
 
 /**
  * Bulk seed-credit — the flip-day tooling from the kit (`packages/design/ui_kits/admin/cash.html`
@@ -33,11 +34,6 @@ import { IconWifiOff } from "../components/icons";
  *  default, which is what a real bulk endpoint would have to honour per row. */
 const PER_RIDER_CAP = 50;
 
-/** Kit `money()` — a negative renders as "−$X.XX", never "$-X.XX". */
-function money(n: number): string {
-  return `${n < 0 ? "−$" : "$"}${Math.abs(n).toFixed(2)}`;
-}
-
 export interface SeedCreditCardProps {
   /**
    * Riders that would receive a seed credit: standing `active`, not on a reliability hold, KYC
@@ -62,9 +58,9 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
   const error = !name
     ? "Give the campaign a name — it's the idempotency key."
     : !(amt > 0)
-      ? "Enter a per-rider amount above $0.00."
+      ? "Enter a per-biker amount above $0.00."
       : amt > PER_RIDER_CAP
-        ? `Per-rider seed credits are capped at ${money(PER_RIDER_CAP)}.`
+        ? `Per-biker seed credits are capped at ${money(PER_RIDER_CAP)}.`
         : null;
 
   const inputStyle: CSSProperties = {
@@ -91,8 +87,7 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
       </div>
 
       <p style={{ fontSize: 13, color: tokens.color.muted, margin: "0 0 16px", maxWidth: 640 }}>
-        Before the rate flips off 0%, every biker&apos;s balance is $0 — below the $2 floor, which would gate the
-        whole fleet offline. Seed a grace credit to every eligible biker first. Each row is keyed{" "}
+        Seed a starting credit to every eligible biker before the rate turns on. Each row is keyed{" "}
         <span className="mono">(campaign, riderId)</span> on the ledger&apos;s unique{" "}
         <span className="mono">idemKey</span>, so re-running the same campaign never double-grants.
       </p>
@@ -160,7 +155,7 @@ export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardPr
           // Hard-disabled: unwired, not merely offline. Never make this conditional on `connected`
           // without a real bulk endpoint behind it.
           disabled
-          title={`Seed grace credits — ${name || "campaign"}`}
+          title={`Seed starting credits — ${name || "campaign"}`}
           consequence={
             <span>
               Credits <b>{eligibleCount ?? "—"} eligible bikers</b> {money(amt > 0 ? amt : 0)} each (

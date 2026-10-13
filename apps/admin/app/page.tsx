@@ -1,14 +1,17 @@
-import { STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
+import { OrderStatus, STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
 import { adminFetchResult } from "./lib/api";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
 import { KpiCard } from "./components/KpiCard";
 import { StatusPill } from "./components/StatusPill";
-import { IconAlert, IconIdCard, IconBanknote, IconCheck, IconInbox } from "./components/icons";
+import { IconAlert, IconIdCard, IconCheck, IconInbox } from "./components/icons";
+import { AutoRefresh } from "./components/AutoRefresh";
+import { OrderLink } from "./components/links";
+import { money, timeAgo } from "./lib/format";
 
 /**
  * Monitor/support console overview (CONCEPT §4, kit `ui_kits/admin/index.html`). Reads /admin/overview.
  * Headline KPIs + a pilot-funnel strip + a "needs attention" queue (stuck order / open dispute / KYC
- * backlog / commission) + recent orders. Degrades to an honest offline/empty state when the API is
+ * backlog) + recent orders, refreshed every 30s. Degrades to an honest offline/empty state when the API is
  * unconfigured, unreachable, or the endpoint hasn't shipped (the header + fallback copy name the case).
  */
 interface Overview {
@@ -51,17 +54,18 @@ export default async function OverviewPage() {
       </header>
 
       {!connected ? <OfflineBanner reason={reason} /> : null}
+      {connected ? <AutoRefresh intervalMs={30_000} /> : null}
 
       {/* Headline KPIs — the two the design leads with (completed + fares today) sit beside live supply. */}
       <section className="panels" style={{ marginBottom: tokens.space.md }}>
-        <KpiCard label="Live orders" value={data ? liveOrders(data.ordersByStatus) : "—"} hint="open for offers + in delivery" />
+        <KpiCard label="Live orders" value={data ? liveOrders(data.ordersByStatus) : "—"} hint="all types, not yet finished" />
         <KpiCard label="Bikers online" value={data ? `${data.riders.online}/${data.riders.verified}` : "—"} hint="online / verified" />
         <KpiCard
           label="Completed today"
           value={data ? data.today.completed : "—"}
-          hint={data && data.today.completionRatePct != null ? `${data.today.completionRatePct}% completion rate` : "delivered today"}
+          hint={data && data.today.completionRatePct != null ? `${data.today.completionRatePct}% completion rate` : "all types, Harare day"}
         />
-        <KpiCard label="Fares today" value={data ? `$${data.today.fares}` : "—"} hint="agreed fares, all cash" />
+        <KpiCard label="Fares today" value={data ? money(data.today.fares) : "—"} hint="parcel fares + food delivery fees" />
       </section>
 
       {/* Secondary pilot-funnel strip. */}
@@ -139,17 +143,15 @@ export default async function OverviewPage() {
             <tbody>
               {data.recentOrders.map((o) => (
                 <tr key={o.id} className="rowlink">
-                  <td className="mono">
-                    <a href={`/orders/${o.id}`} style={{ color: tokens.color.accentText, textDecoration: "none" }}>
-                      {o.id.slice(0, 8)}
-                    </a>
+                  <td>
+                    <OrderLink id={o.id} />
                   </td>
                   <td>{o.route}</td>
                   <td>
                     <StatusPill status={o.status} />
                   </td>
                   <td className="mut">{o.rider ?? "—"}</td>
-                  <td className="num">${o.agreedFare ?? o.proposedFare}</td>
+                  <td className="num">{money(o.agreedFare ?? o.proposedFare)}</td>
                   <td className="mut num">{timeAgo(o.createdAt)}</td>
                 </tr>
               ))}
@@ -173,9 +175,12 @@ export default async function OverviewPage() {
   );
 }
 
+/** Not yet finished: everything but the four end states. `requested` is a merchant order in the kitchen
+ *  (or a parcel a tick before it broadcasts); `delivered` still awaits completion. */
+const ENDED: string[] = [OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.EXPIRED, OrderStatus.UNDELIVERED];
+
 function liveOrders(byStatus: Record<string, number>): number {
-  const inFlight = ["open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"];
-  return inFlight.reduce((sum, s) => sum + (byStatus[s] ?? 0), 0);
+  return Object.entries(byStatus).reduce((sum, [s, n]) => (ENDED.includes(s) ? sum : sum + n), 0);
 }
 
 interface AttentionRow {
@@ -222,37 +227,5 @@ function buildAttention(data: Overview): AttentionRow[] {
       icon: <IconIdCard />,
     });
   }
-  // UX20-02: this used to be a hardcoded "Commission is 0%" literal that could never reflect the real,
-  // operator-flippable rate — an ops flip to a live rate kept this row insisting nothing was collected,
-  // directly contradicted by the very next click into /cash. Read the live rate instead.
-  rows.push(
-    data.commissionRatePct > 0
-      ? {
-          title: `Commission is ${data.commissionRatePct}%`,
-          detail: "being deducted per ride from bikers' prepaid balance.",
-          action: "View",
-          href: "/cash",
-          icon: <IconBanknote />,
-        }
-      : {
-          title: "Commission is 0%",
-          detail: "launch period — nothing is collected yet.",
-          action: "View",
-          href: "/cash",
-          icon: <IconBanknote />,
-        },
-  );
   return rows;
-}
-
-/** Compact "N min ago" for the recent-orders Created column. Server-rendered once; no hydration risk. */
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} d ago`;
 }

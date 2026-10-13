@@ -67,7 +67,10 @@ export interface IssueRow {
   id: string;
   /** Canonical `IssueType` from `@lynia/shared`; rendered through `ISSUE_TYPE_LABELS`. */
   type: IssueType;
+  /** The order's route label (falls back to its id). */
   order: string;
+  /** Optional: older API builds omit it. */
+  orderId?: string;
   openedBy: string;
   opened: string;
   status: IssueStatus;
@@ -88,6 +91,8 @@ export interface IssueTimelineStep {
 }
 
 export interface IssueDetail extends IssueRow {
+  riderId?: string | null;
+  customerId?: string | null;
   route: string;
   fare: string;
   rider: string;
@@ -123,6 +128,8 @@ export interface SosRow {
   orderId: string;
   raisedByProfileId: string;
   raisedByRole: string;
+  /** Optional: older API builds omit it. */
+  raisedByName?: string | null;
   lat: number | null;
   lng: number | null;
   acknowledgedAt: string | null;
@@ -264,6 +271,10 @@ export interface OrderDetail {
   deliveryOtpAttempts?: number;
   /** Whether the customer/rider has an open (unresolved) issue filed against this order (A-05). */
   hasOpenIssue?: boolean;
+  /** Ids for linking to /riders, /customers and /merchants. Optional: older API builds omit them. */
+  riderId?: string | null;
+  customerId?: string;
+  merchantId?: string | null;
   rider: string | null;
   riderPhone?: string;
   bike?: string;
@@ -343,6 +354,8 @@ export interface MerchantDebtLedgerRow {
   id: string;
   orderId: string;
   riderId: string;
+  /** Optional: older API builds omit it. */
+  riderName?: string | null;
   type: "opened" | "settled_cash" | "settled_goods" | "written_off";
   amount: string;
   note: string | null;

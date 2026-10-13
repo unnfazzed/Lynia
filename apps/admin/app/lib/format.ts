@@ -19,6 +19,11 @@ export function fmtDate(iso: string | Date): string {
   return new Date(iso).toLocaleDateString("en-GB", { timeZone: OPS_TZ, day: "numeric", month: "short", year: "numeric" });
 }
 
+/** "13 Oct" in Harare time. */
+export function fmtDayMonth(iso: string | Date): string {
+  return new Date(iso).toLocaleDateString("en-GB", { timeZone: OPS_TZ, day: "numeric", month: "short" });
+}
+
 /** "14:05" in Harare time. */
 export function fmtTime(iso: string | Date): string {
   return new Date(iso).toLocaleTimeString("en-GB", { timeZone: OPS_TZ, hour: "2-digit", minute: "2-digit" });

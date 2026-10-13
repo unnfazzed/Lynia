@@ -8,12 +8,14 @@ import { FareAdjust, CancelOrder, AdjudicateDelivered } from "./OrderActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
 import { ResolveHandshakeButton } from "../../merchants/ResolveHandshakeButton";
+import { RecordLink } from "../../components/links";
+import { enumLabel, fmtDate, fmtDateTime, money, shortId } from "../../lib/format";
 
 const DEBT_STATUS_LABEL: Record<string, string> = {
   open: "Open — awaiting settlement",
   settled_cash: "Settled — cash returned",
   settled_goods: "Settled — goods returned",
-  written_off: "Written off — biker suspended",
+  written_off: "Written off",
 };
 
 /** Order detail (kit `orders.html` detail): 8-step delivery timeline, parcel line items, people
@@ -147,8 +149,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <a className="back" href="/orders">
           ← Orders
         </a>
-        <h1 className="mono" style={{ fontSize: 18 }}>
-          {o.id}
+        <h1 className="mono" style={{ fontSize: 18 }} title={o.id}>
+          {shortId(o.id)}
         </h1>
         <span>
           <StatusPill status={o.status} />
@@ -187,7 +189,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           </section>
 
           <section className="card">
-            <div className="block-title">Parcel</div>
+            <div className="block-title">{o.orderType === "merchant" ? "Items" : "Parcel"}</div>
             {o.items.map((it, i) => (
               <div
                 key={i}
@@ -215,7 +217,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <section className="card">
               <div className="block-title">Proof of drop-off</div>
               <div style={{ fontSize: 12, color: tokens.color.muted, marginBottom: 8 }}>
-                Rider-attached evidence — the recipient took the goods but withheld the delivery code.
+                Biker-attached evidence — the recipient took the goods but withheld the delivery code.
               </div>
               {o.deliveryProof.photoUrl ? (
                 // A short-lived signed GCS URL (mirrors the KYC photo), so a plain <img>, not next/image.
@@ -235,7 +237,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 <KeyValue
                   rows={[
                     ...(o.deliveryProof.at
-                      ? [{ label: "Captured", value: <span className="mono">{new Date(o.deliveryProof.at).toLocaleString()}</span> }]
+                      ? [{ label: "Captured", value: <span className="mono">{fmtDateTime(o.deliveryProof.at)}</span> }]
                       : []),
                     {
                       label: "Location",
@@ -279,167 +281,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
         <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.lg }}>
           <section className="card">
-            <div className="block-title">People</div>
-            <KeyValue
-              rows={[
-                {
-                  label: "Customer",
-                  value: (
-                    <span>
-                      {o.customer} <span className="mono mut">{o.customerPhone ? formatPhoneLocal(o.customerPhone) : "0·· ··· ····"}</span>
-                    </span>
-                  ),
-                },
-                {
-                  label: "Biker",
-                  value: o.rider ? (
-                    <span>
-                      {o.rider} <span className="mono mut">{o.riderPhone ? formatPhoneLocal(o.riderPhone) : o.riderPhone}</span>
-                    </span>
-                  ) : (
-                    "— none assigned"
-                  ),
-                },
-                ...(o.bike ? [{ label: "Bike", value: <span className="mono">{o.bike}</span> }] : []),
-                {
-                  label: "Privacy",
-                  value: (
-                    <span className="mut" style={{ fontSize: 12 }}>
-                      Full numbers visible to ops only during an active order.
-                    </span>
-                  ),
-                },
-              ]}
-            />
-          </section>
-
-          {/* X1: food-order evidence panel — merchant/payment rail/debt/handshake/refund. Null for
-              every parcel order, so this card is simply absent there. */}
-          {o.food ? (
-            <section className="card">
-              <div className="block-title">Food order</div>
-              <KeyValue
-                rows={[
-                  { label: "Merchant", value: o.food.merchant ?? "—" },
-                  {
-                    label: "Payment",
-                    value: `${o.food.paymentMethod ?? "—"}${o.food.paymentConfirmedAt ? ` · confirmed ${new Date(o.food.paymentConfirmedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`,
-                  },
-                  { label: "Goods total", value: o.food.goodsTotal ? `$${o.food.goodsTotal}` : "—" },
-                  { label: "Delivery fee", value: o.food.deliveryFee ? `$${o.food.deliveryFee}` : "—" },
-                  // D-71: free delivery — the business paid this part of the rider's fee, the customer didn't.
-                  ...(o.food.merchantDeliveryShare
-                    ? [{ label: "Paid by the business", value: `$${o.food.merchantDeliveryShare} (free delivery)` }]
-                    : []),
-                ]}
-              />
-
-              {o.food.debt ? (
-                <div style={{ marginTop: 10 }}>
-                  <div className="block-title" style={{ fontSize: 12 }}>
-                    Merchant debt (collect &amp; return)
-                  </div>
-                  <KeyValue
-                    rows={[
-                      { label: "Status", value: DEBT_STATUS_LABEL[o.food.debt.status] ?? o.food.debt.status },
-                      { label: "Amount", value: o.food.debt.amount ? `$${o.food.debt.amount}` : "—" },
-                    ]}
-                  />
-                </div>
-              ) : null}
-
-              {o.food.handshake ? (
-                <div style={{ marginTop: 10 }}>
-                  <div className="block-title" style={{ fontSize: 12 }}>
-                    Doorstep handshake
-                  </div>
-                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
-                    <div className="warnbar" style={{ marginBottom: 8 }}>
-                      <IconAlert />
-                      <span className="t">
-                        <b>Frozen — the biker didn&apos;t confirm.</b> Locked out of new jobs since{" "}
-                        {new Date(o.food.handshake.frozenAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
-                      </span>
-                    </div>
-                  ) : null}
-                  <KeyValue
-                    rows={[
-                      { label: "Amount", value: o.food.handshake.amount ? `$${o.food.handshake.amount}` : "—" },
-                      { label: "Customer confirmed", value: o.food.handshake.customerConfirmedAt ? "Yes" : "Not yet" },
-                      { label: "Biker confirmed", value: o.food.handshake.riderConfirmedAt ? "Yes" : "Not yet" },
-                    ]}
-                  />
-                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
-                    <div style={{ marginTop: 8 }}>
-                      <ResolveHandshakeButton orderId={o.id} connected={connected} />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {o.food.refund ? (
-                <div style={{ marginTop: 10 }}>
-                  <div className="block-title" style={{ fontSize: 12 }}>
-                    Refund
-                  </div>
-                  <KeyValue
-                    rows={[
-                      { label: "Reference", value: <span className="mono">{o.food.refund.reference ?? "—"}</span> },
-                      { label: "Amount", value: o.food.refund.amount ? `$${o.food.refund.amount}` : "—" },
-                    ]}
-                  />
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          <section className="card">
-            <div className="block-title">Fare — cash</div>
-            <KeyValue
-              rows={[
-                { label: "Proposed", value: <span className="num">${o.proposed}</span> },
-                {
-                  /* The old inline "rider countered" hint fired on any agreed ≠ proposed — which is
-                     also what an admin fare correction looks like. The provenance line below the
-                     table (from the server-derived fareProvenance) replaces it. */
-                  label: "Agreed",
-                  value: o.agreed ? <span className="num">${o.agreed}</span> : "—",
-                },
-                {
-                  label: "Collected",
-                  value: (
-                    <span className="num">
-                      {idx >= 6 && o.agreed ? `$${o.agreed} cash at drop-off` : "not yet — cash on delivery"}
-                    </span>
-                  ),
-                },
-              ]}
-            />
-            {/* Provenance of the agreed fare — during a cash dispute this is how ops tells a
-                legitimate market outcome from an operator's correction. */}
-            {o.agreed ? (
-              <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8 }}>
-                {prov?.kind === "admin_adjusted" ? (
-                  <>
-                    Adjusted by {prov.operator} on {prov.at.slice(0, 10)}
-                    {prov.previousFare ? <> (was ${prov.previousFare})</> : null}
-                    {prov.count ? <> — adjusted {prov.count} times, latest shown</> : null}.
-                  </>
-                ) : prov?.kind === "rider_counter" ? (
-                  <>Agreed via biker counter-offer (${prov.offeredFare} vs ${prov.ask} ask).</>
-                ) : prov?.kind === "customer_ask" ? (
-                  <>Customer&rsquo;s asking price, accepted as-is.</>
-                ) : (
-                  <>Fare source unknown — this order predates provenance tracking.</>
-                )}
-              </div>
-            ) : null}
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <FareAdjust id={o.id} agreedOrProposed={o.agreed ?? o.proposed} connected={connected} />
-            </div>
-          </section>
-
-          <section className="card">
             <div className="block-title">Actions</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {o.rider && live ? (
@@ -477,6 +318,180 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               There is no manual dispatch — a no-offer order expires and the customer re-broadcasts.
             </div>
           </section>
+
+          <section className="card">
+            <div className="block-title">People</div>
+            <KeyValue
+              rows={[
+                {
+                  label: "Customer",
+                  value: (
+                    <span>
+                      {o.customerId ? <RecordLink href={`/customers/${o.customerId}`}>{o.customer}</RecordLink> : o.customer}{" "}
+                      <span className="mono mut">{o.customerPhone ? formatPhoneLocal(o.customerPhone) : "0·· ··· ····"}</span>
+                    </span>
+                  ),
+                },
+                {
+                  label: "Biker",
+                  value: o.rider ? (
+                    <span>
+                      {o.riderId ? <RecordLink href={`/riders/${o.riderId}`}>{o.rider}</RecordLink> : o.rider}{" "}
+                      <span className="mono mut">{o.riderPhone ? formatPhoneLocal(o.riderPhone) : o.riderPhone}</span>
+                    </span>
+                  ) : (
+                    "— none assigned"
+                  ),
+                },
+                ...(o.bike ? [{ label: "Bike", value: <span className="mono">{o.bike}</span> }] : []),
+                {
+                  label: "Privacy",
+                  value: (
+                    <span className="mut" style={{ fontSize: 12 }}>
+                      Full numbers visible to ops only during an active order.
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </section>
+
+          {/* X1: food-order evidence panel — merchant/payment rail/debt/handshake/refund. Null for
+              every parcel order, so this card is simply absent there. */}
+          {o.food ? (
+            <section className="card">
+              <div className="block-title">Food order</div>
+              <KeyValue
+                rows={[
+                  {
+                    label: "Merchant",
+                    value:
+                      o.food.merchant && o.merchantId ? (
+                        <RecordLink href={`/merchants/${o.merchantId}`}>{o.food.merchant}</RecordLink>
+                      ) : (
+                        (o.food.merchant ?? "—")
+                      ),
+                  },
+                  {
+                    label: "Payment",
+                    value: `${enumLabel(o.food.paymentMethod)}${o.food.paymentConfirmedAt ? ` · confirmed ${fmtDateTime(o.food.paymentConfirmedAt)}` : ""}`,
+                  },
+                  { label: "Goods total", value: money(o.food.goodsTotal) },
+                  { label: "Delivery fee", value: money(o.food.deliveryFee) },
+                  // D-71: free delivery — the business paid this part of the rider's fee, the customer didn't.
+                  ...(o.food.merchantDeliveryShare
+                    ? [{ label: "Paid by the business", value: `${money(o.food.merchantDeliveryShare)} (free delivery)` }]
+                    : []),
+                ]}
+              />
+
+              {o.food.debt ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Merchant debt (collect &amp; return)
+                  </div>
+                  <KeyValue
+                    rows={[
+                      { label: "Status", value: DEBT_STATUS_LABEL[o.food.debt.status] ?? o.food.debt.status },
+                      { label: "Amount", value: money(o.food.debt.amount) },
+                    ]}
+                  />
+                </div>
+              ) : null}
+
+              {o.food.handshake ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Doorstep handshake
+                  </div>
+                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
+                    <div className="warnbar" style={{ marginBottom: 8 }}>
+                      <IconAlert />
+                      <span className="t">
+                        <b>Frozen — the biker didn&apos;t confirm.</b> Since {fmtDateTime(o.food.handshake.frozenAt)}.
+                      </span>
+                    </div>
+                  ) : null}
+                  <KeyValue
+                    rows={[
+                      { label: "Amount", value: money(o.food.handshake.amount) },
+                      { label: "Customer confirmed", value: o.food.handshake.customerConfirmedAt ? "Yes" : "Not yet" },
+                      { label: "Biker confirmed", value: o.food.handshake.riderConfirmedAt ? "Yes" : "Not yet" },
+                    ]}
+                  />
+                  {o.food.handshake.frozenAt && !o.food.handshake.riderConfirmedAt ? (
+                    <div style={{ marginTop: 8 }}>
+                      <ResolveHandshakeButton orderId={o.id} connected={connected} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {o.food.refund ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="block-title" style={{ fontSize: 12 }}>
+                    Refund
+                  </div>
+                  <KeyValue
+                    rows={[
+                      { label: "Reference", value: <span className="mono">{o.food.refund.reference ?? "—"}</span> },
+                      { label: "Amount", value: money(o.food.refund.amount) },
+                    ]}
+                  />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="card">
+            <div className="block-title">Fare — cash</div>
+            <KeyValue
+              rows={[
+                { label: "Proposed", value: <span className="num">{money(o.proposed)}</span> },
+                {
+                  /* The old inline "rider countered" hint fired on any agreed ≠ proposed — which is
+                     also what an admin fare correction looks like. The provenance line below the
+                     table (from the server-derived fareProvenance) replaces it. */
+                  label: "Agreed",
+                  value: o.agreed ? <span className="num">{money(o.agreed)}</span> : "—",
+                },
+                {
+                  label: "Collected",
+                  value: (
+                    <span className="num">
+                      {idx >= 6 && o.agreed ? `${money(o.agreed)} cash at drop-off` : "not yet — cash on delivery"}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            {/* Provenance of the agreed fare — during a cash dispute this is how ops tells a
+                legitimate market outcome from an operator's correction. */}
+            {o.agreed ? (
+              <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 8 }}>
+                {prov?.kind === "admin_adjusted" ? (
+                  <>
+                    Adjusted by {prov.operator} on {fmtDate(prov.at)}
+                    {prov.previousFare ? <> (was {money(prov.previousFare)})</> : null}
+                    {prov.count ? <> — adjusted {prov.count} times, latest shown</> : null}.
+                  </>
+                ) : prov?.kind === "rider_counter" ? (
+                  <>Agreed via biker counter-offer ({money(prov.offeredFare)} vs {money(prov.ask)} ask).</>
+                ) : prov?.kind === "customer_ask" ? (
+                  <>Customer&rsquo;s asking price, accepted as-is.</>
+                ) : (
+                  <>Fare source unknown — this order predates provenance tracking.</>
+                )}
+              </div>
+            ) : null}
+            {/* The API refuses a fare adjust on a merchant order (its fare is the goods + delivery total). */}
+            {o.orderType !== "merchant" ? (
+              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <FareAdjust id={o.id} agreedOrProposed={o.agreed ?? o.proposed} connected={connected} />
+              </div>
+            ) : null}
+          </section>
+
         </div>
       </div>
     </main>

@@ -8,6 +8,7 @@ import { diditProgressLine, diditSessionUrl, diditUnfinished } from "../../../li
 import { kycDeclineLabel } from "../../../lib/reasons";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../../components/states";
 import { IconAlert, IconIdCard } from "../../../components/icons";
+import { fmtDayMonth } from "../../../lib/format";
 
 /**
  * KYC doc-review screen (kit `kyc.html` detail — admin A-02). Shows the rider's in-app photo, the ID
@@ -281,7 +282,7 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>
-                  Submitted {new Date(r.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  Submitted {fmtDayMonth(r.submittedAt)}
                 </div>
               </div>
             </div>

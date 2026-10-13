@@ -6,6 +6,9 @@ import { Pill } from "../components/StatusPill";
 import { FilterNav } from "../components/FilterNav";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconAlert, IconCheck } from "../components/icons";
+import { AutoRefresh } from "../components/AutoRefresh";
+import { OrderLink } from "../components/links";
+import { enumLabel, fmtDateTime, shortId } from "../lib/format";
 
 /** Issues / disputes queue (kit `issues.html`). Reports from customers, recipients and riders, each
  *  carrying the order. Rows open the investigation view at /issues/[id]. */
@@ -19,7 +22,7 @@ const FILTERS = [
 /** Status pill: open/investigating stay active (neutral fill), resolved goes muted. Never `bad` —
  *  an open dispute isn't a failure state, it's work in the queue. */
 function issuePill(status: IssueRow["status"]) {
-  return <Pill kind={status === "resolved" ? "mut" : ""}>{status}</Pill>;
+  return <Pill kind={status === "resolved" ? "mut" : ""}>{enumLabel(status)}</Pill>;
 }
 
 export default async function IssuesPage({
@@ -36,11 +39,11 @@ export default async function IssuesPage({
   const connected = issues !== null;
 
   const columns: Column<IssueRow>[] = [
-    { key: "id", header: "Issue", className: "mono", cell: (i) => i.id },
+    { key: "id", header: "Issue", className: "mono", cell: (i) => shortId(i.id) },
     { key: "type", header: "Type", cell: (i) => <Pill>{ISSUE_TYPE_LABELS[i.type] ?? i.type}</Pill> },
-    { key: "order", header: "Order", className: "mono", cell: (i) => i.order },
+    { key: "order", header: "Order", cell: (i) => (i.orderId ? <OrderLink id={i.orderId} /> : i.order) },
     { key: "by", header: "Opened by", cell: (i) => i.openedBy },
-    { key: "opened", header: "Opened", className: "mut", cell: (i) => i.opened },
+    { key: "opened", header: "Opened", className: "mut", cell: (i) => fmtDateTime(i.opened) },
     { key: "status", header: "Status", cell: (i) => issuePill(i.status) },
   ];
 
@@ -53,6 +56,7 @@ export default async function IssuesPage({
       </header>
 
       {!connected ? <OfflineBanner reason={reason} /> : null}
+      {connected ? <AutoRefresh intervalMs={60_000} /> : null}
 
       <FilterNav items={FILTERS} active={active} hrefFor={(v) => (v === "all" ? "/issues" : `/issues?status=${v}`)} />
 
@@ -62,7 +66,7 @@ export default async function IssuesPage({
           rows={issues ?? []}
           rowKey={(i) => i.id}
           getRowHref={(i) => `/issues/${i.id}`}
-          rowLabel={(i) => `Investigate ${i.id}`}
+          rowLabel={(i) => `Investigate ${shortId(i.id)}`}
           empty={
             connected ? (
               active === "all" ? (

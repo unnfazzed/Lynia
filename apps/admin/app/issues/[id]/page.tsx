@@ -6,6 +6,8 @@ import { Pill } from "../../components/StatusPill";
 import { ResolveActions } from "./ResolveActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert } from "../../components/icons";
+import { OrderLink } from "../../components/links";
+import { enumLabel, money, shortId } from "../../lib/format";
 
 /** Dispute investigation (kit `issues.html` detail): what happened, the OTP-not-entered evidence
  *  callout + delivery timeline, both statements, masked phones, and resolve → refund / rider strike /
@@ -17,7 +19,7 @@ const RESOLUTION_LABELS: Record<IssueResolution, string> = {
 };
 
 /** Status pill: open/investigating stay active (neutral), resolved goes muted. */
-const statusPill = (status: IssueDetail["status"]) => <Pill kind={status === "resolved" ? "mut" : ""}>{status}</Pill>;
+const statusPill = (status: IssueDetail["status"]) => <Pill kind={status === "resolved" ? "mut" : ""}>{enumLabel(status)}</Pill>;
 
 export default async function IssueDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -50,6 +52,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
   // Past the guard `i` is live data → connected; resolve actions are enabled.
   const connected = true;
   const typeLabel = ISSUE_TYPE_LABELS[i.type] ?? i.type;
+  const orderLabel = i.orderId ? shortId(i.orderId) : i.order;
 
   return (
     <main className="content">
@@ -58,7 +61,10 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
           ← Issues
         </a>
         <h1 style={{ fontSize: 18 }}>
-          <span className="mono">{i.id}</span> — {typeLabel}
+          <span className="mono" title={i.id}>
+            {shortId(i.id)}
+          </span>{" "}
+          — {typeLabel}
         </h1>
         <span>{statusPill(i.status)}</span>
         <Conn connected={connected} />
@@ -127,16 +133,18 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
             <div className="block-title">Order</div>
             <KeyValue
               rows={[
-                { label: "Order", value: <span className="mono">{i.order}</span> },
+                { label: "Order", value: i.orderId ? <OrderLink id={i.orderId} /> : <span className="mono">{i.order}</span> },
                 { label: "Route", value: i.route },
-                { label: "Fare", value: <span className="num">${i.fare} cash</span> },
+                { label: "Fare", value: <span className="num">{money(i.fare)} cash</span> },
                 {
                   label: "Biker",
                   value: (
                     <span>
                       {i.rider}
                       {i.riderPhone ? <span className="mono mut"> {formatPhoneLocal(i.riderPhone)}</span> : null} ·{" "}
-                      <a href="/riders" style={{ color: tokens.color.accentText }}>profile</a>
+                      <a href={i.riderId ? `/riders/${i.riderId}` : "/riders"} style={{ color: tokens.color.accentText }}>
+                        profile
+                      </a>
                     </span>
                   ),
                 },
@@ -146,7 +154,9 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                     <span>
                       {i.customer}
                       {i.customerPhone ? <span className="mono mut"> {formatPhoneLocal(i.customerPhone)}</span> : null} ·{" "}
-                      <a href="/customers" style={{ color: tokens.color.accentText }}>profile</a>
+                      <a href={i.customerId ? `/customers/${i.customerId}` : "/customers"} style={{ color: tokens.color.accentText }}>
+                        profile
+                      </a>
                     </span>
                   ),
                 },
@@ -160,9 +170,11 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                 },
               ]}
             />
-            <a className="btn ghost" href={`/orders/${i.order}`} style={{ marginTop: 12 }}>
-              Open order record
-            </a>
+            {i.orderId ? (
+              <a className="btn ghost" href={`/orders/${i.orderId}`} style={{ marginTop: 12 }}>
+                Open order record
+              </a>
+            ) : null}
           </section>
 
           <section className="card">
@@ -173,7 +185,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                   <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>✓ Resolved.</span>{" "}
                   {i.resolution ? RESOLUTION_LABELS[i.resolution] ?? i.resolution : "Outcome recorded."}
                   {i.resolution === "refund" && i.refundAmount ? (
-                    <span className="num"> · ${i.refundAmount} refunded</span>
+                    <span className="num"> · {money(i.refundAmount)} refunded</span>
                   ) : null}
                 </div>
                 {i.resolutionNote ? (
@@ -187,7 +199,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                 <div style={{ fontSize: 13, color: tokens.color.muted, marginBottom: 14 }}>
                   Pick an outcome — each is recorded on the order, the biker and the customer.
                 </div>
-                <ResolveActions id={i.id} order={i.order} rider={i.rider} fare={i.fare} connected={connected} />
+                <ResolveActions id={i.id} order={orderLabel} rider={i.rider} fare={i.fare} connected={connected} />
               </>
             )}
           </section>
