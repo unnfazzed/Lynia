@@ -306,7 +306,7 @@ credited amount.
    container-app secret `paynow-integration-key`. `release-azure.yml` refuses to deploy until that secret exists. **GCP:** the Secret
    Manager secret `PAYNOW_INTEGRATION_KEY`.
 3. Set the repo Variables **`PAYNOW_INTEGRATION_ID`**, **`PAYNOW_AUTH_EMAIL`** (the Paynow merchant login email) and
-   **`PAYNOW_RESULT_URL`** (`https://<api-host>/webhooks/paynow`), then **`PAYNOW_ENABLED=true`**, and deploy. The
+   **`PAYNOW_RESULT_URL`** (`https://api.lyniago.com/webhooks/paynow`), then **`PAYNOW_ENABLED=true`**, and deploy. The
    release preflight fails in seconds if any is missing.
 4. In test mode, top up with the four test numbers (§ 1) and check the fee-mechanism questions (§ 3, (a)–(c)) in the
    Paynow dashboard. If Paynow doesn't add the fee on express checkout, set `PAYNOW_FEE_MODE=server` and turn Paynow's

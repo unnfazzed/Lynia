@@ -221,6 +221,17 @@ jobs:
                 errors+=("PAYNOW_ENABLED=true but the $_v repo Variable is empty — the API refuses to boot a half-wired Paynow rail. Set it (and the PAYNOW_INTEGRATION_KEY secret), or set PAYNOW_ENABLED=false.")
               fi
             done
+            # The API validates these at boot and EXITS on a bad value: release #214 lost a canary to a result URL
+            # copied with its "<api-host>" placeholder. Catch the same shapes here, before anything is built.
+            if [ -n "$PAYNOW_RESULT_URL" ] && ! printf '%s' "$PAYNOW_RESULT_URL" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?/[^[:space:]<>]*$'; then
+              errors+=("PAYNOW_RESULT_URL must be the API's real https URL, e.g. https://api.lyniago.com/webhooks/paynow (got '$PAYNOW_RESULT_URL'). The API refuses to boot with it.")
+            fi
+            if [ -n "$PAYNOW_INTEGRATION_ID" ] && ! printf '%s' "$PAYNOW_INTEGRATION_ID" | grep -Eq '^[0-9]+$'; then
+              errors+=("PAYNOW_INTEGRATION_ID must be the numeric Paynow integration ID (got '$PAYNOW_INTEGRATION_ID').")
+            fi
+            if [ -n "$PAYNOW_AUTH_EMAIL" ] && ! printf '%s' "$PAYNOW_AUTH_EMAIL" | grep -Eq '^[^[:space:]@<>]+@[^[:space:]@<>]+\.[^[:space:]@<>]+$'; then
+              errors+=("PAYNOW_AUTH_EMAIL must be the Paynow merchant login email (got '$PAYNOW_AUTH_EMAIL').")
+            fi
           fi
           if [ "$OTP_CHANNEL" = "console" ]; then
             errors+=("OTP_CHANNEL=console is a dev-only channel and must not be used in production — clear the OTP_CHANNEL repo Variable (defaults to whatsapp) or set it to whatsapp/sms.")
