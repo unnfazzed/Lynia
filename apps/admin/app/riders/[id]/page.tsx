@@ -21,6 +21,7 @@ const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
   grace: "Starting credit",
   adjustment: "Adjustment",
   reversal: "Reversal",
+  free_job: "Free job",
 };
 
 /** Rider profile (kit `riders.html` detail): trips, rating, completion, cancel strikes, cooldown,

@@ -7,6 +7,8 @@ import { StatusPill, Pill } from "../components/StatusPill";
 import { IconPackage } from "../components/icons";
 import { AutoRefresh } from "../components/AutoRefresh";
 import { money, shortId, timeAgo } from "../lib/format";
+import type { CancelledByRole } from "../lib/adminTypes";
+import { orderNote } from "./note";
 
 interface Order {
   id: string;
@@ -19,7 +21,7 @@ interface Order {
   agreedFare: string | null;
   distanceKm: number | null;
   riderId: string | null;
-  cancelledByRole: "rider" | "customer" | null;
+  cancelledByRole: CancelledByRole | null;
   cancelReason: string | null;
   createdAt: string;
 }
@@ -32,13 +34,6 @@ const TYPES: Array<{ value: string; label: string }> = [
 ];
 
 const FILTERS = [{ value: "", label: "all" }, ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))];
-
-/** Kit's Note column (orders.html) — the one-line "why" beside a row. The only note the list response
- *  carries is the cancellation, rendered in the kit's own shape: "cancelled (customer): change of plans". */
-function noteFor(o: Order): string {
-  if (!o.cancelReason) return "—";
-  return o.cancelledByRole ? `cancelled (${o.cancelledByRole === "rider" ? "biker" : o.cancelledByRole}): ${o.cancelReason}` : `cancelled: ${o.cancelReason}`;
-}
 
 export default async function OrdersPage({
   searchParams,
@@ -77,7 +72,7 @@ export default async function OrdersPage({
     // Distance + Note are kit columns (orders.html `<thead>`: Order · Route · Status · Rider · Fare ·
     // Distance · Note · Created). Both read fields the list response already carries — no extra query.
     { key: "distance", header: "Distance", className: "num", cell: (o) => (o.distanceKm != null ? `${o.distanceKm.toFixed(1)} km` : "—") },
-    { key: "note", header: "Note", className: "mut", cell: noteFor },
+    { key: "note", header: "Note", className: "mut", cell: orderNote },
     { key: "created", header: "Created", className: "mut num", cell: (o) => timeAgo(o.createdAt) },
   ];
 
