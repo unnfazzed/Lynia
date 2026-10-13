@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import { currentAccessToken } from "../api/client";
+import { currentAccessToken, renewSessionForSocket } from "../api/client";
 import { WS_URL } from "../config";
 import { reportReachable } from "../net/reachability";
 
@@ -22,7 +22,20 @@ interface SharedEntry {
   refCount: number;
   /** The newest token an acquirer passed — the handshake's fallback when there is no live session. */
   token: string;
+  /** A pending reconnect after the server refused the handshake; cleared on the last release. */
+  retry: ReturnType<typeof setTimeout> | null;
 }
+
+/**
+ * The server sends a disconnect packet only when it refuses the handshake's token (a missing, invalid or
+ * expired access token: TrackingGateway.handleConnection). Socket.IO never retries that on its own, so
+ * without this a socket that reconnected with an already-expired token stayed down until its hooks
+ * remounted. Rotate the session, then reconnect; repeated refusals back off (same shape as the merchant
+ * app's KitchenConnectionProvider).
+ */
+const KICK_RETRY_BASE_MS = 1_000;
+const KICK_RETRY_MAX_MS = 60_000;
+const KICK_RESET_MS = 60_000;
 
 const shared = new Map<string, SharedEntry>();
 
@@ -41,7 +54,7 @@ export function acquireSocket(identity: string, token: string): Socket {
   let entry = shared.get(identity);
   if (entry) entry.token = token;
   if (!entry) {
-    const fresh: SharedEntry = { socket: undefined as unknown as Socket, refCount: 0, token };
+    const fresh: SharedEntry = { socket: undefined as unknown as Socket, refCount: 0, token, retry: null };
     // LC-C14: `auth` is a callback (not a captured `{ token }`) — Socket.IO calls it on EVERY
     // handshake, including its own internal auto-reconnect after a bare network drop. A captured
     // object replayed the original token on each retry, so a dead zone longer than the 15-minute
@@ -60,6 +73,27 @@ export function acquireSocket(identity: string, token: string): Socket {
     // can be auth, so those stay off the reachability path (the REST choke point + probe own
     // "offline"). Owned by this module, not any one caller, so it's never `.off()`'d per-release.
     socket.on("connect", reportReachable);
+    let kicks = 0;
+    let lastKickAt = 0;
+    socket.on("disconnect", (reason: unknown) => {
+      if (reason !== "io server disconnect" || fresh.retry || shared.get(identity) !== fresh) return;
+      const at = Date.now();
+      if (at - lastKickAt > KICK_RESET_MS) kicks = 0;
+      lastKickAt = at;
+      const delay = kicks === 0 ? 0 : Math.min(KICK_RETRY_MAX_MS, KICK_RETRY_BASE_MS * 2 ** (kicks - 1));
+      kicks += 1;
+      fresh.retry = setTimeout(() => {
+        void renewSessionForSocket()
+          .catch(() => "transient" as const)
+          .then((outcome) => {
+            fresh.retry = null;
+            // Released meanwhile, or signed out: nothing to reconnect. A transient refresh failure still
+            // tries — a refused handshake comes back here, one backoff step slower.
+            if (shared.get(identity) !== fresh || outcome === "dead") return;
+            socket.connect();
+          });
+      }, delay);
+    });
     fresh.socket = socket;
     entry = fresh;
     shared.set(identity, entry);
@@ -79,6 +113,8 @@ export function releaseSocket(identity: string, socket: Socket): void {
   if (!entry || entry.socket !== socket) return;
   entry.refCount--;
   if (entry.refCount <= 0) {
+    if (entry.retry) clearTimeout(entry.retry);
+    entry.retry = null;
     entry.socket.disconnect();
     shared.delete(identity);
   }

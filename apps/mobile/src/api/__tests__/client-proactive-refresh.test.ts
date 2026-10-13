@@ -1,7 +1,7 @@
 import { __resetReachability, __setProbeFetch } from "../../net/reachability";
 import type { Session } from "../../auth/session";
 import { STANDARD_TIMEOUT_MS } from "../../net/network-policy";
-import { __resetTokenClock, apiFetch, clearConditionalCache, configureApi } from "../client";
+import { __resetTokenClock, apiFetch, clearConditionalCache, configureApi, renewSessionForSocket } from "../client";
 
 /**
  * P09 — refresh an expiring access token BEFORE sending, so a cold start doesn't spend a 401 round
@@ -253,5 +253,29 @@ describe("P35 — the request deadline covers the body read", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, text: () => Promise.reject(new Error("decode failed")) });
     const p = apiFetch("/restaurants");
     await expect(p).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+// The realtime server refused the socket's token: rotate it the same single-flight way, and only a
+// definitive rejection signs out.
+describe("renewSessionForSocket", () => {
+  it("rotates the session and reports ok", async () => {
+    fetchMock.mockImplementation(async (url: string) => (isRefresh(url) ? refreshOk() : AUTH_GUARD_401));
+    await expect(renewSessionForSocket()).resolves.toBe("ok");
+    expect(session?.refreshToken).toBe("refresh-1");
+    expect(onSignOut).not.toHaveBeenCalled();
+  });
+
+  it("a definitive rejection signs out and reports dead", async () => {
+    fetchMock.mockImplementation(async () => makeResponse(401, { statusCode: 401, message: "Invalid or expired refresh token" }));
+    await expect(renewSessionForSocket()).resolves.toBe("dead");
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unreachable refresh endpoint leaves the session intact and reports transient", async () => {
+    fetchMock.mockImplementation(async () => makeResponse(502, "bad gateway"));
+    await expect(renewSessionForSocket()).resolves.toBe("transient");
+    expect(onSignOut).not.toHaveBeenCalled();
+    expect(session?.refreshToken).toBe("refresh-0");
   });
 });

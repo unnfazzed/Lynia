@@ -4,13 +4,14 @@ import { acquireSocket, releaseSocket } from "../socket";
 type FakeIoSocket = {
   on: jest.Mock;
   disconnect: jest.Mock;
+  connect: jest.Mock;
 };
 
 let mockCreatedSockets: FakeIoSocket[] = [];
 
 jest.mock("socket.io-client", () => ({
   io: jest.fn(() => {
-    const socket: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn() };
+    const socket: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn(), connect: jest.fn() };
     mockCreatedSockets.push(socket);
     return socket;
   }),
@@ -19,11 +20,13 @@ jest.mock("socket.io-client", () => ({
 jest.mock("../../net/reachability", () => ({ reportReachable: jest.fn() }));
 
 let mockLiveToken: string | null = null;
-jest.mock("../../api/client", () => ({ currentAccessToken: () => mockLiveToken }));
+const mockRenew = jest.fn<Promise<"ok" | "dead" | "transient">, []>();
+jest.mock("../../api/client", () => ({ currentAccessToken: () => mockLiveToken, renewSessionForSocket: () => mockRenew() }));
 
 beforeEach(() => {
   mockCreatedSockets = [];
   mockLiveToken = null;
+  mockRenew.mockReset();
   (io as jest.Mock).mockClear();
 });
 
@@ -113,7 +116,7 @@ describe("acquireSocket / releaseSocket", () => {
 
   it("releasing a socket that doesn't match the tracked entry is a safe no-op", () => {
     const real = acquireSocket("tok", "jwt");
-    const stray: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn() };
+    const stray: FakeIoSocket = { on: jest.fn(), disconnect: jest.fn(), connect: jest.fn() };
 
     expect(() => releaseSocket("tok", stray as unknown as Parameters<typeof releaseSocket>[1])).not.toThrow();
     expect(mockCreatedSockets[0]!.disconnect).not.toHaveBeenCalled(); // the real entry is untouched
@@ -146,5 +149,60 @@ describe("acquireSocket across a token rotation", () => {
     expect(mockCreatedSockets[0]!.disconnect).not.toHaveBeenCalled();
     releaseSocket("profile-1", b);
     expect(mockCreatedSockets[0]!.disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The server disconnects (rather than closing the transport) only when it refuses the handshake token.
+// Socket.IO never retries that by itself, so the shared socket renews the session and reconnects.
+describe("server-refused handshake", () => {
+  const fire = (socket: FakeIoSocket, reason: string) => {
+    const handler = socket.on.mock.calls.find(([ev]) => ev === "disconnect")![1] as (r: string) => void;
+    handler(reason);
+  };
+  const flush = async () => {
+    await jest.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it("renews the session and reconnects", async () => {
+    mockRenew.mockResolvedValue("ok");
+    const s = acquireSocket("p1", "jwt");
+    fire(mockCreatedSockets[0]!, "io server disconnect");
+    await flush();
+    expect(mockRenew).toHaveBeenCalledTimes(1);
+    expect(mockCreatedSockets[0]!.connect).toHaveBeenCalledTimes(1);
+    releaseSocket("p1", s);
+  });
+
+  it("does not reconnect once the session is dead", async () => {
+    mockRenew.mockResolvedValue("dead");
+    const s = acquireSocket("p1", "jwt");
+    fire(mockCreatedSockets[0]!, "io server disconnect");
+    await flush();
+    expect(mockCreatedSockets[0]!.connect).not.toHaveBeenCalled();
+    releaseSocket("p1", s);
+  });
+
+  it("leaves ordinary drops to Socket.IO's own reconnect", async () => {
+    const s = acquireSocket("p1", "jwt");
+    fire(mockCreatedSockets[0]!, "transport close");
+    fire(mockCreatedSockets[0]!, "io client disconnect");
+    await flush();
+    expect(mockRenew).not.toHaveBeenCalled();
+    releaseSocket("p1", s);
+  });
+
+  it("a release cancels a pending reconnect", async () => {
+    mockRenew.mockResolvedValue("ok");
+    const s = acquireSocket("p1", "jwt");
+    fire(mockCreatedSockets[0]!, "io server disconnect");
+    releaseSocket("p1", s);
+    await flush();
+    expect(mockRenew).not.toHaveBeenCalled();
+    expect(mockCreatedSockets[0]!.connect).not.toHaveBeenCalled();
   });
 });
