@@ -9,6 +9,7 @@ import { AdminController } from "./admin.controller";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminLiveService } from "./admin-live.service";
 import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminMoneyService } from "./admin-money.service";
@@ -21,7 +22,8 @@ import { AdminService } from "./admin.service";
 
 @Module({
   // SettlementsModule exports SettlementsService — the admin cash endpoints delegate to it (A-06).
-  // TrackingModule exports TrackingGateway — admin cancelOrder pushes job:cancelled to the assigned rider (P2-3).
+  // TrackingModule exports TrackingGateway — admin cancelOrder pushes job:cancelled to the assigned rider (P2-3) —
+  // and TrackingService, whose last-known positions the live map reads (console v2 §7).
   // SosModule exports SosService — the admin SOS list surface reads recent events (DS13-05).
   // WalletModule exports WalletService — the admin manual-credit path for the commission wallet.
   imports: [SettlementsModule, TrackingModule, SosModule, WalletModule],
@@ -41,6 +43,7 @@ import { AdminService } from "./admin.service";
     AdminTimelineService,
     AdminMoneyService,
     AdminPeopleService,
+    AdminLiveService,
   ],
 })
 export class AdminModule {}

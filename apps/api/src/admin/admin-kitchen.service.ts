@@ -26,6 +26,13 @@ export class AdminKitchenService {
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
+  /** How many orders the "Orders to confirm" list holds (the console's alert strip). */
+  async countToConfirm(): Promise<number> {
+    return this.prisma.order.count({
+      where: { orderType: "merchant", autoAccepted: true, kitchenConfirmedAt: null, status: { in: [...LIVE_STATUSES] } },
+    });
+  }
+
   /**
    * "Orders to confirm": auto-accepted orders the kitchen hasn't confirmed, urgent first.
    *

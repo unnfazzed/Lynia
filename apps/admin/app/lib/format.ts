@@ -39,6 +39,15 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   return `${Math.round(hrs / 24)} d ago`;
 }
 
+/** A span of time: "45 s" · "12 min" · "1 h 05 min" (the live monitor's stage clocks). */
+export function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+}
+
 /** "$1,234.50" / "−$3.00". Accepts the API's decimal strings. Null → "—". */
 export function money(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === "") return "—";

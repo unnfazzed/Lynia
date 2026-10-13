@@ -22,6 +22,12 @@ import { AdminService } from "./admin.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminMoneyService } from "./admin-money.service";
 import { WalletService } from "../wallet/wallet.service";
+import { AdminAuditReadService } from "./admin-audit-read.service";
+import { AdminLiveService } from "./admin-live.service";
+import { AdminPeopleService } from "./admin-people.service";
+import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
+import { AdminSearchService } from "./admin-search.service";
+import { AdminTimelineService } from "./admin-timeline.service";
 
 Reflect.defineMetadata(
   "design:paramtypes",
@@ -38,6 +44,12 @@ Reflect.defineMetadata(
     WalletService,
     AdminKitchenService,
     AdminMoneyService,
+    AdminAuditReadService,
+    AdminSearchService,
+    AdminTimelineService,
+    AdminMerchantApplicationService,
+    AdminPeopleService,
+    AdminLiveService,
   ],
   AdminController,
 );
@@ -51,6 +63,11 @@ const settlements = {};
 // Admin console v2 §6: the rider wallet route now serves the biker statement.
 const money = { statement: vi.fn(async () => ({ balance: "0.00", ledger: [], nextCursor: null })) };
 const sos = { acknowledge: vi.fn(async (id: string) => ({ id, acknowledgedAt: "2026-07-13T10:00:00.000Z" })) };
+
+/** The controller's later collaborators (console v2 PRs 3–7); these suites don't call them. */
+const laterServices = [AdminAuditReadService, AdminSearchService, AdminTimelineService, AdminMerchantApplicationService, AdminPeopleService, AdminLiveService].map(
+  (provide) => ({ provide, useValue: {} }),
+);
 
 describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
   let app: INestApplication;
@@ -69,6 +86,7 @@ describe("GET /admin/overview — HTTP authz (AdminGuard net)", () => {
       { provide: WalletService, useValue: {} },
       { provide: AdminKitchenService, useValue: {} },
       { provide: AdminMoneyService, useValue: money },
+      ...laterServices,
     ]);
   });
   afterAll(async () => {
@@ -115,6 +133,7 @@ describe("POST /admin/sos/:id/ack — HTTP authz (DS13-06 acknowledge is AdminGu
       { provide: WalletService, useValue: {} },
       { provide: AdminKitchenService, useValue: {} },
       { provide: AdminMoneyService, useValue: money },
+      ...laterServices,
     ]);
   });
   afterAll(async () => {
@@ -167,6 +186,7 @@ describe("admin ledger cursors — optional ParseUUIDPipe", () => {
       { provide: WalletService, useValue: {} },
       { provide: AdminKitchenService, useValue: {} },
       { provide: AdminMoneyService, useValue: money },
+      ...laterServices,
     ]);
   });
   afterAll(async () => {
@@ -203,5 +223,57 @@ describe("admin ledger cursors — optional ParseUUIDPipe", () => {
       .set("Authorization", bearer(ADMIN_ID, "admin"));
     expect(res.status).toBe(200);
     expect(merchants.getMerchantDetail).toHaveBeenCalledWith(SOS_ID, USER_ID);
+  });
+});
+
+// Admin console v2 §7: the live ops reads carry bikers' positions and the service settings — admin only.
+describe("GET /admin/live/* and /admin/config — HTTP authz", () => {
+  let app: INestApplication;
+  const live = {
+    liveOrders: vi.fn(async () => ({ rows: [] })),
+    fleet: vi.fn(async () => ({ riders: [], orders: [] })),
+    alerts: vi.fn(async () => ({ sosPending: 0 })),
+    config: vi.fn(() => ({ kyc: { mode: "manual" } })),
+  };
+
+  beforeAll(async () => {
+    app = await buildAuthzApp([AdminController], [
+      { provide: AdminService, useValue: adminService },
+      { provide: AdminOrdersService, useValue: {} },
+      { provide: AdminRidersService, useValue: {} },
+      { provide: AdminKycReviewService, useValue: {} },
+      { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminMerchantsService, useValue: {} },
+      { provide: AdminAuditService, useValue: {} },
+      { provide: SettlementsService, useValue: settlements },
+      { provide: SosService, useValue: sos },
+      { provide: WalletService, useValue: {} },
+      { provide: AdminKitchenService, useValue: {} },
+      { provide: AdminMoneyService, useValue: money },
+      ...laterServices.filter((p) => p.provide !== AdminLiveService),
+      { provide: AdminLiveService, useValue: live },
+    ]);
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it.each(["/admin/live/orders", "/admin/live/fleet", "/admin/alerts", "/admin/config"])("403 for a biker JWT on %s", async (path) => {
+    const res = await request(app.getHttpServer()).get(path).set("Authorization", bearer(USER_ID, "rider"));
+    expect(res.status).toBe(403);
+  });
+
+  it("never reaches the fleet read for a non-admin", () => {
+    expect(live.fleet).not.toHaveBeenCalled();
+    expect(live.config).not.toHaveBeenCalled();
+  });
+
+  it("serves the fleet and the config to an admin", async () => {
+    const fleet = await request(app.getHttpServer()).get("/admin/live/fleet").set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(fleet.status).toBe(200);
+    expect(fleet.body).toEqual({ riders: [], orders: [] });
+    const config = await request(app.getHttpServer()).get("/admin/config").set("Authorization", bearer(ADMIN_ID, "admin"));
+    expect(config.status).toBe(200);
+    expect(config.body).toEqual({ kyc: { mode: "manual" } });
   });
 });

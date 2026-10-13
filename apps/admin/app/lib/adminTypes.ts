@@ -871,3 +871,90 @@ export type NudgeResult =
   | { result: "not_delivered"; at: string }
   | { result: "already_sent"; at: string }
   | { result: "no_push" };
+
+/* ── Admin console v2 §7: live ops (GET /admin/live/orders, /admin/live/fleet, /admin/alerts, /admin/config) ── */
+
+export type LiveBreach = "ok" | "warn" | "breach";
+
+/** One active order in the monitor: its stage, when the stage started, its SLA limit and breach status. */
+export interface LiveOrderRow {
+  id: string;
+  orderType: string;
+  status: string;
+  merchantPhase: string | null;
+  stage: string;
+  stageLabel: string;
+  stageStartedAt: string;
+  limitMs: number;
+  elapsedMs: number;
+  breach: LiveBreach;
+  createdAt: string;
+  customer: { id: string; name: string };
+  rider: { id: string; name: string } | null;
+  merchant: { id: string; name: string } | null;
+}
+
+export interface LiveOrders {
+  generatedAt: string;
+  counts: { total: number; breach: number; warn: number };
+  rows: LiveOrderRow[];
+}
+
+export interface FleetPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface FleetRider {
+  riderId: string;
+  name: string;
+  /** Null when the biker is online but has never sent a position. */
+  position: (FleetPoint & { at: string | null; fresh: boolean }) | null;
+  orderId: string | null;
+}
+
+export interface FleetOrder {
+  orderId: string;
+  orderType: string;
+  status: string;
+  breach: LiveBreach | null;
+  riderId: string | null;
+  pickup: FleetPoint | null;
+  dropoff: FleetPoint | null;
+}
+
+export interface Fleet {
+  generatedAt: string;
+  riders: FleetRider[];
+  orders: FleetOrder[];
+}
+
+/** The alert strip above every page. */
+export interface LiveAlerts {
+  sosPending: number;
+  topupAnomalies: number;
+  kitchenConfirmations: number;
+  merchantApplications: number;
+  ordersBreaching: number;
+}
+
+/** The read-only settings panel. */
+export interface AdminConfig {
+  environment: string;
+  penaltiesSuspended: boolean;
+  commission: { ratePct: number; freeFirstJobs: number; minTopUp: number; maxTopUp: number };
+  topUps: { paymentRail: string; rails: string[]; feePct: number; feeMode: string };
+  wallet: { manualCreditCapUsd: number; reversalCapUsd: number };
+  kyc: { mode: string; provider: string };
+  verticals: {
+    restaurants: boolean;
+    shops: boolean;
+    pharmacy: boolean;
+    prescriptions: boolean;
+    autoDispatch: boolean;
+    merchantWallet: boolean;
+    notificationsFeed: boolean;
+  };
+  gpsRetentionDays: number;
+  sla: Array<{ stage: string; label: string; limitMinutes: number; note: string | null }>;
+}

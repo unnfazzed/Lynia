@@ -21,6 +21,7 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
+import { AdminLiveService } from "./admin-live.service";
 import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import type { ApplicationAction } from "./merchant-application";
@@ -169,6 +170,7 @@ export class AdminController {
     private readonly timeline: AdminTimelineService,
     private readonly application: AdminMerchantApplicationService,
     private readonly people: AdminPeopleService,
+    private readonly live: AdminLiveService,
   ) {}
 
   /* ── Admin console v2 PR 5: funnels, stuck lists, Nudge (plan §4) ─────────────────────────────── */
@@ -244,6 +246,32 @@ export class AdminController {
     const view = await this.timeline.merchantTimeline(id, cursor);
     if (!view) throw new NotFoundException("Merchant not found");
     return view;
+  }
+
+  /* ── Admin console v2 PR 7: live ops (plan §7). All reads. ─────────────────────────────────────── */
+
+  /** The order monitor: every active order with its stage, the stage's clock, its SLA limit and breach status. */
+  @Get("live/orders")
+  liveOrders() {
+    return this.live.liveOrders();
+  }
+
+  /** The live map, polled: online bikers' last known positions (with freshness) and active orders' pins. */
+  @Get("live/fleet")
+  liveFleet() {
+    return this.live.fleet();
+  }
+
+  /** The alert strip above every console page: one cheap call, cached briefly. */
+  @Get("alerts")
+  alerts() {
+    return this.live.alerts();
+  }
+
+  /** The settings the services run with — an allowlist, never a secret. Read-only. */
+  @Get("config")
+  config() {
+    return this.live.config();
   }
 
   @Get("overview")

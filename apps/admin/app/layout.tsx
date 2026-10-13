@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { AlertStrip } from "./components/AlertStrip";
 import { SearchBox } from "./components/SearchBox";
 import { Sidebar } from "./components/Sidebar";
 import { adminFetch } from "./lib/api";
 import { resolveSignOutUrl } from "./lib/console-auth";
-import type { NavCounts } from "./lib/adminTypes";
+import type { LiveAlerts, NavCounts } from "./lib/adminTypes";
 
 export const metadata: Metadata = {
   title: "LyniaGo — Admin",
@@ -24,7 +25,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const operator = (await headers()).get("x-lynia-operator");
   // Cheap attention badges (KYC backlog / open disputes / un-acked SOS) rendered shell-wide. Best-effort:
   // null on the offline/unconfigured path, so the sidebar simply renders no badges.
-  const counts = await adminFetch<NavCounts>("/admin/nav-counts");
+  // Admin console v2 §7: the alert strip's counts come in the same round trip (one cheap, briefly cached call).
+  const [counts, alerts] = await Promise.all([adminFetch<NavCounts>("/admin/nav-counts"), adminFetch<LiveAlerts>("/admin/alerts")]);
   // Sign-out target for the operator's proxy (IAP cookie-clear on GCP, `/.auth/logout` on Azure Easy
   // Auth). Resolved here at request time rather than via a NEXT_PUBLIC_ var, which would be baked in at
   // build time and force a per-host image.
@@ -44,6 +46,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <div className="shell">
           <Sidebar operator={operator} counts={counts} signOutUrl={signOutUrl} />
           <div id="main-content" tabIndex={-1} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+            {/* Admin console v2 §7: what needs ops now, on every page; hidden when nothing does. */}
+            <AlertStrip alerts={alerts} />
             {/* Admin console v2 §4: one search box above every page (desktop; the phone copy is in the menu panel). */}
             <div className="console-search">
               <SearchBox id="search-desktop" />

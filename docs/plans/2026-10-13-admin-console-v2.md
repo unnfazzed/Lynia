@@ -181,6 +181,12 @@ rate, hours open vs scheduled, rating, open debt.
 - **Alert strip** at the top: SOS pending, top-up anomalies, kitchen confirmations waiting, applications past SLA.
 - **Config panel, read-only first:** show `PENALTIES_SUSPENDED`, the commission rate, `TOPUP_RAILS`, the fee %, `KYC_MODE` and the vertical switches. All of these are env-only today, so ops can't see what is on.
 
+**Shipped in PR 7:** `/live` (order monitor with per-stage SLA timers, breach first, 20 s refresh; the stages and
+limits live in `apps/api/src/admin/live-ops.ts`) + a polled live map (`GET /admin/live/orders`, `GET /admin/live/fleet`;
+the admin app has no Maps key, so the map is drawn to scale on a plain box, no street tiles); the alert strip on every
+page (`GET /admin/alerts`, cached 15 s); `/config` read-only (`GET /admin/config`, an allowlist, no secrets). The admin
+Socket.IO room is next: the poll covers a pilot fleet, and opening the gateway to admins is a separate change. No migrations.
+
 ---
 
 ## 8. Access and audit

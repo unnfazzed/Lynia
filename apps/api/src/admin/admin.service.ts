@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { addMoney, MERCHANT_APPLICATION_SLA, MERCHANT_APPLICATION_WAITING, resolveCommissionRatePct, RESTAURANTS_DEBT } from "@lynia/shared";
+import type { Prisma } from "@prisma/client";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -30,6 +31,15 @@ const IN_FLIGHT_STATUSES = [
   "en_route_dropoff",
 ] as const;
 
+/** Merchant applications still waiting on ops past the 24h SLA (the Merchants badge and the alert strip). */
+export function applicationsPastSlaWhere(now: number = Date.now()): Prisma.MerchantWhereInput {
+  return {
+    applicationStatus: { in: [...MERCHANT_APPLICATION_WAITING] },
+    pilotEnabled: false,
+    createdAt: { lt: new Date(now - MERCHANT_APPLICATION_SLA.amberMs) },
+  };
+}
+
 /**
  * Dashboard-level reads for the admin console. The per-domain admin operations live in their own
  * services: AdminOrdersService, AdminRidersService, AdminCustomersService, AdminAuditService — with
@@ -52,7 +62,6 @@ export class AdminService {
     // admin-merchants.service.ts's precise per-row cancelledAt/undeliveredAt computation — a nav badge
     // only needs to be a cheap, roughly-right attention signal, not the authoritative queue itself.
     const refundOverdueCutoff = new Date(Date.now() - RESTAURANTS_DEBT.refundSlaMs);
-    const applicationSlaCutoff = new Date(Date.now() - MERCHANT_APPLICATION_SLA.amberMs);
     const [kycPending, openIssues, sosPending, frozenHandshakes, refundsOverdue, nonReturnReports, merchantApplications] = await Promise.all([
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
       this.prisma.issue.count({ where: { status: { in: ["open", "investigating"] } } }),
@@ -75,9 +84,7 @@ export class AdminService {
         where: { orderType: "merchant", debtStatus: "open", merchantClosedAt: null, debtNonReturnReportedAt: { not: null } },
       }),
       // Admin console v2 §5: merchant applications still waiting on ops past the 24h SLA.
-      this.prisma.merchant.count({
-        where: { applicationStatus: { in: [...MERCHANT_APPLICATION_WAITING] }, pilotEnabled: false, createdAt: { lt: applicationSlaCutoff } },
-      }),
+      this.prisma.merchant.count({ where: applicationsPastSlaWhere() }),
     ]);
     return { kycPending, openIssues, sosPending, foodDisputes: frozenHandshakes + refundsOverdue + nonReturnReports, merchantApplications };
   }

@@ -41,6 +41,15 @@ describe("Sidebar phone menu (D-105)", () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it("carries Live second and Settings last (console v2 PR 7)", () => {
+    render(<Sidebar />);
+    const items = screen.getAllByRole("link").filter((a) => a.classList.contains("nav-item"));
+    expect(items[1]?.textContent).toBe("Live");
+    expect(items[1]?.getAttribute("href")).toBe("/live");
+    expect(items.at(-1)?.textContent).toBe("Settings");
+    expect(items.at(-1)?.getAttribute("href")).toBe("/config");
+  });
+
   it("carries the Audit item and the phone copy of the search box (console v2 PR 3)", () => {
     const { container } = render(<Sidebar />);
     expect(screen.getByRole("link", { name: "Audit" }).getAttribute("href")).toBe("/audit");
