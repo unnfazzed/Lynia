@@ -6,6 +6,10 @@ describe("admin read helpers (console v2 PR 3)", () => {
     const c = { at: new Date("2026-10-13T10:00:00.000Z"), key: "a:0f8e" };
     expect(decodeCursor(encodeCursor(c))).toEqual(c);
     expect(decodeCursor("not-a-cursor")).toBeNull();
+    // A repeated query param arrives as an array; it is never a cursor, a bound or a limit.
+    expect(decodeCursor([encodeCursor(c), encodeCursor(c)])).toBeNull();
+    expect(parseHarareBound(["2026-10-01", "2026-10-02"], "from")).toBeNull();
+    expect(clampLimit(["5", "7"], 50, 100)).toBe(50);
     expect(decodeCursor(Buffer.from("nope|").toString("base64url"))).toBeNull();
     expect(decodeCursor(undefined)).toBeNull();
   });

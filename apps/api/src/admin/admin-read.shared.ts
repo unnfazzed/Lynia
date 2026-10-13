@@ -6,7 +6,7 @@
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isUuid(v: string | null | undefined): boolean {
+export function isUuid(v: unknown): boolean {
   return typeof v === "string" && UUID_RE.test(v);
 }
 
@@ -22,8 +22,9 @@ export function encodeCursor(c: Cursor): string {
 }
 
 /** Parse a `?cursor=`; null when absent or malformed (a bad cursor restarts at the newest page, never a 500). */
-export function decodeCursor(raw: string | null | undefined): Cursor | null {
-  if (!raw || raw.length > 400) return null;
+export function decodeCursor(raw: unknown): Cursor | null {
+  // A repeated `?cursor=a&cursor=b` arrives as an array: only a single string is a cursor.
+  if (typeof raw !== "string" || !raw || raw.length > 400) return null;
   let text: string;
   try {
     text = Buffer.from(raw, "base64url").toString("utf8");
@@ -63,8 +64,8 @@ const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
  * Harare, `to` is the END of that day (the next day's 00:00, used exclusively), so `from=to=2026-10-13` means
  * "the whole of 13 October in Harare". Any other value is read as an ISO instant. Null when unparseable.
  */
-export function parseHarareBound(raw: string | null | undefined, edge: "from" | "to"): Date | null {
-  if (!raw) return null;
+export function parseHarareBound(raw: unknown, edge: "from" | "to"): Date | null {
+  if (typeof raw !== "string" || !raw) return null;
   const v = raw.trim();
   const m = DAY_RE.exec(v);
   if (m) {
@@ -89,8 +90,8 @@ export function uuidPrefixRange(raw: string): { gte: string; lte: string } | nul
 }
 
 /** Clamp a `?limit=` to [1, max], falling back to `dflt`. */
-export function clampLimit(raw: string | number | null | undefined, dflt: number, max: number): number {
-  const n = typeof raw === "number" ? raw : raw != null ? Number.parseInt(raw, 10) : Number.NaN;
+export function clampLimit(raw: unknown, dflt: number, max: number): number {
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
   if (!Number.isFinite(n) || n < 1) return dflt;
   return Math.min(Math.floor(n), max);
 }

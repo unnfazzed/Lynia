@@ -103,8 +103,9 @@ const personName = (p: { firstName: string; lastName: string }) => `${p.firstNam
 export class AdminSearchService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async search(raw: string | undefined): Promise<SearchView> {
-    const q = (raw ?? "").trim().slice(0, MAX_QUERY);
+  async search(raw: unknown): Promise<SearchView> {
+    // A repeated `?q=` arrives as an array: only a single string is a query.
+    const q = (typeof raw === "string" ? raw : "").trim().slice(0, MAX_QUERY);
     const empty: SearchView = { q, tooShort: true, total: 0, groups: { bikers: [], customers: [], merchants: [], orders: [], topups: [] } };
     if (q.replace(/^#/, "").length < MIN_QUERY) return empty;
     const plan = planSearch(q);
