@@ -38,9 +38,11 @@ export type DomainEventType =
   // Admin console v2 §6 (PR 6): ops closed a top-up anomaly without crediting it (data: kind, reasonCode).
   | "topup.anomaly_resolved"
   // Admin console v2 §6: one wallet integrity sweep's summary (data: ok, accountsChecked, drift counts).
-  | "wallet.integrity_check";
+  | "wallet.integrity_check"
+  // Admin console v2 §4 (PR 5): ops pushed a stuck person their step's fixed nudge (data: step, day).
+  | "nudge.sent";
 
-export type DomainSubjectType = "rider" | "order" | "offer" | "merchant" | "dish" | "topup" | "wallet";
+export type DomainSubjectType = "rider" | "order" | "offer" | "merchant" | "dish" | "topup" | "wallet" | "person";
 
 /** The steps of the biker funnel (plan §4) this PR records. */
 export type RiderOnboardingStep =

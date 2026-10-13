@@ -1508,6 +1508,9 @@ authority; this table is a map.
 | `POST /admin/topups/:id/{repoll,credit-paid,resolve}` | Admin | Ask Paynow now · credit what Paynow reported paid (exactly once) · close an anomaly (all reason-coded, audited) |
 | `GET /admin/cash/money` (`/csv`) | Admin | Platform money by Harare day (7 / 30): top-ups, fees, commission, manual credits, reversals; float, receivable, last integrity check |
 | `GET /admin/cash/owed` | Admin | Bikers with a negative balance, longest owing first |
+| `GET /admin/funnels` | Admin | One happy-path funnel (`?kind=biker\|customer\|merchant`, `?range=today\|7d\|30d`, Harare days): per step the count, conversion, median time and a `since` day where data starts with PR 2 |
+| `GET /admin/stuck` | Admin | `?list=<key>`: one stuck list, oldest first (age, link, phone, push reachability, last nudge); `?kind=`: every list of a side with counts |
+| `POST /admin/nudge` | Admin | Push a stuck person their list's fixed copy (push only); one per person per list per Harare day; reason-coded, audited (`person.nudge`) |
 | `GET /admin/issues` | Admin | Disputes queue, newest first (A-05, `?status=`) |
 | `GET /admin/issues/:id` | Admin | Per-issue detail incl. order evidence + masked phones |
 | `POST /admin/issues/:id/resolve` | Admin | Resolve an issue (refund / rider_strike / close_no_action) |

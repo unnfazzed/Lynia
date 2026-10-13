@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
 import { IAP_SIGNOUT_URL } from "../lib/console-auth";
-import { IconAlert, IconBanknote, IconBike, IconHistory, IconIdCard, IconMenu, IconNavigation, IconPackage, IconPhone, IconStore, IconUser, IconX } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconHistory, IconIdCard, IconMenu, IconNavigation, IconPackage, IconPhone, IconStore, IconUser, IconUsers, IconX } from "./icons";
 import { SearchBox } from "./SearchBox";
 
 /**
@@ -30,6 +30,8 @@ interface NavEntry {
 const NAV: NavEntry[] = [
   { label: "Overview", href: "/", icon: <IconNavigation />, match: "/" },
   { label: "Orders", href: "/orders", icon: <IconPackage />, match: "/orders" },
+  // Admin console v2 §4: the happy-path funnels and stuck lists for bikers, customers and merchants.
+  { label: "People", href: "/people", icon: <IconUsers />, match: "/people" },
   { label: "Bikers", href: "/riders", icon: <IconBike />, match: "/riders" },
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },

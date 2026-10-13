@@ -793,3 +793,81 @@ export interface TimelinePage {
   rows: TimelineRow[];
   nextCursor: string | null;
 }
+
+/* ── Admin console v2 §4 (PR 5): funnels, stuck lists, Nudge ─────────────────────────────────────── */
+
+export type FunnelKind = "biker" | "customer" | "merchant";
+export type FunnelRange = "today" | "7d" | "30d";
+
+export interface FunnelStep {
+  key: string;
+  label: string;
+  count: number;
+  /** count ÷ cohort, 0–100. */
+  pctOfCohort: number | null;
+  /** count ÷ the previous step's count, 0–100. */
+  conversionPct: number | null;
+  /** Median time from the previous timed step, ms. */
+  medianMs: number | null;
+  timedCount: number;
+  /** Counts are complete only from this Harare day (YYYY-MM-DD). */
+  since: string | null;
+  /** Times are complete only from this Harare day. */
+  timesSince: string | null;
+  /** The stuck list of the people who didn't reach this step. */
+  stuckList: string | null;
+}
+
+/** GET /admin/funnels?kind=&range=. */
+export interface FunnelView {
+  kind: FunnelKind;
+  range: FunnelRange;
+  from: string;
+  to: string;
+  cohort: number;
+  truncated: boolean;
+  steps: FunnelStep[];
+}
+
+export interface StuckRow {
+  id: string;
+  name: string;
+  href: string;
+  profileId: string | null;
+  phone: string | null;
+  since: string;
+  detail: string | null;
+  link: { href: string; label: string } | null;
+  hasPush: boolean;
+  lastNudgeAt: string | null;
+  nudgedToday: boolean;
+}
+
+/** GET /admin/stuck?list=. */
+export interface StuckList {
+  key: string;
+  kind: FunnelKind;
+  title: string;
+  line: string;
+  nudge: boolean;
+  /** The push a Nudge sends from this list. */
+  copy: { title: string; body: string } | null;
+  rows: StuckRow[];
+  count: number;
+  capped: boolean;
+  queue: { href: string; label: string; count: number } | null;
+  note: string | null;
+}
+
+/** GET /admin/stuck?kind=: every list of a side, counts only. */
+export interface StuckSummary {
+  kind: FunnelKind;
+  lists: Array<Omit<StuckList, "rows">>;
+}
+
+/** POST /admin/nudge. */
+export type NudgeResult =
+  | { result: "sent"; at: string }
+  | { result: "not_delivered"; at: string }
+  | { result: "already_sent"; at: string }
+  | { result: "no_push" };

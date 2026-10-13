@@ -138,6 +138,8 @@ export const REASONS = {
   merchantLicenceVerify: ["Licence seen — number and pharmacist match"],
   // Merchant web upgrade L4: support hands a business over after an identity check (runbook §8).
   merchantOwnerTransfer: ["Sold or handed over — both people confirmed", "The owner lost their number — ID checked", "Family takeover — ID checked"],
+  // Admin console v2 §4: why ops pushed a stuck person their step's nudge.
+  personNudge: ["Stuck on this step", "Couldn't reach them by phone", "They asked for a reminder"],
 } as const;
 
 /** A stored KYC decline key (e.g. `face_mismatch`) as the reviewer reads it; an unknown key shows as-is. */

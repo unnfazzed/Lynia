@@ -97,6 +97,12 @@ GPS inside `data` follows `GPS_RETENTION_DAYS`.
 > **Shipped in PR 3:** global search (`GET /admin/search`, `/search`, the box above every page / in the phone menu) and the
 > merged person timeline (`GET /admin/people/:id/timeline`, `GET /admin/merchants/:id/timeline`) on the biker, customer and
 > merchant pages. Funnels, stuck lists and Nudge are PR 5.
+>
+> **Shipped in PR 5:** `GET /admin/funnels`, `GET /admin/stuck`, `POST /admin/nudge` (push only, one per person per list
+> per Harare day, audited as `person.nudge` + a `nudge.sent` event), the **People** page (`/people`: side and range chips,
+> funnel strip, stuck lists with Call / WhatsApp / Nudge) and three compact strips on the Overview. History is rebuilt
+> from existing rows; a step whose data starts with PR 2 says "since 13 Oct". The merchant application stall list links
+> to PR 4's queue. Migration 0103 (`profiles (created_at)`).
 
 One new page, **People**, plus a **global search** in the top bar (phone, name, order id, Paynow reference).
 Every person has one timeline that merges orders, events, audit rows, KYC and top-ups.

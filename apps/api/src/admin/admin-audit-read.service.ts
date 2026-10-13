@@ -143,6 +143,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "merchant.team.decline": "Team invite declined",
   "merchant.branch.create": "Branch added",
   "merchant.branch.switch": "Switched branch",
+  "person.nudge": "Nudged",
 };
 
 export function auditActionLabel(action: string): string {

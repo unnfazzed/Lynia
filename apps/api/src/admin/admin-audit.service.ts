@@ -109,6 +109,9 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "merchant.team.decline",
   // L4: `AdminMerchantsService.transferOwner` writes this in the same transaction as the handover.
   "merchant.owner_transfer",
+  // Admin console v2 §4 (PR 5): AdminPeopleService.nudge writes it under its advisory lock, and the day's row IS
+  // the one-nudge-per-person-per-list-per-day cap — a forged row would block a real nudge.
+  "person.nudge",
 ]);
 
 @Injectable()

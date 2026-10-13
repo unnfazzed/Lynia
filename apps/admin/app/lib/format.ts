@@ -53,6 +53,23 @@ export function shortId(id: string): string {
   return `#${id.replace(/-/g, "").slice(0, 6)}`;
 }
 
+/** A duration for a funnel median: "45 min", "3 hr", "2 d". Null → "—". */
+export function fmtDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "<1 min";
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `${hrs} hr`;
+  return `${Math.round(hrs / 24)} d`;
+}
+
+/** A wa.me chat link for an E.164 phone ("+263 77…" → "https://wa.me/26377…"). Null without enough digits. */
+export function whatsappHref(phone: string | null | undefined): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  return digits.length >= 8 ? `https://wa.me/${digits}` : null;
+}
+
 /** "open_for_offers" → "Open for offers". */
 export function enumLabel(v: string | null | undefined): string {
   if (!v) return "—";
