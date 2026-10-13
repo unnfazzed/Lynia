@@ -1,47 +1,35 @@
 # Security Operations Runbook
 
-The security controls that live in the **platform/console** rather than the code — precise, ordered
-steps so nothing is hand-wavy. Companion to [SECURITY.md](SECURITY.md) (the plan) and its P0–P3
-roadmap; this is the "how to actually turn it on / roll it out" for the items that need a GCP/vendor
-action or a coordinated deploy.
+The security controls that live in the platform or a vendor console rather than in the code. Companion to
+[SECURITY.md](SECURITY.md) (the plan and its P0–P3 roadmap). Production runs on **Azure** (`infra/azure/`);
+founder commands live in [AZURE-OWNER-RUNBOOK.md](AZURE-OWNER-RUNBOOK.md).
+
+Section letters are cited from code and other docs. Keep their meaning when you edit.
 
 ---
 
-## A. Admin console SSO + MFA (completes P0-2)
+## A. Admin console SSO + MFA (P0-2)
 
-The console code already **fails closed** without a proxy-asserted operator identity
-(`apps/admin/middleware.ts`) and forwards that identity downstream as `x-lynia-operator`. Put a real
-identity in front of it:
+The console **fails closed** without a proxy-asserted operator identity (`apps/admin/middleware.ts`,
+`apps/admin/app/lib/console-auth.ts`) and forwards that identity to the API as `x-lynia-operator`.
 
-**Production today — Azure Easy Auth + Microsoft Entra (`ca-lynia-admin`):** follow
-`infra/azure/README.md` **Step 6**. `infra/azure/admin-auth.sh` creates the Entra app (Assignment
-required = Yes, only named operators assigned) and its Key Vault client secret. The Terraform apply
-turns Easy Auth on, and `deploy-admin-azure.yml` applies `ADMIN_CONSOLE_ALLOWED_OPERATORS` only once
-Easy Auth is confirmed. **Never set that allowlist on an app without Easy Auth in front:** the
-`x-ms-client-principal-name` header is then forgeable, and an allowlisted email becomes a password
-anyone can type (`docs/KNOWN_BUGS.md` ADM-11). Enforce MFA in Entra (security defaults, or Conditional
-Access).
+**Production: Azure Easy Auth + Microsoft Entra (`ca-lynia-admin`).** Follow `infra/azure/README.md`
+**Step 6**. `infra/azure/admin-auth.sh` creates the Entra app (Assignment required = Yes, only named
+operators assigned) and its Key Vault client secret. The Terraform apply turns Easy Auth on
+(`containerapps.tf`, `admin_auth`), and the app reads the operator from `x-ms-client-principal-name`.
+`deploy-admin-azure.yml` applies `ADMIN_CONSOLE_ALLOWED_OPERATORS` only once Easy Auth is confirmed.
 
-**Option 1 — GCP Identity-Aware Proxy (recommended if the console is on GCP):**
-1. Front the admin deployment (Cloud Run / GKE / backend service) with an external HTTPS LB.
-2. Enable **IAP** on that backend service.
-3. Configure the OAuth consent screen; restrict to your Google Workspace domain.
-4. Grant operators `roles/iap.httpsResourceAccessor`. Enforce **MFA** at the Workspace level.
-5. IAP sets `X-Goog-Authenticated-User-Email` — the middleware's default `ADMIN_CONSOLE_PROXY_HEADER`.
-   No app change needed. Leave `ADMIN_CONSOLE_REQUIRE_AUTH` unset (defaults on in prod).
-5a. **Recommended, and now armed in prod:** also set `ADMIN_CONSOLE_IAP_AUDIENCE` (from
-    `terraform output` on `infra/terraform/admin.tf` — the LB backend-service audience string) so the
-    middleware verifies the signed `x-goog-iap-jwt-assertion` (`apps/admin/app/lib/iap-jwt.ts`, ES256 +
-    JWKS + clock-skew tolerance) instead of trusting the plaintext email header alone.
+- **Never set that allowlist on an app without Easy Auth in front.** The header is then forgeable, and an
+  allowlisted email becomes a password anyone can type (`docs/KNOWN_BUGS.md` ADM-11).
+- **Enforce MFA in Entra** (security defaults, or Conditional Access).
+- To remove an operator: unassign them from the Entra app (Enterprise applications → the app → Users and
+  groups) and drop them from `ADMIN_CONSOLE_ALLOWED_OPERATORS`.
 
-**Option 2 — self-hosted OAuth2 proxy** (e.g. oauth2-proxy) in front of the console: point
-`ADMIN_CONSOLE_PROXY_HEADER` at the header it sets (e.g. `x-forwarded-email`).
+The middleware still supports GCP IAP JWT verification (`app/lib/iap-jwt.ts`, enabled only by
+`ADMIN_CONSOLE_IAP_AUDIENCE`). Production does not use it.
 
-*Verify:* an unauthenticated request to the console URL is rejected before any page renders; an
-authenticated operator's actions appear attributed in the admin audit log.
-
-*Network:* additionally restrict the console's ingress (internal + LB only) so the origin isn't
-directly reachable, mirroring the API.
+*Verify:* an unauthenticated request to `admin.lyniago.com` is redirected to Microsoft sign-in before any
+page renders; an operator's actions appear attributed in the admin audit log.
 
 ---
 
@@ -158,63 +146,116 @@ not enabled / API or app restriction / billing).
 
 ## C. Mobile certificate pinning (P3-1)
 
-Pinning stops a man-in-the-middle with a rogue/compromised CA from reading Lynia traffic. **It is also
-the single easiest way to brick the app** — a pinned cert that rotates without an app update makes every
-client unable to connect. Adopt it carefully:
+Pinning stops a man-in-the-middle with a rogue or compromised CA from reading app traffic. It is also the
+easiest way to brick the app: if the pinned key changes without an app update, no installed app can reach
+the API, and only a store update fixes it.
 
-1. Pin the **SPKI public-key hash**, not the leaf certificate (survives cert renewal on the same key).
-2. Always ship **≥ 2 pins**: the current key **and** a backup key held offline, so you can rotate.
-3. Pin the API host (`api.lyniago.com`) and the WS host.
-4. Implementation: a config-plugin / native module (e.g. `react-native-ssl-pinning` or an
-   `expo-build-properties` network-security-config on Android). Gate it behind a flag so it can be
-   disabled by an OTA/remote-config kill-switch if a rotation goes wrong.
-5. **Roll out to a canary cohort first.** Never ship pinning to 100% in the same release it's introduced.
+### What exists
 
-Because a mistake here breaks connectivity for real users, the config-plugin implementation
-(`apps/mobile/plugins/with-certificate-pinning.js`, wired in `app.config.ts`) ships **gated and inert**
-by default — a no-op until `LYNIA_TLS_PINS` is set. See [MOBILE-CERT-PINNING.md](MOBILE-CERT-PINNING.md)
-for the founder-executed arming + on-device validation runbook.
+- `apps/mobile/plugins/with-certificate-pinning.js` pins the API host (`extra.apiUrl` in `app.config.ts`,
+  so `api.lyniago.com`; subdomains are not included). Android gets a `network_security_config` `<pin-set>`;
+  iOS gets `NSPinnedDomains` with `NSPinnedCAIdentities`. Socket.IO connects to the same host.
+  The app's runtime URL can be overridden by `EXPO_PUBLIC_API_URL` (`apps/mobile/src/config.ts`); a build
+  that points it at another host leaves that host unpinned.
+- It is **inert until armed.** `app.config.ts` loads the plugin only when `LYNIA_TLS_PINS` is set.
+- When armed it **refuses to build** with fewer than two pins, a malformed pin, or a missing
+  `LYNIA_TLS_PIN_EXPIRATION` (YYYY-MM-DD). Past that date Android stops enforcing the pins, so a missed
+  rotation degrades to "unpinned" instead of "bricked". iOS has no such valve.
+- `apps/mobile/scripts/compute-tls-pins.sh [host:port]` prints the SPKI pin of every certificate in the
+  live chain, labelled leaf / intermediate / root.
+- Pinning is native. It is not OTA-able: arming or disarming needs a new EAS build and a store release.
+- Status: **not armed.** No workflow or `eas.json` profile sets `LYNIA_TLS_PINS`.
+
+### What the pins would point at today
+
+`api.lyniago.com` is a Cloudflare **DNS-only** CNAME to the Azure Container App, with Azure's free
+**Container Apps managed certificate** bound to it (`.github/workflows/dns-bind-azure.yml`; the orange-cloud
+proxy is off because it breaks that certificate). So the app sees Azure's managed certificate, not a
+Cloudflare or Google one. Azure issues and renews it automatically, and we do not choose its CA. The
+issuing CA has not been checked from this repo (expected to be DigiCert; **unverified**).
+
+The old guidance (Google-managed certificate on a GCP load balancer, pin Google Trust Services roots) no
+longer applies. Any pins computed before the Azure cutover are wrong.
+
+### Before anyone arms `LYNIA_TLS_PINS`
+
+1. **Re-derive the chain from the live host**, from a machine with direct egress (not through a proxy):
+   `./apps/mobile/scripts/compute-tls-pins.sh api.lyniago.com:443`. Record the issuing intermediate and root.
+2. **Confirm with Microsoft which CA(s) Container Apps managed certificates can be issued from**, and
+   whether that can change at renewal. If it can, pin every root it may use.
+3. **Pick at least two pins: never the leaf.** Leaf keys change on every renewal. Use the root that issues
+   today plus a backup root (another root of the same CA, or the alternative CA's root). An intermediate
+   pin is only safe if a root pin backs it up.
+4. **Decide whether to bring the certificate under our control first.** A certificate we upload (our own
+   key, our own CA choice) can be pinned to a backup key we hold offline. A managed certificate cannot.
+5. **Set the build env** on the release profile only (EAS environment variables): `LYNIA_TLS_PINS` =
+   `sha256/<b64>=,sha256/<b64>=` and `LYNIA_TLS_PIN_EXPIRATION` a few months out. Refresh the date every
+   release.
+6. **Validate on a real device** with a native build:
+   - positive: sign in, place an order, watch live tracking;
+   - negative: put the phone behind an intercepting proxy (mitmproxy/Charles) whose CA the phone trusts.
+     The pinned build must fail to connect. If it still works, pinning is not active; do not ship.
+7. **Roll out to a small cohort first**, never 100% in the release that introduces it.
+
+**Rotation.** Before a CA change, ship a release that pins both the old and new roots; drop the old one a
+release later. **Rollback:** unset `LYNIA_TLS_PINS` and ship a new native build. There is no OTA rollback.
 
 ---
 
-## D. Cloud Armor WAF tuning (P3-5)
+## D. Edge WAF and rate limiting (P3-5)
 
-`infra/terraform/armor.tf` ships the OWASP rulesets in **preview** (`armor_waf_preview=true`) so they
-log without blocking. To enforce:
-1. Apply and let it run in preview against real traffic for ~1–2 weeks.
-2. Review Cloud Armor logs for **preview matches** — these are what *would* have been blocked. Confirm
-   they're actual attacks, not false positives on legitimate requests.
-3. Add narrow exclusions for any confirmed false positives.
-4. Flip `armor_waf_preview=false` and apply → the rulesets now `deny(403)`.
-5. Tune `armor_rate_limit_count` / `armor_rate_limit_interval_sec` to sit comfortably above real
-   per-user peak but below abuse levels.
+**There is no WAF in front of production today.** The GCP Cloud Armor policy (`infra/terraform/armor.tf`)
+died with the GCP project. Azure has no replacement in `infra/azure/`:
+
+- The API, admin and merchant apps use plain Container Apps external ingress (`containerapps.tf`). No Front
+  Door, Application Gateway or ingress IP restrictions are configured.
+- `api.lyniago.com` and `admin.lyniago.com` are Cloudflare **DNS-only**, so Cloudflare's WAF and rate
+  limiting do not see that traffic either.
+
+What protects the API now is in the app:
+
+- per-route rate limits (`apps/api/src/common/throttle.guard.ts` + `@Throttle`), backed by Redis;
+- OTP send caps per phone, per IP, per day and per device (`OTP_RL_*` in `apps/api/src/config/env.ts`);
+- security headers and a CORS allowlist (`common/security-headers.middleware.ts`, `common/cors.ts`).
+
+Adding an edge WAF is an open Phase 8 item in `docs/plans/2026-09-24-gcp-to-azure-migration.md`. Whatever
+is chosen must not proxy TLS in a way that breaks the managed certificate (§C) or `TRUST_PROXY=1` (one hop,
+`containerapps.tf`).
 
 ---
 
-## E. Coordinated infra rollouts (gated, default-off)
+## E. Data-tier hardening (P2-1, P3-4)
 
-These landed as code but are **off by default** so a plain `terraform apply` changes nothing. Each is a
-deliberate, verified switch.
+What `infra/azure/data.tf` sets today. All of it is on by default; there are no gated switches.
 
-### E1. Private-only Cloud SQL (P2-1)
-1. Set repo variable `DB_PRIVATE_ONLY=true` (routes migrations to the in-VPC Cloud Run job).
-2. Deploy once with public IP still on and confirm the **in-VPC migrate job** succeeds
-   (`release.yml` → "Apply database migrations (in-VPC Cloud Run job)").
-3. Then set Terraform `db_public_ip_enabled=false` and apply → instance goes private-only.
-4. *Verify:* the instance has no public IP; a normal deploy still migrates + runs. Roll back by
-   flipping both back if the job path misbehaves.
+### E1. Private Postgres (P2-1)
+
+- PostgreSQL Flexible Server 16, **private access only**: VNet-injected into `snet-pg`, resolved through a
+  private DNS zone, `public_network_access_enabled = false`.
+- Migrations run inside the VNet as the `caj-lynia-migrate` Container Apps job (`jobs.tf`), started by
+  `release-azure.yml`.
+- Connections use `sslmode=require` (`keyvault.tf`, `DATABASE-URL`).
+- **Open:** password auth. The admin password is generated by Terraform and sits in state and in
+  `DATABASE-URL` (accepted exception S1 #1). Moving to Entra auth is Phase 8.
 
 ### E2. Redis in-transit TLS (P2-1)
-1. Set Terraform `redis_tls_enabled=true` and apply (enables `SERVER_AUTHENTICATION`, switches
-   `REDIS_URL` to `rediss://`, injects `REDIS_CA_CERT`).
-2. Redeploy; the client auto-negotiates TLS (`apps/api/src/common/redis.ts`).
-3. *Verify:* the app reconnects (OTP, rate-limit, BullMQ, Socket.IO adapter all healthy); a plaintext
-   `redis://` client is now rejected. This is all-or-nothing — roll out in a maintenance window.
 
-### E3. Media bucket CMEK + retention (P3-4)
-1. `kyc_cmek_enabled=true` → creates the KMS keyring/key and encrypts new objects with our key.
-2. Optionally `kyc_retention_days=<N>` to auto-purge old media (mind dispute/compliance needs first).
-3. *Verify:* new objects show the CMEK key; lifecycle rules appear on the bucket.
+- Azure Managed Redis, `client_protocol = "Encrypted"` (TLS only, port 10000), `REDIS_URL` is `rediss://`.
+- Public network access disabled; reached through a private endpoint in `snet-pe`.
+- Non-clustered and `NoEviction`, because BullMQ needs both.
+- **Open:** access-key auth is on, and the key sits in state and in `REDIS-URL` (accepted exception S1 #2).
+  Entra auth is Phase 8. High availability is off.
+
+### E3. Media storage encryption and retention (P3-4)
+
+- One storage account, private container `lynia-media`. Shared keys are off; uploads and reads use
+  **user-delegation SAS** minted with the API's managed identity. HTTPS only, TLS 1.2 minimum.
+- The public endpoint stays on, because phones and the merchant browser PUT/GET blobs directly with a SAS.
+- Blob versioning on; deleted blobs and containers are recoverable for 14 days. Replication is LRS.
+- Encryption at rest uses Azure's platform-managed keys. **There is no customer-managed key** (the GCP
+  CMEK option has no Azure equivalent configured).
+- **No storage lifecycle rule.** Retention is enforced by the app: `caj-lynia-retention` (daily, `jobs.tf`)
+  calls `POST /admin/retention/purge`.
 
 ---
 
@@ -229,15 +270,17 @@ deliberate, verified switch.
 
 ---
 
-## Quick reference — where each control lives
+## Quick reference: where each control lives
 
 | Control | Code / config |
 |---|---|
-| Console fail-closed gate | `apps/admin/middleware.ts`, `app/lib/console-auth.ts`, `app/lib/iap-jwt.ts` |
-| Edge WAF / rate limit | `infra/terraform/armor.tf` (+ vars) |
+| Console fail-closed gate | `apps/admin/middleware.ts`, `apps/admin/app/lib/console-auth.ts` |
+| Console sign-in (Easy Auth) | `infra/azure/containerapps.tf` (`admin_auth`), `infra/azure/admin-auth.sh` |
+| Edge WAF | none (§D) |
 | App rate limiting | `apps/api/src/common/throttle.guard.ts` + `@Throttle` |
 | Security headers / CORS | `apps/api/src/common/{security-headers.middleware,cors}.ts` |
 | Boot fail-closed guards | `apps/api/src/config/env.ts` |
-| Secret rotation | `apps/api/src/auth/token.service.ts` + [SECRET-ROTATION](SECRET-ROTATION.md) |
-| Private SQL / Redis TLS / CMEK | `infra/terraform/{sql,redis,secrets,kms,storage}.tf` (gated vars) |
+| Secret storage and rotation | Key Vault (`infra/azure/keyvault.tf`) + [SECRET-ROTATION](SECRET-ROTATION.md) |
+| Private Postgres / Redis TLS / media storage | `infra/azure/{data,network}.tf` |
+| Certificate pinning (inert) | `apps/mobile/plugins/with-certificate-pinning.js`, `apps/mobile/scripts/compute-tls-pins.sh` |
 | CI security scanning | `.github/workflows/{ci,codeql}.yml`, `.github/dependabot.yml` |

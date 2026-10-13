@@ -142,12 +142,19 @@ built").
 | MJ-RH2 | Ended rider bookings (expired, failed, cancelled, delivered) vanish from the merchant board. The empty-state part is fixed. | "Ended booking" cards on the Deliveries board, with Try again / Call the rider. |
 | MJ-M16 | "Joining a team instead?" with no invite bounces silently, so a cashier may create a duplicate business. | A "You need an invite" explaining state on the join screen. |
 | MJ-M13 (countdown) | The Rx check has no countdown. Photo links and the alarm are already fixed. | A countdown on the prescription-check screen. |
-| U21 | After cancelling a parcel post-pickup, the customer is told to "arrange it with the rider", but there is no way to reach them. | An 18a "after pickup" variant with the rider card and Call / WhatsApp. The server also needs to reveal the rider's phone to the customer. |
-| U66 | The venue's "Something else" note reaches the customer only by push, never on screen. | The note on D3b ("{Venue} couldn't take your order"). |
-| U04 (UI half) | The locked-code re-issue works, but there is no "your code changed" note or "Send a new code" button. | A locked-code state in after-send-v2 (2.14). |
-| U29 (UI half) | No way to remove one prescription page. | The R8b remove-page control (D-92 upstream ask). |
 | MJ-RL10 | No "Stay closed today" before opening time. | A "Stay closed today" option on the closed header / switch. |
 | MJ-RL13 | Flagged in review as possibly needing UI. | Check with the designer whether it needs a drawing. |
+| Brief 10 | Rider ID-check tips only appear after a decline, and the intro names the wrong documents. | Tips and accepted documents before the check (first-run-v2 R1). |
+| Brief 11 | An under-18 decline lands on the "both tries used" screen. | A final "not yet, 18 or older" screen (first-run-v2 F5). |
+| Brief 12 | An ID already on another account dead-ends honest number-changers. | The F5dup body (first-run-v2). |
+| Brief 13 | A rider is taken offline mid-shift on the day their ID expires, with no warning. | Reminders 30 and 7 days before (first-run-v2 F6, rider board). |
+| Brief 14 | Hitting the 3-a-day fixable-retry cap only shows a misleading toast. | A "tried too many times today" state (first-run-v2 F4a–d). |
+
+Briefs for every row above: [`design-briefs-2026-10-12/`](./design-briefs-2026-10-12/README.md) (01–05 merchant,
+10–14 rider).
+
+**Done:** U21, U66, U04 (UI half) and U29 (UI half) shipped on 2026-10-12 from the designer's
+`customer-briefs-06-09` handoff (D-97, #1146).
 
 ---
 
@@ -163,6 +170,39 @@ built").
 
 ---
 
+## 6. Motion backlog (from the 2026-10-03 motion audit)
+
+Checked open on 2026-10-12. The tab bar is still the only part of the app built to a motion standard.
+Every item is JS-only, so each can ship as an OTA update. Code paths are in `apps/mobile/`.
+
+### 6.1 Bugs and jank (Code: no design needed)
+- **Sheets:** 12 `Modal animationType="slide"` sheets slide the dim backdrop up with the panel and
+  have a decorative handle. Fix: one `Sheet` primitive (fading scrim, native-driver
+  panel, drag to dismiss, instant under reduce motion).
+- **Order sheet:** `src/ui/order/OrderSheet.tsx` animates `top` with `useNativeDriver: false`, so drags
+  stutter on low-end phones. Fix: fixed-height sheet moved by native `translateY`.
+- **Toasts:** four implementations (`Toast.tsx`, `RToast`, `OrderToast`, `BrowseToast`). Fix: one
+  animated toast host.
+- **Press feedback:** `src/ui/Tappable.tsx` has no press scale and no double-tap guard.
+- **Images:** `src/ui/RemoteImage.tsx` has no fade-in.
+- **Tabs:** neither `Tabs` navigator sets `animation: "fade"` or `freezeOnBlur`.
+- **Haptics:** no success haptic on order placed, no warning haptic on a wrong OTP (`app/verify.tsx`).
+- **Reduce motion:** `useReduceMotion` exists, but `BootSplash.tsx`, `BottomSheet.tsx`, `LiveMap.tsx`
+  and `src/ui/index.tsx` still read the setting their own way.
+
+### 6.2 Performance on low-end Android (Code)
+- The "finding a rider" rings marker re-rasterises every frame (`OrderMap.tsx`, `tracksViewChanges`).
+- Orders history is a growing `ScrollView`; the long lists set no windowing props.
+- Screens with per-second clocks re-render whole trees. Fix: small countdown components and memoised rows.
+
+### 6.3 A shared motion standard (Design)
+- There are no motion tokens and no `motion-v1` handoff. The handoffs contradict each other (spring
+  overshoot vs none, 0.97 vs 0.94 press scale, toast timing, undo windows, map re-fit timing). Ask the
+  designer for a `motion-v1` handoff with tokens, seeded from tab bar v1.4, before building
+  `src/ui/motion.ts` (it doesn't exist yet).
+
+---
+
 ## Quick checklist
 
 - [ ] 1.1 Tick a pharmacist on every pharmacy
@@ -172,5 +212,9 @@ built").
 - [ ] 2.1 C18: choose (a) or (b)
 - [ ] 2.2 P26: yes / no / later
 - [ ] 2.3 P32: defer (recommended) or do
-- [ ] 3.x Say "go" for MJ-RL6, MJ-RL15, MJ-M11 test and any extras
-- [ ] 4 Send the design list to the designer (briefs ready: `docs/design-briefs-2026-10-12/`)
+- [x] 3.1 MJ-RL6 (D-95)
+- [x] 3.2 MJ-RL15, invitee side (D-95)
+- [ ] 3.x Say "go" for the MJ-M11 test and any extras
+- [x] 4 Customer briefs 06–09 drawn and shipped (D-97, #1146)
+- [ ] 4 Send briefs 01–05 and 10–14 to the designer (`docs/design-briefs-2026-10-12/`)
+- [ ] 6 Motion backlog: say "go" for 6.1 / 6.2; ask the designer for 6.3

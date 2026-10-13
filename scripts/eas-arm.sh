@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # eas-arm.sh — one-shot arming of the mobile release pipeline (mobile-release.yml + mobile-ota.yml).
 #
-# Automates docs/LAUNCH-EXECUTION-RUNBOOK.md §8c end-to-end: sets the GitHub variables/secrets,
+# Automates docs/AZURE-OWNER-RUNBOOK.md §9 (originally docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §8c) end-to-end: sets the GitHub variables/secrets,
 # walks the EAS credential + secret setup, creates the production-mobile environment, and flips
 # EAS_RELEASE_ENABLED. Pauses only where a human is unavoidable (Expo login, Play Console app
 # creation, token paste) — everything else is scripted and idempotent, so re-running is safe.
@@ -170,10 +170,9 @@ printf '\n%d pass, %d fail, %d warn\n' "$PASS" "$FAIL" "$WARN"
 if [ $FAIL -eq 0 ] && [ $VERIFY -eq 0 ]; then
   cat <<'EOF'
 
-Armed. First release (docs/LAUNCH-EXECUTION-RUNBOOK.md §8c):
-  1. Actions → "Mobile Release (Play)" → dispatch with profile `preview` (internal track)
-  2. promote through closed testing in Play Console
-  3. tag v0.2.0 on main → first staged production rollout (starts at 10%)
+Armed. Releasing (docs/AZURE-OWNER-RUNBOOK.md §9, docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1b):
+  1. Actions → "Mobile Release (Play)" → dispatch with profile `closed` (the testers' Closed testing track)
+  2. production rollout only once Play grants production access and EAS_TAG_RELEASES_ENABLED=true
 JS-only hotfixes after that: Actions → "Mobile OTA Update" (never `eas update` from a laptop).
 EOF
 fi

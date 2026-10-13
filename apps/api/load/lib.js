@@ -1,6 +1,6 @@
-// Shared helpers for the Lynia k6 load harness (docs/LOAD-MODEL.md). Standalone k6 JS — not part of the
-// TS build. Targets a STAGING deploy in QA mode (OTP_CHANNEL=console + OTP_TEST_PHONES), never the live
-// pilot. All request shapes mirror packages/shared/src/contracts.ts.
+// Shared helpers for the Lynia k6 load harness (apps/api/load/README.md). Standalone k6 JS — not part of
+// the TS build. Targets a local API in QA mode (OTP_CHANNEL=console + OTP_TEST_PHONES), never production.
+// All request shapes mirror packages/shared/src/contracts.ts.
 import http from "k6/http";
 import { check } from "k6";
 

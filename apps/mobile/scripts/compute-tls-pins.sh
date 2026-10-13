@@ -6,8 +6,8 @@
 # LYNIA_TLS_PINS, straight from the live certificate chain of the API/WS host. It prints one pin per
 # certificate in the chain (leaf → intermediate → root) and tells you WHICH to pin.
 #
-# ⚠️  Read docs/MOBILE-CERT-PINNING.md first. The API sits behind a Google-managed cert that
-#     AUTO-ROTATES, so you must pin an INTERMEDIATE/ROOT SPKI (Google Trust Services), NOT the leaf,
+# ⚠️  Read docs/SECURITY-OPS.md §C first. The API sits behind an Azure Container Apps managed cert that
+#     AUTO-ROTATES (CA not chosen by us), so you must pin an INTERMEDIATE/ROOT SPKI, NOT the leaf,
 #     and ALWAYS include a backup. A leaf pin — or a single pin with no backup — bricks every installed
 #     app's connectivity on the next rotation, unrecoverable without a forced store update.
 #
@@ -17,7 +17,7 @@
 #   ./apps/mobile/scripts/compute-tls-pins.sh [host[:port]]
 #   ./apps/mobile/scripts/compute-tls-pins.sh api.lyniago.com:443
 #
-# Then arm (see docs/MOBILE-CERT-PINNING.md) with the intermediate + root pins:
+# Then arm (see docs/SECURITY-OPS.md §C) with the intermediate + root pins:
 #   LYNIA_TLS_PINS="sha256/<intermediate>=,sha256/<root>="
 #   LYNIA_TLS_PIN_EXPIRATION="YYYY-MM-DD"   # keep ahead of the CA's rotation cadence
 # and produce a fresh NATIVE build (pinning is not OTA-able), then validate on a physical device.
@@ -66,4 +66,4 @@ for i in "${!STARTS[@]}"; do
 done
 
 echo "LYNIA_TLS_PINS should list at least two of the above (primary + backup), e.g. the intermediate"
-echo "and the root, as: sha256/<b64>=,sha256/<b64>=  — see docs/MOBILE-CERT-PINNING.md before arming."
+echo "and the root, as: sha256/<b64>=,sha256/<b64>=  — see docs/SECURITY-OPS.md §C before arming."

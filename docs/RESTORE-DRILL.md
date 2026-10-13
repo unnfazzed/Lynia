@@ -1,284 +1,189 @@
 # Backup Restore Drill Runbook
 
-Prove the Cloud SQL backups are real by restoring one. PITR + automated backups are enabled on
-`lynia-pg` (`infra/terraform/sql.tf`) but have **never been exercised** — *a backup that has never
-restored is a hope* (`docs/archive/LAUNCH-READINESS.md` LR7). This runbook restores production data into a
-throwaway scratch instance, boots verification against it, records the **RTO**, and tears the scratch
-instance down so it costs nothing. It never touches production.
+Prove the Postgres backups are real by restoring one. Azure takes automatic backups of the production
+server and keeps 7 days of point-in-time restore (PITR), but **no restore has been done on Azure yet**:
+a backup that has never been restored is a hope. This drill restores production into a throwaway server,
+checks it with `scripts/restore-drill-verify.sh`, records the recovery time (RTO), and deletes everything
+it created. It never writes to production.
 
-Companion to the incident runbook (`docs/IR-RUNBOOK.md` §3 recover) and the provisioning audit
-(`scripts/gcp-provisioning-verify.sh`). Closes the DR half of LR7.
+Companion to [IR-RUNBOOK §3](IR-RUNBOOK.md). Run the commands in **Azure Cloud Shell (Bash)** as the
+owner. Steps marked 💵 create billable resources; §6 deletes them, so never skip it.
 
-> Keep this runnable at 3am. The commands below are copy-paste, with the real instance name and region
-> filled in. Do the drill on a calm day first, then re-drill after any Terraform change to `sql.tf`.
-
----
-
-## Legend
-
-| Mark | Meaning |
-|---|---|
-| 🧑‍✈️ **FOUNDER-EXECUTED** | Spends money and/or mutates cloud resources against project `lynia-500911`. Only the founder runs these (per `docs/archive/LAUNCH-READINESS.md` §1 "Prod is founder-touched only"). Agents prepare; they do not run `gcloud`. |
-| 💵 | This step provisions a billable resource. The teardown step (§7) removes it — do not skip teardown. |
-| 🖥️ | Local/read-only — safe to run from any authenticated workstation. |
+> **Not yet run on Azure.** The commands follow the Azure CLI as documented but have not been executed
+> against this subscription. Record anything that differs in §8.
 
 ---
 
-## 0. Facts (from `infra/terraform/sql.tf` + `variables.tf`)
+## 0. Facts (from `infra/azure/data.tf`, `variables.tf`, `locals.tf`)
 
 | Thing | Value |
 |---|---|
-| GCP project | `lynia-500911` |
-| Region | `africa-south1` |
-| Prod SQL instance | `lynia-pg` |
-| Engine | PostgreSQL 16 (`POSTGRES_16`), edition `ENTERPRISE`, tier `db-custom-1-3840` |
-| Database | `lynia` · app user `lynia` |
-| Connection name | `lynia-500911:africa-south1:lynia-pg` |
-| Backups | `enabled = true`, daily `start_time = 02:00` UTC (~04:00 CAT) |
-| PITR | `point_in_time_recovery_enabled = true` (WAL archiving) |
-| Availability | `ZONAL` (pilot; no standby) |
-| Scratch instance (this drill) | `lynia-pg-restore-drill` |
+| Resource group | `rg-lynia-prod-san` (South Africa North) |
+| Production server | `psql-lynia-prod-<suffix>` (the suffix is fixed per subscription; `az postgres flexible-server list -g rg-lynia-prod-san -o table`) |
+| Engine | Azure Database for PostgreSQL Flexible Server, version 16, SKU `B_Standard_B1ms`, 32 GB |
+| Database / admin login | `lynia` / `lynia_admin` |
+| Network | Private access only, VNet-injected into `snet-pg`, private DNS zone `lynia-prod.private.postgres.database.azure.com` |
+| Backups | Automatic. `backup_retention_days = 7`, so any point in the last 7 days can be restored |
+| Geo-redundant backup | **Off** (`geo_redundant_backup_enabled = false`): no restore into another region |
+| High availability | None (no standby). A zone failure means restore from backup, which is this drill |
+| Connection string | Key Vault secret `DATABASE-URL` (`sslmode=require`) |
+| Scratch server (this drill) | `psql-lynia-restore-drill` |
+| Scratch client app (this drill) | `ca-restore-drill` in environment `cae-lynia-prod` |
 
 ---
 
-## 1. Prerequisites 🖥️
+## 1. Prerequisites
 
-1. **gcloud** authenticated as a principal with `roles/cloudsql.admin` (clone/restore/create/delete
-   instances) on `lynia-500911`:
+1. In Cloud Shell, set the names once:
    ```bash
-   gcloud auth login
-   gcloud config set project lynia-500911
-   gcloud config set compute/region africa-south1
+   RG=rg-lynia-prod-san
+   SRC=$(az postgres flexible-server list -g "$RG" --query "[0].name" -o tsv); echo "$SRC"
+   V=$(gh variable get AZ_KEY_VAULT_NAME -R unnfazzed/Lynia)
+   SCRATCH=psql-lynia-restore-drill
    ```
-2. **Cloud SQL Auth Proxy v2** (`cloud-sql-proxy`) — to reach the scratch instance without opening a
-   public IP. Install: https://cloud.google.com/sql/docs/postgres/sql-proxy#install
-3. **psql** (the PostgreSQL client) — the verification script uses it.
-4. This repo checked out (for `scripts/restore-drill-verify.sh`).
-5. Confirm a restore point actually exists before you start 🖥️:
+2. You need rights to create a Flexible Server and a Container App in `$RG`, and to read `DATABASE-URL`
+   from the vault.
+3. Confirm there is something to restore from:
    ```bash
-   # Automated backups available to restore from:
-   gcloud sql backups list --instance=lynia-pg --project=lynia-500911
-
-   # PITR window — clones can target any timestamp from earliestRestoreTime to now:
-   gcloud sql instances describe lynia-pg --project=lynia-500911 \
-     --format='value(settings.backupConfiguration.pointInTimeRecoveryEnabled,
-                     settings.backupConfiguration.transactionLogRetentionDays)'
+   az postgres flexible-server show -g "$RG" -n "$SRC" --query "{retention:backup.backupRetentionDays, earliest:backup.earliestRestoreDate, geo:backup.geoRedundantBackup}" -o table
    ```
-   If `backups list` is empty or PITR is `False`, **stop** — there is nothing to restore, which is
-   itself the finding (fix `sql.tf` and re-run a backup first).
+   If `earliest` is empty, stop: there is nothing to restore, and that is the finding.
 
 ---
 
-## 2. Start the clock, pick a recovery point 🖥️
+## 2. Start the clock, pick a recovery point
 
-RTO is measured from the moment you *decide to restore* to the moment the restored DB is *verified
-healthy*. Note the wall-clock time now — this is `T0`:
+RTO runs from the moment you decide to restore to the moment the restored database checks out. Write
+down `T0`:
 
 ```bash
-date -u '+%Y-%m-%dT%H:%M:%SZ'   # write this down as T0
+date -u '+%Y-%m-%dT%H:%M:%SZ'
 ```
 
-Pick the point-in-time to recover to. For a drill, "a few minutes ago" exercises PITR + WAL replay
-(the most realistic recovery); it must be inside the PITR window and RFC3339 **UTC with milliseconds**:
+For the drill, restore to 15 minutes ago. It must be inside the PITR window, in UTC:
 
 ```bash
-# e.g. 15 minutes ago, formatted the way `gcloud sql instances clone` wants:
-PITR_TS="$(date -u -d '15 minutes ago' '+%Y-%m-%dT%H:%M:%S.000Z')"
-echo "$PITR_TS"
+PITR_TS="$(date -u -d '15 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')"; echo "$PITR_TS"
 ```
 
 ---
 
-## 3. Restore into a scratch instance
+## 3. Restore into a scratch server 💵
 
-### Path A — PITR clone (preferred: exercises point-in-time recovery) 🧑‍✈️💵
-
-`clone` builds a brand-new instance from `lynia-pg` at `$PITR_TS`. The source keeps serving,
-untouched. The clone lands in the same region (`africa-south1`) and inherits the source's tier.
+PITR builds a **new** server from the source's backups. The source keeps serving, untouched.
 
 ```bash
-gcloud sql instances clone lynia-pg lynia-pg-restore-drill \
-  --point-in-time "$PITR_TS" \
-  --project lynia-500911
+az postgres flexible-server restore -g "$RG" -n "$SCRATCH" \
+  --source-server "$SRC" --restore-time "$PITR_TS"
 ```
 
-> Omit `--point-in-time` to clone the current state instead (does not exercise WAL replay). A clone
-> can take several minutes on a populated instance — that duration is a real component of your RTO.
-
-### Path B — restore an automated backup onto a fresh scratch instance 🧑‍✈️💵
-
-Use this if PITR is unavailable, or to additionally prove the daily backup itself is restorable.
-`backups restore` **overwrites** its target, so the target must be a throwaway you just created —
-never an instance with data you care about.
+A server with private access restores into a private network too. Check where it landed and that it is
+`Ready`:
 
 ```bash
-# 1. Create an empty scratch instance (same engine + region; small is fine for a drill):
-gcloud sql instances create lynia-pg-restore-drill \
-  --database-version=POSTGRES_16 --edition=ENTERPRISE \
-  --tier=db-custom-1-3840 --region=africa-south1 \
-  --no-assign-ip --project=lynia-500911
-
-# 2. Find the backup id to restore (newest first):
-gcloud sql backups list --instance=lynia-pg --project=lynia-500911
-
-# 3. Restore that backup onto the scratch instance (OVERWRITES lynia-pg-restore-drill):
-gcloud sql backups restore <BACKUP_ID> \
-  --restore-instance=lynia-pg-restore-drill \
-  --backup-instance=lynia-pg \
-  --project=lynia-500911
+az postgres flexible-server show -g "$RG" -n "$SCRATCH" \
+  --query "{state:state, fqdn:fullyQualifiedDomainName, subnet:network.delegatedSubnetResourceId}" -o table
 ```
 
-Wait until the scratch instance is `RUNNABLE`:
+If it did not land in `snet-pg` of `vnet-lynia-prod`, pass `--subnet` and `--private-dns-zone` explicitly
+(see `az postgres flexible-server restore --help`). The restore time is a real part of your RTO.
+
+---
+
+## 4. Connect to the scratch server
+
+The scratch server has no public endpoint, so the check must run from inside the VNet. Nothing in the
+repo does this yet. Use a temporary Container App in the production environment, running the official
+`postgres:16` image (it has `psql` and `bash`).
+
+1. Build the scratch connection string. The restored server keeps the source's admin login and
+   password, so only the host changes. The value never prints:
+   ```bash
+   SCRATCH_HOST=$(az postgres flexible-server show -g "$RG" -n "$SCRATCH" --query fullyQualifiedDomainName -o tsv)
+   SRC_HOST=$(az postgres flexible-server show -g "$RG" -n "$SRC" --query fullyQualifiedDomainName -o tsv)
+   SCRATCH_URL=$(az keyvault secret show --vault-name "$V" -n DATABASE-URL --query value -o tsv | sed "s/@${SRC_HOST}:/@${SCRATCH_HOST}:/")
+   case "$SCRATCH_URL" in *"@${SCRATCH_HOST}:"*) echo "points at scratch";; *) echo "STOP: not rewritten"; unset SCRATCH_URL;; esac
+   ```
+2. Start the client app 💵 (no ingress, one replica):
+   ```bash
+   az containerapp create -g "$RG" -n ca-restore-drill --environment cae-lynia-prod \
+     --workload-profile-name Consumption --image docker.io/library/postgres:16 \
+     --command sleep --args infinity --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
+     --secrets "dburl=$SCRATCH_URL" --env-vars DATABASE_URL=secretref:dburl -o none
+   unset SCRATCH_URL
+   az containerapp exec -g "$RG" -n ca-restore-drill --command bash
+   ```
+
+---
+
+## 5. Check the restore
+
+Inside the `ca-restore-drill` shell, fetch and run the check:
 
 ```bash
-gcloud sql instances describe lynia-pg-restore-drill --project=lynia-500911 \
-  --format='value(state)'
+apt-get update -qq && apt-get install -y -qq curl >/dev/null
+curl -fsSL https://raw.githubusercontent.com/unnfazzed/Lynia/main/scripts/restore-drill-verify.sh -o /tmp/verify.sh
+bash /tmp/verify.sh            # reads DATABASE_URL from the environment
+```
+
+`scripts/restore-drill-verify.sh` is read-only. It checks the expected tables exist, reports row
+counts, and asserts the wallet money invariants (balances rebuild from the ledger, every confirmed
+top-up has exactly one credit, every commission debit carries its receipt fields). Expect
+`N passed, 0 failed`. It exits non-zero on any failed invariant.
+
+Leave the shell. Write down `T1` (`date -u '+%Y-%m-%dT%H:%M:%SZ'`). **RTO = T1 − T0.** RPO for a PITR
+restore is the gap between the recovery point and the incident.
+
+---
+
+## 6. Teardown 💵
+
+Do this even if the drill failed. A left-over server bills every hour.
+
+```bash
+az containerapp delete -g "$RG" -n ca-restore-drill --yes
+az postgres flexible-server delete -g "$RG" -n "$SCRATCH" --yes
+az postgres flexible-server list -g "$RG" --query "[].name" -o tsv | grep -q restore-drill \
+  && echo "STILL PRESENT: delete it" || echo "scratch server gone"
 ```
 
 ---
 
-## 4. Point a connection at the scratch DB
+## 7. Checklist
 
-### 4a. Give the app user a temporary password on the scratch instance 🧑‍✈️
-
-A clone copies the `lynia` user but you don't hold its plaintext password (it lives in Secret
-Manager). Set a throwaway one **on the scratch instance only** — the real prod credential is never
-touched:
-
-```bash
-SCRATCH_PW="$(openssl rand -base64 24 | tr -d '/+=')"
-gcloud sql users set-password lynia \
-  --instance=lynia-pg-restore-drill \
-  --password="$SCRATCH_PW" \
-  --project=lynia-500911
-```
-
-### 4b. Start the Cloud SQL Auth Proxy against the scratch instance 🖥️
-
-In a second terminal (leave it running):
-
-```bash
-cloud-sql-proxy lynia-500911:africa-south1:lynia-pg-restore-drill --port 5433
-```
-
-### 4c. Build the scratch `DATABASE_URL` 🖥️
-
-```bash
-export DATABASE_URL="postgresql://lynia:${SCRATCH_PW}@127.0.0.1:5433/lynia"
-```
+- [ ] Names set; `earliest` restore date shown (§1)
+- [ ] `T0` recorded; `$PITR_TS` inside the 7-day window (§2)
+- [ ] 💵 `psql-lynia-restore-drill` restored and `Ready` (§3)
+- [ ] 💵 `ca-restore-drill` running with the scratch `DATABASE_URL` (§4)
+- [ ] `restore-drill-verify.sh` → `0 failed` (§5)
+- [ ] `T1` recorded; RTO computed (§5)
+- [ ] 💵 Both scratch resources deleted (§6)
+- [ ] Result written into §8
 
 ---
 
-## 5. Verify the restore is healthy 🖥️
+## 8. Drill record
 
-Run the verification script. It asserts the schema is intact, the DB is populated, and — reusing the
-**same invariants as the roadmap's ledger integrity job (item 1.3)** — that the money data is
-self-consistent (balances reconstruct from the ledger, every confirmed top-up has its credit, every
-per-ride debit carries its receipt). It exits non-zero on any failed invariant.
+| Date (UTC) | Recovery point | T0 | T1 | **RTO** | Verify result | Operator |
+|---|---|---|---|---|---|---|
+| _not yet run on Azure_ | | | | | | |
 
-```bash
-scripts/restore-drill-verify.sh "$DATABASE_URL"
-# or, since DATABASE_URL is exported:
-scripts/restore-drill-verify.sh
-```
+Notes (restore duration, network surprises, missing permissions, verify warnings):
 
-Expect `N passed, 0 failed`. Optionally, boot a throwaway API against the scratch DB for an
-end-to-end smoke (never point a *deployed* service at it — a local process only):
-
-```bash
-# From apps/api, with DATABASE_URL pointing at the proxy and a dummy REDIS_URL / secrets:
-pnpm --filter @lynia/api exec prisma migrate status   # schema matches migrations?
-curl -fsS localhost:3000/healthz                       # if you booted the API locally
-```
+- _(none yet)_
 
 ---
 
-## 6. Stop the clock — record the RTO 🖥️
+## 9. Backup risks worth a decision before launch
 
-```bash
-date -u '+%Y-%m-%dT%H:%M:%SZ'   # this is T1
-```
+From `infra/azure/data.tf`:
 
-RTO = `T1 − T0`. Record it in §9 below. RPO for a PITR clone is ~0 (you chose the recovery point); for
-a backup restore it is "time since the backup ran" (up to ~24h given the daily `02:00` schedule).
-
----
-
-## 7. Teardown — delete the scratch instance 💵🧑‍✈️
-
-**Do this even if the drill failed.** A left-over Cloud SQL instance bills continuously.
-
-```bash
-# Stop the proxy (Ctrl-C in its terminal), then:
-gcloud sql instances delete lynia-pg-restore-drill --project=lynia-500911 --quiet
-```
-
-If deletion is refused because the scratch instance inherited deletion protection, clear it first:
-
-```bash
-gcloud sql instances patch lynia-pg-restore-drill --no-deletion-protection --project=lynia-500911
-gcloud sql instances delete lynia-pg-restore-drill --project=lynia-500911 --quiet
-```
-
-Confirm it is gone:
-
-```bash
-gcloud sql instances list --project=lynia-500911 --format='value(name)' | grep restore-drill \
-  && echo "STILL PRESENT — delete it" || echo "scratch instance gone ✓"
-```
-
----
-
-## 8. Checklist (tick as you go)
-
-- [ ] Prereqs met: gcloud auth (`cloudsql.admin`), `cloud-sql-proxy`, `psql` (§1)
-- [ ] `gcloud sql backups list` shows a backup **and/or** PITR is enabled (§1.5)
-- [ ] `T0` recorded; recovery point `$PITR_TS` chosen inside the PITR window (§2)
-- [ ] 🧑‍✈️💵 Scratch instance `lynia-pg-restore-drill` created via clone (Path A) or restore (Path B) (§3)
-- [ ] Scratch instance reached `RUNNABLE` (§3)
-- [ ] 🧑‍✈️ Temp password set on scratch `lynia` user; proxy up on `:5433`; `DATABASE_URL` built (§4)
-- [ ] `scripts/restore-drill-verify.sh` run → **`0 failed`** (§5)
-- [ ] (optional) API booted against the scratch DB / `prisma migrate status` clean (§5)
-- [ ] `T1` recorded; **RTO computed** (§6)
-- [ ] 💵🧑‍✈️ Scratch instance **deleted**; `gcloud sql instances list` confirms it is gone (§7)
-- [ ] RTO + gotchas written into §9 and the LR7 exit-test line (`ENG-REVIEW.md`, per LR7)
-- [ ] LR7 box ticked in `docs/archive/LAUNCH-READINESS.md` **only after this drill actually ran**
-
----
-
-## 9. Drill record (fill in each time)
-
-| Date (UTC) | Path (A clone / B backup) | Recovery point | T0 | T1 | **RTO** | Verify result | Operator |
-|---|---|---|---|---|---|---|---|
-| _pending — first drill not yet run_ | | | | | | | |
-
-**Gotchas / notes observed during the drill** (append):
-
-- _(none yet — record anything surprising: clone duration, proxy quirks, missing IAM, verify warnings)_
-
----
-
-## 10. Backup-config review — risks worth fixing before launch
-
-Findings from reading `infra/terraform/sql.tf` while writing this runbook. None block the drill; all
-are worth a founder decision before LR7 closes:
-
-1. **Backup storage location is not pinned.** `backup_configuration` sets no `location`, so automated
-   backups default to a Google multi-region that may sit **outside `africa-south1`** — a data-residency
-   consideration under the Zimbabwe Cyber & Data Protection Act (the same concern LR8 tracks). Decide
-   the backup region deliberately and set `backup_configuration.location`.
-2. **Retention windows rely on defaults.** Neither `backup_retention_settings.retained_backups` nor
-   `transaction_log_retention_days` is set, so both fall to Cloud SQL defaults (~7 days). If the
-   intended DR window is longer, set them explicitly — and confirm the PITR window in §1.5 covers the
-   recovery point you plan to be able to reach.
-3. **`ZONAL` availability = backups but no standby.** A zone failure means restore-from-backup (this
-   runbook), not automatic failover. LR7 item 2 already flags the `REGIONAL` flip for launch; until
-   then, this drill *is* the DR story.
-4. **Prod `deletion_protection` defaults to `false`** (`var.deletion_protection`). Unrelated to
-   restores, but an accidental `terraform destroy` / console delete of `lynia-pg` would not be blocked.
-   Consider setting it `true` for prod before launch.
-
----
-
-*Exit test (LR7): this drill performed once, RTO + gotchas recorded above and in `ENG-REVIEW.md`, then
-the LR7 box ticked in `docs/archive/LAUNCH-READINESS.md`.*
+1. **7-day window.** `backup_retention_days = 7` is the shortest useful setting. Azure allows up to 35.
+   A problem found after a week cannot be undone.
+2. **No geo-redundant backup.** Losing South Africa North loses the backups with it. Enabling it later
+   may require recreating the server (unverified); decide before data grows.
+3. **No off-cloud copy.** Everything sits in one Azure subscription. Off-cloud backups are an open Phase 8
+   item in `docs/plans/2026-09-24-gcp-to-azure-migration.md`.
+4. **No standby.** A zone outage means a restore (this drill), not a failover.
+5. **Nothing blocks deleting the server** besides `terraform-apply-azure.yml`'s destroy guard. There is no
+   Azure resource lock in `infra/azure`.

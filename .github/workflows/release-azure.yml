@@ -296,7 +296,7 @@ jobs:
           fi
           if [ ${#errors[@]} -gt 0 ]; then
             for e in "${errors[@]}"; do echo "::error::$e"; done
-            echo "::error::Production launch-hygiene guards (apps/api/src/config/env.ts) would reject this deploy at container boot. Fix the repo Variables above, then re-run. See docs/PILOT-READINESS.md." >&2
+            echo "::error::Production launch-hygiene guards (apps/api/src/config/env.ts) would reject this deploy at container boot. Fix the repo Variables above, then re-run. See docs/AZURE-OWNER-RUNBOOK.md §8." >&2
             exit 1
           fi
           whatsapp_note=""

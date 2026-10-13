@@ -12,7 +12,7 @@ import { type SchedulerRequest, type SchedulerTokenVerifier, schedulerVerifierFo
 import { TokenService } from "./token.service";
 
 /** Admin JWT (the console path) OR the scheduler's platform identity token (the cron path —
- *  docs/LAUNCH-EXECUTION-RUNBOOK.md §2). JwtAuthGuard alone rejects the scheduler's token (it
+ *  the Container Apps cron jobs in infra/azure/jobs.tf). JwtAuthGuard alone rejects the scheduler's token (it
  *  verifies only our own HS256 JWTs), which is why the daily retention sweep 401'd; this guard
  *  adds the missing acceptance path without weakening the admin one. Which scheduler token is
  *  accepted is `SCHEDULER_AUTH`'s choice: a Google-signed Cloud Scheduler OIDC token

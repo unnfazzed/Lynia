@@ -1,4 +1,4 @@
-# Cloud Scheduler cron jobs — the terraformed version of docs/LAUNCH-EXECUTION-RUNBOOK.md §2.
+# Cloud Scheduler cron jobs — the terraformed version of docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §2.
 #
 # Both jobs POST to admin endpoints with a Google-signed OIDC token minted as the RUNTIME SA.
 # AdminOrSchedulerGuard (apps/api/src/auth/admin-or-scheduler.guard.ts) accepts that token only

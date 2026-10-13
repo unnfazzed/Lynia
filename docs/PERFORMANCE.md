@@ -6,7 +6,7 @@ network — metered 2G/3G, high RTT (~200-600 ms), frequent dead zones, cheap An
 and the ranked backlog.
 
 The design borrows the three patterns the big marketplaces converged on, scaled to Lynia's
-stack (NestJS/Express + Prisma/PostGIS + Redis on Cloud Run `africa-south1`; Expo/RN + TanStack
+stack (NestJS/Express + Prisma/PostGIS + Redis on Azure Container Apps, South Africa North; Expo/RN + TanStack
 Query + Socket.IO):
 
 1. **Cache close to the reader, coalesce identical work** — DoorDash's transparent proxy cache
@@ -222,15 +222,17 @@ without reading those entries first — the Sentry one specifically cannot be co
    `useInfiniteQuery` when row counts grow past the current 50-cap.
 6. **Cap/paginate `getSnapshot.events[]`** — unbounded today; fine at pilot scale, payload growth
    with long trips.
-7. **Edge/CDN layer.** Today Cloudflare is DNS-only *by explicit decision* (managed TLS +
-   cert-pinning + single-hop `trust proxy`, see `docs/CLOUDFLARE.md`) and the GCP LB has no CDN.
-   When revisited: Cloud CDN on the LB (respects the `Cache-Control` semantics shipped here,
-   `public` routes + signed media only), or an H3/QUIC-capable edge — the Uber-style tail-latency
-   win — weighed against the pinning/trust-proxy constraints.
+7. **Edge/CDN layer.** Today the API host is Cloudflare DNS-only *by explicit decision* (Azure's
+   managed certificate needs a grey-cloud CNAME, plus cert-pinning and single-hop `trust proxy`; see
+   `docs/CLOUDFLARE.md`), and Container Apps ingress has no CDN in front. When revisited: a CDN or
+   H3/QUIC-capable edge in front of the API (respecting the `Cache-Control` semantics shipped here:
+   `public` routes and signed media only), the Uber-style tail-latency win, weighed against the
+   pinning, trust-proxy and certificate constraints.
 8. **Known open device-side items:** ALR-07 (double GPS stream while foregrounded, ~2× location
    upload) and ALR-09 (offline mutation UX) in `docs/KNOWN_BUGS.md`.
-9. **Ops cost trims:** LB `log_config.sample_rate` is 1.0 (100% request logging) and Cloud Run
-   `max_instances = 3` is a low capacity ceiling for launch spikes (`infra/terraform/`).
+9. **Capacity ceiling:** the API scales to at most 5 replicas, because 5 × `DATABASE_CONNECTION_LIMIT`
+   5 = 25 connections fits the B1ms Postgres (~50). Raising it means raising the Postgres SKU first
+   (`api_max_replicas` in `infra/azure/variables.tf`).
 
 ## Sources / further reading
 

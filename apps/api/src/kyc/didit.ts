@@ -136,8 +136,8 @@ export function classifyStoredDiditStatus(status: string | null | undefined): Di
  * Pull Didit's face-match similarity out of a decision webhook as a [0, 1] score, or null when the
  * payload exposes none (the caller then lets Didit's status decide — see {@link decideDiditKyc}).
  *
- * V3 first (IR26-07). Our destination is registered as `webhook_version: "v3"` (docs/PILOT-READINESS.md
- * step 3), and V3 carries every per-feature result as a PLURAL array: the face-match report is
+ * V3 first (IR26-07). Our destination is registered as `webhook_version: "v3"` (docs/AZURE-OWNER-RUNBOOK.md
+ * §4 step 3), and V3 carries every per-feature result as a PLURAL array: the face-match report is
  * `decision.face_matches[]`, each entry `{ node_id, status, score, warnings }`. The singular
  * `decision.face_match` only appears on a destination pinned to V2. Reading only the singular shape
  * returned null on every real webhook, so the KYC_THRESHOLDS bands never ran.
@@ -322,8 +322,8 @@ export function extractDiditDocumentNumber(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
   const decision = (p.decision ?? {}) as Record<string, unknown>;
-  // V3 webhooks (Didit's default, and the version our destination is registered with — docs/PILOT-READINESS.md
-  // step 3) carry every per-feature result as a PLURAL array: the ID report is `decision.id_verifications[]`.
+  // V3 webhooks (Didit's default, and the version our destination is registered with — docs/AZURE-OWNER-RUNBOOK.md
+  // §4 step 3) carry every per-feature result as a PLURAL array: the ID report is `decision.id_verifications[]`.
   // The singular `id_verification` object only appears on a destination pinned to `webhook_version: "v2"`.
   // Reading only the singular shape left this extractor returning null on every real V3 webhook.
   const v3 = Array.isArray(decision.id_verifications) ? (decision.id_verifications as unknown[]) : [];

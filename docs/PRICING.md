@@ -1,8 +1,8 @@
 # Lynia — Pricing & offer ranking
 
-Lynia is a **matchmaker, not a price-setter**: the customer names the price, riders accept or counter,
-and the customer always chooses. Two pure, shared modules shape that negotiation without ever taking
-control of it:
+Lynia is a **matchmaker, not a price-setter**: on a parcel the customer names the price, riders accept or
+counter, and the customer always chooses. Two pure, shared modules shape that negotiation without ever
+taking control of it:
 
 - **`suggestFare` / `quoteFare`** ([`packages/shared/src/pricing.ts`](../packages/shared/src/pricing.ts)) —
   the *anchor*: a fair starting price we show the customer.
@@ -13,7 +13,8 @@ control of it:
 Both live in `@lynia/shared` and are **pure and framework-free**, so the API and the mobile client run
 the exact same math — the customer's live preview and the number stored on the order can never drift.
 This doc is the reference for both; see [ARCHITECTURE §6](./ARCHITECTURE.md#6-the-offer-loop-core-sequence)
-for how they sit inside the offer loop.
+for how they sit inside the offer loop. Restaurant, shop and pharmacy orders do not negotiate: their
+delivery fee is fixed by distance ([§5](#5-merchant-orders-delivery-fee-and-preferred-riders)).
 
 ---
 
@@ -67,7 +68,7 @@ hint, `Riders usually accept around $X–$Y` (`apps/mobile/app/send.tsx`,
 ## 2. The suggested-fare model
 
 A deliberately simple, transparent **flag-fall + per-km** model. Simplicity is a feature here: the
-customer can predict it, and it's trivial to retune from real corridor data at the pricing spike (T0).
+customer can predict it, and it's trivial to retune from real ride data.
 
 ### Formula
 
@@ -84,9 +85,10 @@ suggestedFare(distanceKm) = max( minUsd, baseUsd + perKmUsd × distanceKm )   //
 | `minUsd` | `1.50` | Hard floor — short hops still cost the rider time. |
 | `earthRadiusKm` | `6371` | For the Haversine distance. |
 
-> These are **USD pilot values for the Harare corridor** and are explicitly placeholders — tune them
-> at the pricing T0 spike on real ride data. Because they're one `const` in one shared file, retuning
-> is a single-line change that both clients pick up.
+> These are **USD launch values** and are placeholders: tune them on real ride data. Lynia serves all of
+> Zimbabwe (`packages/shared/src/service-area.ts`, ledger D-99), and one curve applies everywhere.
+> Because they're one `const` in one shared file, retuning is a single-line change that every client
+> picks up.
 
 ### Distance: great-circle (Haversine)
 
@@ -213,6 +215,14 @@ Batch ranges: fare `[2.50, 3.00]`, eta `[10, 25]`, rating (rated only) `[4.0, 4.
 and a mid-range price is recommended — exactly the "don't collapse into cheapest" behaviour the blend
 is designed for.
 
+### The ETA the ranking reads
+
+Since D-99 a rider anywhere in the country can bid, and the rider app's ETA is a tapped chip. So the API
+keeps the larger of the rider's claimed ETA and a straight-line estimate from the rider's position
+(`estimatePickupEtaMinutes`, `PICKUP_ETA` in `packages/shared/src/policy.ts`: 2 min to start plus
+25 km/h; called from `apps/api/src/offers/offers.service.ts`). A far-away rider can't rank as "sooner"
+than the distance allows.
+
 ### Client sort modes
 
 The mobile order screen (`apps/mobile/app/order/[id].tsx`) exposes `rankOffers` as the **"best"** sort
@@ -221,7 +231,7 @@ sort — the customer still chooses. Ranking is presentation only; the server ne
 
 ---
 
-## 4. Tuning checklist (T0 pricing spike)
+## 4. Tuning checklist
 
 Everything tunable is a named constant in one of two shared files — no logic changes needed to retune:
 
@@ -230,7 +240,40 @@ Everything tunable is a named constant in one of two shared files — no logic c
 - **New-rider baseline** — `NEW_RIDER_RATING_SCORE` (keep `≤ 0.5`).
 - **Distance model** — swap Haversine for routed distance in `quoteFare` if/when a routing provider is
   added; the four fares and the ranking are unaffected.
+- **Merchant delivery fee** — `RESTAURANTS_PRICING` in `restaurants-order.ts` (§5).
+- **Preferred-rider bonus** — `PREFERRED_OFFER_BONUS` in `offer-ranking.ts` (§5).
 
 Both modules are unit-tested from the API package (`*.spec.ts`), so a retune is a value change plus a
 green test run.
 </content>
+
+---
+
+## 5. Merchant orders: delivery fee and preferred riders
+
+**Delivery fee.** A restaurant, shop or pharmacy order has no customer-named price. The API sets the
+delivery fee at placement with `deliveryFeeForDistance(distanceKm)`
+([`packages/shared/src/restaurants-order.ts`](../packages/shared/src/restaurants-order.ts)), using the
+Haversine distance from the venue to the drop-off (`apps/api/src/merchant/food-order.service.ts`):
+
+```
+deliveryFee(distanceKm) = max( 1.50, round_to_0.50( 0.80 × distanceKm ) )
+```
+
+| Constant (`RESTAURANTS_PRICING`) | Value | Role |
+|---|---|---|
+| `deliveryFeePerKm` | `0.80` | Per-km rate |
+| `deliveryFeeRoundingUnit` | `0.50` | Fee is rounded to the nearest $0.50 |
+| `deliveryFeeMin` | `1.50` | Floor |
+| `minOrderSubtotal` / `smallOrderFee` | `4.00` / `1.00` | Below a $4 subtotal a $1 fee is added; checkout is never blocked |
+
+A venue with free delivery pays the rider's fee out of its own share (`merchantDeliveryShareAtPlacement`,
+ledger D-71). The customer then pays $0 delivery and the rider still gets the full fee. Payment is cash.
+
+**Preferred riders (merchant "Book a rider").** When a business books a parcel rider from the merchant
+app, it sees offers like a customer does. It ranks them with `MERCHANT_OFFER_WEIGHTS`: the default blend
+plus `PREFERRED_OFFER_BONUS = 0.5` for one of the business's own riders
+([`offer-ranking.ts`](../packages/shared/src/offer-ranking.ts), used by `apps/merchant/app/lib/booking.ts`).
+The bonus is worth more than any one dimension alone and less than fare and ETA together (0.65). So the
+business's rider is listed first unless another offer is cheaper **and** sooner. The bonus only reorders
+offers. It never changes who may bid, and the business still picks. The customer app never sets it.

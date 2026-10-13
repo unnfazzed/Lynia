@@ -1,7 +1,14 @@
 # Google Play submission package (LR20)
 
+> **Current state (2026-10-12).** The newest build is **v0.51.0 / versionCode 45** (EAS build `87291256`,
+> 2026-10-06), submitted to the **`Closed testing`** track (§8, "Build vc 45"). JS-only fixes since then
+> reach it by OTA on the `preview` branch. The app talks to the API on **Azure** (`api.lyniago.com`).
+> It is **not public**: Play has not granted production access, so `play.google.com/store/apps/details?id=zw.co.lynia`
+> returns 404 by design. Ship to testers with *Mobile Release (Play)* → `profile: closed`
+> (`docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b). Everything below is the dated record.
+
 > Everything needed to create, fill in and ship the **LyniaGo** Play Console listing, in the order the
-> console asks for it. Companions: `docs/LAUNCH-EXECUTION-RUNBOOK.md` §8c (arming the release
+> console asks for it. Companions: `docs/AZURE-OWNER-RUNBOOK.md` §9 (arming the release
 > pipeline), `docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b (build/submit mechanics),
 > `docs/DATA-RETENTION.md` (the source of truth behind every data claim here).
 >

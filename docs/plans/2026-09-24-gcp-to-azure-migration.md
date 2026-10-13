@@ -2,9 +2,12 @@
 ## Implementation plan
 # GCP → Azure migration plan
 
-**Status:** APPROVED by the owner 2026-09-24 ("go"; see §14). Execution has started. Owner decisions in §12 gate
-Phase 1 onward. Do not treat any section as approved until the owner signs off in this file's review log
-(§14).
+**Status (2026-10-12):** APPROVED by the owner 2026-09-24 ("go"; see §14). **Production cutover is done:** the
+API runs on Azure Container Apps (`release-azure.yml` deploys every merge to `main`), and `api.lyniago.com` /
+`admin.lyniago.com` point at Azure (`dns-bind-azure.yml`). Azure staging is retired. Still open is **Phase 8**
+(below): retire the dead GCP workflows and `infra/terraform/`, refresh the docs, plus the hardening items
+(off-cloud backups and a restore drill, edge WAF/rate limiting, launch sizing, Entra auth for Redis and Postgres).
+The review log (§14) is the owner's record and is left as written.
 
 **Scope:** everything that ran in GCP project `lynia-500911` (project number `407250490173`), plus the
 Google-platform services the Android app depends on.

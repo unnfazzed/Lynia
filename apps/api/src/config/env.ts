@@ -184,7 +184,7 @@ export const envSchema = z.object({
   // effective on the "console" channel and ONLY for numbers in this list — an arbitrary phone
   // is never exposed, so this is not an account-takeover hole. Empty = exposure off (default).
   // MUST be empty (and OTP_CHANNEL not "console" or the unimplemented "sms" stub) before real launch —
-  // see docs/PILOT-READINESS.md.
+  // see docs/AZURE-OWNER-RUNBOOK.md §8.
   OTP_TEST_PHONES: z.string().default(""),
   // Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). A single allowlisted phone whose
   // login accepts a FIXED code, so a Google reviewer — who cannot receive a Zimbabwean OTP — can sign
@@ -339,7 +339,7 @@ export const envSchema = z.object({
   GPS_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   SESSION_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   // Service-account email whose Google-signed OIDC identity tokens may call the scheduler-driven
-  // admin endpoints (the daily Cloud Scheduler retention sweep — docs/LAUNCH-EXECUTION-RUNBOOK.md §2).
+  // admin endpoints (the daily Cloud Scheduler retention sweep — docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §2).
   // Unset/empty = the OIDC path is off and those routes accept only an admin JWT. The deploy injects
   // the Cloud Run runtime SA here (the same SA the scheduler job mints its token as); "" coerces to
   // absent like the other deploy-injected optionals.

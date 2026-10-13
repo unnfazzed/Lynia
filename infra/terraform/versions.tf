@@ -1,5 +1,5 @@
 # Provider + Terraform version pins for the Lynia GCP provisioning module.
-# Ship-stage GCP provisioning as Infrastructure-as-Code (status: docs/PILOT-READINESS.md).
+# Ship-stage GCP provisioning as Infrastructure-as-Code (status: docs/archive/PILOT-READINESS.md).
 
 terraform {
   required_version = ">= 1.5.0"

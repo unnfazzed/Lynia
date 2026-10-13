@@ -364,9 +364,9 @@ const config: ExpoConfig = {
     ],
     // TLS certificate pinning for the API/WS host (SECURITY §P3-1). GATED on LYNIA_TLS_PINS: attached
     // ONLY when pins are supplied, so an unpinned build never even loads the plugin (mirrors the Maps/
-    // FCM/EAS "attach only when provisioned" pattern). Arming needs real Google-Trust-Services SPKI pins
-    // + a backup + a native build — see docs/MOBILE-CERT-PINNING.md (a wrong pin bricks the app on the
-    // managed cert's rotation). Single gate = the env var.
+    // FCM/EAS "attach only when provisioned" pattern). Arming needs SPKI pins re-derived from the live Azure
+    // managed-cert chain + a backup + a native build — see docs/SECURITY-OPS.md §C (a wrong pin bricks the
+    // app on the managed cert's rotation). Single gate = the env var.
     ...(process.env.LYNIA_TLS_PINS?.trim() ? ["./plugins/with-certificate-pinning"] : []),
   ],
   android: {

@@ -1,5 +1,5 @@
 /**
- * Didit founder wiring — the one non-code step that gates real KYC (see docs/PILOT-READINESS.md §2).
+ * Didit founder wiring — the one non-code step that gates real KYC (see docs/AZURE-OWNER-RUNBOOK.md §4).
  *
  * The integration itself is built; this script turns the manual runbook into a single command that
  *   1. registers a Didit account programmatically (no browser) and returns the API key,
@@ -170,7 +170,7 @@ function presence(s?: string): string {
 
 function summary(vals: { apiKey?: string; workflowId?: string; webhookSecret?: string; callbackUrl?: string }): void {
   console.log("\n──────────── Didit wiring — store these, then flip DIDIT_ENABLED=true ────────────");
-  console.log("Secrets → Secret Manager (see docs/PILOT-READINESS.md §2):");
+  console.log("Secrets → Key Vault (see docs/AZURE-OWNER-RUNBOOK.md §3 and §4):");
   console.log(`  DIDIT_API_KEY        = ${presence(vals.apiKey)}`);
   console.log(`  DIDIT_WEBHOOK_SECRET = ${presence(vals.webhookSecret)}`);
   console.log("Plain repo Variables:");

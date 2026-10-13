@@ -9,7 +9,7 @@
  * proves nothing the next morning. This file exists so that ritual is a REGRESSION instead of an
  * event — every leg of the rehearsal, driven against a real Postgres/PostGIS, on every CI run and
  * every time an engineer touches C2/C3/C4 or the Express seams they share a table with. The checklist
- * in `docs/LAUNCH-EXECUTION-RUNBOOK.md` names this file as the automated half of the gate; what stays
+ * in `docs/AZURE-OWNER-RUNBOOK.md` §10 names this file as the automated half of the gate; what stays
  * manual is only what genuinely can't be automated (real tablets, real riders, real mobile money).
  *
  * Why an INT spec and not a unit spec: every claim X2 makes is a claim about the DATABASE, not about

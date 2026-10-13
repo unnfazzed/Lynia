@@ -1,14 +1,18 @@
 # Pixel-parity tracker
 
-Progress for the app-wide pixel-alignment workstream (`CLAUDE.md` → "Pixel parity"). Source of
-truth is the **2026-08-10 rev 2** design export in `packages/design/`; the inventory below is
-generated from `packages/design/EXPORT-MANIFEST.txt`.
+Per-screen status for the pixel-alignment work (`CLAUDE.md` → "Pixel parity").
 
-**A screen counts as done when it is adopted (wired to an app target) and the automated guardrail
-suite stays green** — token-conformance + screen-inventory + reverse-drift freeze (see `CLAUDE.md` →
-"Pixel parity" → the guardrail suite). Owner decision 2026-08-11: the guardrail suite REPLACES the
-per-screen human visual-OK sign-off; ✅ is a machine state, not an eyeball. Structure, geometry,
-colour, type and copy must all match the mock, and the guardrails are what enforce it.
+**The authority is the handoffs, then the gallery.** Most screens now follow a per-screen handoff in
+`packages/design/handoff/*`, each approved in a ledger entry in `docs/DESIGN-DEVIATIONS.md` (the map
+is in `docs/DESIGN.md` → "Which handoff owns which screen"). A gallery row a handoff replaced is ⏭
+and names its ledger entry. The gallery (`packages/design/explorations/journey/All Screens Gallery.html`,
+2026-08-10 rev 2 export) is the authority only for screens no handoff has replaced. Values come from
+`packages/design/tokens/*.css`.
+
+**A screen counts as done when it is adopted (wired to an app target, or built to its handoff with a
+committed sheet in `docs/parity/`) and the guardrail suite stays green**: token-conformance,
+screen-inventory, reverse-drift freeze and structural-snapshot. ✅ is a machine state, not an
+eyeball (owner decision 2026-08-11).
 
 | Status | Meaning |
 |---|---|
@@ -18,78 +22,31 @@ colour, type and copy must all match the mock, and the guardrails are what enfor
 | ⛔ | backend-gated: designed but not renderable without a seeded backend — `BACKEND_GATED` (with a reason) in `tools/parity/parity-status.mjs`, tracked as an issue |
 | ⏭ | superseded: an owner handoff replaced this gallery screen as the authority (see the ledger entry named on the row); not aligned to until a gallery export redraws it |
 
-The guardrail suite is the enforcement: the screen-inventory guardrail
-(`apps/api/src/parity/screen-inventory.spec.ts`) fails CI if any screen is neither wired nor
-allowlisted, so this tracker can never silently fall behind the gallery.
+The screen-inventory guardrail (`apps/api/src/parity/screen-inventory.spec.ts`) fails CI if any
+gallery screen is neither wired nor allowlisted, so this tracker can't silently fall behind the
+gallery. The structural-snapshot guardrail (`apps/api/src/parity/structure-snapshot.spec.ts`) holds
+the deferral count to `tools/parity/codegen/deferral-baseline.json` (78 today) and requires every
+deferral to cite a ledger entry, an issue, or a row here. Existing `UIP-` rows in
+`docs/KNOWN_BUGS.md` are signals to re-open a screen's row.
 
-**⛔ is provisional.** Only the states the 2026-08-05 audit named explicitly are pre-marked. Every
-phase begins by verifying build status for its own screens against source — a screen is never
-dropped from scope on the strength of a stale audit line.
-
-**Drift watch.** A weekly UI Parity Audit routine was specified on 2026-08-23 but never ran, and its
-prompt was removed on 2026-10-12. Drift is caught by the guardrail suite in CI (`CLAUDE.md` §"Pixel
-parity"). Existing `UIP-` rows in `docs/KNOWN_BUGS.md` are signals to re-open this tracker's row for
-that screen.
+**⛔ is provisional.** Verify a screen's build status against source before dropping it from scope.
 
 Retired designs (`LJ home_launcher`; the nine `RJ` originals) are **absent from the gallery by
 design** and therefore absent below — never align to them. Note `RJM board` and `LJ profile` ARE
-current; only the `RJ` originals were retired.
+current gallery ids; only the `RJ` originals were retired.
 
-**rev 2 added 31 states (the `SH·` shipped-states wave)** — the offline / draft-restore / keyless-
-search / flag-off / permissions / proof-of-pickup / merchant-item-out states the app already ships
-but that had never been designed. They are built-but-unaligned, so they start at ⬜ like any other
-screen; the handoff sheet is `ui_kits/mobile/shipped-states.html` (SH1–SH12).
+**Inventory.** `tools/parity/screens.generated.json` holds 277 gallery screens (customer 122 ·
+rider 100 · merchant 48 · admin 7). The kit sheets below (safety flows, shipped states `SH·`, support,
+new flows) are tracked in their own sections.
 
-Counts: **295 designed states** — customer 122 · rider 98 · merchant 48 · admin 7 · safety sheet 20.
+**Merchant** is a phone web app aligned to `packages/design/handoff/merchant-v2/` (D-77), with
+`merchant-mobile/` (D-48) for the screens v2 doesn't redraw. The gallery `RM` tablet rows are
+superseded wherever v2 redraws the screen; the merchant section below lists the v2 sheets.
+**Admin** (7) is web, built to `ui_kits/admin` and held by the token-conformance and
+screen-inventory guardrails.
 
-## Foundation-F codegen adoption — final status (2026-08-12)
-
-The mobile **structural-snapshot codegen** adoption (`docs/archive/plans/2026-08-11-mock-adoption-program.md`)
-ran to its ceiling. **32 mobile views are guardrail-proven congruent** to their mocks
-(`node tools/parity/codegen/cli.mjs check` = 32/32; the structural-snapshot spec asserts each tree ≡
-the mock's). Foundation tooling built across a→e: render-helper/SHELL unwrap, W-KIT member-tag
-resolution, map/sheet remaps + non-`Screen` slot locator, `RTracker→Stepper`, and the transpiler
-idioms (template-literal border / conditional shadow-spread / mixed text+element siblings).
-
-**Merchant (47 RM) + admin (7)** are **web** (Next/direct-DOM), already built to the mocks in Phase 6
-and enforced by the **token-conformance + screen-inventory** guardrails — the mobile codegen does not
-apply to them; the only open item is a seeded parity instance for *offline-screenshot verification*
-(#674, infra — not a structure gate).
-
-**69 mobile states remain deferred, each with a precise recorded reason** in
-`tools/parity/codegen/adopted.mjs`, in three buckets — none is a codegen gap:
-- **Backend-gated (#670–#674)** — `RC.pay_*` (payment-prompt flow #670), `RC.track_secured`
-  (rider identity #671), `RC.delivered_rate` (dual food+rider ratings/chips #672), discovery
-  ratings/ETA/geo (#673). Owned by the backend session (`apps/api`); adopt when those land.
-- **App re-architecture (sensitive, not codegen)** — the rider board/offer/active screens are aligned
-  to the **superseded `r-rider` kit** and need realigning to the current **RJM** mocks; the parcel
-  **auction** draws bids inline and needs its ranking/select container restructured. Both touch
-  sensitive accept-offer / agreed-price / order-assignment code, so they are a deliberate, separately
-  scoped, regression-tested effort — **not** an autonomous codegen sweep.
-- **Undesigned superset** — live affordances no static mock draws (profile-draft-restored banner,
-  account hub-nav, `on_hold` restore, `generic_error`). Need an upstream mock or descope.
-
-Guardrail suite (token-conformance · screen-inventory · reverse-drift freeze · structural-snapshot)
-is green on `main`; the adopted set is congruent-by-construction and cannot silently regress.
-
-**Rendered-expectation coverage (2026-08-21).** All 67 wired mobile targets now carry a committed
-`tools/parity/expected/<key>.json`, and all 67 reproduce byte-for-byte under
-`node tools/parity/extract-expected.mjs --check`. The 11 `RC.*` targets wired by PR #795 (await_accept,
-cart_empty, item_removed, list_error, list_loading, menu_closed, no_rider, pay_confirmed, refunded,
-rejected, track_prep) had been listed pending with no expectation file extracted at all — which
-`--check` reports as `≠`, indistinguishable from real drift, and which nothing caught because `--check`
-was not in CI. Both holes are closed: `--check` runs as the last step of `parity-render` (non-blocking,
-it needs a browser) and the *blocking* mobile test job now requires an expectation for every wired
-target, an `index.json` that matches the directory, and no expectation outliving its target.
-
-> **Lane wiring ≠ sign-off.** Phase 2 of the screenshot lane (PR for `claude/phase-2-multi-agent`) wired
-> the app side of **47 screens** — the primary populated state of every top-level app route across all
-> four surfaces — so an alignment reviewer can now generate a real side-by-side for them
-> (`cd tools/parity && node pair.mjs --keys <src.id> --out out/sheet`) instead of an app-column
-> "pending". This does **not** advance any status below: a screen still only earns 👁/✅ when its
-> side-by-side is built and the user signs it off. The wiring is the *tool* that makes those sheets
-> cheap to produce; the alignment work and sign-off remain per-screen. Wired keys and their fixtures
-> are listed in `tools/parity/app-targets.mjs`; the coverage summary is in `docs/SCREENSHOT-LANE.md`.
+How sheets are made: `docs/SCREENSHOT-LANE.md`. Wired keys and fixtures:
+`tools/parity/app-targets.mjs`.
 
 ---
 

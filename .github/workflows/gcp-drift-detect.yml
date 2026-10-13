@@ -88,7 +88,7 @@ jobs:
         run: |
           set +e
           if [ -z "$TF_PROD_TFVARS" ]; then
-            echo "::warning::TF_PROD_TFVARS repo secret not set — skipping the terraform-plan probe. Paste the applied terraform.tfvars into that secret to arm it (docs/LAUNCH-EXECUTION-RUNBOOK.md §10)."
+            echo "::warning::TF_PROD_TFVARS repo secret not set — skipping the terraform-plan probe. Paste the applied terraform.tfvars into that secret to arm it (docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §10)."
             echo "exit=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -159,7 +159,7 @@ jobs:
               echo; echo '```'; cat plan-tail.txt; echo '```'; echo "</details>"
             fi
             echo
-            echo "_Read-only audit — nothing was changed. Fix path: console drift → adopt or revert per docs/LAUNCH-EXECUTION-RUNBOOK.md; pending apply → founder runs \`terraform plan && terraform apply\`. (gcp-drift-detect.yml)_"
+            echo "_Read-only audit — nothing was changed. Fix path: console drift → adopt or revert per docs/archive/LAUNCH-EXECUTION-RUNBOOK.md; pending apply → founder runs \`terraform plan && terraform apply\`. (gcp-drift-detect.yml)_"
           } > /tmp/issue-body.md
 
           if [ -n "$EXISTING" ]; then
