@@ -1,5 +1,5 @@
 import type { FunnelKind, FunnelRange, FunnelStep } from "../lib/adminTypes";
-import { fmtDayMonth, fmtDuration } from "../lib/format";
+import { fmtDayMonth, fmtMedian } from "../lib/format";
 
 /**
  * Admin console v2 §4: one happy-path funnel as a strip of step tiles (undrawn; route (b), D-106). Each tile is
@@ -37,7 +37,7 @@ export function FunnelStrip({
         const since = s.since ?? s.timesSince;
         const hint = [
           i === 0 ? null : s.conversionPct != null ? `${s.conversionPct}%` : "—",
-          i > 0 && s.medianMs != null ? fmtDuration(s.medianMs) : null,
+          i > 0 && s.medianMs != null ? fmtMedian(s.medianMs) : null,
         ]
           .filter(Boolean)
           .join(" · ");

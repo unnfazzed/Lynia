@@ -63,7 +63,7 @@ export function shortId(id: string): string {
 }
 
 /** A duration for a funnel median: "45 min", "3 hr", "2 d". Null → "—". */
-export function fmtDuration(ms: number | null | undefined): string {
+export function fmtMedian(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
   const mins = Math.round(ms / 60000);
   if (mins < 1) return "<1 min";
