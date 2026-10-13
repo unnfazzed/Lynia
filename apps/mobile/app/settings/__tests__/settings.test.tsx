@@ -52,6 +52,9 @@ const mockSetOnline = jest.fn(async (online: boolean) => {
 jest.mock("../../../src/auth/auth-context", () => ({ useAuth: () => ({ session: { role: "customer" }, signOut: () => mockSignOut() }) }));
 jest.mock("../../../src/api/riders", () => ({ setOnline: (online: boolean) => mockSetOnline(online) }));
 jest.mock("../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
+// Paynow Phase 1 (ledger D-103): Settings reads the live top-up rails from /wallet/config.
+const mockGetWalletConfig = jest.fn();
+jest.mock("../../../src/api/wallet", () => ({ getWalletConfig: () => mockGetWalletConfig() }));
 
 import { Linking } from "react-native";
 import SettingsScreen from "../index";
@@ -95,6 +98,7 @@ const toggle = (t: renderer.ReactTestRenderer, id: string) => t.root.findAll((n)
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetWalletConfig.mockResolvedValue({ ratePct: 10, floor: 0, graceCredit: 5, minTopUp: 5, maxTopUp: 50, topupFeePct: 2.5, topupRails: ["ecocash"] });
   mockNotifPerms.mockResolvedValue(GRANTED);
   mockLocPerms.mockResolvedValue(GRANTED);
   jest.spyOn(Linking, "openSettings").mockImplementation(mockOpenSettings);
@@ -328,5 +332,17 @@ describe("U39 · the customer web build draws no push state", () => {
     expect(t.root.findAll((n) => n.props.testID === "settings-alerts")).toHaveLength(0);
     // The rest of the screen is unchanged.
     expect(s).toContain('"Personal details"');
+  });
+});
+
+describe("Top-up number sheet (Paynow Phase 1, ledger D-103)", () => {
+  it("InnBucks and O'mari chips read 'Coming soon' and can't be chosen; EcoCash can", async () => {
+    const t = await render(RIDER);
+    const row = t.root.findAll((n) => typeof n.props.onPress === "function" && JSON.stringify(n.props.title ?? "") === JSON.stringify("Top-up number"))[0];
+    await act(async () => row?.props.onPress());
+    const chip = (label: string) => t.root.findAll((n) => n.props.accessibilityLabel === label && n.props.accessibilityRole === "button")[0];
+    expect(chip("EcoCash")?.props.disabled).toBeFalsy();
+    expect(chip("InnBucks · Coming soon")?.props.disabled).toBe(true);
+    expect(chip("O'mari · Coming soon")?.props.disabled).toBe(true);
   });
 });
