@@ -2,9 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
 import { assertRiderCoversCommission, jobCommission, liveCommissionRatePct, ridersWhoCoverCommission } from "./commission-cover";
 
-/** A db stub holding each rider's completed-job count and wallet balance (no row = never topped up). */
-function db(riders: Record<string, { tripsCount: number; balance?: number }>) {
+type Delivered = { orderType: string; agreedFare?: number; suggestedFare?: number; deliveryFee?: number };
+
+/** A db stub holding each rider's completed-job count and wallet balance (no row = never topped up), plus
+ *  any jobs they have `delivered` but not yet closed. */
+function db(riders: Record<string, { tripsCount: number; balance?: number; delivered?: Delivered[] }>) {
   return {
+    order: {
+      findMany: vi.fn(async ({ where }: { where: { riderId: { in: string[] }; status: string } }) =>
+        where.status !== "delivered"
+          ? []
+          : where.riderId.in.flatMap((id) => (riders[id]?.delivered ?? []).map((o) => ({ riderId: id, agreedFare: null, suggestedFare: null, deliveryFee: null, ...o }))),
+      ),
+    },
     rider: {
       findMany: vi.fn(async ({ where }: { where: { profileId: { in: string[] } } }) =>
         where.profileId.in.filter((id) => riders[id]).map((id) => ({ profileId: id, tripsCount: riders[id]!.tripsCount })),
@@ -15,7 +25,7 @@ function db(riders: Record<string, { tripsCount: number; balance?: number }>) {
         where.riderId.in.filter((id) => riders[id]?.balance != null).map((id) => ({ riderId: id, balance: riders[id]!.balance })),
       ),
     },
-  } as unknown as PrismaService & { rider: { findMany: ReturnType<typeof vi.fn> } };
+  } as unknown as PrismaService & { rider: { findMany: ReturnType<typeof vi.fn> }; order: { findMany: ReturnType<typeof vi.fn> } };
 }
 
 describe("jobCommission (owner 2026-10-12: 10% of the biker's fare on every job)", () => {
@@ -52,6 +62,27 @@ describe("ridersWhoCoverCommission — a biker can't take a job whose commission
       10,
     );
     expect([...ok]).toEqual(["cheap"]);
+  });
+  it("counts the commission still owed on delivered-but-not-closed jobs against the balance", async () => {
+    // $1 balance, two delivered parcels at $4 (0.40 each) not yet closed → $0.20 left: a $0.40 job is refused.
+    const two = [{ orderType: "parcel", agreedFare: 4, suggestedFare: 4 }, { orderType: "parcel", agreedFare: 4, suggestedFare: 4 }];
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 40, balance: 1, delivered: two } }), ["a"], 0.4, 10)).has("a")).toBe(false);
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 40, balance: 1.2, delivered: two } }), ["a"], 0.4, 10)).has("a")).toBe(true);
+  });
+  it("delivered-but-not-closed jobs use up the free first jobs", async () => {
+    // 8 completed + 2 delivered = the 10 free jobs are spoken for; the next job needs the balance.
+    const two = [{ orderType: "merchant", deliveryFee: 3 }, { orderType: "merchant", deliveryFee: 3 }];
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 8, delivered: two } }), ["a"], 0.3, 10)).has("a")).toBe(false);
+    // 7 completed + 2 delivered: one free job is still left, and neither pending job is charged.
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 7, delivered: two } }), ["a"], 0.3, 10)).has("a")).toBe(true);
+    // 9 completed + 2 delivered: one pending job falls past the allowance and is owed ($0.30 of $0.50).
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 9, balance: 0.5, delivered: two } }), ["a"], 0.3, 10)).has("a")).toBe(false);
+    expect((await ridersWhoCoverCommission(db({ a: { tripsCount: 9, balance: 0.6, delivered: two } }), ["a"], 0.3, 10)).has("a")).toBe(true);
+  });
+  it("reads every biker's delivered jobs in one query", async () => {
+    const d = db({ a: { tripsCount: 40, balance: 1 }, b: { tripsCount: 40, balance: 1 } });
+    await ridersWhoCoverCommission(d, ["a", "b"], 0.3, 10);
+    expect(d.order.findMany).toHaveBeenCalledTimes(1);
   });
   it("reads nothing and lets everyone through while commission is off", async () => {
     const d = db({});

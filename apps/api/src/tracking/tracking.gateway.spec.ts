@@ -1,5 +1,6 @@
 import type { BoardNewOrderEvent } from "@lynia/shared";
 import { PRESENCE_ESCALATION_MS, WS_EVENTS } from "@lynia/shared";
+import jwt from "jsonwebtoken";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
@@ -1258,5 +1259,118 @@ describe("TrackingGateway.scanPresence (C5 customer mirror)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("TrackingGateway.evictFromOrderRoom (rider removed from an order)", () => {
+  it("takes only that profile's sockets out of only that order's room", async () => {
+    const room = orderRoom("ord-1");
+    const dropped = remoteSocket("rider-old", [room, BOARD_ROOM]);
+    const customer = remoteSocket("cust-1", [room]);
+    const { server, in: inFn } = fakeServer([dropped, customer]);
+    const g = gateway();
+    g.server = server as never;
+
+    await g.evictFromOrderRoom("rider-old", "ord-1");
+
+    expect(inFn).toHaveBeenCalledWith(room);
+    expect(dropped.leave).toHaveBeenCalledTimes(1);
+    expect(dropped.leave).toHaveBeenCalledWith(room);
+    expect(dropped.rooms.has(BOARD_ROOM)).toBe(true);
+    expect(customer.leave).not.toHaveBeenCalled();
+  });
+
+  it("never throws: no server, or a failed lookup", async () => {
+    const g = gateway();
+    await expect(g.evictFromOrderRoom("rider-old", "ord-1")).resolves.toBeUndefined();
+    const server = { in: vi.fn(() => ({ fetchSockets: vi.fn(async () => { throw new Error("adapter down"); }) })) } as unknown;
+    g.server = server as never;
+    await expect(g.evictFromOrderRoom("rider-old", "ord-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("TrackingGateway.subscribeOrder — access re-checked after join", () => {
+  const ORDER = "0d6f1c2a-0000-4000-8000-0000000000aa";
+
+  it("leaves the room and refuses when access is gone by the time the join lands", async () => {
+    const canAccessOrder = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const isAssignedRider = vi.fn(async () => true);
+    const g = gateway({ canAccessOrder, isAssignedRider } as Partial<TrackingService>);
+    const client = fakeSocket({ sub: "rider-old", role: "rider" });
+
+    await expect(g.subscribeOrder(client as never, { orderId: ORDER })).resolves.toEqual({ error: "forbidden" });
+    expect(client.join).toHaveBeenCalledWith(orderRoom(ORDER));
+    expect(client.leave).toHaveBeenCalledWith(orderRoom(ORDER));
+    expect(client.rooms.has(orderRoom(ORDER))).toBe(false);
+    expect(isAssignedRider).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the re-check read errors", async () => {
+    const canAccessOrder = vi.fn().mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("db down"));
+    const g = gateway({ canAccessOrder, isAssignedRider: vi.fn(async () => false) } as Partial<TrackingService>);
+    const client = fakeSocket({ sub: "c1", role: "customer" });
+    await expect(g.subscribeOrder(client as never, { orderId: ORDER })).resolves.toEqual({ error: "forbidden" });
+    expect(client.rooms.has(orderRoom(ORDER))).toBe(false);
+  });
+});
+
+describe("TrackingGateway.handleConnection — socket auth ends with the access token", () => {
+  function connSocket(token?: string) {
+    return {
+      id: "sock-exp",
+      data: {} as Record<string, unknown>,
+      handshake: { auth: token ? { token } : {}, headers: {} },
+      conn: { close: vi.fn() },
+      disconnect: vi.fn(),
+    };
+  }
+  function gatewayWithTokens() {
+    const tokens = { verifyAccess: vi.fn(() => ({ sub: "u1", role: "customer" })) } as unknown as TokenService;
+    return new TrackingGateway({} as Env, tokens, { flushToPg: vi.fn(async () => {}) } as unknown as TrackingService, fakeMetrics());
+  }
+
+  it("closes the connection once the token's exp passes, not before (a transport close the client retries)", () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      const token = jwt.sign({ role: "customer" }, "test-secret", { subject: "u1", expiresIn: 60 });
+      const g = gatewayWithTokens();
+      const client = connSocket(token);
+      g.handleConnection(client as never);
+      expect(client.data.user).toEqual({ sub: "u1", role: "customer" });
+      expect(client.data.authExpiresAt).toBeGreaterThan(now);
+      vi.advanceTimersByTime(59_000);
+      expect(client.conn.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2_000);
+      expect(client.conn.close).toHaveBeenCalledTimes(1);
+      // Not a server-sent disconnect packet, which clients never retry by themselves.
+      expect(client.disconnect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the expiry timer on disconnect", () => {
+    vi.useFakeTimers();
+    try {
+      const token = jwt.sign({ role: "customer" }, "test-secret", { subject: "u1", expiresIn: 60 });
+      const g = gatewayWithTokens();
+      const client = connSocket(token);
+      g.handleConnection(client as never);
+      g.handleDisconnect({ ...client, rooms: new Set() } as never);
+      vi.advanceTimersByTime(120_000);
+      expect(client.conn.close).not.toHaveBeenCalled();
+      expect(client.disconnect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still drops a socket with no token, and sets no timer", () => {
+    const g = gatewayWithTokens();
+    const client = connSocket();
+    g.handleConnection(client as never);
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(client.data.authTimer).toBeUndefined();
   });
 });

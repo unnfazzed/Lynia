@@ -6,7 +6,9 @@
 #                        ACCOUNT (user-delegation SAS), AcrPull.
 #   id-lynia-jobs-<env>  The two cron jobs. No Azure RBAC at all: its only power is the
 #                        Scheduler.Invoke app role (entra.tf) that the API checks.
-#   id-lynia-web-<env>   Admin + merchant. AcrPull, and KV Secrets User on ADMIN-API-TOKEN only.
+#   id-lynia-web-<env>   Admin. AcrPull, and KV Secrets User on ADMIN-API-TOKEN only.
+#   id-lynia-merchant-<env>  The retired merchant container (docs/MERCHANT-WEB.md). AcrPull ONLY —
+#                        no Key Vault role, so it can never read the admin token.
 #
 # CI identities (created by bootstrap.sh in rg-lynia-tfstate; read here):
 #   id-lynia-infra               Terraform. Subscription roles granted by bootstrap.sh.
@@ -35,6 +37,14 @@ resource "azurerm_user_assigned_identity" "web" {
   tags                = local.tags
 }
 
+# Separate from `web` so the merchant app does not hold the admin console's Key Vault access.
+resource "azurerm_user_assigned_identity" "merchant" {
+  name                = local.names.id_merchant
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tags                = local.tags
+}
+
 data "azurerm_user_assigned_identity" "deploy" {
   name                = local.deploy_identity_name
   resource_group_name = var.tfstate_resource_group
@@ -44,8 +54,9 @@ data "azurerm_user_assigned_identity" "deploy" {
 
 resource "azurerm_role_assignment" "acr_pull" {
   for_each = {
-    api = azurerm_user_assigned_identity.api.principal_id
-    web = azurerm_user_assigned_identity.web.principal_id
+    api      = azurerm_user_assigned_identity.api.principal_id
+    web      = azurerm_user_assigned_identity.web.principal_id
+    merchant = azurerm_user_assigned_identity.merchant.principal_id
   }
   scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"

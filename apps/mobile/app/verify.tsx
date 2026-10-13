@@ -6,8 +6,10 @@ import { AccessibilityInfo, AppState, Platform, Text, TextInput, View } from "re
 import { requestOtp, verifyOtp } from "../src/api/auth";
 import { ApiError } from "../src/api/client";
 import { useAuth } from "../src/auth/auth-context";
+import { clearDevCode, peekDevCode } from "../src/auth/dev-code-handoff";
 import { clearSignupIntent, loadSignupIntent } from "../src/auth/device-state";
 import { loadRolePreference, saveRolePreference } from "../src/auth/session";
+import { bootDestination } from "../src/logic/boot-route";
 import { replaceClearingStack } from "../src/logic/nav";
 import { RESEND_COOLDOWN_S, formatCountdown, otpErrorMessage, otpFailure } from "../src/logic/otp";
 import { parseSignInIntent, riderEntry, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
@@ -112,12 +114,18 @@ function ResendRow({ endsAt, label, resending, onResend }: { endsAt: number; lab
  */
 export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, initialLocked = false }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
-  const { signIn } = useAuth();
-  const params = useLocalSearchParams<{ phone?: string; devCode?: string; deliveryChannel?: string; intent?: string }>();
+  const { signIn, session, loading } = useAuth();
+  const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const paramIntent = parseSignInIntent(params.intent);
-  const prefilled = typeof params.devCode === "string" && params.devCode.length > 0;
-  const [code, setCode] = useState(prefilled ? (params.devCode as string) : "");
+  // A test build's code comes from the phone screen in memory (src/auth/dev-code-handoff.ts), never from
+  // the URL: this route is reachable by a link, and a prefilled code submits itself.
+  const [devCode] = useState(() => peekDevCode(phone));
+  const prefilled = devCode != null;
+  const [code, setCode] = useState(devCode ?? "");
+  useEffect(() => {
+    clearDevCode();
+  }, []);
   const [deliveryChannel, setDeliveryChannel] = useState<DeliveryChannel>(asDeliveryChannel(params.deliveryChannel));
   const [busy, setBusy] = useState(false);
   const setError = useActionError();
@@ -139,6 +147,21 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
   // U42: bumped to re-run the auto-submit effect once a non-answer's cause may have gone away.
   const [rearm, setRearm] = useState(0);
   const online = useReachability();
+
+  // Reached with a session already in place (a link opened while signed in): this screen must never swap
+  // the account on the device, so it hands over to the signed-in destination instead. Decided once, the
+  // first time auth has loaded; this screen's own sign-in sets a session later and navigates itself.
+  const sessionChecked = useRef(false);
+  const leaving = useRef(false);
+  useEffect(() => {
+    if (loading || sessionChecked.current) return;
+    sessionChecked.current = true;
+    if (!session) return;
+    leaving.current = true;
+    void loadRolePreference()
+      .catch(() => null)
+      .then((rolePref) => replaceClearingStack(router, bootDestination({ session, onboardingSeen: true, rolePref })));
+  }, [loading, session, router]);
 
   // iOS has no live regions: say the error lines out loud there (Android's accessibilityLiveRegion does).
   useEffect(() => {
@@ -230,7 +253,7 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
   // The sixth digit submits (README §3 "auto-verifies, so there's no Verify button") — the latest code,
   // once nothing is in flight: `busy` is a dependency so a code completed mid-request goes when it ends.
   useEffect(() => {
-    if (busy || locked || code.length !== CODE_LENGTH || tried.current === code) return;
+    if (leaving.current || busy || locked || code.length !== CODE_LENGTH || tried.current === code) return;
     void submit(code);
   }, [code, locked, busy, rearm]);
 

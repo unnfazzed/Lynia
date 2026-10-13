@@ -50,6 +50,7 @@ locals {
     id_api           = "id-lynia-api-${local.env_short}"
     id_jobs          = "id-lynia-jobs-${local.env_short}"
     id_web           = "id-lynia-web-${local.env_short}"
+    id_merchant      = "id-lynia-merchant-${local.env_short}"
   }
 
   # CI identities, created by bootstrap.sh in rg-lynia-tfstate (E14).

@@ -146,5 +146,7 @@ export async function uploadPhotoBlob(
     throw new Error("The upload timed out — check your connection and try again.", { cause: err });
   }
   getReachabilityStore(API_BASE_URL).reportReachable();
-  if (!res.ok) throw new Error(`Photo upload failed (${res.status}).`);
+  // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 (the blob
+  // exists). The bytes are there, and attach verifies them, so that is a success (E13).
+  if (!res.ok && res.status !== 409) throw new Error(`Photo upload failed (${res.status}).`);
 }

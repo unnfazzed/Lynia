@@ -134,7 +134,7 @@ describe("UploadsController on Azure (C1) — headers come from the adapter", ()
     const res = await c.bannerPhoto({ contentType: "image/png" }, "owner-1");
     expect(spy.mock.calls[0]![3]).toBe(250 * 1024);
     expect(res.headers).toEqual({ "Content-Type": "image/png", "x-ms-blob-type": "BlockBlob" });
-    expect(new URL(res.uploadUrl).searchParams.get("sp")).toBe("cw");
+    expect(new URL(res.uploadUrl).searchParams.get("sp")).toBe("c");
   });
 });
 

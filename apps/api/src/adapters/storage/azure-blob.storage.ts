@@ -7,7 +7,7 @@ import {
   type UserDelegationKey,
 } from "@azure/storage-blob";
 import { Logger } from "@nestjs/common";
-import { assertSafeObjectKey, UPLOAD_KINDS } from "./upload-kinds";
+import { assertSafeObjectKey, imageContentTypeFor, UPLOAD_KINDS } from "./upload-kinds";
 import { ObjectTooLargeError, type CloudProvider, type ObjectStat, type StorageAdapter, type StoredObject, type UploadTarget } from "./storage.interface";
 
 /** Clock-skew allowance on every SAS and on the delegation key (C1): a phone or edge node running a
@@ -83,17 +83,20 @@ export class AzureBlobStorage implements StorageAdapter {
     expiresInSeconds = UPLOAD_SAS_MAX_SECONDS,
     _maxBytes?: number,
   ): Promise<UploadTarget> {
-    // `cw`, not create-only `c` (E13): a network retry of a PUT that already landed would 409 on `c`, and
-    // shipped binaries report that as a failure. The key is server-generated and unique per mint, and the
-    // attach-time etag makes a later overwrite detectable. `maxBytes` cannot be bound into a SAS — the
-    // attach-time stat enforces the per-kind cap instead.
-    const url = await this.sasUrl(key, "cw", Math.min(expiresInSeconds, UPLOAD_SAS_MAX_SECONDS));
+    // Create-only `c`, never `w`: once a blob exists at the key, this SAS cannot replace it, so the bytes
+    // the attach-time check verified (size, type, magic bytes) are the bytes every later read serves. A
+    // network retry of a PUT that already landed answers 409 (BlobAlreadyExists); the clients treat that
+    // as success (E13), and attach still verifies whatever is stored. `maxBytes` cannot be bound into a
+    // SAS — the attach-time stat enforces the per-kind cap instead.
+    const url = await this.sasUrl(key, "c", Math.min(expiresInSeconds, UPLOAD_SAS_MAX_SECONDS));
     return { url, key, headers: { "Content-Type": contentType, "x-ms-blob-type": "BlockBlob" } };
   }
 
   async createReadUrl(key: string, expiresInSeconds = DEFAULT_READ_SECONDS): Promise<string> {
     const ttl = key.startsWith(UPLOAD_KINDS.kyc.prefix) ? Math.min(expiresInSeconds, KYC_READ_SAS_MAX_SECONDS) : expiresInSeconds;
-    return this.sasUrl(key, "r", ttl);
+    // Every stored object is a JPEG/PNG photo (or its JPEG thumb). Pin the response headers into the SAS so
+    // the storage origin always serves the blob as an inline image, whatever Content-Type the uploader set.
+    return this.sasUrl(key, "r", ttl, { contentType: imageContentTypeFor(key), contentDisposition: "inline" });
   }
 
   async stat(key: string): Promise<ObjectStat | null> {
@@ -158,7 +161,12 @@ export class AzureBlobStorage implements StorageAdapter {
   }
 
   /** One blob, one permission set, https only (S4). The SAS never outlives the key that signs it. */
-  private async sasUrl(key: string, permissions: "cw" | "r", ttlSeconds: number): Promise<string> {
+  private async sasUrl(
+    key: string,
+    permissions: "c" | "r",
+    ttlSeconds: number,
+    responseHeaders: { contentType?: string; contentDisposition?: string } = {},
+  ): Promise<string> {
     assertSafeObjectKey(key);
     const now = this.now();
     const wantExpiry = now + ttlSeconds * 1000;
@@ -172,6 +180,7 @@ export class AzureBlobStorage implements StorageAdapter {
         startsOn: new Date(now - CLOCK_SKEW_MS),
         expiresOn,
         protocol: SASProtocol.Https,
+        ...responseHeaders,
       },
       delegation,
       this.opts.account,

@@ -1,6 +1,6 @@
 import { AttachMerchantDoorProofRequest, MerchantDishRequest, PrescriptionInput, UpdateMerchantDishRequest, UpdateMerchantProfileRequest } from "@lynia/shared";
 import { describe, expect, it } from "vitest";
-import { assertSafeObjectKey, isMintedUploadKey, isOwnedUploadKey, isSafeObjectKey, UnsafeObjectKeyError } from "./upload-kinds";
+import { assertSafeObjectKey, imageContentTypeFor, isMintedUploadKey, isOwnedUploadKey, isSafeObjectKey, UnsafeObjectKeyError } from "./upload-kinds";
 
 /** D7 review (2026-10-07): the Azure SDK resolves `dish/me/../../kyc/victim/x.jpg` to the victim's blob,
  *  so a key that merely starts with the caller's namespace is not proof of ownership. */
@@ -53,5 +53,15 @@ describe("upload key checks (D7 review)", () => {
     expect(AttachMerchantDoorProofRequest.safeParse({ key: bad, reason: "left_at_gate" }).success).toBe(false);
     // A minted key still passes.
     expect(UpdateMerchantDishRequest.safeParse({ photoUrl: `dish/p1/${UUID}.jpg` }).success).toBe(true);
+  });
+});
+
+describe("imageContentTypeFor (read URLs always serve an image type)", () => {
+  it("maps .png to PNG and every other key, thumbs included, to JPEG", () => {
+    expect(imageContentTypeFor("dish/o/a.png")).toBe("image/png");
+    expect(imageContentTypeFor("dish/o/a.PNG")).toBe("image/png");
+    expect(imageContentTypeFor("kyc/r/a.jpg")).toBe("image/jpeg");
+    expect(imageContentTypeFor("dish/o/a.png.thumb.jpg")).toBe("image/jpeg");
+    expect(imageContentTypeFor("legacy/no-extension")).toBe("image/jpeg");
   });
 });

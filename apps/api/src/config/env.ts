@@ -167,6 +167,19 @@ export const envSchema = z.object({
   OTP_RL_IP_MAX: z.coerce.number().int().positive().default(200), // per IP, per hour
   OTP_RL_GLOBAL_MAX: z.coerce.number().int().positive().default(500), // all senders, per day
   OTP_RL_DEVICE_SIGNUP_MAX: z.coerce.number().int().positive().default(3), // NEW accounts per device, per day
+  // The E.164 calling codes `POST /auth/otp/request` sends a code to, comma-separated ("263" or
+  // "263,27"; a leading "+" is accepted). A number in any other calling code is refused before any
+  // rate-limit or provider spend. Defaults to the launch market.
+  OTP_ALLOWED_COUNTRY_CODES: z
+    .string()
+    .default("263")
+    .refine(
+      (v) => {
+        const entries = v.split(",").map((e) => e.trim());
+        return entries.length > 0 && entries.every((e) => /^\+?\d{1,3}$/.test(e));
+      },
+      { message: 'OTP_ALLOWED_COUNTRY_CODES must be a comma-separated list of 1–3 digit calling codes, e.g. "263" or "263,27"' },
+    ),
   // E4: WhatsApp default, SMS behind a flag (schedule insurance vs BSP delay). "bird" delivers the OTP
   // as an SMS via bird.com (product decision 2026-07-18) while WhatsApp Business verification is pending;
   // "local-sms" delivers via a local A2P gateway (the Zimbabwe fallback for when Bird's international

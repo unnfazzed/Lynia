@@ -61,7 +61,7 @@ jobs:
       HOST: merchant.lyniago.com
       ZONE: lyniago.com
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -74,9 +74,9 @@ jobs:
           [ "$REF" = "refs/heads/main" ] || { echo "::error::The merchant web deploys from main only (got ${REF})."; exit 1; }
           [ -n "$CF_TOKEN" ] || { echo "::error::CLOUDFLARE_WORKERS_API_TOKEN is not set. It must be a production ENVIRONMENT secret (docs/WEBSITE.md § One-time setup)."; exit 1; }
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm

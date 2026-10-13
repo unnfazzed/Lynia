@@ -74,7 +74,7 @@ jobs:
     env:
       TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve target
         id: target
@@ -107,7 +107,7 @@ jobs:
           bash scripts/azure-target.sh "$TIER" CLIENT_ID RG ACR REGISTRY APP API_BASE_URL ALLOWED_OPERATORS
 
       - name: Azure login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -117,7 +117,7 @@ jobs:
         run: az acr login --name "$ACR"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Build once and LOAD locally so the boot smoke runs the exact image that ships.
       - name: Build admin image (load for smoke)

@@ -25,12 +25,14 @@ function fakeGateway() {
   return {
     emitOrderStatus: vi.fn(),
     evictRiderFromSupply: vi.fn(async () => {}),
+    evictFromOrderRoom: vi.fn(async () => {}),
     emitFoodOffer: vi.fn(async () => {}),
     emitFoodOfferClosed: vi.fn(async () => {}),
     emitFoodQueueChanged: vi.fn(),
   } as unknown as TrackingGateway & {
     emitOrderStatus: ReturnType<typeof vi.fn>;
     evictRiderFromSupply: ReturnType<typeof vi.fn>;
+    evictFromOrderRoom: ReturnType<typeof vi.fn>;
     emitFoodOffer: ReturnType<typeof vi.fn>;
     emitFoodOfferClosed: ReturnType<typeof vi.fn>;
     emitFoodQueueChanged: ReturnType<typeof vi.fn>;
@@ -459,7 +461,7 @@ describe("FoodDispatchService.acceptDispatch — D-04 biker secured, first to ac
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc } = build(
       {
-        order: { findFirst: async () => ({ ...liveOrder, deliveryFee: 3 }), updateMany: orderUpdateMany },
+        order: { findFirst: async () => ({ ...liveOrder, deliveryFee: 3 }), updateMany: orderUpdateMany, findMany: async () => [] },
         foodDispatchAttempt: { findUnique: async () => pendingRow },
         rider: { findMany: async () => [{ profileId: "r1", tripsCount: 30 }], findUnique: goodRider.findUnique },
         commissionAccount: { findMany: async () => [{ riderId: "r1", balance: 0.29 }] },
@@ -633,6 +635,9 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
     );
     expect(riderUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cancelStrikes: 1 }) }));
     expect(gateway.evictRiderFromSupply).not.toHaveBeenCalled(); // strike 1 of 3 — no cooldown yet
+    // The dropped rider's sockets leave the order room after the commit (the next rider's position and
+    // the order's status no longer reach them).
+    expect(gateway.evictFromOrderRoom).toHaveBeenCalledWith("r1", orderId);
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId); // C5: merchant sees the drop without waiting for the poll
   });
 
@@ -670,7 +675,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
   // applied against a drop that didn't actually happen.
   it("409s 'Order changed, retry' when the in-transaction CAS loses a race", async () => {
     const riderUpdate = vi.fn(async () => ({}));
-    const { svc } = build(
+    const { svc, gateway } = build(
       {
         order: {
           findFirst: async () => ({ status: "assigned", dispatchExcludedRiderIds: [], merchantId: MERCHANT_ID }),
@@ -682,6 +687,7 @@ describe("FoodDispatchService.dropDispatch — D-33 pre-pickup only", () => {
     );
     await expect(svc.dropDispatch(orderId, "r1")).rejects.toThrow(/order changed, retry/i);
     expect(riderUpdate).not.toHaveBeenCalled();
+    expect(gateway.evictFromOrderRoom).not.toHaveBeenCalled(); // nothing committed — the rider keeps the room
   });
 });
 

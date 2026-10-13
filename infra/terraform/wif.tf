@@ -34,15 +34,20 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   # Verify with a no-environment job on a scratch branch before arming, and confirm the plan says
   # "update in-place", never "must be replaced".
   attribute_mapping = {
-    "google.subject"        = "assertion.sub"
-    "attribute.repository"  = "assertion.repository"
-    "attribute.environment" = "has(assertion.environment) ? assertion.environment : \"none\""
-    "attribute.ref"         = "has(assertion.ref) ? assertion.ref : \"none\""
+    "google.subject"           = "assertion.sub"
+    "attribute.repository"     = "assertion.repository"
+    "attribute.environment"    = "has(assertion.environment) ? assertion.environment : \"none\""
+    "attribute.ref"            = "has(assertion.ref) ? assertion.ref : \"none\""
     # Composite claim so privileged principalSets can be REPO-qualified. Binding the provisioner to
     # attribute.environment/infra alone would match ANY identity in this pool carrying an `infra`
     # environment — adding a second provider to github-pool later would silently widen it to another
     # repo's `infra` environment. repo_env pins repo AND environment in one value.
-    "attribute.repo_env"    = "assertion.repository + \":\" + (has(assertion.environment) ? assertion.environment : \"none\")"
+    "attribute.repo_env"       = "assertion.repository + \":\" + (has(assertion.environment) ? assertion.environment : \"none\")"
+    # "<repo>:trusted" only for a token from main, or from a job in the reviewed staging/production
+    # Environments (whose own branch policies apply — rollback.yml stays usable from a hotfix branch).
+    # deployer_wif binds to this value, so a no-environment job on any other ref cannot reach the
+    # deployer SA. Adding a mapped attribute is an in-place provider update.
+    "attribute.deployer_trust" = "assertion.repository + \":\" + (((has(assertion.ref) && assertion.ref == \"refs/heads/main\") || (has(assertion.environment) && (assertion.environment == \"staging\" || assertion.environment == \"production\"))) ? \"trusted\" : \"untrusted\")"
   }
 
   # Hard gate: only OIDC tokens minted for THIS repo may use the provider.
@@ -62,9 +67,13 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
-# Allow workflows from the repo to impersonate the deployer SA.
+# Allow this repo's workflows to impersonate the deployer SA — but only from main or from the
+# staging/production Environments (attribute.deployer_trust above). Covers every current user:
+# release/deploy-admin/deploy-staging/rollback (environment-gated) and gcp-diagnose,
+# gcp-drift-detect and terraform-apply's plan job (no environment; dispatch/schedule on main).
+# Changing `member` replaces this binding (destroy + create) on apply.
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.deployer_trust/${var.github_repository}:trusted"
 }

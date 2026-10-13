@@ -54,7 +54,7 @@ jobs:
       TIER: ${{ inputs.environment }}
       RECAP: /tmp/recap.txt
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve target
         id: target
@@ -86,7 +86,7 @@ jobs:
             RETENTION_JOB WALLET_JOB MIGRATE_JOB HEALTH_URL LAW_ID
 
       - name: Azure login (OIDC)
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ steps.target.outputs.client_id }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}

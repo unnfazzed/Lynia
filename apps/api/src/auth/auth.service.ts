@@ -11,7 +11,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { COMMISSION, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
+import { COMMISSION, DEFAULT_COUNTRY_CODE, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -91,6 +91,13 @@ const rlFrom = (env: Env) => ({
   // create an account (see verifyOtp), so this can no longer be skipped by omitting the header.
   deviceSignup: { max: env.OTP_RL_DEVICE_SIGNUP_MAX, windowSec: 86400 },
 });
+// The calling codes an OTP may be sent to (OTP_ALLOWED_COUNTRY_CODES, comma-separated, validated in
+// config/env.ts). Falls back to the launch market when the var is absent.
+const otpAllowedCountryCodes = (env: Env): string[] =>
+  (env.OTP_ALLOWED_COUNTRY_CODES ?? DEFAULT_COUNTRY_CODE)
+    .split(",")
+    .map((e) => e.trim().replace(/^\+/, ""))
+    .filter((e) => /^\d{1,3}$/.test(e));
 // L0 recycle-detection: a re-verify of an EXISTING account from a device never seen for it, after this
 // long without a fresh session, is flagged as a possible SIM recycle (non-destructive signal only).
 const RECYCLE_DORMANCY_MS = 90 * 24 * 60 * 60 * 1000;
@@ -413,13 +420,32 @@ export class AuthService {
     if (this.isDemoPhone(phone)) {
       return { sent: true, channel: this.env.OTP_CHANNEL, deliveryChannel: previewDeliveryChannel(this.env.OTP_CHANNEL) };
     }
+    // Codes are only sent to the calling codes the service operates in (OTP_ALLOWED_COUNTRY_CODES).
+    // Checked before the rate limiters so a refused number spends no budget. An OTP_TEST_PHONES entry
+    // is an operator-listed number and is exempt.
+    if (!this.isAllowedOtpDestination(phone) && !this.isTestPhone(phone)) {
+      throw new BadRequestException("Enter a valid phone number");
+    }
     const rl = rlFrom(this.env);
     const rlKeys = [`rl:phone:${phone}`, `rl:ip:${ip}`, "rl:global"];
     // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
     // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
-    await this.enforceRate(rlKeys[0], rl.phone, "otp_send_limit");
-    await this.enforceRate(rlKeys[1], rl.ip);
-    await this.enforceRate(rlKeys[2], rl.global);
+    const rlSteps: Array<[string, { max: number; windowSec: number }, string?]> = [
+      [rlKeys[0], rl.phone, "otp_send_limit"],
+      [rlKeys[1], rl.ip],
+      [rlKeys[2], rl.global],
+    ];
+    // Each bucket is charged in turn. When one refuses, every bucket this request already charged
+    // (the refusing one included) is given back, so a refused request spends nothing — otherwise a
+    // request turned away by the per-IP or global cap would still have used up the phone's allowance.
+    for (const [i, [key, limit, reason]] of rlSteps.entries()) {
+      try {
+        await this.enforceRate(key, limit, reason);
+      } catch (err) {
+        await Promise.all(rlKeys.slice(0, i + 1).map((k) => this.store.unhit(k).catch(() => undefined)));
+        throw err;
+      }
+    }
     // Only a send that went out spends the budget: a failed one is refunded, or a vendor outage would
     // lock every retrying user out for the hour (E2E 2026-10-05 FS-6). Charging up front, rather than
     // after, keeps concurrent requests from all slipping under the cap together.
@@ -480,6 +506,14 @@ export class AuthService {
   }
 
   /**
+   * Whether `phone` (E.164) is in a calling code listed in OTP_ALLOWED_COUNTRY_CODES (comma-separated,
+   * default "263"). E.164 calling codes are prefix-free, so a prefix match on `+<code>` is exact.
+   */
+  private isAllowedOtpDestination(phone: string): boolean {
+    return otpAllowedCountryCodes(this.env).some((cc) => phone.startsWith(`+${cc}`));
+  }
+
+  /**
    * The reserved demo accounts (docs/PLAY-STORE-SUBMISSION.md §7.1), E.164-normalized. Armed ONLY
    * when BOTH env vars are set (each entry enforced well-formed by the config boot-guard); either
    * unset → the whole path is inert and `isDemoPhone` is always false, so the ordinary OTP flow is
@@ -536,8 +570,9 @@ export class AuthService {
       where: { phone },
       update: { phoneVerifiedAt: new Date() },
       create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
-      select: { id: true, role: true, firstName: true },
+      select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
     });
+    this.assertMaySignIn(profile);
     const session = await this.issueSession(profile.id, profile.role, userAgent, device);
     // Audit trail: a demo sign-in is a real production session on a privileged bypass path, so make it
     // visible in the logs (the code is never logged). Masked phone, like the rest of this file.
@@ -645,9 +680,10 @@ export class AuthService {
         where: { phone },
         update: { phoneVerifiedAt: new Date() },
         create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
-        select: { id: true, role: true, firstName: true },
+        select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
       });
 
+      this.assertMaySignIn(profile);
       const session = await this.issueSession(profile.id, profile.role, userAgent, device);
       record("ok");
       return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
@@ -789,6 +825,11 @@ export class AuthService {
     // this is a no-op for them. Hard reject, never graced — a demoted rider can't lost-response-heal either.
     const standing = s.profile.rider?.accountStatus;
     if (standing === RiderAccountStatus.SUSPENDED || standing === RiderAccountStatus.BANNED) {
+      throw new UnauthorizedException("Account is not active");
+    }
+    // Admin API access is the operator token only; a session row for an admin-role profile (minted
+    // before sign-in refused them, or by any other path) is never renewed.
+    if (s.profile.role === "admin") {
       throw new UnauthorizedException("Account is not active");
     }
 
@@ -976,7 +1017,7 @@ export class AuthService {
     // Plain read, and re-derive needsProfile the same way as the happy path.
     let profile = await this.prisma.profile.findUnique({
       where: { phone },
-      select: { id: true, role: true, firstName: true },
+      select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
     });
     if (!profile) {
       // The original verify was refused for a device reason (no device id, the per-device signup cap)
@@ -988,11 +1029,39 @@ export class AuthService {
         where: { phone },
         update: { phoneVerifiedAt: new Date() },
         create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
-        select: { id: true, role: true, firstName: true },
+        select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
       });
     }
+    this.assertMaySignIn(profile);
     const session = await this.issueSession(profile.id, profile.role, userAgent, device);
     return { ...session, profileId: profile.id, role: profile.role, needsProfile: profile.firstName === "" };
+  }
+
+  /**
+   * Whether a profile whose code has just been proven may be handed a session (verifyOtp, its grace
+   * retry and the demo path). Runs only after the code is checked, so it tells nothing to a caller who
+   * doesn't hold it. The `{ reason, message }` body is the one the order and booking standing gates
+   * throw, which the app routes by `reason` and otherwise shows the message of.
+   *  - A suspended or banned rider: refresh() already refuses to renew their session, so a fresh
+   *    sign-in must not mint one either.
+   *  - An admin profile: admin API access is the operator token only, never a phone session.
+   */
+  private assertMaySignIn(profile: { role: string; rider?: { accountStatus: string } | null }): void {
+    const standing = profile.rider?.accountStatus;
+    if (standing === RiderAccountStatus.SUSPENDED || standing === RiderAccountStatus.BANNED) {
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        reason: standing === RiderAccountStatus.BANNED ? "account_banned" : "account_suspended",
+        message: "Your account is not in good standing.",
+      });
+    }
+    if (profile.role === "admin") {
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        reason: "admin_sign_in_refused",
+        message: "This account can't sign in to the app.",
+      });
+    }
   }
 
   private async issueSession(profileId: string, role: string, userAgent?: string, deviceId?: string): Promise<SessionTokens> {
