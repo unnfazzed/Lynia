@@ -1,6 +1,6 @@
 # Plan: Admin console v2 — find people off the happy path, approve merchants, track the money
 
-Status: **DRAFT for owner review** · Date: 2026-10-13
+Status: **APPROVED (owner, 2026-10-13)** with the §11 answers · Date: 2026-10-13
 Scope: `apps/admin`, the `apps/api` admin surface, and the data the API must start recording.
 Source: a code review of every console route, admin endpoint, the Prisma schema and the KYC / onboarding / merchant / wallet flows.
 The docs were not used as a source; they are behind the code.
@@ -209,14 +209,14 @@ that don't scroll sideways, 32px chips. A responsive console changes drawn geome
 
 ---
 
-## 11. Decisions for the owner
+## 11. Owner decisions (2026-10-13)
 
-1. New admin screens: route **(a)** or **(b)** in §10? (Recommendation: **b**, like Paynow.)
-2. A phone-usable console (collapsing sidebar, tables that scroll sideways): yes or no?
-3. Count pending commission at accept (stops stacking into a negative balance): yes or no?
-4. Roles (ops / finance / owner) and the two-person threshold: are $20, bans and write-offs right?
-5. Pharmacy licence upload as a hard go-live requirement: yes or no?
-6. The Nudge action: push only, or push + SMS?
+1. New admin screens: **route (b)**. Build from the existing admin kit primitives and record them in one `docs/DESIGN-DEVIATIONS.md` entry.
+2. Phone-usable console: **yes**, in its own PR with a ledger entry.
+3. Unfinished commission: **open**. The recommendation is to charge at delivery, not at completion (its own PR, with regression tests).
+4. Roles and the two-person rule: **later**. The owner is the only operator for now, so PR 8 waits.
+5. Pharmacy licence before go-live: **yes** (the recommendation).
+6. Nudge: **push only**, no SMS.
 
 ---
 
