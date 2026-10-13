@@ -570,3 +570,62 @@ export interface RiderRosterRow {
   tripsCount: number;
   cooldownUntil: string | null;
 }
+
+/* ── Audit viewer, search, timelines (admin console v2 PR 3, plan §4 / §8) ─────────────── */
+
+/** What an audit row's `target` names (GET /admin/audit). `other` = a free-text target with no record behind it. */
+export type AuditTargetType = "rider" | "customer" | "order" | "merchant" | "issue" | "sos" | "topup" | "other";
+
+export interface AuditRow {
+  id: string;
+  at: string;
+  actor: { id: string; name: string; href: string | null };
+  action: string;
+  /** Short past-tense label ("Suspended"), server-written. */
+  actionLabel: string;
+  target: { type: AuditTargetType; id: string; label: string; href: string | null };
+  reasonCode: string | null;
+  note: string | null;
+  amount: string | null;
+  before: unknown;
+  after: unknown;
+}
+
+/** GET /admin/audit — newest first; pass `nextCursor` back as `?cursor=` for the next page. */
+export interface AuditList {
+  rows: AuditRow[];
+  nextCursor: string | null;
+}
+
+export interface SearchHit {
+  id: string;
+  label: string;
+  sub: string;
+  href: string;
+}
+
+/** GET /admin/search?q= — capped per group. */
+export interface SearchResults {
+  q: string;
+  tooShort: boolean;
+  total: number;
+  groups: { bikers: SearchHit[]; customers: SearchHit[]; merchants: SearchHit[]; orders: SearchHit[]; topups: SearchHit[] };
+}
+
+export type TimelineKind = "order" | "event" | "kyc" | "audit" | "topup" | "wallet";
+
+export interface TimelineRow {
+  key: string;
+  at: string;
+  kind: TimelineKind;
+  line: string;
+  tone: "good" | "bad" | "mut" | "";
+  ref: { label: string; href: string } | null;
+  by: string | null;
+}
+
+/** GET /admin/people/:id/timeline and /admin/merchants/:id/timeline. */
+export interface TimelinePage {
+  rows: TimelineRow[];
+  nextCursor: string | null;
+}

@@ -9,6 +9,7 @@ import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../
 import { IconAlert, IconPackage, IconPhone } from "../../components/icons";
 import { ResolveHandshakeButton } from "../../merchants/ResolveHandshakeButton";
 import { RecordLink } from "../../components/links";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { enumLabel, fmtDate, fmtDateTime, money, shortId } from "../../lib/format";
 
 const DEBT_STATUS_LABEL: Record<string, string> = {
@@ -107,7 +108,10 @@ function deriveSteps(o: OrderDetail): Step[] {
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const res = await adminFetchResult<OrderDetail & { fareProvenance?: FareProvenance | null }>(`/admin/orders/${id}`);
+  const [res, audit] = await Promise.all([
+    adminFetchResult<OrderDetail & { fareProvenance?: FareProvenance | null }>(`/admin/orders/${id}`),
+    fetchAuditFor(id),
+  ]);
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -494,6 +498,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
         </div>
       </div>
+
+      {/* Admin console v2 §8: the ops and system actions recorded on this order. */}
+      <AuditCard target={o.id} list={audit} />
     </main>
   );
 }

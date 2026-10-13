@@ -11,6 +11,8 @@ import { WalletCreditButton } from "./WalletActions";
 import { OrderLink } from "../../components/links";
 import { enumLabel, fmtDateTime, money } from "../../lib/format";
 import { ReportsCallout } from "../../components/ReportsCallout";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
+import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
@@ -50,6 +52,7 @@ export default async function RiderProfilePage({
   const sp = await searchParams;
   const rawWalletCursor = sp.walletCursor;
   const walletCursor = typeof rawWalletCursor === "string" ? rawWalletCursor : undefined;
+  const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
   const res = await adminFetchResult<RiderDetail>(`/admin/riders/${id}`);
 
   if (!("data" in res)) {
@@ -81,9 +84,12 @@ export default async function RiderProfilePage({
   // DOC-16-03: the prepaid-wallet view (balance + a ledger page). Best-effort — null if the endpoint is
   // absent (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
   // LC-D07: `walletCursor` pages further back past the first 20 entries via the "Load older" link below.
-  const wallet = await adminFetch<WalletView>(
-    `/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`,
-  );
+  // Admin console v2 §4 / §8: the timeline and the audit rows load alongside it, each best-effort the same way.
+  const [wallet, timeline, audit] = await Promise.all([
+    adminFetch<WalletView>(`/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`),
+    fetchTimeline(`/admin/people/${id}/timeline?as=rider`, tlCursor),
+    fetchAuditFor(id),
+  ]);
 
   // `commission_freeze` state (design OV-4A). `undefined` today for EVERY rider — no admin read surface
   // reports `Rider.heldReason`, so this is "unknown", never "not frozen" (see `WalletView.frozen`).
@@ -354,6 +360,14 @@ export default async function RiderProfilePage({
         </div>
       </div>
 
+      {/* Admin console v2 §4 / §8: everything that happened to this biker, then the ops actions on them. */}
+      <TimelineCard
+        page={timeline}
+        cursor={tlCursor}
+        pageHref={(c) => `/riders/${id}?tlCursor=${encodeURIComponent(c)}`}
+        resetHref={`/riders/${id}`}
+      />
+      <AuditCard target={id} list={audit} />
     </main>
   );
 }

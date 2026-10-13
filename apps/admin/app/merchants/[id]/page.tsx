@@ -11,6 +11,8 @@ import { GoLiveButton } from "../GoLiveButton";
 import { OrderSettingsCard } from "../OrderSettingsCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
 import { OrderLink, RecordLink } from "../../components/links";
+import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
+import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { fmtDateTime, money, shortId } from "../../lib/format";
 
 const DEBT_TYPE_LABEL: Record<MerchantDebtLedgerRow["type"], string> = {
@@ -39,9 +41,13 @@ export default async function MerchantProfilePage({
   const rawDebtCursor = sp.debtCursor;
   // LC-D-T1: `debtCursor` pages further back past the first 30 entries via the "Load older" link below.
   const debtCursor = typeof rawDebtCursor === "string" ? rawDebtCursor : undefined;
-  const res = await adminFetchResult<MerchantDetail>(
-    `/admin/merchants/${id}${debtCursor ? `?debtCursor=${encodeURIComponent(debtCursor)}` : ""}`,
-  );
+  const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
+  // Admin console v2 §4 / §8: the venue's timeline and audit rows load alongside the profile, best-effort.
+  const [res, timeline, audit] = await Promise.all([
+    adminFetchResult<MerchantDetail>(`/admin/merchants/${id}${debtCursor ? `?debtCursor=${encodeURIComponent(debtCursor)}` : ""}`),
+    fetchTimeline(`/admin/merchants/${id}/timeline`, tlCursor),
+    fetchAuditFor(id),
+  ]);
 
   if (!("data" in res)) {
     const reason = res.reason;
@@ -254,6 +260,14 @@ export default async function MerchantProfilePage({
           </div>
         ) : null}
       </section>
+
+      <TimelineCard
+        page={timeline}
+        cursor={tlCursor}
+        pageHref={(c) => `/merchants/${id}?tlCursor=${encodeURIComponent(c)}`}
+        resetHref={`/merchants/${id}`}
+      />
+      <AuditCard target={id} list={audit} />
     </main>
   );
 }

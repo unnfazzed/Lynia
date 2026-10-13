@@ -94,6 +94,10 @@ GPS inside `data` follows `GPS_RETENTION_DAYS`.
 
 ## 4. "Find them": the happy paths and the stuck lists
 
+> **Shipped in PR 3:** global search (`GET /admin/search`, `/search`, the box above every page / in the phone menu) and the
+> merged person timeline (`GET /admin/people/:id/timeline`, `GET /admin/merchants/:id/timeline`) on the biker, customer and
+> merchant pages. Funnels, stuck lists and Nudge are PR 5.
+
 One new page, **People**, plus a **global search** in the top bar (phone, name, order id, Paynow reference).
 Every person has one timeline that merges orders, events, audit rows, KYC and top-ups.
 
@@ -171,6 +175,9 @@ rate, hours open vs scheduled, rating, open debt.
 
 - **Roles:** `ops` (orders, people, KYC, merchants), `finance` (wallet, top-ups, credits, write-offs), `owner` (everything plus config). Map each role to a console identity; the API checks the role for each route.
 - **Audit viewer:** `GET /admin/audit?target=&actor=&action=&from=` and an Audit tab on every person, order and merchant.
+  **Shipped in PR 3:** `GET /admin/audit` (+ `targetType`, `to`, keyset `cursor`; Harare-day `from`/`to`), `/audit`, and an
+  Audit card on the biker, customer, order and merchant pages; indexes `audit_logs (actor, created_at)` and
+  `(target, created_at)` (migrations 0098–0099).
 - **Two-person rule** for credits above $20, reversals, bans and write-offs. Proposed values; the owner sets them.
 
 ---

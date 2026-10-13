@@ -32,6 +32,9 @@ const HOT_PATH_INDEXES = [
   { model: "Order", attr: "@@index([orderType, createdAt])", table: "orders", columns: `"order_type", "created_at"` },
   { model: "OrderEvent", attr: "@@index([status, createdAt])", table: "order_events", columns: `"status", "created_at"` },
   { model: "Offer", attr: "@@index([createdAt])", table: "offers", columns: `"created_at"` },
+  // Admin console v2 §8: the audit viewer and the person timeline page audit rows by actor / target (0098–0099).
+  { model: "AuditLog", attr: "@@index([actor, createdAt])", table: "audit_logs", columns: `"actor", "created_at"` },
+  { model: "AuditLog", attr: "@@index([target, createdAt])", table: "audit_logs", columns: `"target", "created_at"` },
 ];
 
 describe("hot-path indexes", () => {

@@ -4,7 +4,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
 import { IAP_SIGNOUT_URL } from "../lib/console-auth";
-import { IconAlert, IconBanknote, IconBike, IconIdCard, IconMenu, IconNavigation, IconPackage, IconPhone, IconStore, IconUser, IconX } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconHistory, IconIdCard, IconMenu, IconNavigation, IconPackage, IconPhone, IconStore, IconUser, IconX } from "./icons";
+import { SearchBox } from "./SearchBox";
 
 /**
  * 216px ops-console sidebar (kit `shell.js` NAV). Client component so it can mark the active route
@@ -45,6 +46,8 @@ const NAV: NavEntry[] = [
   { label: "Issues", href: "/issues", icon: <IconAlert />, match: "/issues", badge: "openIssues" },
   { label: "SOS", href: "/sos", icon: <IconPhone />, match: "/sos", badge: "sosPending" },
   { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
+  // Admin console v2 §8: who did what, newest first.
+  { label: "Audit", href: "/audit", icon: <IconHistory />, match: "/audit" },
 ];
 
 /**
@@ -138,6 +141,10 @@ export function Sidebar({
       </button>
 
       <div id="sidenav-panel" className="sidenav-panel">
+      {/* Phone only (D-105): the console search sits at the top of the menu panel; on desktop it is above the page. */}
+      <div className="sidenav-search">
+        <SearchBox id="search-phone" />
+      </div>
       {/* Primary navigation landmark so a screen reader can jump straight to it. */}
       <nav aria-label="Primary" style={{ display: "contents" }}>
       {NAV.map((n) => {

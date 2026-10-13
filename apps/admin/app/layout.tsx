@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { SearchBox } from "./components/SearchBox";
 import { Sidebar } from "./components/Sidebar";
 import { adminFetch } from "./lib/api";
 import { resolveSignOutUrl } from "./lib/console-auth";
@@ -42,7 +43,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* Ops-console shell: 216px sidebar (kit shell.js) + the page's own <main>. */}
         <div className="shell">
           <Sidebar operator={operator} counts={counts} signOutUrl={signOutUrl} />
-          <div id="main-content" tabIndex={-1} style={{ display: "flex", flex: 1, minWidth: 0 }}>
+          <div id="main-content" tabIndex={-1} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+            {/* Admin console v2 §4: one search box above every page (desktop; the phone copy is in the menu panel). */}
+            <div className="console-search">
+              <SearchBox id="search-desktop" />
+            </div>
             {children}
           </div>
         </div>

@@ -291,6 +291,31 @@ td.mut, .mut { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; opacity: 0.7; } }
 
 .hidden { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* ── Console search + filter fields (admin console v2 PR 3, built from the kit's input/chip language) ── */
+.console-search { width: 100%; max-width: 1180px; margin: 0 auto; padding: var(--space-lg) var(--space-xl) 0; }
+.sidenav-search { display: none; }
+.phone-only { display: none; }
+.search-form { display: flex; gap: var(--space-sm); align-items: center; }
+.field-input,
+.search-form input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-input); background: var(--bg);
+  color: var(--ink); font-family: var(--font-sans); font-size: 13px; padding: 8px 12px;
+}
+.field-input:focus,
+.search-form input:focus { border-color: var(--accent-text); }
+.filter-form { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); align-items: flex-end; margin-bottom: var(--space-md); }
+.filter-form label { display: flex; flex-direction: column; gap: var(--space-xs); font-size: 12px; font-weight: 600; color: var(--muted); }
+.filter-form .field-input { min-width: 150px; }
+.list-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--space-md); flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: var(--space-md); }
+.list-foot a { color: var(--accent-text); }
+.hit-list { list-style: none; margin: 0; padding: 0; }
+.hit-list li { border-top: 1px solid var(--line); }
+.hit-list li:first-child { border-top: 0; }
+.hit-list a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-sm); padding: 9px 0; text-decoration: none; color: var(--ink); font-size: 13px; }
+.hit-list a:hover b { color: var(--accent-text); }
+.hit-list .mut { font-size: 12px; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    Phone layout (D-105, owner 2026-10-13). The admin kit draws 1440 only; below
@@ -342,6 +367,15 @@ td.mut, .mut { color: var(--muted); }
   .modal .actions { flex-wrap: wrap; }
 
   .seed-grid, .doc-grid { grid-template-columns: 1fr; }
+
+  /* Search moves into the menu panel; fields reach the touch floor (16px text stops iOS zooming on focus). */
+  .console-search { display: none; }
+  .sidenav-search { display: block; padding-bottom: var(--space-sm); }
+  .phone-only { display: block; }
+  .field-input, .search-form input { min-height: var(--target-min); font-size: 16px; }
+  .filter-form label { flex: 1 1 140px; }
+  .filter-form .field-input { min-width: 0; width: 100%; }
+  .hit-list a { min-height: var(--target-min); }
 }
 
 @media (max-width: 640px) {

@@ -8,6 +8,7 @@ import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { SosService } from "../sos/sos.service";
 import { WalletService } from "../wallet/wallet.service";
+import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
@@ -15,6 +16,8 @@ import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminRidersService } from "./admin-riders.service";
+import { AdminSearchService } from "./admin-search.service";
+import { AdminTimelineService } from "./admin-timeline.service";
 import { AdminService } from "./admin.service";
 
 const KYC_VALUES = Object.values(KycStatus) as string[];
@@ -109,7 +112,59 @@ export class AdminController {
     private readonly sos: SosService,
     private readonly wallet: WalletService,
     private readonly kitchen: AdminKitchenService,
+    private readonly auditRead: AdminAuditReadService,
+    private readonly search: AdminSearchService,
+    private readonly timeline: AdminTimelineService,
   ) {}
+
+  /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */
+
+  /**
+   * The audit trail, newest first, keyset-paged (`cursor` from the previous page's `nextCursor`). Filters:
+   * `target` (an id), `targetType` (rider|customer|order|merchant|issue|sos), `actor`, `action` (exact, or a
+   * family with a trailing dot: `rider.`), `from` / `to` (a Harare day `YYYY-MM-DD`, both inclusive, or an ISO
+   * instant), `limit` (default 50, max 100). Read-only.
+   */
+  @Get("audit")
+  auditLog(
+    @Query("target") target?: string,
+    @Query("targetType") targetType?: string,
+    @Query("actor") actor?: string,
+    @Query("action") action?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.auditRead.list({ target, targetType, actor, action, from, to, cursor, limit });
+  }
+
+  /** The console search box: bikers, customers, merchants, orders and top-ups matching `q`, capped per group. */
+  @Get("search")
+  searchAll(@Query("q") q?: string) {
+    return this.search.search(q);
+  }
+
+  /** One person's merged timeline, newest first. `as=customer|rider` picks the side (default: biker if they are one). */
+  @Get("people/:profileId/timeline")
+  async personTimeline(
+    @Param("profileId", ParseUUIDPipe) profileId: string,
+    @Query("cursor") cursor?: string,
+    @Query("as") as?: string,
+  ) {
+    const side = as === "customer" || as === "rider" ? as : undefined;
+    const view = await this.timeline.personTimeline(profileId, cursor, side);
+    if (!view) throw new NotFoundException("Person not found");
+    return view;
+  }
+
+  /** A merchant's timeline: order steps, open/close/busy/hours, stock changes and audit rows. */
+  @Get("merchants/:id/timeline")
+  async merchantTimeline(@Param("id", ParseUUIDPipe) id: string, @Query("cursor") cursor?: string) {
+    const view = await this.timeline.merchantTimeline(id, cursor);
+    if (!view) throw new NotFoundException("Merchant not found");
+    return view;
+  }
 
   @Get("overview")
   overview() {

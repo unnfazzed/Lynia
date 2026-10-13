@@ -1114,6 +1114,9 @@ model AuditLog {
   // PW-LC1: the notifications feed reads rows back by `target` (a profile or order id) + `action`, several
   // times per open (migration 0080).
   @@index([target, action])
+  // Admin console v2 §8: the audit viewer pages by actor and by target, newest first (migrations 0098–0099).
+  @@index([actor, createdAt])
+  @@index([target, createdAt])
   @@map("audit_logs")
 }
 

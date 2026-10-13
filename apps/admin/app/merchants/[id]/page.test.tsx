@@ -5,7 +5,7 @@ import MerchantProfilePage from "./page";
 import { adminFetchResult } from "../../lib/api";
 import type { MerchantDetail } from "../../lib/adminTypes";
 
-vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn() }));
+vi.mock("../../lib/api", () => ({ adminFetchResult: vi.fn(), adminFetch: vi.fn(async () => null) }));
 vi.mock("../actions", () => ({ setMerchantPilot: vi.fn(), setMerchantOrderSettings: vi.fn() }));
 vi.mock("../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
