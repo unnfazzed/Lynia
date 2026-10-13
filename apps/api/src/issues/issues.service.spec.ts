@@ -330,6 +330,24 @@ describe("IssuesService.resolve — side-effect + audit in one transaction", () 
     expect(auditCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("writes the operator's picked reason to the audit row's reasonCode when the console sends one", async () => {
+    const auditCreate = vi.fn(async () => ({}));
+    const tx = {
+      issue: {
+        findUnique: async () => ({ id: "iss-1", status: "open", orderId: "ord-1", openedByProfileId: "cust-1" }),
+        updateMany: async () => ({ count: 1 }),
+      },
+      order: { findUnique: async () => ({ riderId: "rider-1" }) },
+      refund: { create: vi.fn(async () => ({})) },
+      rider: { update: vi.fn(async () => ({})) },
+      auditLog: { create: auditCreate },
+    };
+    await txSvc(tx).resolve("admin-1", "iss-1", { resolution: "close_no_action", reasonCode: "Duplicate issue", note: "Same as #a1b2c3" });
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: { actor: "admin-1", action: "issue.resolve", target: "iss-1", reasonCode: "Duplicate issue", note: "Same as #a1b2c3" },
+    });
+  });
+
   it("rejects re-resolving an already-resolved issue (CAS: updateMany matches 0 rows)", async () => {
     // The guarded updateMany (where status != resolved) matches 0 rows for an already-resolved issue,
     // so the side-effect never runs and the loser gets the conflict.

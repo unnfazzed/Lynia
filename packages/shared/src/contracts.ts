@@ -303,6 +303,8 @@ export const ResolveIssueRequest = z
     // Money is stored as Decimal(10,2); constrain to whole cents so a sub-cent value can't be silently
     // rounded into the durable Refund ledger. The per-order upper bound (≤ fare) is enforced server-side.
     refundAmount: z.number().positive().max(1000).multipleOf(0.01).optional(),
+    /** The reason the operator picked in the console. Optional so older clients keep working. */
+    reasonCode: z.string().min(1).max(64).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.resolution === "refund" && v.refundAmount === undefined) {

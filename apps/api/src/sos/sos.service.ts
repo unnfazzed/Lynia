@@ -119,6 +119,8 @@ export class SosService {
       orderId: string;
       raisedByProfileId: string;
       raisedByRole: string;
+      /** The raiser's name, so ops sees a person, not a profile id. Null if the profile is gone. */
+      raisedByName: string | null;
       lat: number | null;
       lng: number | null;
       acknowledgedAt: string | null;
@@ -140,8 +142,15 @@ export class SosService {
         createdAt: true,
       },
     });
+    // One batched name lookup for the raisers (no N+1).
+    const raiserIds = [...new Set(rows.map((r) => r.raisedByProfileId))];
+    const profiles = raiserIds.length
+      ? await this.prisma.profile.findMany({ where: { id: { in: raiserIds } }, select: { id: true, firstName: true, lastName: true } })
+      : [];
+    const nameById = new Map(profiles.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()]));
     return rows.map((r) => ({
       ...r,
+      raisedByName: nameById.get(r.raisedByProfileId) || null,
       acknowledgedAt: r.acknowledgedAt ? r.acknowledgedAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
     }));

@@ -120,9 +120,18 @@ describe("SosService.listRecent (DS13-05 — read-only ops surface)", () => {
   });
 
   function svcWith(findMany: (args: { orderBy: unknown; take: number }) => Promise<unknown>) {
-    const prisma = { sosEvent: { findMany } } as unknown as PrismaService;
+    const prisma = {
+      sosEvent: { findMany },
+      profile: { findMany: async () => [{ id: "cust-1", firstName: "Rudo", lastName: "K" }] },
+    } as unknown as PrismaService;
     return new SosService(prisma, makeNotifications());
   }
+
+  it("names the raiser (batched profile lookup) so ops doesn't read a profile id", async () => {
+    const s = svcWith(async () => [row("sos-1", new Date("2026-07-12T10:00:00Z"))]);
+    const rows = await s.listRecent();
+    expect(rows[0]).toMatchObject({ raisedByProfileId: "cust-1", raisedByName: "Rudo K" });
+  });
 
   it("returns recent events newest-first with ISO timestamps, including acknowledgedAt (null when pending)", async () => {
     let orderBy: unknown;

@@ -160,6 +160,8 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     // en_route_dropoff is a reveal status → full numbers for ops to call.
     expect(d.customerPhone).toBe("+263771112222");
     expect(d.riderPhone).toBe("+263782000001");
+    // The console links the order to its people.
+    expect(d).toMatchObject({ riderId: "r1", customerId: "c1" });
   });
 
   it("merchant web upgrade L2 (OV-9): a business's booking reads as the business, on its pickup contact phone", async () => {

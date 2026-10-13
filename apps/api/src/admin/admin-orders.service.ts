@@ -546,6 +546,7 @@ export class AdminOrdersService {
         // order). merchantPhase covers the pre-dispatch kitchen sub-state the base OrderStatus has no
         // room for (plan §0b.1) — see FoodOrderService's class docstring.
         merchant: { select: { name: true, cashRule: true } },
+        merchantId: true,
         merchantPhase: true,
         merchantPaymentMethod: true,
         merchantPaymentConfirmedAt: true,
@@ -752,6 +753,10 @@ export class AdminOrdersService {
         : otpMismatchNote,
       deliveryOtpAttempts: order.deliveryOtpAttempts,
       hasOpenIssue: openIssue != null,
+      // Ids so the console can link the order to its biker, customer and merchant pages.
+      riderId: order.riderId,
+      customerId: order.customerId,
+      merchantId: order.merchantId,
       rider: riderName,
       // Both phones masked unless this order is live in its reveal window — never leak PII on a
       // terminal/closed order. Provide the (masked) string either way so the UI shows the redaction.

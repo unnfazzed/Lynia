@@ -129,7 +129,18 @@ export class AdminMerchantsService {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: DEBT_LEDGER_PAGE_SIZE + 1,
         ...(debtCursor ? { cursor: { id: debtCursor }, skip: 1 } : {}),
-        select: { id: true, orderId: true, riderId: true, type: true, amount: true, note: true, actor: true, createdAt: true },
+        select: {
+          id: true,
+          orderId: true,
+          riderId: true,
+          // The biker's name, so the ledger reads as a person, not an id.
+          rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
+          type: true,
+          amount: true,
+          note: true,
+          actor: true,
+          createdAt: true,
+        },
       }),
       // Merchant web upgrade L2 (R2-5): the business's booking account. Holding it (the existing
       // customer hold, on its own page) pauses every booking the business makes. Null before its first.
@@ -168,6 +179,7 @@ export class AdminMerchantsService {
         id: l.id,
         orderId: l.orderId,
         riderId: l.riderId,
+        riderName: l.rider ? `${l.rider.profile.firstName} ${l.rider.profile.lastName}`.trim() || null : null,
         type: l.type,
         amount: l.amount.toString(),
         note: l.note,

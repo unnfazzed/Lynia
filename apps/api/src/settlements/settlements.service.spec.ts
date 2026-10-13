@@ -46,7 +46,7 @@ function overviewPrisma(
 }
 
 describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
-  it("projects per-rider rides/fares/commission at the current rate and totals the KPIs", async () => {
+  it("sums per-rider rides/fares/charged commission and totals the KPIs", async () => {
     const { prisma } = overviewPrisma(
       [
         { riderId: "r1", fares: 100, rides: 5 },
@@ -56,6 +56,8 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
         { id: "r1", firstName: "Tendai", lastName: "M" },
         { id: "r2", firstName: "Rudo", lastName: "M" },
       ],
+      // Each $20 ride was charged its 10% ($2.00) — the ledger is what the console sums at a live rate.
+      ["o0-0", "o0-1", "o0-2", "o0-3", "o0-4", "o1-0", "o1-1"].map((orderId) => ({ orderId, amount: -perRideCommission(20) })),
     );
     const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"));
@@ -144,15 +146,28 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
     expect(view.rows[0]!.commission).toBe("4.00");
   });
 
-  it("WD-006: falls back to the current-rate projection for an order with no ledger row (the 0% launch period)", async () => {
+  it("WD-006: falls back to the projection for an order with no ledger row only at 0% (which projects $0.00)", async () => {
     const { prisma } = overviewPrisma(
       [{ riderId: "r1", fares: 100, rides: 1 }],
       [{ id: "r1", firstName: "Tendai", lastName: "M" }],
       [], // no ledger rows — chargeCommission writes none at 0%
     );
     const svc = new SettlementsService(prisma as unknown as PrismaService);
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 0);
+    expect(view.rows[0]!.commission).toBe("0.00");
+  });
+
+  it("at a live rate, a completed job with no ledger row (a free first-10 job) accrues nothing — no projection", async () => {
+    // Two $50 jobs at 10%: one charged $5.00, one free (no row). Projecting the free one would show $10.00.
+    const { prisma } = overviewPrisma(
+      [{ riderId: "r1", fares: 100, rides: 2 }],
+      [{ id: "r1", firstName: "Tendai", lastName: "M" }],
+      [{ orderId: "o0-1", amount: -5 }],
+    );
+    const svc = new SettlementsService(prisma as unknown as PrismaService);
     const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 10);
-    expect(view.rows[0]!.commission).toBe(perRideCommission(100, 10).toFixed(2));
+    expect(view.rows[0]).toMatchObject({ rides: 2, fares: "100.00", commission: "5.00" });
+    expect(view.kpis.commission).toBe("5.00");
   });
 
   it("WD-NEW-A: does NOT project phantom commission for a completed order with a null agreedFare (chargeCommission permanently skips it)", async () => {
@@ -171,10 +186,11 @@ describe("SettlementsService.commissionOverview (prepaid per-ride)", () => {
       commissionLedger: { findMany: async () => [] }, // no ledger rows for either
     };
     const svc = new SettlementsService(prisma as unknown as PrismaService);
-    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 20);
+    // At 0% the projection branch is the one that runs, so that's where the null-fare guard matters.
+    const view = await svc.commissionOverview(new Date("2026-07-06T00:00:00Z"), 0);
     // Both count toward ride count; only the $80 order contributes projected commission (the null-fare
     // order would have floored commissionBasis(0, 60) to a non-zero phantom figure before this fix).
     expect(view.rows[0]).toMatchObject({ riderId: "r1", rides: 2 });
-    expect(view.rows[0]!.commission).toBe(perRideCommission(commissionBasis(80, 80), 20).toFixed(2));
+    expect(view.rows[0]!.commission).toBe(perRideCommission(commissionBasis(80, 80), 0).toFixed(2));
   });
 });

@@ -141,6 +141,7 @@ export class IssuesService {
       id: i.id,
       type: ISSUE_TYPE_LABELS[i.type],
       order: routeById.get(i.orderId) ?? i.orderId,
+      orderId: i.orderId,
       openedBy: nameById.get(i.openedByProfileId) ?? "—",
       opened: i.createdAt.toISOString(),
       status: i.status,
@@ -177,6 +178,8 @@ export class IssuesService {
         proposedFare: true,
         agreedFare: true,
         itemPhotoUrl: true,
+        riderId: true,
+        customerId: true,
         customer: { select: { firstName: true, lastName: true, phone: true } },
         rider: { select: { profile: { select: { firstName: true, lastName: true, phone: true } } } },
       },
@@ -194,6 +197,10 @@ export class IssuesService {
       id: issue.id,
       type: ISSUE_TYPE_LABELS[issue.type],
       order: order ? routeOf(order.pickup, order.dropoff) : issue.orderId,
+      // Ids so the console can link the issue to its order, biker and customer.
+      orderId: issue.orderId,
+      riderId: order?.riderId ?? null,
+      customerId: order?.customerId ?? null,
       openedBy: openerName,
       opened: issue.createdAt.toISOString(),
       status: issue.status,
@@ -316,8 +323,9 @@ export class IssuesService {
       }
 
       // Audit row in the SAME transaction — the action and its record are never one without the other.
+      // reasonCode is the operator's picked reason; old clients that don't send one keep the resolution.
       await tx.auditLog.create({
-        data: { actor: adminId, action: "issue.resolve", target: id, reasonCode: body.resolution, note: body.note ?? null },
+        data: { actor: adminId, action: "issue.resolve", target: id, reasonCode: body.reasonCode ?? body.resolution, note: body.note ?? null },
       });
 
       return {
