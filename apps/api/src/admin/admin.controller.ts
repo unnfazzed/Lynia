@@ -153,11 +153,11 @@ export class AdminController {
     private readonly sos: SosService,
     private readonly wallet: WalletService,
     private readonly kitchen: AdminKitchenService,
+    private readonly money: AdminMoneyService,
     private readonly auditRead: AdminAuditReadService,
     private readonly search: AdminSearchService,
     private readonly timeline: AdminTimelineService,
     private readonly application: AdminMerchantApplicationService,
-    private readonly money: AdminMoneyService,
   ) {}
 
   /* ── Admin console v2 PR 3: audit viewer, global search, timelines (plan §4, §8) ───────────── */

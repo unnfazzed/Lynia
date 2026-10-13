@@ -89,7 +89,7 @@ describe("Biker profile — statement (admin console v2 §6)", () => {
 
   it("shows the header (balance owed, free jobs left, commission to come, last top-up) and what each row was", async () => {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: detail() } as never);
-    vi.mocked(adminFetch).mockResolvedValue(wallet as never);
+    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path.includes("/wallet") ? wallet : null)) as never);
     render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
     expect(screen.getByText("Free jobs left")).toBeTruthy();
     expect(screen.getByText("2 delivered, not closed yet")).toBeTruthy();
@@ -106,7 +106,7 @@ describe("Biker profile — statement (admin console v2 §6)", () => {
 
   it("an older API (no summary) keeps the plain ledger and offers no reversal", async () => {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: detail() } as never);
-    vi.mocked(adminFetch).mockResolvedValue({ ...wallet, summary: undefined } as never);
+    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path.includes("/wallet") ? { ...wallet, summary: undefined } : null)) as never);
     render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
     expect(screen.queryByText("Free jobs left")).toBeNull();
     expect(screen.queryByRole("button", { name: /Reverse|Take off/ })).toBeNull();
