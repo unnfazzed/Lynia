@@ -154,8 +154,7 @@ rate, hours open vs scheduled, rating, open debt.
 5. **Reversal/debit:** wire the existing `reversal` type for an admin correction (reason-coded, capped, two-person above a limit; see §8).
 6. **Negative-balance list**, linked from the stuck lists.
 
-**Policy calls that are not mine to make** (see §9): should commission still pending on delivered-but-not-completed
-jobs count at accept? Today a biker can stack jobs during the 6h rating window and go negative.
+**Owner decision (2026-10-13):** commission stays charged when the job closes. A biker can still stack jobs in the 6h rating window and go briefly negative; the negative-balance list (item 6) shows it.
 
 ---
 
@@ -213,7 +212,7 @@ that don't scroll sideways, 32px chips. A responsive console changes drawn geome
 
 1. New admin screens: **route (b)**. Build from the existing admin kit primitives and record them in one `docs/DESIGN-DEVIATIONS.md` entry.
 2. Phone-usable console: **yes**, in its own PR with a ledger entry.
-3. Unfinished commission: **open**. The recommendation is to charge at delivery, not at completion (its own PR, with regression tests).
+3. Unfinished commission: **keep charging when the job closes** (today's behaviour). Admin shows negative balances as money owed (§6 item 6).
 4. Roles and the two-person rule: **later**. The owner is the only operator for now, so PR 8 waits.
 5. Pharmacy licence before go-live: **yes** (the recommendation).
 6. Nudge: **push only**, no SMS.
