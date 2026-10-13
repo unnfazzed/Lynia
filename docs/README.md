@@ -21,19 +21,18 @@ GCP setup and are being rewritten.
 | [`CONCEPT.md`](./CONCEPT.md) | 🟢 Living | Product concept & one-month plan — the north star. inDrive-style customer-priced courier; matchmaker, not a payment processor. Forward-looking sections annotated with build status. |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 🟢 Living (spec) | The engineering map: system context, monorepo layout, GCP deployment, API module map, data model (ERD), and sequence/state diagrams for the offer loop, lifecycle, auth, KYC, and tracking. |
 | [`PRICING.md`](./PRICING.md) | 🟢 Living (spec) | The two shared pure modules that shape the negotiation: the **suggested-fare anchor** (`quoteFare`) and the blended **best-match offer ranking** (`rankOffers`) — formulas, weights, edge cases, worked examples. |
-| [`DESIGN.md`](./DESIGN.md) | 🟢 Living (spec) | Design system + UX spec (tokens, components, §5c journey, the two-sided IA) and the `DT1`–`DT13` build-task table. Visual source of truth is `packages/design/`. |
-| [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) | 🟢 Living | Design-system adoption record: how `packages/design/` was vendored, the CSS↔TS token contract (machine-enforced by `design-tokens.drift.spec.ts`), and the device/build follow-ups. |
+| [`DESIGN.md`](./DESIGN.md) | 🟢 Living (spec) | Design system + UX spec: core tokens, responsive & accessibility rules, screen classes, and which `packages/design/handoff/*` owns each screen. |
+| [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) | 🟢 Living | Where the design system lives, the CSS↔TS token naming map (enforced by `design-tokens.drift.spec.ts`) for mobile, admin and merchant, and error surfaces. |
 
 ## Security & compliance
 
 | Doc | Kind | Purpose |
 |-----|------|---------|
 | [`SECURITY.md`](./SECURITY.md) | 🟢 Living (spec) | Security plan & threat model: data classification, STRIDE attack-surface map, posture scorecard, P0→P3 roadmap with implementation status. Companion to the root [`../SECURITY.md`](../SECURITY.md) disclosure policy. |
-| [`SECURITY-OPS.md`](./SECURITY-OPS.md) | 🟢 Living (runbook) | The platform/console steps behind the plan — admin IAP+MFA, Maps key restriction, Cloud Armor tuning, gated-infra rollouts, pentest cadence. |
+| [`SECURITY-OPS.md`](./SECURITY-OPS.md) | 🟢 Living (runbook) | The platform/console steps behind the plan — admin Entra sign-in + MFA, Maps key restriction, certificate pinning (inert), edge WAF (none yet), Azure data-tier hardening, pentest cadence. |
 | [`SECRET-ROTATION.md`](./SECRET-ROTATION.md) | 🟢 Living (runbook) | How to rotate every secret safely: dual-secret JWT flow, DB/Redis/vendor keys, schedule, post-rotation checklist. |
 | [`IR-RUNBOOK.md`](./IR-RUNBOOK.md) | 🟢 Living (runbook) | Incident response: severity triage, containment, eradicate/recover, breach notification, blameless post-mortem. |
 | [`DATA-RETENTION.md`](./DATA-RETENTION.md) | 🟢 Living (spec) | PII retention schedule + erasure mechanism under Zimbabwe's CDPA — machine-enforced by the PII-manifest test. |
-| [`MOBILE-CERT-PINNING.md`](./MOBILE-CERT-PINNING.md) | 🟢 Living (runbook) | Arming runbook for the gated TLS cert-pinning config plugin (`LYNIA_TLS_PINS`). |
 
 ## Operations, performance & infrastructure
 
@@ -44,7 +43,7 @@ GCP setup and are being rewritten.
 | [`RESTORE-DRILL.md`](./RESTORE-DRILL.md) | 🟢 Living (runbook) | Prove Cloud SQL backups restore: PITR/backup drill + `scripts/restore-drill-verify.sh`, RTO record. |
 | [`PERFORMANCE.md`](./PERFORMANCE.md) | 🟢 Living (spec) | Mobile speed/latency/cost strategy: micro-cache, bootstrap endpoint, verification status, ranked backlog. |
 | [`APP-SIZE.md`](./APP-SIZE.md) | 🟢 Living (guardrail) | Download/OTA size playbook + the CI-enforced per-PR bundle-size budget and its audit trail. |
-| [`LOAD-MODEL.md`](./LOAD-MODEL.md) | 🟢 Living (plan) | The launch load envelope (1×/×5) and k6 scenario plan (`apps/api/load/`); SLO assertions LR10–LR15. |
+| [`../apps/api/load/README.md`](../apps/api/load/README.md) | 🟢 Living (plan) | The k6 load harness, the launch load envelope (1×/×5) and the SLO thresholds it asserts. |
 | [`CLOUDFLARE.md`](./CLOUDFLARE.md) | 🟢 Living | Why DNS is grey-cloud/DNS-only (TLS issuance, cert pinning, `trust proxy`), plus the Cloudflare MCP wiring for agent sessions. |
 | [`BIRD-SETUP.md`](./BIRD-SETUP.md) | 🟢 Living (runbook) | OTP channel arming: Bird SMS (priority channel, verified to Econet) + the WhatsApp Cloud API fallback section. |
 
@@ -52,9 +51,8 @@ GCP setup and are being rewritten.
 
 | Doc | Kind | Purpose |
 |-----|------|---------|
-| [`PILOT-READINESS.md`](./PILOT-READINESS.md) | 🟢 Living (status board) | Where the build stands: scorecard, remaining gates, the founder vendor-wiring runbook, and the vendor-free QA-testing guide. Header notes where it defers to the GCP pending review. |
-| [`LAUNCH-DEPLOYMENT-STRATEGY.md`](./LAUNCH-DEPLOYMENT-STRATEGY.md) | 🟢 Living (design) | Release-automation design rationale: OTA/staged/min-version channels, canary + rollback, environments. §-anchors are cited from ~18 code/workflow sites. |
-| [`LAUNCH-EXECUTION-RUNBOOK.md`](./LAUNCH-EXECUTION-RUNBOOK.md) | 🟢 Living (runbook) | Copy-paste founder commands for every cloud-side arming step — CI error messages point here by section. |
+| [`AZURE-OWNER-RUNBOOK.md`](./AZURE-OWNER-RUNBOOK.md) | 🟢 Living (runbook) | The founder/ops command runbook: what runs where, the Azure migration checklist, vendor secrets, Didit, push, launch-hygiene guards, force-update, vertical flips, one-off backfills. CI error messages point here by section. |
+| [`LAUNCH-DEPLOYMENT-STRATEGY.md`](./LAUNCH-DEPLOYMENT-STRATEGY.md) | 🟢 Living (spec) | How releases work: mobile OTA / Play tracks / compatibility contract, the Azure API canary and rollback, the GitHub process. §-anchors are cited from code and workflows. |
 | [`PLAY-STORE-SUBMISSION.md`](./PLAY-STORE-SUBMISSION.md) | 🟢 Living (package) | The complete Play Console submission: listing copy, data-safety table (test-guarded), declarations, founder-only open items. Shipped assets: `store-assets/google-play/`. |
 | [`APP-STORE-SUBMISSION.md`](./APP-STORE-SUBMISSION.md) | 🟢 Living (plan + ledger) | The iOS twin of the Play package: step-by-step path to a first App Store release (Apple accounts, Xcode 26 / Expo SDK path, iOS config, APNs push, listing, review risks) and the ledger of every iOS build/submission. |
 | [`QA-DEVICE-CHECKLIST.md`](./QA-DEVICE-CHECKLIST.md) | 🟢 Living (checklist) | The hardware-gated device pass (LR16/LR17/LR20): on-device `/qa`, low-end Android, Sentry, background GPS. |
@@ -88,7 +86,7 @@ longer exists.
 
 - **Just want the status?** → the Status paragraph above, then `PENDING-WORK-2026-10-11.md`.
 - **New to the project?** → `CONCEPT.md` (what & why) → `DESIGN.md` (how it looks) →
-  `PILOT-READINESS.md` (where it stands).
+  `AZURE-OWNER-RUNBOOK.md` (how it runs).
 - **How is it built?** → `ARCHITECTURE.md` (system diagrams, data model, the offer-loop flow).
 - **How does pricing / ranking work?** → `PRICING.md` (fare anchor + best-match offer ranking).
 - **Want to run it / contribute?** → [`../CONTRIBUTING.md`](../CONTRIBUTING.md) (local setup + PR flow).

@@ -29,10 +29,10 @@ const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 
 const LOCATE_TIMEOUT_MS = 9_000;
 
 /**
- * Tap-to-pin location picker (DESIGN.md D-b: map-anchored). Tap the map to drop a pin, drag the pin to
+ * Tap-to-pin location picker (map-anchored). Tap the map to drop a pin, drag the pin to
  * fine-tune, or center on the device's GPS. Controlled: it owns no coordinate state, only emits the
  * chosen point so the parent keeps it in the order form. Needs the dev build + a Google Maps key on
- * Android (Apple Maps on iOS needs none) — see app.config.ts / PILOT-READINESS.
+ * Android (Apple Maps on iOS needs none) — see app.config.ts.
  */
 export function MapPicker(props: {
   label: string;

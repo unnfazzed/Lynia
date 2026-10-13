@@ -1,256 +1,143 @@
 # The screenshot lane — every parity claim becomes an image
 
-**Status:** Phase 1 landed the lane; **Phase 2 wired the app side across all four surfaces** — the
-primary populated state of every top-level app route now renders beside its mock (39 mobile keys +
-7 admin routes + merchant login = 47 wired screens, up from 4). Remaining per-screen states grow as
-screens are aligned. See "What Phase 2 wired" below.
+An alignment claim is made with a **side-by-side image**, not prose: the design's drawing of a
+screen beside the app's render of it, at the same viewport. The tools live in
+[`tools/parity/`](../tools/parity/) (outside the workspace globs, so they never enter turbo
+build/typecheck/test). Quick reference: [`tools/parity/README.md`](../tools/parity/README.md).
 
-This is the process fix behind the pixel-parity workstream (`CLAUDE.md` → "Pixel parity"). Five days of
-"alignment" PRs merged green while the app still didn't look like the designs, because the checks were
-copy-string and route-existence greps — a 2026-08-05 pixel audit then found **1 of 244 screens actually
-matched**. The lane closes that gap: for any screen it renders the **design mock** beside the **app
-screen** in the same browser, at the same viewport, and composes a side-by-side sheet. The reviewer
-**approves the picture, not the prose.**
+Conformance itself is enforced by CI guardrails (`CLAUDE.md` → "Pixel parity"). The sheets are the
+evidence attached to an alignment PR.
 
-The tool lives in [`tools/parity/`](../tools/parity/) (a root-level tool, deliberately outside the
-`apps/*`/`packages/*` workspace globs, so it never enters turbo build/typecheck/test gates).
+## Two kinds of sheet
 
-## What it renders — three paths, one sheet
-
-| Surface | Mock side (source of truth) | App side | Viewport |
+| Kind | Mock side | Tool | Used for |
 |---|---|---|---|
-| Customer + Rider (mobile) | design registry screen, rendered from the real design system | the RN screen via **react-native-web** | 360×720 (·320×640) |
-| Merchant (tablet) | design registry screen | the Next.js app (Playwright) | 1024×680 |
-| Admin (console) | the `ui_kits/admin/*.html` kit page | the Next.js app (Playwright) | 1440×900 |
+| **Handoff sheet** | the handoff's own HTML prototype or exported frame PNGs (`packages/design/handoff/<name>/…`) | one `shoot-<handoff>.mjs` script per handoff | every screen a handoff owns (most of the app today) |
+| **Gallery sheet** | a registry screen from `All Screens Gallery.html`, rendered from the real design system | `pair.mjs` | screens no handoff has replaced, and admin |
 
-All three feed one compositor that emits `<name>.html` (self-contained, PR-attachable) and `<name>.png`.
+Both put the app beside the mock and write a sheet as `<out>.png` plus a self-contained `<out>.html`
+(`lib/sheet.mjs`).
 
-### Mock side — hermetic, byte-faithful to the design tool
+## Handoff sheets — `shoot-*.mjs`
 
-`lib/design-server.mjs` serves `packages/design/` over loopback and answers one virtual path,
-`/explorations/journey/__parity_harness.html` (generated in memory — **nothing is written into the
-design mirror**). The harness reproduces the exact head + script load order of
-`All Screens Gallery.html` up to but not including `gallery.jsx`, then mounts **one** registry screen
-(`window.LJ/RC/RJ/RR/RJM/RM[id]`) into a container sized to the real app viewport. Same React, same
-Babel, same DS bundle, same Inter the gallery uses.
+Each script stages the app from fixtures, drives it by accessible name where a state needs a tap,
+and shoots the matching handoff frame. Its header comment gives the exact command.
 
-Why hermetic: this container's Chromium can't complete a TLS handshake to external hosts through the
-agent proxy (the egress MITM resets its BoringSSL ClientHello, though curl/node succeed). So the pinned
-CDN libs (react/react-dom/@babel-standalone/leaflet) are vendored once into a gitignored cache
-(`lib/vendor.mjs`) and served from loopback — the "serve a local mirror" path the design
-`EXPORT-README` sanctions. OSM map tiles are stubbed to neutral gray (`stubExternals`), which keeps the
-render deterministic **and honest**: a parity shot never claims the live map matches — that's what a
-native-map device spot-check is for.
+| Script | Handoff | Ledger | App side |
+|---|---|---|---|
+| `shoot-send-v2.mjs` | `send-compose-v2` | D-52 | `app/send.tsx` |
+| `shoot-after-send.mjs` | `after-send-v2` | D-53 | `app/order/[id].tsx` |
+| `shoot-rider-v2.mjs` | `rider-v2` | D-54 | rider screens |
+| `shoot-calm-mint.mjs` | `calm-mint-v2-2026-10` | D-55 | Home and onboarding |
+| `shoot-tab-bar.mjs` | `tab-bar-v1` | D-56 | a tab root with the real `TabBar` |
+| `shoot-browse-v2.mjs` | `browse-v2` | D-57 | Restaurants list, storefront, search |
+| `shoot-order-flow-review.mjs` | `order-flow-v2` (R states) | D-59 | `app/food/checkout.tsx` |
+| `shoot-order-flow-customer.mjs` | `order-flow-v2` (T/U/P/D states) | D-59 | `app/order/[id].tsx` |
+| `shoot-order-flow-shops.mjs` | `order-flow-v2` + `browse-v2` | D-59 | shop and pharmacy ordering |
+| `shoot-order-flow-merchant.mjs` | `order-flow-v2` (M and RD states) | D-59 | merchant hand-over (default) or rider (`--set rider`) |
+| `shoot-orders-v2.mjs` | `orders-v2` | D-63 | Orders tab |
+| `shoot-splash.mjs` | `splash-v1` | D-64 | `src/boot/splash/BootSplash.tsx` |
+| `shoot-notifications-v1.mjs` | `notifications-v1` | D-66 | Notifications |
+| `shoot-merchant-v2.mjs` | `merchant-v2` | D-77 | merchant web app |
+| `shoot-merchant-mobile.mjs` | `merchant-mobile` | D-48 | merchant screens merchant-v2 doesn't redraw |
 
-### Mobile app side — react-native-web
-
-`mobile/bundle.mjs` bundles a screen with esbuild, aliasing `react-native`→`react-native-web`, deduping
-React to one copy (two copies = "invalid hook call"), routing native-only modules to shims
-(`mobile/shims/`: safe-area, `react-native-svg`→DOM, expo-router, expo-constants, expo-splash-screen,
-sentry, a generic empty), and `@lynia/shared`→its TS source. lucide icons draw through the svg shim. The bundle mounts in
-a blank 360×720 page with Inter inlined, and `#root` is a flex column so a root `flex:1` fills the
-height the way the RN root does on device.
-
-Per-screen data comes from a **fixture** (`mobile/fixtures/<name>.mjs`, `{ wrap?, props? }`) — the same
-provider-mocking the jest suites already do. A screen with no fixture yet still shows its **mock**; its
-app column shows an honest "pending", never a blank that reads as "matches".
-
-A wired screen that throws (in render or in an effect) is a **failed** render, not an "ok": the entry
-wraps the tree in a boundary that sets `window.__PARITY_ERROR`, and `lib/mobile.mjs` also refuses an
-empty `#root` after the settle wait. `pair.mjs` prints `app FAILED` with the stack, marks the row, and
-exits 1; `render-mobile.mjs` exits 1. A native module the app reads as a namespace
-(`import * as SplashScreen from "expo-splash-screen"`) needs its own shim with named exports: the
-generic empty shim only answers through its default export.
-
-### Web app side — Playwright on the Next dev server
-
-`serve-web.mjs` runs `next dev --webpack` for admin (:4311) / merchant (:4312). `--webpack` is required:
-Next 16's default Turbopack mis-labels `@lynia/shared`'s ESM as CommonJS and 500s every page (the apps'
-own build scripts use `next build --webpack` for the same reason). In dev the admin auth gate is off,
-and with `API_BASE_URL` unset the pages render their **offline/empty state** rather than crashing — a
-faithful render of the console/tablet shell with no API/DB/auth to stand up. Point
-`PARITY_ADMIN_URL` / `PARITY_MERCHANT_URL` at a seeded instance to shoot populated data instead.
-
-#### Seeded instance — populated merchant/admin states (#674)
-
-The offline shell is honest but empty; the **populated** merchant-tablet + admin states need a real,
-migrated, seeded backend. The seed (`apps/api/prisma/seed.ts`) covers this: alongside the admin +
-customer + riders + parcel order it seeds a **`pilotEnabled` merchant (Sadza Republic) + a Mains menu
-+ four food orders across the `MerchantPhase` set**, so the queue board, menu, KPIs and needs-attention
-queue have real rows.
+Mobile scripts need no server: the app renders through react-native-web. Example:
 
 ```bash
-# 1. bring up Postgres + apply migrations, then seed
-pnpm db:up && pnpm db:migrate && pnpm db:seed
-# 2. run the api against that DB (its own shell) — this is the backend the web servers hit
-pnpm --filter @lynia/api start          # → http://127.0.0.1:3000 (or your api port)
-# 3. point the Next dev servers at the seeded api and shoot populated states
-API_BASE_URL=http://127.0.0.1:3000 node tools/parity/serve-web.mjs merchant   # :4312
-API_BASE_URL=http://127.0.0.1:3000 node tools/parity/serve-web.mjs admin      # :4311
-# 4. render — or set PARITY_MERCHANT_URL/PARITY_ADMIN_URL at hosted seeded instances instead of :4312/:4311
-PARITY_MERCHANT_URL=http://127.0.0.1:4312 node tools/parity/pair.mjs --category merchant --out out/sheet-merchant
+node tools/parity/shoot-orders-v2.mjs --out docs/parity/ORDERS-V2-2026-10-02
 ```
 
-`serve-web.mjs` forwards `API_BASE_URL` to the Next server and logs whether it started in seeded or
-offline mode. The admin auth gate is off in dev; the merchant tablet's gated routes render against the
-seeded api (offline they honestly redirect to `/login`). This is a **verification-lane** capability —
-the screens' STRUCTURE is already adopted (direct-DOM, structural-snapshot guardrail); the seeded
-instance is only what lets the offline screenshot show populated data like-for-like.
-
-## Commands
+**Merchant is a phone (360×720).** Start the merchant Next dev server with its API stubbed in the
+browser, then shoot a set:
 
 ```bash
-cd tools/parity
-npm i                                    # one-time: esbuild + react-native-web (playwright is global here)
+API_BASE_URL=http://127.0.0.1:4312/__api node tools/parity/serve-web.mjs merchant
+node tools/parity/shoot-merchant-v2.mjs --set shell --out docs/parity/MERCHANT-V2-SHELL-2026-10-04
+```
 
-# one screen, one side
+Sets in `shoot-merchant-v2.mjs`: `shell` (default), `board`, `ticket`, `book`, `money`, `sheets`,
+`boardx`, `k5x`, `tabsa`, `moneyx`, `arrival`. `PARITY_NARROW=1` shoots the 320×640 check instead.
+
+Not every committed sheet has a script: `EMPTY-STATES-V2-2026-10-06.png` and
+`FIRST-RUN-V2-2026-10-06.png` were made without one in `tools/parity/`.
+
+### Where sheets go
+
+`--out docs/parity/<HANDOFF>-<YYYY-MM-DD>` writes `docs/parity/<HANDOFF>-<YYYY-MM-DD>.png` (and
+`.html`) and puts the single shots in a `<HANDOFF>-<YYYY-MM-DD>-shots/` folder beside it. Commit the
+`.png` sheet and cite it from the ledger entry and the tracker row. Add a suffix for a part or round
+(`ORDER-FLOW-V2-CUSTOMER-2026-10-02-ROUND2.png`, `MERCHANT-V2-FOLLOWUPS-TAP-2026-10-05.png`).
+
+### Retired scripts
+
+`shoot-merchant-current.mjs` and `shoot-merchant-l1.mjs` … `l5.mjs` shoot the old merchant tablet at
+1024×680 against the `RM` mocks. D-48 and D-77 replaced that design, so don't use them for new
+alignment work.
+
+## Gallery sheets — `pair.mjs`
+
+For a screen whose authority is still the gallery (or the admin kit):
+
+```bash
+cd tools/parity && npm i            # one-time: esbuild + react-native-web
 node render-mock.mjs   --src RC --id home --out out/rc-home.png
-node render-mock.mjs   --src RM --id queue_board --mode tablet --out out/rm.png
 node render-mobile.mjs --component app/force-update.tsx --fixture force_update --out out/app.png
-
-# a full side-by-side sheet (mock + app) for a PR
-node pair.mjs --keys LJ.force_update,RC.home --title "Parity — X" --out out/sheet-x
-node pair.mjs --category admin --out out/sheet-admin      # needs: node serve-web.mjs admin (separate shell)
-node pair.mjs --wired --out out/sheet-wired               # every screen that has an app target
+node pair.mjs --keys LJ.force_update --title "Parity — force update" --out out/sheet
+node pair.mjs --wired --out out/sheet-wired          # every screen with an app target
+node serve-web.mjs admin                              # then: node pair.mjs --category admin --out out/sheet-admin
 ```
 
-`pair.mjs` writes `out/sheet-x.html` (attach to the PR) and `out/sheet-x.png` (drop in chat). Each row
-shows the mock, the app (or an honest pending), and the screen's parity status chip.
+- **Mock side:** `lib/design-server.mjs` serves `packages/design/` on loopback and mounts one
+  registry screen in a generated harness page (nothing is written into the design mirror). Pinned
+  CDN libraries are downloaded once into the gitignored `.vendor/`. Map tiles are grey stubs.
+- **Mobile app side:** `mobile/bundle.mjs` bundles the screen with esbuild and react-native-web,
+  with native modules shimmed (`mobile/shims/`) and data from a fixture (`mobile/fixtures/`, recipe
+  in its `README.md`).
+- **Admin side:** Playwright on the Next dev server (`serve-web.mjs`, admin on :4311) at 1440×900.
+- **Registry:** `screens.generated.json` (277 screens: customer 122, rider 100, merchant 48,
+  admin 7) is generated by `node gen-manifest.mjs`; never hand-edit it. `app-targets.mjs` maps
+  `${src}.${id}` keys to app screens. `parity-status.mjs` holds `PENDING` and `BACKEND_GATED` keys.
+  The screen-inventory guardrail (`apps/api/src/parity/screen-inventory.spec.ts`) checks all three.
 
-## The registry
+A wired screen that throws is a **failed** render, not a pass. `pair.mjs` prints `app FAILED` and
+exits 1. A screen with no fixture shows an honest "pending" in its app column.
 
-- `screens.generated.json` — the **mock-side inventory** (275 screens: customer 122 · rider 98 ·
-  merchant 48 · admin 7), generated from the design's own gallery data. Regenerate after a new export:
-  `node gen-manifest.mjs`. Never hand-edit.
-
-  > Regenerating the manifest is **not sufficient on its own.** The manifest comes from the gallery
-  > *data*, but the renderer loads the registry *files* listed in `lib/harness-html.mjs`. If an export
-  > adds a registry file (rev 2 added three), the new screens appear in the manifest and then fail to
-  > render with `not found in registry`. Add the `<script>` tags too, in the same order as
-  > `All Screens Gallery.html` — extension registries must load **after** the base they extend.
-- `app-targets.mjs` — the **hand-maintained** app-side map, keyed by `${src}.${id}`. This is where the
-  lane grows: as each screen is aligned, add its target.
-
-  ```js
-  "RC.home":        { kind: "mobile", component: "app/(tabs)/home.tsx", fixture: "home" },
-  "ADMIN.orders.html": { kind: "web", app: "admin", route: "/orders", mode: "admin" },
-  ```
+`old-vs-new.mjs` composes a before/after sheet of two app renders, for a change with no mock.
 
 ## The rendered-conformance lane — the same fixtures, but blocking
 
-The sheet above is *evidence*: a human looks at it. The **rendered-conformance** guardrail turns the
-same staging into a failing build, and it is what catches what neither a screenshot nor a static AST
-check can: which conditional branch actually won, what the live wiring interpolated into a string, and
-copy the app invented that no mock draws. (The launcher home shipped ONE generic card reading "Delivery
-in progress" where `RC.home` draws two service-specific cards; every static check was green.)
-
-It is split so the blocking half needs no browser — browser rendering is environment-sensitive, which
-is exactly why `parity-render` is `continue-on-error`:
+The sheets are evidence a human looks at. The rendered-conformance check turns the same fixtures into
+a failing build when a wired gallery screen stops matching the mock's copy or structure.
 
 ```bash
-node tools/parity/extract-expected.mjs            # BROWSER, run locally: mock DOM → tools/parity/expected/<key>.json
-node tools/parity/extract-expected.mjs --check    # determinism gate — must reproduce byte-for-byte
-pnpm --filter ./apps/mobile exec jest rendered-conformance   # NO browser — this runs in CI's blocking mobile test job
+node tools/parity/extract-expected.mjs            # browser: mock DOM → tools/parity/expected/<key>.json (commit these)
+node tools/parity/extract-expected.mjs --check    # must reproduce byte-for-byte
+pnpm --filter ./apps/mobile exec jest rendered-conformance   # no browser; the blocking CI check
 ```
 
-- The expected side renders the mock exactly as `render-mock.mjs` does (frozen `Date`/`Math.random`),
-  walks the DOM to a normalized `{role, text}` tree and commits it. The mocks' faux status bar and root
-  tab bar are dropped — the app SCREEN renders neither (the OS and `app/(tabs)/_layout.tsx` do) — and
-  the drop is recorded in `chromeDropped`, never silent.
-- The app side mounts the real screen with the **same** `tools/parity/mobile/fixtures/*.mjs` this lane
-  already uses, so the data lives in exactly one place. Both sides import `lib/rendered-tree.mjs`.
-- Escapes are per-string and reviewable — `dynamic` (a value a fixture can't pin; needs a regex),
-  `extra` (an app string the mock doesn't draw), `undrawn` (a mock string the app doesn't render) —
-  each with a reason and a `ref`. A wired+fixtured key that is neither asserted nor listed in
-  `tools/parity/rendered-conformance.pending.json` **fails the test**: no screen is silently uncovered.
-- `rendered-conformance.pending.json` is therefore also the rendered-drift inventory: it names the
-  concrete blocker for every wired screen that does not yet conform.
-- **Pending suspends the ASSERTION, never the EXTRACTION.** Every wired+fixtured key carries a
-  committed `expected/<key>.json` whether or not it is asserted — that file is the mock's own truth,
-  and it is what a pending entry's blocker is measured against. Wiring a target without running the
-  extractor is a gap, not a deferral.
+- The app side (`apps/mobile/src/parity/__tests__/rendered-conformance.test.tsx`) mounts the real
+  screen with the same fixture and diffs the same normalized tree (`lib/rendered-tree.mjs`).
+- Escapes are per string, with a reason and a ref: `dynamic`, `extra`, `undrawn`.
+- A wired, fixtured key that is neither asserted nor listed in
+  `tools/parity/rendered-conformance.pending.json` fails the test. Every wired key needs a committed
+  `expected/<key>.json`, even when its assertion is pending.
+- A key that `--check` reports `≠` with no file on disk is an extractor that was never run, not drift.
 
-### Where each half runs, and why
+| Check | Browser? | CI |
+|---|---|---|
+| `node render-wired-mobile.mjs --out out` | yes | `parity-render` job, non-blocking; uploads the PNGs as PR evidence |
+| `extract-expected.mjs --check` | yes | last step of `parity-render`, non-blocking |
+| `jest rendered-conformance` | no | mobile test job, **blocking** |
 
-| Check | Needs a browser? | CI | Catches |
-|---|---|---|---|
-| `extract-expected.mjs --check` | yes | `parity-render` step, **non-blocking** | a committed expectation that no longer reproduces from its mock |
-| `jest rendered-conformance` | no | mobile test job, **blocking** | app-vs-mock divergence, plus a wired target with no/stale/orphaned expectation |
+## Honesty rules
 
-The browser half cannot be the blocking gate — browser rendering is environment-sensitive, which is
-the same reason `parity-render` carries `continue-on-error`. So it runs as the last step of that job
-(after the artifact upload, so drift never costs the PR its screenshots) and writes its verdict to the
-job summary. The guarantee that no screen goes *un-extracted* is browser-free and does block:
-`rendered-conformance` requires a committed expectation for every wired+fixtured target, requires
-`expected/index.json` to match the directory, and rejects an expectation whose target is gone.
-
-**Reading a `≠` from `--check`.** A key reported `≠` with **no file on disk** is an unrun extractor,
-not drift — a null `previous` never equals a fresh render, so the two cases print identically. Check
-whether `tools/parity/expected/<key>.json` exists before diagnosing. This is not hypothetical: PR #795
-(2026-08-17) wired 11 new `RC.*` targets and listed them as pending without running the extractor, and
-because `--check` was not in CI at the time, they read as "11 drifted RC expectations" for four days.
-The fix was to run the extractor; the recurrence gate is the blocking jest coverage tests above.
-
-## How it plugs into an alignment PR
-
-1. Add/verify the screen's `app-targets.mjs` entry (+ a fixture if the mobile screen needs data).
-2. `node pair.mjs --keys <the screens> --out out/sheet-<pr>`.
-3. Attach `out/sheet-<pr>.html` (or the `.png`) to the PR.
-4. The **user approves the picture** — an alignment PR waits for that visual OK (`CLAUDE.md` merge gate),
-   and the screen is marked ✅ in `docs/PIXEL-PARITY-TRACKER.md` only then.
-
-## Honesty rules (do not "fix" these away)
-
-- **Not drawn ⇒ not rendered.** The mock side renders exactly what the design system draws — including
-  its own image-slot placeholders. Don't dress it up.
-- **Stubbed map ≠ matched map.** Map tiles are gray stubs; the native map is verified by device
-  spot-check, not by this lane.
-- **Offline admin/merchant** shows the empty state until you point the renderer at a seeded API.
+- **Not drawn ⇒ not rendered.** The mock side shows exactly what the design draws.
+- **Stubbed map ≠ matched map.** Native maps render as a grey field (the react-native-maps web shim).
+  Check the map on a device.
 - **Pending is not pass.** A missing app render is a labelled placeholder, never a blank.
+- Say on the sheet what is stubbed (no Places key, no camera shot, live loops caught mid-motion).
 
-## What Phase 1 proved, and what's incremental
+## Environment notes
 
-Proven end-to-end: the hermetic mock renderer (all 275 screens, phone/320/tablet + admin kit pages), the
-mobile react-native-web renderer (`force-update` as the reference screen), the web renderer (admin
-console, both `/` and `/orders`), and the pair→sheet pipeline. Incremental, per screen, as alignment
-proceeds: the `app-targets.mjs` entries and mobile `fixtures/` — each is the same provider-mocking the
-jest suites already encode, added when a screen is actually being aligned.
-
-## What Phase 2 wired
-
-Phase 2 grew the app side from 4 proof screens to **47 wired screens** — the primary populated state of
-every top-level app route, across all four surfaces — so an alignment reviewer sees a real app render
-next to the mock, not a "pending" placeholder. The scalable mechanism is a **fixture harness**
-(`mobile/fixtures/_harness.mjs`, recipe in `mobile/fixtures/README.md`): a `globalThis.fetch` router
-that feeds the *real* hooks/queries their data (so the screen paints its live state the way it does on
-device), a `withQuery`/`withAuthQuery` provider wrap, and `setParams` for expo-router params. Native
-modules the screens import are covered by shims under `mobile/shims/` (safe-area, svg, maps as a gray
-stub, notifications/task-manager/location/file-system, socket.io, fonts, status-bar).
-
-Coverage:
-- **Customer food (RC)** — home, orders, list, search, menu, cart, checkout (cash + wallet), and the
-  food order tracker (on-the-way, pay-now, delivered-rate).
-- **Customer send + auth + account (LJ)** — phone, OTP, onboarding, role, permission, register, the
-  send composer (empty + both-pins), parcel tracking (active + code), account, notifications, help,
-  settings, history, force-update.
-- **Rider (RJM / RJ / RR)** — the one board (jobs + empty), money, account, food offer, food job,
-  parcel job, become-a-rider, documents, top-up.
-- **Admin console** — all 7 console routes render their offline "API not connected" shells.
-- **Merchant tablet** — `/login` renders; the gated routes need a seeded API (see the honesty note).
-
-Honest gaps carried forward (not faked): a few states live only in component `useState` with no route
-param to seed (`onboard_send`/`onboard_shared`, `perm_notif`) — they need a small `initialStep`-style
-prop before a fixture can reach them; the parcel tracking screens show the "re-issue code" card rather
-than the plaintext digits (the code lives in customer-local SecureStore, inert here); and the
-socket-driven rider boards show a "Reconnecting" chip and `0.0 km` distances because the socket and GPS
-are inert shims. The merchant tablet's queue/menu/shop render only against a seeded
-`PARITY_MERCHANT_URL` — offline they redirect to sign-in, which is the honest state.
-
-## Environment notes (this container)
-
-- Playwright + Chromium are global (`/opt/pw-browsers`); the loader prefers the global install and pins
-  the pre-installed Chromium, so a locally `npm i`-ed `playwright-core` with an undownloaded browser
-  can't break it.
-- Chromium is pointed at `$HTTPS_PROXY` with `<-loopback>` bypass as a safety net, but the mock render
-  is fully hermetic (loopback + stubbed externals) and needs no egress at render time — only the
-  one-time vendor download does.
+- Playwright and Chromium are global in this container (`/opt/pw-browsers`); the loader prefers them.
+- The mock render needs no network after the one-time `.vendor/` download.

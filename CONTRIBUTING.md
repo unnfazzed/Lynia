@@ -2,7 +2,7 @@
 
 This guide gets you from a fresh clone to a running local stack, and lays out how changes flow into
 `main`. For *what* the system is and *how* it's wired, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-first; for status and the founder wiring runbook, [`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
+first; for production operations, [`docs/AZURE-OWNER-RUNBOOK.md`](docs/AZURE-OWNER-RUNBOOK.md).
 
 ---
 
@@ -80,7 +80,7 @@ so nothing typechecks or runs until shared is built.
 ### Local defaults
 
 `.env.example` is pre-wired for the compose stack — `DATABASE_URL` and `REDIS_URL` already point at
-`localhost`, `CLOUD_PROVIDER=gcp`, `PUSH_PROVIDER=noop` (logs instead of sending), `KYC_PROVIDER=stub`
+`localhost`, `CLOUD_PROVIDER=gcp` (local only; production runs `azure`), `PUSH_PROVIDER=noop` (logs instead of sending), `KYC_PROVIDER=stub`
 (auto-passes, no Didit account), and `OTP_CHANNEL` can be set to `console` to print codes to the log.
 **You need no cloud account and no external vendor keys to run the full flow locally.**
 
@@ -145,7 +145,7 @@ graph LR
     ci["CI: build + schema jobs"]
     review["review"]
     merge["squash/merge to main"]
-    deploy["release.yml → Cloud Run<br/>(armed, non-docs changes)"]
+    deploy["release-azure.yml → Azure Container Apps<br/>(non-docs changes)"]
 
     branch --> change --> verify --> pr --> ci --> review --> merge --> deploy
 
@@ -157,37 +157,39 @@ graph LR
 - **Before pushing**, run the same gate CI will: `pnpm typecheck && pnpm build && pnpm test`.
 - **Open a PR** into `main`. Keep it scoped; write a description that explains the *why*.
 - **CI must be green** (next section) before merge.
-- **Docs-only changes** (`docs/**`, `**.md`) skip the deploy — the release workflow's `paths-ignore`
-  makes them a no-op for Cloud Run.
+- **Docs-only changes** (`docs/**`, `**.md`) skip the deploy — `release-azure.yml`'s `paths-ignore`
+  makes them a no-op.
 
 ---
 
-## 5. What CI checks
+## 5. What CI checks, and how a merge deploys
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`, in three jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every PR and push to `main`. The main jobs:
 
 | Job | What it does |
 |---|---|
-| **security** | `pnpm audit --audit-level high` (dependency advisory gate) + a `gitleaks` secret scan over full git history. |
-| **build** | `pnpm install` → build `@lynia/shared` → `prisma:generate` → `typecheck` → `lint` → `build` → API `test` → mobile `test` (`@lynia/mobile`), across all workspaces. |
+| **security** | `osv-scanner` dependency scan (high and above) + a `gitleaks` secret scan. |
+| **build** | install → build `@lynia/shared` → `prisma:generate` → `typecheck` → `lint` → the contract back-compat gate → `depcruise` → `build` → the API, mobile, admin and merchant tests. |
 | **schema** | Spins up a **real PostGIS service**, runs `migrate:deploy`, **asserts the offer-loop constraints actually applied** — `one_active_ride`, the GiST geo index, and the hashed delivery OTP — then runs the offer-loop concurrency integration tests (`test:int`). |
+| **design-freeze**, **doc-links**, **website**, **mobile-bundle-size**, **workflow-lint**, **terraform-validate** | Guardrails: the design package is not edited to match the app, `docs/` references resolve, the website matches its handoff, the JS bundle stays in budget, workflows and Terraform stay valid. |
 
 The schema job is the important one to understand: the correctness of the offer loop rests on those DB
 constraints ([ARCHITECTURE §13](docs/ARCHITECTURE.md#13-concurrency-safety-model)), so CI proves they
 exist on every change rather than trusting the migration.
 
-[`release.yml`](.github/workflows/release.yml) builds and deploys the API container to Cloud Run on
-merges to `main` — but only when a maintainer has armed it (`GCP_DEPLOY_ENABLED == 'true'`). Until
-then it's a clean no-op. The deploy is a **canary**: the new revision starts with no traffic, takes a
-small share, is observed via `/health` through the LB, then promotes to 100% — rolling back
-automatically on degradation. Manual rollback (a traffic re-point, seconds):
-[`rollback.yml`](.github/workflows/rollback.yml). Once staging is armed,
-[`deploy-staging.yml`](.github/workflows/deploy-staging.yml) also deploys every merge to a separate
-staging service (own DB/Redis/secrets, QA test mode) before the prod canary runs. Mobile ships separately —
-[`mobile-release.yml`](.github/workflows/mobile-release.yml) (EAS build → staged Play rollout, on
-`v*` tags) and [`mobile-ota.yml`](.github/workflows/mobile-ota.yml) (JS-only over-the-air hotfix).
-The full release strategy lives in
-[`docs/LAUNCH-DEPLOYMENT-STRATEGY.md`](docs/LAUNCH-DEPLOYMENT-STRATEGY.md).
+**Deploys.** [`release-azure.yml`](.github/workflows/release-azure.yml) deploys the API to Azure
+Container Apps on every non-docs merge to `main`: build the image, run the migrations in the in-VNet job,
+create the new revision at 0% traffic, smoke it, then canary 10% → 50% → 100% on `/healthz`, revision
+health and the 5xx rate, rolling back automatically if a gate fails. Manual rollback (a traffic
+re-point, seconds): [`rollback-azure.yml`](.github/workflows/rollback-azure.yml) with
+`environment: production`. The admin console deploys with
+[`deploy-admin-azure.yml`](.github/workflows/deploy-admin-azure.yml); the customer web, merchant web and
+website deploy to Cloudflare with their own `deploy-*.yml`.
+
+Mobile ships separately and only by hand: [`mobile-release.yml`](.github/workflows/mobile-release.yml)
+(EAS build → Play; pass `profile: closed` for the testers' Closed testing track) and
+[`mobile-ota.yml`](.github/workflows/mobile-ota.yml) (JS-only over-the-air update). The full release
+strategy lives in [`docs/LAUNCH-DEPLOYMENT-STRATEGY.md`](docs/LAUNCH-DEPLOYMENT-STRATEGY.md).
 
 ---
 
@@ -213,9 +215,12 @@ The full release strategy lives in
 | Backend (NestJS) | `apps/api/` |
 | Mobile (Expo) | `apps/mobile/` |
 | Admin console (Next.js) | `apps/admin/` |
+| Merchant web (Next.js, static export) | `apps/merchant/` |
+| Customer web (Cloudflare Worker over the mobile web export) | `apps/customer-web/` |
+| Marketing site (handoff, as-is) | `apps/website/` |
 | Shared contracts / enums / pricing | `packages/shared/src/` |
 | DB schema + migrations | `apps/api/prisma/` |
-| Cloud infra (Terraform) | `infra/terraform/` |
+| Cloud infra (Terraform, Azure) | `infra/azure/` |
 | CI / release | `.github/workflows/` |
 | Architecture & design docs | `docs/` |
 

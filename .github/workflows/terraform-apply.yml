@@ -1,7 +1,7 @@
 name: Terraform Apply (gated)
 
 # Runs `terraform apply` from CI behind a human approval gate, so infra changes stop requiring a
-# laptop with gcloud + terraform + state access (docs/LAUNCH-EXECUTION-RUNBOOK.md §8e).
+# laptop with gcloud + terraform + state access (docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §8e).
 #
 # THIS FILE WAS REWRITTEN AFTER AN ADVERSARIAL SECURITY REVIEW of its first draft, which found
 # 5 P1 issues. Each control below exists because the review broke the previous version:

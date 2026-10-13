@@ -1,43 +1,45 @@
 # Lynia
 
-On-demand motorbike courier for Zimbabwe — an inDrive-style "offer loop" (customer names a
-price, riders accept or counter, customer selects). See [`docs/`](docs/) for the full plan:
-[CONCEPT](docs/CONCEPT.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) (system diagrams + data model) ·
-review logs: [CEO](docs/archive/CEO-REVIEW.md) · [Eng](docs/archive/ENG-REVIEW.md) ·
-[Design](docs/archive/DESIGN-REVIEW.md) · [Design system](docs/DESIGN.md).
+LyniaGo: on-demand motorbike delivery for Zimbabwe. Customers send parcels with an inDrive-style "offer
+loop" (the customer names a price, bikers accept or counter, the customer picks one), and order from
+restaurants, shops and pharmacies (cash only). See [`docs/`](docs/README.md):
+[CONCEPT](docs/CONCEPT.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [Design system](docs/DESIGN.md).
 
-**Status:** the API is **live and CI-deployed on GCP** at
-[`https://api.lyniago.com`](https://api.lyniago.com) (`/health` →
-`{"status":"ok","db":true,"redis":true}`). The **Phase-3 mobile build** has since landed — native map +
-tap-to-pin for pickup/drop-off and a **live tracking map** on both the customer order and rider job
-screens — and the vendor integrations are now **implemented behind flags** (WhatsApp Cloud API OTP send,
-Didit v3 KYC with a one-command founder-wiring script, FCM push + `google-services.json` build wiring). What
-remains is **founder account/key actions and an on-device `/qa` dev build**, not more feature code. Where the
-build stands + what the founder wires next → [`docs/PILOT-READINESS.md`](docs/PILOT-READINESS.md).
+**Status (2026-10-12):**
 
-**The Android app is live on Google Play's internal testing track** as of **2026-08-04** — v0.17.9
-(versionCode 2), built and submitted end to end by
-[`mobile-release.yml`](.github/workflows/mobile-release.yml) with no manual upload. Internal track
-only (not public); the mandatory ~14-day closed test has not started. Release record + what is still
-open → [`docs/PLAY-STORE-SUBMISSION.md`](docs/PLAY-STORE-SUBMISSION.md).
+- **API** live at [`https://api.lyniago.com`](https://api.lyniago.com) on **Azure Container Apps**
+  (South Africa North), deployed by [`release-azure.yml`](.github/workflows/release-azure.yml) on every
+  merge to `main`, with a 10% → 50% → 100% canary and automatic rollback.
+- **Android app** on Google Play's **Closed testing** track: v0.51.0, versionCode 45 (2026-10-06), plus
+  OTA updates. Not public yet. → [`docs/PLAY-STORE-SUBMISSION.md`](docs/PLAY-STORE-SUBMISSION.md)
+- **iPhone users** use the customer web app at `app.lyniago.com` until the App Store release
+  ([`docs/CUSTOMER-WEB.md`](docs/CUSTOMER-WEB.md)).
+- **Merchants** use `merchant.lyniago.com`; operators use the admin console at `admin.lyniago.com`.
+- **Marketing site** at `lyniago.com` ([`docs/WEBSITE.md`](docs/WEBSITE.md)).
+
+How releases work → [`docs/LAUNCH-DEPLOYMENT-STRATEGY.md`](docs/LAUNCH-DEPLOYMENT-STRATEGY.md).
+Founder and ops commands → [`docs/AZURE-OWNER-RUNBOOK.md`](docs/AZURE-OWNER-RUNBOOK.md).
 
 ## Monorepo
 
-pnpm + Turborepo. Backend is an own NestJS API on PostgreSQL (no BaaS) on **Google Cloud**
-(chosen 2026-06-27, provisioned + deployed 2026-06-29 — Cloud Run + Cloud SQL + Memorystore + Cloud
-Storage + Secret Manager in `africa-south1`, fronted by an external HTTPS load balancer). The infra is
-Terraform ([`infra/terraform/`](infra/terraform/)) with keyless CI auth (Workload Identity Federation),
-deployed by [`.github/workflows/release.yml`](.github/workflows/release.yml). Cloud-specific code lives
-behind adapters (`apps/api/src/adapters`) — so a future cloud move is a new adapter impl, not a
-rewrite.
+pnpm + Turborepo. The backend is our own NestJS API on PostgreSQL (PostGIS) and Redis, no BaaS.
+Cloud-specific code sits behind adapters (`apps/api/src/adapters`), selected by `CLOUD_PROVIDER`.
 
 ```
-packages/shared   @lynia/shared  — enums, API contracts (zod), design tokens (shared by all apps)
-packages/design   @lynia/design  — vendored LyniaGo design system: tokens, components, brand assets, UI kits
-apps/api          @lynia/api     — NestJS: config, Prisma, health, cloud adapters, OpenTelemetry
-apps/mobile       @lynia/mobile  — Expo (React Native), Android-first
-apps/admin        @lynia/admin   — Next.js monitor/support console
+apps/api           @lynia/api       NestJS API: Prisma/PostGIS, Redis, BullMQ, Socket.IO, cloud adapters
+apps/mobile        @lynia/mobile    Expo (React Native) app, customer + biker; Android first
+apps/admin         @lynia/admin     Next.js operator console (admin.lyniago.com, Azure)
+apps/merchant      @lynia/merchant  Next.js merchant web app, static export (merchant.lyniago.com, Cloudflare)
+apps/customer-web  —                Cloudflare Worker serving apps/mobile's web export (app.lyniago.com)
+apps/website       —                lyniago.com, the design handoff shipped as-is (Cloudflare)
+packages/shared    @lynia/shared    enums, API contracts (zod), policy, design tokens
+packages/design    @lynia/design    the vendored LyniaGo design system: tokens, components, handoffs
+infra/azure                          Terraform + owner scripts for the Azure production stack
 ```
+
+`infra/terraform/` and the GCP workflows (`release.yml`, `rollback.yml`, `deploy-staging.yml`,
+`deploy-admin.yml`, `gcp-*.yml`, `terraform-apply.yml`) are left over from the suspended GCP project and
+deploy nothing.
 
 ## Develop
 
@@ -45,13 +47,11 @@ apps/admin        @lynia/admin   — Next.js monitor/support console
 pnpm install
 pnpm --filter @lynia/shared build         # build shared types first
 pnpm --filter @lynia/api prisma:generate  # generate the Prisma client
-pnpm run typecheck                        # all workspaces
-pnpm run build                            # all workspaces
+pnpm db:up && pnpm db:migrate             # local PostGIS + Redis (docker compose), then the schema
+pnpm dev                                  # all workspaces
+pnpm typecheck && pnpm test               # the local gate
 ```
 
-Local services: PostgreSQL **with PostGIS** + Redis (set `DATABASE_URL`, `REDIS_URL` — see
-`.env.example`). Apply the schema with `pnpm --filter @lynia/api migrate:deploy`.
-
-CI (`.github/workflows/ci.yml`) typechecks/builds/tests every workspace and runs the migration
-against a real PostGIS service, asserting the offer-loop constraints (`one_active_ride`, the GiST
-geo index, hashed delivery OTP).
+Full setup and the PR flow: [`CONTRIBUTING.md`](CONTRIBUTING.md). CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) typechecks, builds and tests every workspace,
+runs the migrations against a real PostGIS service, and asserts the offer-loop constraints.

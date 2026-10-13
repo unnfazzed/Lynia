@@ -3,7 +3,7 @@
 # backup restore drill (docs/RESTORE-DRILL.md, roadmap item 1.7 / LR7).
 #
 # Given a DATABASE_URL pointing at a RESTORED SCRATCH database (a PITR clone or a
-# backup restored onto a throwaway Cloud SQL instance — NEVER production), this
+# backup restored onto a throwaway Azure Postgres server — NEVER production), this
 # script asserts the restore actually produced a healthy, self-consistent DB:
 #
 #   • the expected tables exist (a partial/failed restore is caught here);
@@ -36,8 +36,8 @@
 #   scripts/restore-drill-verify.sh "postgresql://user:pass@127.0.0.1:5433/lynia"
 #   DATABASE_URL="postgresql://..." scripts/restore-drill-verify.sh
 #
-# Typical drill wiring (see docs/RESTORE-DRILL.md): start the Cloud SQL Auth
-# Proxy against the SCRATCH instance, then point this at 127.0.0.1:<proxy-port>.
+# Typical drill wiring (see docs/RESTORE-DRILL.md): run this from a temporary
+# container inside the Azure network and point it at the SCRATCH server.
 
 set -uo pipefail
 
@@ -69,7 +69,7 @@ q() { psql "$DATABASE_URL" --no-psqlrc -Atq -c "$1"; }
 hdr "Connectivity"
 if ! SRV="$(q "SELECT current_database() || ' @ ' || COALESCE(inet_server_addr()::text,'socket')")"; then
   bad "cannot connect to the restored database via DATABASE_URL" \
-      "check the Cloud SQL Auth Proxy is up and the URL host/port/creds are right (docs/RESTORE-DRILL.md §Connect)"
+      "check the scratch server is reachable and the URL host/port/creds are right (docs/RESTORE-DRILL.md §Connect)"
   printf '\n%d passed, %d failed, %d warnings — ABORTED\n' "$PASS" "$FAIL" "$WARN"
   exit 1
 fi

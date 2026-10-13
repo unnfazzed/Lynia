@@ -364,7 +364,7 @@ variable "merchant_cloud_run_service" {
 
 # --- Staging stack (staging.tf) — all gated off by default ---
 variable "staging_enabled" {
-  description = "Provision the staging tier (staging.tf): its own Cloud SQL + Redis + secrets + runtime SA + media bucket, exposed via the existing ALB at staging_api_domain. Off by default — zero diff until armed. Arming guide: docs/LAUNCH-EXECUTION-RUNBOOK.md §8e."
+  description = "Provision the staging tier (staging.tf): its own Cloud SQL + Redis + secrets + runtime SA + media bucket, exposed via the existing ALB at staging_api_domain. Off by default — zero diff until armed. Arming guide: docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §8e."
   type        = bool
   default     = false
 }
@@ -407,7 +407,7 @@ variable "kyc_alerts_enabled" {
 
 # --- Cloud Scheduler cron jobs (scheduler.tf) ---
 variable "scheduler_jobs_enabled" {
-  description = "Create the daily retention-purge Cloud Scheduler job (LR8, docs/LAUNCH-EXECUTION-RUNBOOK.md §2). ON by default: the API side (AdminOrSchedulerGuard + SCHEDULER_SERVICE_ACCOUNT injection) has been live since 2026-07-08 while the job itself was never created, so the purge has never run — the next apply closes that gap. Requires DNS for api_domain to be live (the OIDC audience is pinned to the public URL)."
+  description = "Create the daily retention-purge Cloud Scheduler job (LR8, docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §2). ON by default: the API side (AdminOrSchedulerGuard + SCHEDULER_SERVICE_ACCOUNT injection) has been live since 2026-07-08 while the job itself was never created, so the purge has never run — the next apply closes that gap. Requires DNS for api_domain to be live (the OIDC audience is pinned to the public URL)."
   type        = bool
   default     = true
 }
@@ -419,7 +419,7 @@ variable "scheduler_region" {
 }
 
 variable "settlement_autopause_enabled" {
-  description = "Also create the daily settlement auto-pause job (LR5). Off until monetization is on — commission is 0% for the pilot, so there are no settlements to pause (docs/PILOT-READINESS.md)."
+  description = "Also create the daily settlement auto-pause job (LR5). Off until monetization is on — commission is 0% for the pilot, so there are no settlements to pause (docs/archive/PILOT-READINESS.md)."
   type        = bool
   default     = false
 }

@@ -10,7 +10,7 @@ name: Deploy Staging (Cloud Run)
 # DORMANT UNTIL STAGING IS PROVISIONED — gated on the repo variable GCP_STAGING_ENABLED == 'true'.
 # Arming (founder): set staging_enabled = true in terraform.tfvars, `terraform apply`, create the
 # staging DNS A record, then set the repo variables/secret below from the Terraform outputs
-# (docs/LAUNCH-EXECUTION-RUNBOOK.md §8e).
+# (docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §8e).
 #
 #   Variables: GCP_STAGING_ENABLED, STAGING_CLOUD_SQL_INSTANCE, STAGING_CLOUD_RUN_SERVICE_ACCOUNT
 #              (optional: STAGING_CLOUD_RUN_SERVICE, STAGING_HEALTH_URL, STAGING_OTP_TEST_PHONES)
@@ -78,7 +78,7 @@ jobs:
             [ -n "${!v:-}" ] || missing+=("$v")
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::GCP_STAGING_ENABLED is true but these are unset: ${missing[*]}. See docs/LAUNCH-EXECUTION-RUNBOOK.md §8e." >&2
+            echo "::error::GCP_STAGING_ENABLED is true but these are unset: ${missing[*]}. See docs/archive/LAUNCH-EXECUTION-RUNBOOK.md §8e." >&2
             exit 1
           fi
           echo "All required staging config present."

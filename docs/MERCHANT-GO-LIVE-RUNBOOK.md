@@ -90,7 +90,7 @@ riders are given at pickup, plus the pin.
   ringing and is cancelled only after 24 h, the customer free to cancel and nudged at 3 and 15 min), cash
   only. A switched-on shop in a switched-on section is orderable as soon as this API is deployed.
 - **Sign-up refuses** a held account, a banned or suspended rider, and a pin outside the area LyniaGo
-  covers (the 25 km Send corridor).
+  covers (all of Zimbabwe, `isInServiceArea` in `packages/shared/src/service-area.ts`, D-99).
 
 ## 6. Bookings (Book a rider, L2)
 

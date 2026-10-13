@@ -1,389 +1,153 @@
-# Lynia — Design System & UX Spec
+# Lynia — Design system & UX rules
 
-> Seeded by the gstack `/plan-design-review` stage. This is the living design **system/spec**: every screen
-> and future design review calibrates against it. The **review history** (verdicts, scores, findings) lives
-> in `docs/archive/DESIGN-REVIEW.md`; this file is the baseline it measures against. Direction: **Grab-style clean
-> utility** — trust through clarity, tuned for a low-trust cash market on cheap Android phones in bright
-> sunlight. Light theme, data-light, white cards on soft shadows, a bright Grab-green with a dark text-green
-> for legibility, one sparing gold marker.
->
-> **The full design system is vendored at [`packages/design/`](../packages/design/)** — CSS-variable tokens,
-> reusable primitives, brand assets (the Paper Dove), and the mobile/admin/support UI kits. That folder is the
-> visual source of truth; `@lynia/shared`'s `design-tokens.ts` mirrors it for the apps. See
-> [`docs/DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) for how it was adopted and what remains, and
-> `packages/design/HANDOFF.md` for the engineering handoff.
+This file is the short map of where the design lives, the token values, and the few UX rules the
+code depends on. It is not a screen spec. Each screen's look comes from a design handoff in
+`packages/design/handoff/`, and `CLAUDE.md` → "Pixel parity" is the full rulebook.
 
-## Locked design decisions
+Direction: **Grab-style clean utility**. Light theme, data-light, white cards on soft shadows, a
+bright green fill with a dark text-green for legibility. Built for a cash market, cheap Android
+phones and bright sunlight.
 
-| # | Decision | Choice |
-|---|----------|--------|
-| D-a | Visual/brand direction | Grab-style clean utility — bright Grab-green fills, dark text-green, mint selected wash (clean-utility neutrals unchanged) |
-| D-b | Customer home layout | Map-anchored home; scannable LIST for offer compare |
-| D-c | Theme + data discipline | Light, sunlight-contrast, data-light (dark mode deferred) |
-| D-d | Offer presentation | Sorted list, blended "best-match" default + 'recommended' marker |
+## Where the design lives
+
+| Layer | Source | Notes |
+|---|---|---|
+| **Look, per screen** | the handoff that owns the screen (table below) | Each handoff has a ledger entry in [`DESIGN-DEVIATIONS.md`](./DESIGN-DEVIATIONS.md). |
+| **Look, everything else** | `packages/design/explorations/journey/All Screens Gallery.html` | Only where no handoff has replaced the screen. |
+| **Interaction** | `packages/design/ui_kits/` | The gallery wins on look and IA. The mobile kit is stale for the rider. |
+| **Values** | `packages/design/tokens/*.css` | Never hardcode a value a token defines. Mirrors: see [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md). |
+| **Sanctioned differences** | [`DESIGN-DEVIATIONS.md`](./DESIGN-DEVIATIONS.md) | Owner-approved only. A code comment is not a deviation. |
+
+`packages/design/` mirrors the design tool. Do not edit it to match the app. CI fails a PR that
+touches `packages/design/**` without a `DESIGN-DEVIATIONS.md` entry (`scripts/check-design-freeze.mjs`).
+
+### Which handoff owns which screen
+
+| Area | Code | Handoff (`packages/design/handoff/…`) | Ledger |
+|---|---|---|---|
+| Send a parcel | `app/send.tsx` | [`send-compose-v2/`](../packages/design/handoff/send-compose-v2/) | D-52 |
+| Order screen (parcel and merchant orders) | `app/order/[id].tsx` | [`after-send-v2/`](../packages/design/handoff/after-send-v2/) + [`order-flow-v2/`](../packages/design/handoff/order-flow-v2/) | D-53, D-59 |
+| Rider app, top-up, both Account tabs, Settings, Job history | `app/rider/**`, `app/wallet/top-up.tsx`, `app/settings/index.tsx`, `app/history/index.tsx` | [`rider-v2/`](../packages/design/handoff/rider-v2/) | D-54 |
+| Home, customer onboarding (C1–C5), rider first run (R1–R3) | `app/(tabs)/home.tsx` and onboarding | [`calm-mint-v2-2026-10/`](../packages/design/handoff/calm-mint-v2-2026-10/) | D-55 |
+| Tab bar (both sides) | `src/ui/shell/TabBar.tsx`, the `(tabs)` layouts | [`tab-bar-v1/`](../packages/design/handoff/tab-bar-v1/) | D-56 |
+| Restaurants, Shops, Pharmacy browse and search | `app/food/index.tsx`, `app/food/[id].tsx`, `app/food/search.tsx`, `app/shops/*`, `app/pharmacy/*` | [`browse-v2/`](../packages/design/handoff/browse-v2/) | D-57, D-58 |
+| Review & place, merchant order screens, rider merchant jobs | `app/food/checkout.tsx`, `app/order/[id].tsx`, merchant and rider job screens | [`order-flow-v2/`](../packages/design/handoff/order-flow-v2/) | D-59 |
+| Orders tab | `app/(tabs)/orders.tsx` | [`orders-v2/`](../packages/design/handoff/orders-v2/) | D-63 |
+| Cold-start splash | `src/boot/splash/BootSplash.tsx` | [`splash-v1/`](../packages/design/handoff/splash-v1/) | D-64 |
+| Notifications (both sides) | `app/notifications/index.tsx` | [`notifications-v1/`](../packages/design/handoff/notifications-v1/) | D-66 |
+| Every empty, nothing-found and couldn't-load state | `src/ui/EmptyState.tsx` | [`empty-states-v2-2026-10/`](../packages/design/handoff/empty-states-v2-2026-10/) | D-78 |
+| Permission asks, update screens, rider details and documents, ID-check outcomes, rider entry | `app/permissions.tsx`, `app/order-updates.tsx`, `src/ui/firstrun/*` | [`first-run-v2/`](../packages/design/handoff/first-run-v2/) | D-82 |
+| Merchant app (kitchens, shops, pharmacies) | `apps/merchant` | [`merchant-v2/`](../packages/design/handoff/merchant-v2/) (its `BRIEF.md` wins); screens it does not redraw keep [`merchant-mobile/`](../packages/design/handoff/merchant-mobile/) | D-77, D-48 |
+| Late-cancel rider contact, venue note, code changed, remove an Rx page | states on existing screens | [`customer-briefs-06-09/`](../packages/design/handoff/customer-briefs-06-09/) | D-97 |
+| Marketing website | `apps/website/site/` | [`lyniago-website/`](../packages/design/handoff/lyniago-website/), shipped as-is | D-42 |
+
+Strings come from each handoff's copy file, verbatim. One standing exception: user-visible
+**"rider" reads "biker"** app-wide (D-101). Code, routes and data keep `rider`.
+
+**Viewports.** Customer and rider phone: 360×720, plus a 320×640 check. Merchant is a phone app too:
+360×720 plus 320px. Admin: 1440×900.
+
+**Retired screens** are listed in `packages/design/EXPORT-README.md`. Never align to them.
 
 ## Design tokens
 
-**Color (light theme, AA+ contrast):**
+Values are in `packages/design/tokens/*.css`. These are the core ones; the files hold the rest
+(semantic roles, tile tints, illustration palette, shadows).
+
+**Colour (light theme):**
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--ink` | `#14181B` | body text (≥4.5:1) |
-| `--muted` | `#5B6670` | secondary text, captions |
-| `--bg` | `#FFFFFF` | page background |
-| `--surface` | `#F6F7F8` | cards, sheets |
-| `--line` | `#E2E6EA` | borders, dividers |
-| `--accent` | `#00B14F` | brand green — **fills / graphics / map pins only** (≈2.9:1, never text) |
-| `--accent-700` | `#009D3B` | pressed / hover-deep fill |
-| `--accent-text` | `#006630` | green **text & small icons** (≈7:1 on white) |
-| `--accent-wash` | `#E9F8EF` | mint wash — selected states, chips |
-| `--cta-fill` | `#00812F` | primary-button fill — white label ≈4.7:1 (AA large), sunlight-tuned |
-| `--highlight` | `#F2B705` | 'recommended' marker only (gold, sparing) |
-| `--danger` | `#C0392B` | errors, destructive |
-| `--danger-wash` | `#FAEDEB` | danger tint — 'bad' status pills, warn bars, danger hover (admin console) |
-| `--success` | `#00B14F` | confirmation fills (use `--accent-text` for success text) |
-| `--onAccent` | `#FFFFFF` | text/icons on an accent (or danger) fill — the one inverse |
+| `--ink` | `#14181b` | body text |
+| `--muted` | `#5b6670` | secondary text, captions |
+| `--bg` | `#ffffff` | page background |
+| `--surface` | `#f6f7f8` | sheets, chips, sunken areas |
+| `--line` | `#e2e6ea` | borders, dividers |
+| `--accent` | `#00b14f` | brand green: **fills, graphics, map pins only** (≈2.9:1, never text) |
+| `--accent-700` | `#009d3b` | pressed fill |
+| `--accent-text` | `#006630` | green **text and small icons** (≈7:1 on white) |
+| `--accent-wash` | `#e9f8ef` | mint wash: selected states, chips |
+| `--cta-fill` | `#00812f` | primary-button fill; white label ≈4.7:1 |
+| `--cta-fill-pressed` | `#006b27` | pressed primary button |
+| `--highlight` | `#ffd23f` | gold, sparing: ETA chip, unread dot, star fill (was `#f2b705` before D-55) |
+| `--highlight-ink` | `#6b5600` | gold-family text on `--highlight-wash` |
+| `--danger` | `#c0392b` | errors, destructive |
+| `--danger-wash` | `#faedeb` | soft red wash |
+| `--danger-ink` | `#8f2418` | danger text on `--danger-wash` |
+| `--success` | `#00b14f` | confirmation fills (use `--accent-text` for success text) |
+| `--on-accent` | `#ffffff` | text and icons on a green or danger fill |
 
-Body text ≥ 4.5:1 contrast; green **text** uses `--accent-text` (≈7:1) and the primary CTA uses `--cta-fill`
-(white label ≈4.7:1) for **sunlight readability** (riders outdoors). **Never set text in `--accent`** — the bright
-fill green fails contrast; that is exactly what `--accent-text` is for.
+**Never set text in `--accent`.** Green text uses `--accent-text`; white text on green sits on
+`--cta-fill`. The semantic role layer (`--text-*`, `--surface-*`, `--action-*` …) in `colors.css`
+maps onto these raw values; prefer role names in new UI.
 
-**Semantic colour roles (roadmap 4.6, additive):** a role layer on top of the raw scale above — `--text-*`,
-`--surface-*`, `--border-*`, `--action-*`, `--marker-*`, `--state-*` in `packages/design/tokens/colors.css`,
-mirrored by the `semantic` export in `@lynia/shared`'s `design-tokens.ts`. Each role maps straight to a raw
-token (`--text-accent` → `--accent-text`, `--action-primary` → `--cta-fill`, etc.) — nothing new to tune,
-just names for "what a colour is FOR" so a future re-theme is a change to this map, not a codebase sweep.
-Prefer role names in new UI; the raw scale still exists underneath and nothing in it changed.
+**Type:** Inter 400/600/700, tabular numerals for fares, ETAs and ratings (the `tabular` helper in
+`apps/mobile/src/ui/index.tsx`). Scale from `typography.css`: display 28, h1 24, h2 20, title 18,
+body-lg 16 (inputs, button labels), body 14, caption 12, micro 10. The "LyniaGo" wordmark ships as
+outlined paths (`apps/mobile/src/ui/wordmark-paths.ts`), not a font.
 
-**Type:** **Inter** (UI + display) — the same open-source typeface Grab uses in-product; self-hosted 400/600/700
-in `packages/design/assets/fonts` with a system-font (Roboto) fallback, `font-display: swap`. **Tabular numerals**
-for fares, ETAs, ratings — in the app always via the shared `tabular` style helper (`apps/mobile/src/ui`), never ad hoc. Grab-dense scale: 24px screen titles, 18px card titles, **14px body, 12px captions**,
-16px for inputs & button labels. Titles bold 700; body 400/600. **Fredoka 600** is the LyniaGo wordmark face only
-(never UI/body text).
+**Spacing:** 4 / 8 / 12 / 16 / 24 / 32 / 48. Screen edge 16px.
 
-**Spacing:** 8pt base — `4 / 8 / 12 / 16 / 24 / 32 / 48`. Screen edge padding 16px (320px-first, not 24px).
+**Radius:** input 12, card 16, buttons and pills full.
 
-**Radius (Grab shape language):** cards **16px**, inputs **12px**, buttons **full pill** (primary + secondary),
-chips/status pills full. Cards float on a soft ambient shadow with no visible border; hairlines stay for dividers,
-inputs and chips.
+**Icons:** the Lucide line set, always paired with a text label. No emoji.
 
-**Data-light:** cache map tiles, throttle the GPS marker render, lazy-load images, skeleton loaders over spinners.
-
-## Components
-
-| Component | Spec |
-|-----------|------|
-| Primary CTA | full-width pill, **52px** tall, `--cta-fill` (brand `--accent` reserved for non-text fills), one per screen |
-| Secondary | outline, 48px |
-| Input | **visible label above** the field (never placeholder-as-label), 48px |
-| Offer card | big **tabular price** · ★rating + count · ETA · optional 'recommended' marker |
-| Rider card | photo · first name + last initial · ★rating · call button (active order only) |
-| Status stepper | the §5c 7-step timeline |
-| Map bottom-sheet | draggable sheet over a full-bleed map |
-| Skeleton | content-shaped placeholder (pulse) for list/board screens — `SkeletonList` (cards) / `SkeletonRows` (row-with-value, e.g. history). Per-screen stepper/summary skeletons tuned in the on-device `/qa` pass |
-| OfflineBanner | global connectivity affordance, mounted once per screen — ink bar = offline, surface bar = reconnecting; renders nothing while online |
-
-**Icons** are the self-hosted **Lucide** line-icon subset (`packages/design/assets/lynia-icons.js`, ~5KB — never
-the full CDN library) and are **always paired with a text label** (low-literacy users + screen readers). Green
-icons use `--accent-text`; icons on a green fill are white. **No emoji** — they are not part of the visual language.
-
-## Screen information architecture
-
-```
-Customer:  [Map home + "Send a parcel" sheet] → pins + item + adjustable price → Broadcast
-           [Broadcasting] map + "Finding riders…" → offers stream into a sorted bottom-sheet LIST
-             → select → [Tracking] §5c 7-step stepper + live map + rider card
-Rider:     [Home] big online/offline toggle · nearby broadcasts (accept/counter) · active job
-```
-
-Offer list (D-d): default sort by a **blended best-match** of price + rating + ETA, with a subtle
-'recommended' marker; re-sortable by the customer. Reduces decision-paralysis and resists a pure
-race-to-the-bottom while keeping "customer always selects" (CEO D5).
-
-## Interaction-state coverage
-
-```
-FEATURE             | LOADING            | EMPTY                          | ERROR                       | SUCCESS          | PARTIAL
---------------------|--------------------|--------------------------------|-----------------------------|------------------|----------------
-Broadcast / offers  | "Finding riders…"  | no-offers → nudge+rebroadcast  | network → retry banner      | offer list shown | offers as they arrive
-                    |  skeleton list     | no-riders → notify-me          | GPS off → enable prompt     |                  |
-Tracking (§5c)      | map skeleton       | n/a (active order)             | GPS drop → stale label      | step lights up   | last-known + "paused"
-Offer select        | per-row spinner    | n/a                            | rider gone → "pick another" | assigned → track |
-Signup / OTP        | "sending code…"    | n/a                            | send failed → retry / alt   | verified         |
-```
-
-### Empty states (designed — the highest-leverage screens)
-
-- **No offers / window expired:** calm, illustration-light card — *"No riders took this price yet."*
-  Primary action: **Nudge price & re-broadcast**. Secondary: Edit order. (A dead-end becomes an action.)
-- **No riders online:** *"No riders online in [corridor] right now."* Primary: **Notify me when one's
-  available**. Context line on typical busy hours.
-
----
-
-# Two-sided journey (added by the pre-Phase-3 design consultation)
-
-> The sections above were the original customer-side design review. The build has since shipped the **rider
-> side** (Phase 2) and the app will soon need the **cross-cutting flows** every two-sided courier has. This
-> half of the spec covers the *full* journey — rider screens calibrated against the as-built code, plus the
-> not-yet-built flows (history, profile, earnings, notifications, support) designed once, now, on paper.
-> Same locked tokens and components as above — nothing new invented.
-
-## Rider information architecture
-
-```
-Rider:  [Become a rider / KYC]  name + ID + bike reg + photo → submit → Didit verification (browser) → pending/verified
-        [Rider home]            big online/offline toggle · distance-sorted broadcast board · active-job banner
-          → tap a broadcast → [Offer compose] accept-at-asking | counter (fare + ETA) → one round, then hidden
-        [Active job]            §5c status stepper (rider view) · customer card · advance buttons
-          → en_route_dropoff → [Delivery hand-off] enter recipient's 6-digit OTP → delivered → free for next
-```
-
-The rider side reuses the customer component language verbatim: the **online/offline toggle** is the
-screen's single primary CTA (52px pill, `--accent` when offline = "Go online", outline/ghost when online);
-the **broadcast board** is the same offer-card layout inverted (the rider scans *orders* the way the
-customer scans *offers* — tabular price · distance · item, sorted by `haversineKm` to pickup); the **active
-job** renders the §5c stepper from the rider's perspective.
-
-### Rider screens — spec + as-built calibration
-
-| Screen | As-built route | Spec notes (calibrate code to this) |
-|--------|----------------|-------------------------------------|
-| Become / KYC | `app/rider/become.tsx` | Two cards (identity, bike) → one CTA. Pending/verified result card. Only an `https://` verification URL opens (already enforced). Add: inline field validation states + a "what Didit needs" helper line. |
-| Rider home | `app/rider/index.tsx` | Online toggle is the one primary CTA; status line states the consequence ("offers stay live" / "go online to bid"). Board hides already-bid orders (built). Add the **two rider empty-states** below. |
-| Offer compose | (inline card in `index.tsx`) | Pre-fill fare = customer's ask (accept) ; any edit = counter (built). Label the toggle clearly: *Accept $X* vs *Counter*. ETA in minutes, tabular. |
-| Active job | `app/rider/job.tsx` | §5c stepper, **rider view** (table below). Customer card (name + ★ + call) visible only in the reveal window (§5d). Delivery-OTP card at `en_route_dropoff`; 5-attempt lockout messaged (built). Undelivered flow (`UndeliveredSheet`) offers an optional proof-of-drop photo + GPS capture before submitting a failed hand-off (`KB-POD-DISPUTE` Phase A, IR16-11) — never blocks the undelivered decision. |
-
-### §5c stepper — the rider's view (mirror of the customer table)
-
-| # | Rider sees | Order status | Rider action |
-|---|---|---|---|
-| 1 | **You're assigned** | `assigned` | Review item + note → **Confirm details** |
-| 2 | **Details confirmed** | `confirmed` | **Start ride** (head to pickup) |
-| 3 | **Heading to pickup** | `en_route_pickup` | Collect parcel → **Mark collected** (+ pickup photo) |
-| 4 | **Parcel collected** | `picked_up` | **Head to drop-off** |
-| 5 | **Heading to drop-off** | `en_route_dropoff` | Ask recipient for OTP → **enter code** |
-| 6 | **Delivered** | `delivered` | Done — *"You're free for the next job."* |
-
-> The customer stepper (§5c) and this rider stepper are **one timeline seen from two sides** — keep the step
-> labels paired so a support agent reading either screen sees the same journey.
-
-### Rider interaction-states (parity with the customer matrix)
-
-```
-FEATURE          | LOADING             | EMPTY                           | ERROR                              | SUCCESS              | PARTIAL
------------------|---------------------|---------------------------------|------------------------------------|----------------------|------------------
-ID verification  | wall skeleton while | n/a — a rider always has a wall | declined → reason + "Try again";   | "Verified" → the     | unfinished → "Finish
-  (KYC)          |   /auth/me is cold  |   here, never a blank board     |   2nd decline locks to support;    |   board unlocks      |   verifying" (resumes,
-                 |                     |                                 |   SDK couldn't open → "camera or   |                      |   0 credits); in flight
-                 |                     |                                 |   connection", support ghost       |                      |   → "with Didit", no action
-Go online        | toggle spinner      | n/a                             | cooldown 403 → "taken offline" +   | "you're online"      | heartbeat retrying
-                 |                     |                                 |   reason, toggle flips off (built) |                      |
-Broadcast board  | skeleton cards      | no-orders → "No open orders in   | location off → "enable for nearest"| sorted board         | orders stream in
-                 |                     |   [corridor]. Stay online."      | net → retry banner                 |                      |
-Offer compose    | send spinner        | n/a                             | order taken → "gone — pick another"| hidden from board    |
-Active job       | stepper skeleton    | no active job → "Accept an order"| OTP 5-fail lockout → re-issue ask  | step lights up       | GPS stale → "paused"
-Delivery OTP     | verify spinner      | n/a                             | wrong code 401 → retry; 403 lockout| delivered            |
-```
-
-### Rider empty-states (the high-leverage ones, parity with customer)
-
-- **No open orders (online):** *"No open orders near you right now — you're online and first in line."*
-  Reassures the rider that staying online is the correct action (don't make idleness feel like a dead-end).
-  Secondary: typical busy-hours / busiest-corridor hint.
-- **Not yet verified:** if a rider opens the board pre-KYC, a calm gate. No silent empty board.
-
-  **This is the row the matrix above was missing, and its absence is why the states got improvised.**
-  "Pending" is one server state but three different situations, and one screen cannot serve all three
-  — they differ in whether the rider still owes an action, and if so whose fault it is (P0-1):
-
-  | State | When | Copy | Action |
-  |---|---|---|---|
-  | **in flight** (`RJ kyc_pending`) | the vendor has it | *"Finishing verification… / Your ID check is with Didit"* | none — the board polls |
-  | **unfinished** (`RJ kyc_unfinished`) | opened and backed out, or never opened | *"Finish verifying your ID / It takes about a minute."* | **Finish verifying** — resumes the live session, costs no credit |
-  | **couldn't start** (`RJ kyc_cant_start`) | the check never opened (camera, permission, network) | *"We couldn't open the ID check / usually the camera or the connection"* | **Try again** · ghost **Contact support** |
-
-  Two rules that are easy to lose. **"Couldn't start" is not a decline** — nothing was assessed, so it
-  must not borrow the rejection copy, and it never counts toward the A-02 attempt lock (**D4**): a
-  device fault is not evidence about the rider's identity. And **the exit is the tab bar, not the
-  wall** — the customer bridge was moved off this screen onto the Account tab (owner, 2026-08-16), so
-  none of these three draws one.
-
-## Cross-cutting flows (designed now, built later)
-
-Designed once here so the post-Phase-3 build and the `/design-html` regen have a spec. All reuse existing
-components; none needs a device to design.
-
-| Flow | Who | Spec | Reuse / dependency |
-|------|-----|------|--------------------|
-| **Order / trip history** | both | Reverse-chron list of past orders (Card per order: route landmarks · date · fare · outcome pill · ★ given/received). Tap → read-only order detail. Empty: *"No trips yet."* | Same Card + StatusPill; reads existing order list. The first **"my past orders"** read each role needs. |
-| **Profile / settings** | both | View/edit name, phone (re-verify on change), language; rider also bike reg + KYC status + photo. Sign-out lives here (move off `home`). Empty/loading trivial. | Reuses `Field`/`Button`; today profile is set once in KYC with no edit path. |
-| **Rider rating profile** | customer-facing | The **public rider card** a customer taps an offer to expand: photo · first name + last initial · ★ aggregate + trip count · bike reg. **Score + count only, no written comments** (per §5d / DESIGN "NOT in scope"). | Lets customers choose on **more than price** (D-d best-match). Pairs with the deferred **two-sided rating** work. |
-| **Notifications center** | both | In-app list of order events (offer received, selected, status changes) + a per-item read state. Bridges the gap until **FCM push** (deferred, cloud-gated) lands; until then it's the polled feed surfaced as a list. | Socket/poll events already exist; this is presentation. Push delivery is deferred. |
-| **Support / help** | both | Static FAQ + "report an issue on this order" (deep-links an order id into a prefilled message channel). Low-literacy: icon+label, short sentences. | No backend yet — design the surface; wire to a channel when one's chosen. |
-
-## Earnings / wallet — payment-agnostic (open §6 dependency)
-
-> **Superseded (2026-07-13):** §6's revenue mechanism was decided and the prepaid commission wallet was
-> subsequently designed and built as its own dedicated screen — `docs/archive/plans/2026-rider-wallet-design.md`
-> (explicitly calibrated against this section); the wallet screens are now drawn by `packages/design/handoff/rider-v2/`. The
-> stance below (cash-first, mechanism-free earnings ledger) is preserved as the pre-wallet baseline this
-> screen was calibrated against; it no longer describes the shipped Earnings/Wallet split.
-
-> **Stance (historical, pre-wallet):** Lynia is a *matchmaker, not a payment processor* for the pilot
-> (§6 — revenue & settlement deferred, **no commission, money moves outside the app**). The wallet is
-> therefore designed **cash-first and mechanism-free**: it shows what was *agreed and delivered*, not
-> what was *charged or settled*.
-
-- **Rider earnings ledger:** a per-trip list of **agreed fares on completed deliveries** (date · route ·
-  `agreed_fare`), with a period total. Framed as a **record of work done**, explicitly *not* a payout
-  balance — no "withdraw", no settlement state, no commission line. Matches CONCEPT §7's "trip log
-  (informational; no payments)".
-- **Customer side:** the same data appears simply as the **fare on each past order** in history — no
-  separate wallet needed pre-revenue.
-- **Open dependency, called out:** when §6 picks a revenue/settlement mechanism (gateway / own rails /
-  commission / fee), this screen gains a settlement state + (if any) a take-rate line. The layout is built
-  to **absorb that without a redesign** — the ledger rows stay; a status column and a balance summary slot
-  in. **Do not** add payout/commission UI until §6 is decided.
-
-## Drift — built vs. designed (reconcile in the build phase)
-
-Logged as tasks (below) so the post-Phase-3 visual `/design-review` has a checklist instead of rediscovering:
-
-- **§5c 7-step stepper** is specced (customer + now rider); the customer side is built
-  (`app/order/[id].tsx` renders `Stepper`), the rider side is **not** — `app/rider/job.tsx` still
-  renders a plainer `StatusPill`.
-- **Designed empty-states** (no-offers / no-riders, and the new rider ones) are **not all built**.
-- **API-contract fields with no UI:** `itemPhotoUrl`, `note` (create order); `comment` (rating);
-  `reason` (cancel) — all in `@lynia/shared` contracts, no field on screen. Either surface or consciously
-  defer per flow.
-- **Sign-out** lives on `home` today; spec moves it to **profile/settings**.
+**Data-light:** cache map tiles, throttle marker renders, lazy-load images, skeletons over spinners.
 
 ## Responsive & accessibility
 
 - Android-first, designed at 360px width; touch targets **≥ 44px** (52px for primary) — from the
   token, never a literal — `--target-min` / `--target-primary` in the kit, `touchTargetMin` /
   `touchTargetPrimary` (`packages/shared/src/design-tokens.ts`) in the app.
-- **Sunlight contrast** (AA+, primary ≥ 7:1) — riders use the app outdoors.
+- **Sunlight contrast** (AA+) — riders use the app outdoors.
 - Icon + text label everywhere; logical screen-reader order; visible focus.
-- Easy error recovery (retry, edit, go back) — replenish the goodwill reservoir.
+- Easy error recovery (retry, edit, go back).
 
 ### Who wins when a mock draws a target below the floor
 
-The floor above and `CLAUDE.md`'s "strict mock sizes" rule (a mock smaller than 44px wins) used to
-contradict each other outright — a 20px drawn ✕ was simultaneously the authority and a violation, and
-a builder could honestly ship either. Settled by **D2 (owner, 2026-08-20)**:
+Settled by **D2 (owner, 2026-08-20)**:
 
 | | Rule |
 |---|---|
 | **App** | Never inflates a drawn target. Silently resizing a mock is how the app stopped looking like the design. |
-| **Kit** | Must draw one that clears the floor. A below-floor mock is an **UPSTREAM defect** — fix it in `packages/design/**` with a `docs/DESIGN-DEVIATIONS.md` entry, and report it upstream. |
+| **Kit** | Must draw one that clears the floor. A below-floor mock is an **upstream defect**: fix it in `packages/design/**` with a `DESIGN-DEVIATIONS.md` entry, and report it upstream. |
 
-"Mock wins" is scoped to **parity**. It was never licence for the design to draw an unusable control.
+"Mock wins" is scoped to parity. It is not licence for the design to draw an unusable control.
 
 ### Screen classes — what "no back arrow" actually means
 
-`back={false}` removes a drawn chevron and, on its own, says nothing about Android's hardware back
-button. Two different intentions were wearing the same prop, so name them (**N-04**; scope settled by
-**D1**):
+`back={false}` removes a drawn chevron. On its own it says nothing about Android's hardware back
+button. So the two intentions have names (**N-04**; scope settled by **D1**):
 
 | Class | Drawn back | Hardware back | Members |
 |---|---|---|---|
 | **dismissible** | yes | allowed | every ordinary pushed screen |
-| **directed** | no | allowed | `gate_topup` (M2), the KYC walls, the active job (J6/J7) |
-| **held** | no | **blocked** | checkout while an order is being placed — and nothing else |
+| **directed** | no | allowed | `gate_topup` (M2), the KYC walls, the active job |
+| **held** | no | **blocked** | Review & place (`app/food/checkout.tsx`) while the order is being placed — and nothing else |
 
-**`held` is deliberately almost empty.** Blocking the OS back gesture is a serious thing to do to
-someone, and it is justified in exactly one place: a payment is in flight and leaving would risk a
-double charge or a silently-lost order. `usePlacingGuard` is the only implementation, and
-`app/food/checkout.tsx` is its only caller.
+**`held` is deliberately almost empty.** Blocking the OS back gesture is justified only while an
+order is in flight and leaving would risk a double order or a lost one. `usePlacingGuard` is the
+only implementation and `app/food/checkout.tsx` its only caller. The test
+`apps/mobile/src/logic/__tests__/screen-classes.test.ts` pins this.
 
-**Active jobs are `directed`, not `held` (D1).** A rider mid-delivery has no drawn back — the screen
-is the job — but the gesture stays allowed. A rider in trouble must always have an exit, and the tab
-bar leaves anyway, so blocking one gesture would be theatre rather than protection.
+**Active jobs are `directed`, not `held` (D1).** A rider in trouble must always have an exit, and
+the tab bar leaves anyway.
 
 ### Back and skip idioms — why they are not all the same word
 
-**Six** exit affordances ship, across five idioms — the two ghosts below are one idiom in two places —
-and a review (**N-05 / N-06 / N-07**) flagged them as inconsistent. The three variants for leaving the
-current step (**Skip** / **Not now** / **Enter address manually**) are drawn differently deliberately;
-the distinction is what the tap *costs*. "Leaving the step", not "skipping it" — the third one is not a
-skip at all, as its row below says.
+The words for leaving a step differ on purpose. The difference is what the tap costs.
 
-| Affordance | Where | Why not one of the others |
+| Affordance | Where | Meaning |
 |---|---|---|
-| **Drawn chevron** | any dismissible pushed screen | Ordinary reversible navigation. |
-| **Ghost "Back"** | OTP | The step above is a *different* decision (which number), not a screen to pop. |
-| **Ghost "Use a different number"** | Register | Same shape as OTP's, and it says what it undoes — the rider has already passed a code, so a bare "Back" would read as losing it. |
-| **"Skip"**, top-right text | onboarding carousel | Skipping *marketing*, not making a product decision — hence the lowest possible weight and no button chrome. |
-| **"Not now"**, secondary button | notification permission | A real decision with a real consequence, and the wording promises it is re-askable. |
-| **"Enter address manually"**, secondary button | location permission | **Not a decline at all** — it is the alternative route to the same outcome. Location exists to set a pickup pin; typing the address achieves that. "Not now" here would leave the customer with no pin and no way forward. |
+| **Drawn chevron** ("Back") | any dismissible pushed screen | Ordinary, reversible navigation. |
+| **"Not now"** | permission asks (`app/permissions.tsx`, `app/order-updates.tsx`) | A real decline that can be asked again. It never blocks the next step. |
+| **"Type an address"** | the location sheet (`src/ui/firstrun/CustomerLocationSheet.tsx`) | Not a decline. It is the other way to the same result: a pickup point. |
+| **"Skip"** | optional steps such as rating | A step with no consequence. |
 
-So: **one word per *meaning*, not one word everywhere.** "Skip" for a step with no consequence, "Not
-now" for a re-askable decline, a named alternative when one exists. The mocks already encode this —
-changing the app to a single word would introduce drift, not remove it.
+So: **one word per meaning, not one word everywhere.** The handoffs encode this. Changing the app to
+one word would add drift.
 
-## NOT in scope (design, deferred)
+## Not in scope
 
-- Dark mode / system-follow theme — fast-follow.
-- Visual mockups — generate later with `/design-html` from this spec.
-- Written-comment display on profiles (ratings show score + count only, per CONCEPT §5d).
-
-## Build tasks (status as of 2026-06-27)
-
-| ID | P | Task | Status |
-|----|---|------|--------|
-| DT1 | P1 | This file — tokens, Inter scale, spacing, components | ✅ done |
-| DT2 | P1 | Two empty states (no-offers / no-riders) with warmth + primary action | ✅ done |
-| DT3 | P1 | Interaction-state coverage (loading/error/partial) for broadcast, offers, tracking, OTP | ✅ done (error states landed in the post-build review fixes) |
-| DT4 | P1 | Offer list best-match default sort + recommended marker (D-d) | ✅ done — `rankOffers` (`@lynia/shared`, unit-tested) + a re-sort selector (best/cheapest/fastest/top-rated) and a RECOMMENDED badge on the customer offer screen |
-| DT5 | P1 | Map-anchored customer home + bottom-sheet create flow (D-b) | ◐ **partial** — the single full-bleed two-pin map + target toggle is **done** (`ComposeMap.tsx`, wired into `home.tsx`); the **draggable overlay `MapSheet`** (peek/expanded snap points) spec'd below is still deferred to the device-gated build — `BottomSheet` today docks as a flex sibling below the map at a single static snap, not a draggable overlay (its drag/snap/keyboard physics + sunlight legibility are only tunable on-device). |
-| DT6 | P2 | A11y + sunlight + data-light pass (targets, contrast, labels, tile caching) | ⬜ deferred (device-gated) |
-| DT7 | P2 | Run `/design-review` (visual QA) post-implementation | ⬜ deferred — needs a dev build |
-| DT8 | P1 | Rider IA + screens specced & calibrated to as-built `app/rider/*` | ✅ done |
-| DT9 | P1 | Rider interaction-states + two rider empty-states (no-orders / not-verified) | ✅ done |
-| DT10 | P2 | Cross-cutting flows: history, profile/settings, rider rating profile, notifications, support | ◐ **partial** — history/profile/earnings/notifications/support shipped; only the *public* rider rating profile (tap-to-expand card with bike reg) not yet |
-| DT11 | P2 | Earnings ledger — payment-agnostic | ✅ done, then superseded — §6 decided (rider commission, 0% for ~6–8 months); the prepaid wallet + ledger shipped as its own screen (`docs/archive/plans/2026-rider-wallet-design.md`), not a line grafted onto Earnings as originally sketched here — see the section above |
-| DT12 | P1 | Drift fixes: §5c stepper (both sides), designed empty-states, surface/defer contract-only fields, move sign-out to profile | ◐ **partial** — customer-side `Stepper` built (`order/[id].tsx`); rider-side `job.tsx` still shows a single `StatusPill`, not the timeline (contract-only fields + rider pickup-photo also still deferred) |
-| DT13 | P2 | Post-Phase-3: regen `/design-html`, then DT7 visual review + `/qa` on a device build | ⬜ deferred (device-gated) |
-
-### DT5 — deferred full spec (draggable sheet)
-
-The single full-bleed two-pin map has shipped (`ComposeMap.tsx`); what's still deferred is the
-draggable `MapSheet` overlay below. The device-gated build replaces today's static thumb-zone
-`BottomSheet` with the locked D-b sheet; build it on a device where the drag/snap/keyboard physics
-and sunlight legibility can actually be tuned (Eng + Design plan reviews, batch-3):
-
-- **Layers:** z0 full-bleed `MapView`; z1 top-left "Draft restored · Clear" chip + top-right "Use my
-  location" pill on solid `bg` fills (sunlight-legible); z2 the bottom `MapSheet`.
-- **`MapSheet`** — a new token-built `ui/` component from RN `Animated` + `PanResponder` + `Pressable`
-  (NOT `@gorhom/bottom-sheet`/reanimated/gesture-handler — not deps, off-pattern vs `LiveMap`). Two snap
-  points: **peek ≈ 0.42 vh** (handle · target toggle · route summary · item · price + suggested-fare
-  chip · CTA) and **expanded ≈ 0.88 vh** (+ landmarks, phones, declared value). Draggable between;
-  never dismissable.
-- **Single-map two-pin UX:** a segmented "Pickup | Drop-off" toggle whose selected colour == the pin
-  being placed (accent = pickup, danger = drop-off, from `LiveMap`); a map tap routes to
-  `setPickupPoint`/`setDropPoint` by the active target; auto-advance pickup→drop after the first pin.
-  No gold (reserved for the recommended marker).
-- **Keyboard:** focusing the price field auto-snaps to expanded and lifts above the keyboard.
-- **Reduce-motion:** reuse the `LiveMap` `AccessibilityInfo.isReduceMotionEnabled` guard — snap, no spring.
-- **A11y/SR order:** map summary → target toggle → item → price → suggested-fare → CTA; "Use my
-  location" + the landmark Fields stay the non-visual way to set a location; toggle/CTA ≥ 44/52 px.
-- **Preserve (already built):** the PII-free draft (phones never stored), reverse-geocode "• from map"
-  auto-fill, and the order-cache seed on create.
-
-## Next steps (gstack flow)
-
-- ✅ Office Hours · CEO review · Eng review · **Design review** (customer side).
-- ✅ Build — customer journey (Phase 1) + rider role (Phase 2) shipped.
-- ✅ **Design consultation — full two-sided journey**: rider IA, cross-cutting flows, payment-agnostic
-  earnings; drift logged as DT8–DT13.
-- ✅ **Built most of the newly-specced screens** — §5c stepper, empty-states, history, profile, earnings,
-  rider KYC gate (DT8/DT9/DT11/DT12); post-build eng+design review fixes merged.
-- ✅ **DT4 offer best-match sort + recommended marker** — shipped.
-- ⬜ **Phase 3 (needs a dev build):** DT5 map-anchored home, the live map, then DT7 `/design-review` + `/qa`.
-
-**Design score: 9/10** — the full journey is specced and built, review-hardened, with DT4 the last
-buildable-now gap now closed. The remaining lift is purely the **device-gated visual QA** (DT5 map / DT7 /
-DT13). The §6 revenue mechanism is decided (commission, deferred ~6–8 months). **Current overall status:
-`docs/PILOT-READINESS.md`.**
+- Dark mode.
+- Written comments on profiles (ratings show score and count only).

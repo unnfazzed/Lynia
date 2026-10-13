@@ -1,11 +1,14 @@
 # Incident Response Runbook
 
-What to do when something goes wrong — a breach, a leak, an active attack, an abuse spike. Companion
-to [SECURITY.md](SECURITY.md) (§8). The goal of the whole security program is that breaks are **small
-and caught fast**; this is how we keep them that way when one happens.
+What to do when something goes wrong: a breach, a leak, an active attack, an abuse spike. Companion to
+[SECURITY.md](SECURITY.md) §8. Production runs on Azure (`infra/azure/`); the owner's Cloud Shell steps
+are in [AZURE-OWNER-RUNBOOK.md](AZURE-OWNER-RUNBOOK.md).
 
-> Keep this runbook short enough to actually use at 3am. Detail lives in the linked docs; this is the
-> sequence.
+> Keep this short enough to use at 3am. Detail lives in the linked docs; this is the sequence.
+
+Production names used below: resource group `rg-lynia-prod-san`, apps `ca-lynia-api` and
+`ca-lynia-admin`, Log Analytics workspace `log-lynia-prod` (`infra/azure/locals.tf`). Run `az` commands
+in Azure Cloud Shell as the owner.
 
 ---
 
@@ -14,10 +17,10 @@ and caught fast**; this is how we keep them that way when one happens.
 | Role | Who | Responsibility |
 |---|---|---|
 | Incident Lead | _founder_ | Owns the response, makes the call, communicates |
-| Ops/Eng | _founder/eng_ | Executes containment + fixes |
-| Comms | _founder_ | User + regulator notification |
+| Ops/Eng | _founder/eng_ | Executes containment and fixes |
+| Comms | _founder_ | User and regulator notification |
 
-One person may hold several roles at pilot scale — but name them.
+One person may hold several roles at pilot scale, but name them.
 
 ---
 
@@ -26,69 +29,105 @@ One person may hold several roles at pilot scale — but name them.
 | Sev | Definition | Examples |
 |---|---|---|
 | **SEV1** | Confirmed data breach or full compromise | KYC/PII exfiltrated; admin takeover; JWT secret leaked |
-| **SEV2** | Active attack, no confirmed data loss yet | Credential-stuffing spike; WAF flood; auth bypass attempt |
+| **SEV2** | Active attack, no confirmed data loss yet | Credential stuffing; request flood; auth bypass attempt |
 | **SEV3** | Vulnerability found, not yet exploited | High-CVE dependency; misconfig; researcher report |
 
-Record: **what** happened, **which data classes** ([SECURITY §1](SECURITY.md#1-what-we-protect)) are in
-scope, **when** it started, **how** you know.
+Record **what** happened, **which data classes** ([SECURITY §1](SECURITY.md#1-what-we-protect)) are in
+scope, **when** it started, and **how** you know.
 
 ---
 
 ## 2. Contain (stop the bleeding)
 
-Pick what fits the incident — most are one command:
+Pick what fits.
 
-- **Compromised sessions / suspected token theft** → revoke sessions (the model supports real revoke):
-  `UPDATE sessions SET "revokedAt" = now() WHERE "revokedAt" IS NULL;` (targeted by `profileId` if scoped).
-- **Leaked JWT signing secret** → rotate it *now* ([SECRET-ROTATION §1](SECRET-ROTATION.md)); to force
-  every token invalid immediately, rotate WITHOUT setting `_PREVIOUS`.
-- **Any other leaked secret** (DB, Redis, vendor key) → rotate per [SECRET-ROTATION](SECRET-ROTATION.md).
-- **Active flood / injection** → tighten Cloud Armor (`infra/terraform/armor.tf`): flip
-  `armor_waf_preview=false` to enforce, drop `armor_rate_limit_count`, or add a deny rule for the
-  offending IPs/ranges; apply.
-- **Abusive authenticated user** → ban via the admin console (suspend/ban), which revokes their access.
-- **Bad deploy / exploited endpoint** → roll back (redeploy the previous image tag) or disable the
-  feature flag / route.
-- **Compromised admin** → revoke the operator's IAP access, rotate `ADMIN_API_TOKEN`, audit the admin
-  action log for what they did.
+**Tokens and secrets**
+
+- **Leaked JWT signing secret** → rotate it now ([SECRET-ROTATION §1](SECRET-ROTATION.md)). To kill
+  every outstanding access token at once, rotate **without** a previous secret.
+- **Log everyone out** → rotate `TOKEN_HASH_SECRET` ([SECRET-ROTATION §2](SECRET-ROTATION.md)). Every
+  refresh token stops working; access tokens die within `ACCESS_TTL_SECONDS` (15 min). This needs no
+  database access.
+- **Any other leaked secret** (database, Redis, vendor key, admin token) → rotate per
+  [SECRET-ROTATION](SECRET-ROTATION.md).
+
+**People**
+
+- **Abusive rider** → suspend or ban in the admin console. Both revoke that rider's sessions
+  (`admin-riders.service.ts`).
+- **Compromised operator** →
+  1. Remove them from the Entra app (Enterprise applications → the admin app → Users and groups).
+     Easy Auth then refuses their sign-in.
+  2. Remove them from the `ADMIN_CONSOLE_ALLOWED_OPERATORS` Variable and re-run **Deploy Admin Console
+     (Azure)**.
+  3. Rotate `ADMIN-API-TOKEN` ([SECRET-ROTATION](SECRET-ROTATION.md)).
+  4. Read the admin audit log for what they did.
+- **Take the whole console offline** → `az containerapp ingress disable -g rg-lynia-prod-san -n ca-lynia-admin`.
+  Turn it back on with `ingress enable`.
+
+**Traffic**
+
+- **Bad deploy or exploited endpoint** → GitHub → Actions → **Rollback (Azure)**, environment
+  `production`. Leave `revision` empty to list revisions, then re-run with the name. It moves 100% of
+  traffic to that revision in seconds. It does not roll back the database.
+- **Turn a vertical off** → set its kill-switch Variable (`RESTAURANTS_ENABLED`, `SHOPS_ENABLED`,
+  `PHARMACY_ENABLED`, `RX_ENABLED`, …) to `false` and dispatch **Release (Azure)**.
+- **Request flood from known addresses** → there is **no WAF** ([SECURITY-OPS §D](SECURITY-OPS.md)).
+  The app's rate limits still apply. To block addresses at the ingress:
+  `az containerapp ingress access-restriction set -g rg-lynia-prod-san -n ca-lynia-api --rule-name block-1 --ip-address <cidr> --action Deny`.
+  Remove it later with `access-restriction remove`. All rules on an app must share one action (all
+  Deny or all Allow). Cloudflare cannot help here: `api.lyniago.com` is DNS-only, and turning on its
+  proxy breaks the managed certificate.
 
 ---
 
 ## 3. Eradicate & recover
 
-1. Find root cause (logs, `order_events`/admin audit trail, Cloud Armor logs, CodeQL/audit findings).
-2. Patch the vulnerability; add a **test that reproduces it** so it can't regress (this is how a fix
-   becomes a permanent control).
-3. Redeploy via the normal CD pipeline; verify `/healthz` and the affected flow end-to-end.
-4. Confirm the attacker's access is gone (rotated secrets, revoked sessions, closed hole).
+1. Find the root cause. Sources: API logs in Log Analytics (`ContainerAppConsoleLogs_CL`), platform
+   events (`ContainerAppSystemLogs_CL`), Sentry (when `SENTRY_ENABLED`), `order_events` and the admin
+   audit trail, CodeQL and dependency alerts.
+2. Patch it and add a **test that reproduces it**, so it cannot regress.
+3. Merge to `main`. **Release (Azure)** builds, migrates and canaries it. Check `/healthz` reports
+   `status: ok`, then the affected flow end to end.
+4. Confirm the attacker's access is gone: rotated secrets, revoked sessions, closed hole.
+5. If data was damaged, restore per [RESTORE-DRILL](RESTORE-DRILL.md).
 
 ---
 
 ## 4. Notify
 
-- **Users**: when their PII is involved, notify the affected users clearly and promptly (what happened,
+- **Users**: when their PII is involved, tell the affected users clearly and promptly (what happened,
   what data, what they should do).
-- **Regulator**: meet **Zimbabwe Data Protection Act** breach-notification duties (timelines + content).
-  Keep a record of the assessment even if notification isn't required.
-- **Vendors**: if a vendor was the vector (WhatsApp/Didit/FCM), open a case with them.
-- Do not over-share technical detail publicly before the hole is closed.
+- **Regulator**: meet the **Zimbabwe Cyber and Data Protection Act** breach-notification duties
+  (timelines and content). Keep a record of the assessment even if notification isn't required.
+- **Vendors**: if a vendor was the vector (Bird, Meta WhatsApp, Didit, Firebase), open a case with them.
+- Do not share technical detail publicly before the hole is closed.
 
 ---
 
 ## 5. Post-mortem (within a week, blameless)
 
-Write it down: timeline, root cause, blast radius, what worked, what didn't. Every incident produces
-at least one tracked **action item that becomes a new control or test** (a detection alert, a WAF rule,
-a boot-guard, a CI check). File them; close them.
+Write down the timeline, root cause, blast radius, what worked and what didn't. Every incident produces
+at least one tracked action item that becomes a new control or test (an alert, a rate limit, a boot
+guard, a CI check).
 
 ---
 
-## Detections that should page you (wire these — [OBSERVABILITY](OBSERVABILITY.md))
+## What alerts you today
 
-- Spike in `401`/`403`/`429` or OTP-request / refresh-failure rates → ATO / stuffing.
-- Cloud Armor blocks / rate-limit trips → attack in progress.
-- Admin audit anomalies (bulk KYC approvals, off-hours bans/payouts).
-- Failed KYC webhook signatures → spoof attempts.
-- CI security-scan failures / new critical CVE → supply chain.
+Wired in `infra/azure/monitoring.tf`, sent to the `ag-lynia-prod` action group (email, optional webhook):
 
-**Rehearse this runbook quarterly** with a tabletop exercise. An unpracticed runbook is a wish.
+- a Container Apps job execution failed (migrate, retention, wallet integrity);
+- a scheduled job had no successful run in 26 hours;
+- Postgres active connections above 40;
+- monthly budget at 80% actual / 100% forecast.
+
+Outside that file: Sentry error alerts when armed, and an external uptime check (kept outside Azure by
+design, per the `monitoring.tf` header; not defined in this repo).
+
+**Not wired** (no OTel collector runs on Azure, see [OBSERVABILITY](OBSERVABILITY.md)): spikes in
+`401`/`403`/`429`, OTP-request or refresh-failure rates, admin audit anomalies (bulk KYC approvals,
+off-hours bans or payouts), failed KYC webhook signatures. Until they are, check these by hand in Log
+Analytics during an incident.
+
+**Rehearse this runbook quarterly** with a tabletop exercise.

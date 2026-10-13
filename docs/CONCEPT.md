@@ -1,427 +1,396 @@
-# Lynia — Concept & One-Month Execution Plan
+# Lynia — Concept
 
-> **Vision:** a Zimbabwean **superapp** — order groceries, medicals, and food online.
-> **Now (MVP):** a fully-formed on-demand **motorbike courier / Express** — pick an item up here,
-> deliver it there, by bike. The Express *is* the superapp's spine; verticals layer on later.
+> **Vision:** a Zimbabwean **superapp** — send anything, and order food, shop goods and medicine, all
+> delivered by motorbike.
+> **Today:** two products on one fleet. **Send** is an on-demand motorbike courier: pick an item up here,
+> deliver it there. **Restaurants, Shops and Pharmacy** let a customer order from a venue and have it
+> delivered, cash on delivery. Both run everywhere in Zimbabwe.
 > **Payments reality:** Zimbabwe is **cash-based and low-trust**. Lynia is a **matchmaker, not a payment
-> processor** — the rider transports the item and never handles money for the goods.
-> **Matching is the inDrive model**: the **customer names the price** (system-suggested, adjustable), riders
-> **accept or counter**, and the **customer picks the rider** — a price-negotiated bidding marketplace.
+> processor**. Customers pay in cash; Lynia's revenue is a prepaid commission on what the biker earns.
+> **Matching for parcels is the inDrive model:** the **customer names the price** (system-suggested,
+> adjustable), bikers **accept or counter**, and the **customer picks the biker**.
 > References: Grab Express (point-to-point parcel), **inDrive** (customer-priced, cash-economy marketplace).
-> Output of a gstack-style **Office Hours** session. Status: **conceptualisation locked, ready for build.**
 
-> ✅ **Build shipped (2026-06-27); deployed to GCP (2026-06-29).** The concept and architecture below are
-> validated — a full delivery runs phone-to-phone in code (offer loop → lifecycle → OTP hand-off → rating),
-> and the API is now **live and CI-deployed** at `https://api.lyniago.com`. This doc remains the
-> living north star; its forward-looking parts (§3 risks, §7 one-month plan, §10 next steps) are annotated
-> below. The **cloud (Google Cloud) is provisioned + deployed** and the **revenue model (§6) is decided**;
-> the remaining gates are the **dev build** and **founder/vendor wiring** (WhatsApp BSP, Didit).
-> **For current status, see `docs/PILOT-READINESS.md`.**
+This is the product north star: what Lynia is and the decisions that shape it. *How* it is built is in
+[ARCHITECTURE](ARCHITECTURE.md); prices in [PRICING](PRICING.md); security in [SECURITY](SECURITY.md).
+Section numbers are cited from code, so keep them.
+
+**Wording.** User-facing copy says **"biker"**; code, routes and data say `rider` (ledger D-101). This doc
+uses "biker" for the person and `rider` for code names.
 
 ---
 
-## 1. What Lynia is (MVP)
+## 1. What Lynia is
 
-A two-sided, on-demand logistics marketplace on the **inDrive (customer-priced bidding) model**:
+A two-sided, on-demand delivery marketplace.
 
-**The core flow:**
-1. **Customer** enters pickup + dropoff pins (+ item description/photo) and sees a **system-suggested price**.
-2. Customer can **notch the price up or down** (the suggestion is a guide, not a floor) and **broadcasts the request**.
-3. **Nearby riders** receive the broadcast and either **accept the offered price** or **counter-offer** their own (one round each — no haggling back and forth).
-4. **All interested riders** (those who accepted *and* those who countered) are **displayed to the customer** with price, rating, and ETA.
-5. The **customer selects the rider** they want → the job is assigned and they track the rider live.
+**Send (parcels) — the core flow, on the inDrive model:**
+1. **Customer** sets pickup and drop-off pins (+ item description/photo) and sees a **system-suggested
+   price**.
+2. The customer can **change the price** (the suggestion is a guide, not a floor) and **broadcasts**.
+3. **Every online biker in Zimbabwe** sees the request and either **accepts the price** or **counters** with
+   their own (one round each — no haggling back and forth). The board lists open orders nearest first.
+4. **All interested bikers** are shown to the customer with price, rating and ETA.
+5. The **customer selects the biker** → the job is assigned and they track the biker live.
 
-- **Riders** (motorbike) go online, see open broadcasts nearby, **accept or counter**, and once selected pick up and deliver, updating status along the way.
-- **No manual dispatch.** If a broadcast draws **no interested riders** in the time window, it **expires** and the customer is prompted to **nudge the price up and re-broadcast** — fully automatic, no human in the loop. Admin only **monitors & supports**.
+- **No manual dispatch.** A broadcast with no interested bikers in the window **expires**, and the
+  customer is prompted to **raise the price and re-broadcast**. Admin only **monitors and supports**.
+- **Reach is nationwide** (ledger D-99): "Bikers can get any order despite their location… It's up to the
+  user to decide who they want." The customer chooses; a biker far away shows a longer ETA.
 
-Both customer and rider live in **one app with a role toggle** (fastest to ship).
+**Restaurants, Shops and Pharmacy (merchant orders):** the customer orders from a venue's menu, the venue
+accepts and prepares it, and a biker delivers it. The delivery fee is fixed by distance, and the job goes
+first-accept-wins to bikers within 15 km of the venue — food can't wait for a biker from another city.
+Payment is **cash on delivery**. See §1b.
 
-**Launch model: A — point-to-point parcel courier.** The sender already has the item; the rider only transports it. No rider cash float, no purchasing risk.
+Customers and bikers use **one mobile app**. Merchants use a separate phone-first web app.
 
-> **Core rule:** the rider handles the **item**, never the **money for the goods**. If the receiver is the
-> buyer, they settle payment for the goods with the sender **offline, outside the app** — Lynia is not
-> involved. This kills the "buy-for-me" relay model: in a cash, low-trust market riders don't carry float,
-> so rider-purchasing is **off the roadmap** until digital payments mature.
+> **Core rule:** the biker never **buys** anything with their own money. On a parcel, the biker only
+> transports the item; if the receiver is the buyer, they settle with the sender **offline**. On a merchant
+> order, the customer pays cash at the door, and either the biker returns the venue's share or the venue
+> was paid up front — the venue chooses (`MerchantCashRule`). "Buy-for-me" relay stays **off the roadmap**.
 
 ---
 
 ## 1b. Superapp vision & sequencing
 
-Lynia's endgame is a **superapp** (groceries + medicals + food). Every successful superapp
-(Grab, Gojek, WeChat, Careem) started as **one thing done exceptionally**, then layered verticals
-onto a shared **spine**. Lynia's spine, built by a fully-formed Express:
+Every successful superapp (Grab, Gojek, Careem) started as **one thing done exceptionally**, then layered
+verticals onto a shared **spine**. Lynia's spine:
 
-> **① one identity · ② one logistics & rider fleet · ③ one location/address book · ④ one transaction & reputation record.**
+> **① one identity · ② one logistics & biker fleet · ③ one location/address book · ④ one transaction & reputation record.**
 
 **The ladder (cash-economy version — each rung reuses the one below):**
-1. **Express / parcel** (month 1 MVP) — rider *transports* an item; goods money settled offline. Builds the spine.
-2. **Merchant verticals via Cash-on-Delivery** — **pharmacy → grocery → food** (proposed order; settle in Plan
-   stage). The **merchant** holds & packs the goods, the **rider only delivers**, the **customer pays
-   cash-on-delivery** (to merchant or rider). **COD is the bridge to commerce** —
-   the rider still never buys anything. *(How payment is collected in that future phase — gateway, own rails,
-   or pure cash — is out of scope now; see §6.)*
+1. **Send / parcel** — the biker *transports* an item. Built the spine.
+2. **Merchant verticals via cash on delivery** — **restaurants, shops and pharmacy** are built. The
+   merchant holds and packs the goods, the biker only delivers, the customer pays cash at the door. Cash
+   on delivery is the bridge to commerce.
+3. **Next rungs** (not built): more verticals and, when digital payments mature, a real payment rail
+   ([PAYMENT-RAIL-OUTSTANDING](PAYMENT-RAIL-OUTSTANDING.md)).
 
-> ❌ **"Buy-for-me" relay is removed** — it requires rider float and trust the market doesn't have.
-> COD replaces it entirely.
-
-**Discipline:** month one ships **only Express**. The superapp vision changes how we *name and shape
-the data*, not *what we ship now*. Design the seams, don't build the rooms (see §5b).
+**Discipline:** design the seams, don't build the rooms (§5b). A new vertical should be an additive order
+type on the same spine, not a new system.
 
 ---
 
-## 2. Decisions locked (Office Hours)
+## 2. Decisions locked
 
 | Decision | Choice | Notes |
 |---|---|---|
-| Courier model | **A: point-to-point parcel** | No rider float; simplest trustworthy MVP |
-| Rider & money | **Rider handles the item, never goods money** | Goods $ settled sender↔receiver offline; buy-for-me removed |
-| Monetization & payments | **Deferred — decided next phase** | **Out of scope for the pilot.** The app names/agrees the fare (the bidding loop) but does **not** process or settle it; how the fare is paid and how Lynia earns (gateway, own-built rails, or cash) is a deliberate later-phase decision. Lynia stays a **matchmaker, not a payment processor**. See §6 |
-| Build approach | **Straight to cross-platform app** | Skipping the WhatsApp ops MVP (founder's call) |
-| Matching model | **inDrive: customer-priced bidding marketplace** | System suggests → customer adjusts → broadcast → riders accept/counter → customer selects |
-| Pricing | **Customer names the price (system-suggested, adjustable)** | Suggestion = base + per-km guide; customer notches up/down; **soft suggestion, no hard floor** — riders simply won't accept lowballs |
-| Rider response | **Accept or counter — one round each** | Rider accepts the offered price or counters once; **no back-and-forth haggling** |
-| Selection | **Customer always selects** | Every interested rider (accept *or* counter) is shown with price/rating/ETA; customer picks — even exact-accepts go to the list |
-| No-offers fallback | **Expire + customer re-broadcasts (automatic)** | No interested riders in the window → expire, prompt customer to nudge price & re-broadcast; **no manual dispatch** |
-| App packaging | **One app, role toggle** (customer ↔ rider) | Fastest to ship in a month; single Expo codebase |
-| Demand wedge | **General "send anything"** | Broad use case, but launch confined to one corridor |
-| Platforms | **Android-first**, iOS from same codebase later | Zimbabwe is ~85–90% Android |
-| Launch geography | **One Harare corridor** (e.g. CBD + Avenues + Borrowdale/Msasa) | Concentrate supply & ETAs |
-| Timeline | **≤ 1 month** to pilot + Play Store | iOS TestFlight only if time allows |
-| Live tracking | **Initiator tracking window, accept → rate** | One window follows the rider: accepted → items/note confirmed → ride started → collected → en route → delivered → rate. **Live location from acceptance**, **rider confirms (confirm-only)**, **rating required to close**. See §5c |
-| Account creation | **Low friction: phone + name + ID** | **Phone required, email optional**; verified by **WhatsApp code (WhatsApp-only, no SMS fallback)**; capture **name + national ID**. See §5d |
-| One account | **Sign up as customer → upgrade to rider** | Single identity, role-expandable (matches the role toggle & §5b seam); becoming a rider adds the rider-only requirements on top |
-| Identity verification | **Customers: ID stored (unverified) · Riders: automated KYC** | Rider **ID verified by an automated KYC service, no admin**; **rides only after verification**; **ZIM bike reg stored (not live-checked)**; **rider photo required**. See §5d |
-| Profiles & privacy | **Viewable profiles; phone hidden except active ride** | Public name = **first name + last initial**; **rider** profile = photo + trips + joined + rating(★+count); **customer** profile = orders + joined + name; **real phone revealed only `assigned`→`completed`**. See §5d |
+| Courier model | **Point-to-point parcel** + **merchant cash on delivery** | The biker never fronts money for goods |
+| Biker & money | **Biker handles the item; customer pays cash** | Parcel goods money settled offline; merchant goods paid at the door |
+| Revenue | **Biker commission, prepaid** | 10% of what the biker earns per job, after their first 10 jobs. See §6 |
+| Payments | **No payment processing** | No card or mobile-money rail is wired. See §6 |
+| Matching (parcels) | **inDrive: customer-priced bidding** | Suggest → adjust → broadcast → accept/counter → customer selects |
+| Matching (merchant orders) | **Fixed fee, first-accept-wins** | The venue's own bikers first, then the nearest, within 15 km |
+| Pricing | **Customer names the parcel price** | Suggestion = base + per-km; soft, no hard floor. See [PRICING](PRICING.md) |
+| Biker response | **Accept or counter — one round** | No back-and-forth |
+| Selection | **Customer always selects** (parcels) | Every interested biker is shown; exact-accepts go to the list too |
+| No-offers fallback | **Expire + re-broadcast** | No manual dispatch |
+| Geography | **All of Zimbabwe** | One border rule for every location check (`packages/shared/src/service-area.ts`, D-99) |
+| App packaging | **One mobile app** (customer + biker), **one merchant web app** | Expo app; merchant app at `merchant.lyniago.com` |
+| Platforms | **Android app**; **iPhone users on the web** (`app.lyniago.com`) | Zimbabwe is mostly Android |
+| Live tracking | **One order screen follows the order** | Live biker location from assignment to delivery. See §5c |
+| Account creation | **Phone + name** | Verified by a one-time code; national ID optional for customers. See §5d |
+| One account | **Customer → upgrade to biker** | Biker requirements added on top |
+| Identity verification | **Bikers: fully automatic KYC** | Didit decides; no human review step. See §5d |
+| Profiles & privacy | **Phone hidden except during an active order** | Public name = first name + last initial |
 
 ---
 
-## 3. Honest risk register (from Office Hours)
+## 3. Risk register
 
-> **Build-status note (2026-06-27):** of these, the *engineering* risks are now retired — **(6) bidding
-> complexity** is built, tested, and proven (concurrency-correct offer loop in CI); **(8) timeline** is
-> actualized (the brutally-scoped MVP shipped). **(2) revenue model is now DECIDED** — rider commission,
-> 0% for ~6–8 months, infra built later (§6). Still **open**: **(1) cold-start / real supply**, **(11)
-> WhatsApp BSP**, and **(12) KYC coverage on real ZIM IDs** — the external gates tracked in
-> `docs/PILOT-READINESS.md`, not engineering work.
->
-> **Update (2026-07-13/16):** the prepaid-wallet infrastructure landed far ahead of the ~6–8-month
-> estimate — see the §6 note below. Rate stays 0% at launch either way.
-
-1. **Cold-start (highest risk).** Straight-to-app + general wedge means no demand validation before build. **Mitigation:** recruit 5–15 riders in the launch corridor from day 1 (parallel to the build); keep a WhatsApp + spreadsheet channel as a manual backstop for ops, not as the product's matching path.
-2. **Payments & revenue (model decided; rate deferred ~6–8 months).** The economy is cash and low-trust, and Lynia is a **matchmaker, not a payment processor** — it does **not** process or settle the delivery transaction during the pilot. The revenue model is **decided: rider commission** (a % of the agreed fare, inDrive-style), and **0% for the first ~6–8 months** (§6). **The prepaid-commission wallet infrastructure itself has since been built** (`apps/api/src/wallet/*`, ahead of the original ~6–8-month estimate) — it ships inert at the 0% launch rate, so no money moves yet regardless. **Risk:** monetization stays unvalidated during the launch period — the pilot proves demand/liquidity, not willingness-to-pay-commission. **Mitigation:** the data model is payment-agnostic so commission slots in without a rebuild; calibrate the take-rate on real corridor data before charging.
-3. **Addressing.** No reliable street addresses → rely on **GPS pin + landmark text + phone number**, never typed addresses.
+1. **Cold start (highest risk).** A marketplace needs bikers and customers at the same time.
+   **Mitigation:** recruit bikers ahead of demand; nationwide reach means any online biker can bid on any
+   parcel, which helps while supply is thin.
+2. **Monetisation.** Commission is live at 10% after a biker's first 10 jobs. **Risk:** bikers must pre-fund
+   a wallet, and the only top-up path today is a support call and an admin credit — there is no payment
+   rail (§6, [PAYMENT-RAIL-OUTSTANDING](PAYMENT-RAIL-OUTSTANDING.md)). **Mitigation:** no minimum balance;
+   a biker is only stopped from a job whose commission exceeds their balance.
+3. **Addressing.** No reliable street addresses → rely on **GPS pin + landmark text + phone number**.
 4. **Data cost.** Mobile data is expensive → keep the app light, cache maps, throttle background location.
-5. **Trust & safety.** Rider verification via **automated KYC** (ID check + selfie) plus **ZIM bike reg** (stored) and a **required rider photo**, item **photo at pickup**, **delivery OTP** at handover, two-way ratings, a **declared-value cap** (pilot: max ~US$100–150/item), a **prohibited-items list** (cash, illegal/hazardous goods, live animals, anything above cap), and a **per-device signup throttle** (a keychain-persisted `x-device-id` caps new-account creation per device, `docs/archive/plans/2026-identity-and-pod-hardening.md` L1, IR16-10) as a first layer against SIM-recycle account abuse. Liability for safe handling sits with the rider; platform liability capped in T&Cs.
-6. **Bidding-model complexity (biggest build item).** The customer-priced offer loop — suggest → adjust → broadcast → accept/counter → display interested riders → select — is the core build (offers table, `open_for_offers` state, rider accept/counter screen, customer selection screen). **Mitigation:** build the offer loop first and keep it strictly **one round** (no haggle-back) to bound complexity.
-7. **Lowball / no-offers (pricing risk).** With no hard floor, customers may underprice and get no riders. **Mitigation:** a clear, honest suggested price; an empty-broadcast UX that **prompts a price nudge + re-broadcast**; optionally surface "riders usually accept around $X" hints once there's data.
-8. **Timeline.** A polished bidding marketplace is a 3–6 month build. One month = a **brutally scoped** Android MVP in one corridor. Scope discipline is the whole game.
-9. **Superapp scope creep.** The "superapp" vision will tempt catalogs/merchant onboarding/multi-vertical UI into month one. **Mitigation:** ship only Express now; capture the future solely as cheap data "seams" (§5b), never as features.
-10. **Comms cost / reach.** Data is expensive and not all users stay online → the **signup OTP is sent via WhatsApp**, while push (when online) + **SMS fallback** carry other critical notifications; offline-tolerant order creation. Fast rider broadcast alerts are critical — push is the primary channel.
-11. **WhatsApp-only OTP (onboarding reach).** Verifying signup by WhatsApp code with **no SMS fallback** is cheap and familiar, but **excludes users without WhatsApp** and depends on **WhatsApp Business API** access, message-template approval, and per-message cost. **Mitigation:** confirm a WhatsApp BSP/aggregator early (§9); revisit an SMS fallback for the OTP if reach proves a problem in the corridor. **Update (2026-07-18):** this mitigation is now built — `OTP_CHANNEL` supports `bird` (Bird SMS) and `local-sms` (a Zimbabwe A2P gateway) alongside `whatsapp`, configurable per deployment (`apps/api/src/config/env.ts`). WhatsApp remains the default channel; the mobile OTP screens' copy was also made channel-agnostic ("We'll text you a one-time code") so it no longer hardcodes WhatsApp.
-12. **Automated KYC coverage for Zimbabwean IDs.** The rider flow relies on an **automated KYC vendor with no admin step** — but ID-verification providers may have **poor coverage of Zimbabwean national IDs** (latency, false rejects, or no support at all). **Mitigation:** validate a vendor against real Zimbabwean IDs before committing; keep a **manual review backstop** in reserve even though the chosen flow is admin-free (§9).
+5. **Trust & safety.** **Automated KYC** for bikers (ID check + selfie), bike registration (stored) and a
+   **required biker photo**; **photo at pickup**; **6-digit handover codes** (pickup and delivery);
+   two-way ratings; a **declared-value cap** (US$150 per parcel, `packages/shared/src/contracts.ts`);
+   a **prohibited-items list** (cash, weapons, drugs, prescription medicine, stolen goods…); a
+   **per-device signup throttle**; SOS on a live trip. Prescription medicine goes through the pharmacy
+   flow with a pharmacist check, never as a parcel. Liability for safe handling sits with the biker;
+   platform liability is capped in the terms.
+6. **Bidding-model complexity.** The offer loop is the core build. **Mitigation:** strictly one round; every
+   contended write is a guarded compare-and-swap ([ARCHITECTURE §13](ARCHITECTURE.md#13-concurrency-safety-model)).
+7. **Lowball / no-offers.** With no hard floor, customers may underprice. **Mitigation:** an honest suggested
+   price, autofilled into the field; an acceptance-band hint ("bikers usually accept around $X–$Y"); an
+   empty-broadcast screen that prompts a price raise and re-broadcast.
+8. **Scope.** Many surfaces (customer, biker, merchant, admin, web). **Mitigation:** each surface aligns to
+   its design handoff; anything not drawn is not built.
+9. **Superapp scope creep.** New verticals tempt new systems. **Mitigation:** additive order types on the
+   same spine only (§5b).
+10. **Comms cost / reach.** Data is expensive and not everyone stays online. The sign-in code goes by
+    WhatsApp or SMS (§5d). **Push is the primary channel for new-order alerts to bikers** — fast alerts are
+    critical. Push and the in-app notifications feed carry the rest.
+11. **OTP delivery.** Code delivery depends on a messaging vendor (template approval, per-message cost,
+    reach). **Mitigation:** the channel is set per deployment (`OTP_CHANNEL` in
+    `apps/api/src/config/env.ts`: WhatsApp Cloud API, Bird SMS, Bird Verify — WhatsApp first with SMS
+    fallback — or a local A2P SMS gateway).
+12. **Automated KYC coverage for Zimbabwean IDs.** The vendor may false-reject genuine IDs, and with no
+    human review band a false reject stands until the biker retries. **Mitigation:** measure the
+    false-reject rate on real IDs; support can apply an audited admin override.
 
 ---
 
-## 4. MVP scope
+## 4. Product scope
 
-**In scope (must ship):**
-- **Onboarding (low friction):** phone-number auth verified by **WhatsApp code (WhatsApp-only)**, **email optional**, capture **name + national ID**; **one account** with customer ↔ rider role toggle, **upgradeable to rider** (adds **automated KYC ID check + ZIM bike reg + required photo**, rides only after verification). See §5d.
-- **Viewable profiles:** rider (photo, first name + last initial, trips, date joined, rating ★+count) and customer (first name + last initial, orders, date joined); **phone hidden except during an active ride** (`assigned`→`completed`, real number). See §5d.
-- Customer: create delivery (pickup pin, dropoff pin, item description + photo, size category), see **suggested price**, **adjust it up/down**, **broadcast**, view **interested riders (accept/counter) with price/rating/ETA**, **select a rider** at the **agreed fare** (shown in-app; **no in-app payment** — settlement is out of scope, §6), **live tracking window** (accept → confirm → start → collect → en route → delivered → rate, with live map; §5c), rating.
-- Rider: go online/offline, **see open broadcasts nearby & accept or counter (one round)**, status transitions, share live location, **daily trip log** (count + agreed fares) + a **prepaid commission wallet** (balance, ledger, top-up entry — see §6; inert at the 0% launch rate, no real money movement yet).
-- **Offer loop engine:** order → `open_for_offers` → collect rider accepts/counters within a window → show to customer → **customer selects** → assign; on no offers, **expire + prompt re-broadcast**.
-- Admin web dashboard: **monitor orders & riders, support stuck orders** (no manual dispatch in the normal flow).
-- Pricing engine: base + per-km (Google distance) as the **suggested** price; customer-adjustable, soft (no hard floor).
-- Trust: **rider verification via automated KYC ID check** (+ ZIM bike reg stored, **required rider photo**), **item photo at pickup**, **delivery OTP** at handover, two-way ratings, **declared-value cap + prohibited-items list**.
-- Notifications: signup OTP via **WhatsApp (WhatsApp-only)**; otherwise **push when online, SMS fallback** for critical updates; **low-latency rider broadcast alerts**.
+**In scope:**
+- **Onboarding:** phone + one-time code, name; one account, **upgradeable to biker** (automated KYC, bike
+  registration, required photo; jobs only after verification). See §5d.
+- **Profiles:** biker (photo, first name + last initial, trips, date joined, rating) and customer (first
+  name + last initial, orders, date joined); **phone hidden except during an active order**.
+- **Customer — Send:** pickup/drop-off pins, items, **suggested price**, adjust, **broadcast**, compare
+  offers, **select a biker**, live tracking, rating.
+- **Customer — Restaurants, Shops, Pharmacy:** browse and search venues, order, follow the order on the
+  same order screen, pay cash at the door. A pharmacy order can carry a prescription for the pharmacist.
+- **Biker:** go online/offline, see every open parcel on one board and **accept or counter (one round)**,
+  take merchant jobs, step through the trip, share live location, job history, and the **prepaid
+  commission wallet** (balance, ledger, top-up).
+- **Merchant (web app):** menu and hours, an order board (accept → cook/pack → hand over → on the way →
+  cash back), team members, preferred bikers, and "book a biker" for the venue's own parcels.
+- **Admin console:** monitor orders, bikers, customers, KYC, SOS and disputes; support stuck orders;
+  credit biker wallets. No manual dispatch in the normal flow.
+- **Notifications:** sign-in code by WhatsApp/SMS; push for order events and new-order alerts; an in-app
+  notifications feed.
 
-**Out of scope (removed or fast-follow):**
-- ❌ **Back-and-forth haggling** — rider response is one round (accept or single counter); customer selects.
-- ❌ **Hard price floor / customer-side price caps** — suggestion is soft; market decides.
-- ❌ **Manual / admin dispatch as a product path** — no-offers is handled by expire + re-broadcast.
-- ❌ **Buy-for-me relay / rider float** — removed (cash, low-trust market).
-- ❌ **Goods payment between sender & receiver** — settled offline, never in the app.
-- ❌ **In-app payments / fare settlement / payment-gateway (Paynow etc.) integration** — no real money-movement rail is wired; the wallet top-up screen has no self-serve form, only a "contact support" instruction card that routes the rider to the working admin manual-credit path (`docs/KNOWN_BUGS.md` DOC-16-02 — the self-serve form was removed, not merely non-functional); the pilot app agrees the fare but moves no money. **Commission / rider balance / top-ups infrastructure itself shipped ahead of schedule** (the prepaid wallet, §6) but is inert at the 0% launch rate — the revenue model is decided, the rate flip is not yet done.
-- Merchant verticals + Cash-on-Delivery (the commerce fast-follow), multi-city, scheduled deliveries, in-app chat, promotions/referrals, advanced fraud tooling, full iOS launch.
+**Out of scope:**
+- ❌ **Back-and-forth haggling.**
+- ❌ **Hard price floor / customer-side price caps.**
+- ❌ **Manual / admin dispatch as a product path.**
+- ❌ **Buy-for-me relay / biker float.**
+- ❌ **In-app payment processing** — no card or mobile-money rail is wired; merchant checkout is cash only.
+- Scheduled parcel deliveries, in-app chat, promotions/referrals.
 
 ---
 
 ## 5. Tech architecture
 
-> **Build annotation (2026-06-27).** The original Office Hours sketch named **Supabase** (managed BaaS) as the
-> fastest path to an MVP. The Plan-stage reviews then **dropped the BaaS for an own NestJS/TypeScript API on
-> plain PostgreSQL** (full control, data sovereignty, no vendor lock-in) — and that is what **shipped**. The
-> table below reflects the **built** stack; the Supabase→own-stack mapping is in `docs/archive/CEO-REVIEW.md`, and the
-> cloud is **Google Cloud** (Cloud Run + Cloud SQL + Memorystore + Cloud Storage) behind portability adapters
-> (D7). *Realtime is now an own Socket.IO + Redis gateway, auth an own JWT + WhatsApp-OTP subsystem, offer
-> expiry a server-side BullMQ job.*
+An own **NestJS / TypeScript API on PostgreSQL + PostGIS** (no BaaS), with Redis for OTP, rate limits,
+BullMQ jobs and Socket.IO fan-out. It runs on **Azure** in South Africa North (Container Apps,
+PostgreSQL Flexible Server, Azure Managed Redis, Blob Storage, Key Vault), behind cloud adapters
+([ARCHITECTURE §3 and §12](ARCHITECTURE.md)).
 
 | Layer | Choice | Why |
 |---|---|---|
-| App (one app, role toggle) | **React Native + Expo (EAS)** | Single codebase + single build, customer ↔ rider toggle, Android now + iOS later |
-| Backend | **Own NestJS / TypeScript API on PostgreSQL** (no BaaS) | Full control & data sovereignty; custom JWT + WhatsApp-OTP auth, Prisma, BullMQ jobs; on Google Cloud behind portability adapters (D7) |
-| Offer loop logic | **Socket.IO + Redis + Postgres** (broadcast, offers, window/expiry) | Push broadcasts to nearby riders; collect accepts/counters; server-side BullMQ expiry on timeout |
-| Maps / routing | **Google Maps Platform** | Best data coverage in Zimbabwe; geocoding, distance, ETA |
-| Payments | **None in MVP — deferred** | No payment integration; the app agrees the fare but moves no money. Settlement and Lynia's revenue rails (gateway vs. own-built vs. cash) are a deliberate next-phase decision (§6) |
-| Admin dashboard | **Next.js** on the same NestJS API | Monitoring & support tool (not a dispatch console) |
-| Notifications | **WhatsApp (signup OTP)** + **Expo Notifications / FCM** + **SMS gateway** (fallback) | Signup OTP via WhatsApp (WhatsApp-only); push when online (primary for broadcast alerts); SMS fallback for other critical updates |
+| Mobile app (customer + biker) | **React Native + Expo (EAS)** | One codebase; the Android build, and the same app exported for the web at `app.lyniago.com` |
+| Merchant app | **Next.js** static export on Cloudflare Workers | Phone-first web app; no store install for venues |
+| Admin console | **Next.js** on Azure Container Apps, behind Microsoft Entra sign-in | Monitoring and support tool |
+| Backend | **Own NestJS API on PostgreSQL** | Full control; own OTP + JWT auth, Prisma, BullMQ |
+| Offer loop | **Socket.IO + Redis + Postgres** | One nationwide board room; server-side expiry |
+| Maps | **Google Maps Platform** | Best coverage in Zimbabwe; geocoding, places |
+| Payments | **None** — cash on delivery; commission wallet credited by admin | See §6 |
+| Notifications | **WhatsApp / SMS** (sign-in code) + **FCM / APNs** (push) | Push is primary for new-order alerts |
+| Identity | **Didit** (automated KYC) | Zimbabwean national IDs |
 
 ### Data model (sketch)
-- `profiles` (id, role: customer/rider/merchant/admin, **first_name, last_name** (public = first name + last initial), phone, **email** (nullable), **id_number** (stored; verified only for riders), **photo_url** (required for riders), **phone_verified_at** (WhatsApp OTP), **created_at** (date joined), **orders_count** (denormalized for the customer profile))
-- `riders` (profile_id, vehicle_info, **bike_reg** (ZIM plate, stored — not live-checked), **photo_url** (required), id_verified, **kyc_status[`pending`|`verified`|`failed`]**, **kyc_ref** (KYC provider reference), is_online, current_lat, current_lng, **trips_count**, **rating_avg, rating_count** (denormalized from `ratings` for cheap profile rendering), updated_at) — a rider can only go online / accept jobs once `kyc_status = verified`. *(No commission/balance fields on `riders` itself — the prepaid wallet lives in its own `commission_accounts`/`commission_ledger`/`top_ups` tables, §6.)*
-- `orders` (id, order_type[`parcel`], customer_id, rider_id, pickup{lat,lng,landmark,contact}, dropoff{...}, item_desc (now backed by an **`items` line-items JSON column** — the §5b "line-items, not a single field" seam **realized**, `Order.items`, migration 0008; `item_desc` kept as the derived compact summary), **note** (customer's pickup/handling instructions the rider confirms), item_photo_url, declared_value, size, distance_km, **suggested_fare** (system), **proposed_fare** (customer's broadcast price), **agreed_fare** (selected offer), currency, delivery_otp, status, **confirmed_at**, **pickup_started_at**, **collected_at**, timestamps)
-- `offers` (id, order_id, rider_id, **type[`accept`|`counter`]**, offered_fare, eta_minutes, status[`pending`|`selected`|`declined`|`expired`], at) — the bidding loop; `accept` means offered_fare = customer's proposed_fare, `counter` means a different amount
-- `order_events` (order_id, status, **lat, lng** (rider position at the event, when relevant), at) — status history; the **append-only feed the initiator's tracking timeline renders from** (§5c)
-- `ratings` (order_id, by, score, comment)
-
-> **No payments tables in the MVP** (`rider_ledger`, balances, top-ups, gateway refs) — revenue/settlement is deferred to a later phase (§6). The fare fields above (`suggested_fare`/`proposed_fare`/`agreed_fare`) exist only to drive the **matching/bidding loop**; the app never moves money.
+The authority is `apps/api/prisma/schema.prisma`. The main shapes:
+- `profiles` — one identity; role `customer | rider | merchant | admin`; name, phone, optional email,
+  optional national ID (encrypted, with a one-way hash).
+- `riders` — bike registration, photo, KYC status and reference, online state and position (PostGIS),
+  trip and rating aggregates, strikes and holds.
+- `orders` — `order_type` `parcel | merchant`; pickup/drop-off waypoints, line items (`items` JSON), the
+  parcel fares (`suggested_fare`, `proposed_fare`, `agreed_fare`), merchant money fields (goods total,
+  delivery fee, venue's delivery share), hashed and sealed handover codes, status, timestamps.
+- `offers` — one per biker per parcel order (`accept | counter`).
+- `order_events` — the append-only status history the tracking timeline renders from.
+- `ratings`, `issues`, `reports`, `sos_events`, `audit_logs`.
+- `merchants`, `merchant_dishes`, `merchant_order_items`, `order_prescriptions`, `merchant_debt_ledger`
+  — the merchant verticals.
+- `commission_accounts`, `commission_ledger`, `top_ups` — the prepaid commission wallet (§6).
 
 ### Order status flow
-`requested → open_for_offers → assigned → confirmed → en_route_pickup → picked_up → en_route_dropoff → delivered (OTP verified) → completed` (plus `cancelled` and `expired`). The customer sets `proposed_fare` (from the adjustable `suggested_fare`) and broadcasts → `open_for_offers`. Nearby riders submit `offers` (`accept` at the proposed price or a `counter`); all `pending` offers are shown to the customer, who **selects one** → that offer becomes `selected`, its fare becomes `agreed_fare`, `rider_id` is set, status → `assigned`. If the offer window lapses with no offers (or the customer doesn't select), status → `expired` and the customer is prompted to nudge the price and re-broadcast. The `agreed_fare` is shown in-app for reference, but **how it is settled is out of scope** — the app moves no money and takes no commission in the pilot (§6).
+Parcels: `open_for_offers → assigned → confirmed → en_route_pickup → picked_up → en_route_dropoff →
+delivered (code verified) → completed`, plus `cancelled`, `expired` and `undelivered`. The customer's
+`proposed_fare` is broadcast; bikers submit `offers`; the selected offer's fare becomes `agreed_fare`.
 
-The two post-assignment states — **`confirmed`** (rider has reviewed and confirmed the item description + customer note) and **`en_route_pickup`** (rider has tapped "start ride" and is travelling to the pickup) — exist so the **initiator** (the customer who created the transaction) gets a continuous, legible view of the rider's progress from acceptance to handover. **Live rider location streams from `assigned` through `delivered`**, so the customer sees the bike the moment they select a rider. The single old `en_route` is split into **`en_route_pickup`** (rider → sender) and **`en_route_dropoff`** (rider → receiver) so the tracking window can show *which leg* the rider is on. See §5c.
-
----
-
-## 5b. Superapp "seams" baked into the MVP (cheap now, saves a rewrite)
-
-Low-cost data decisions so grocery/pharmacy/food plug in later as **additive order types**, not migrations:
-
-1. **Generic `orders`** with an `order_type` enum — `parcel` at launch; `merchant` reserved (for COD verticals). Use **line-items**, not a single hard-coded item field — ✅ **implemented** (`Order.items` JSON, migration 0008; `itemDesc` kept as the derived summary).
-2. **Stubbed `merchants`** table + optional `merchant_id` on orders (unused at launch; powers COD verticals later).
-3. **Saved `addresses`** (address book) per user — needed for repeat grocery/food anyway.
-4. **One identity, expandable roles** — customer / rider / merchant / admin from day one.
-
-> **Payments were deliberately not a seam at launch — since revised.** Earlier drafts pre-built a
-> `rider_ledger` "commission/cash backbone"; that was removed, and the plan at the time was to add
-> commission/wallet tables only once the take-rate was calibrated on real data, ~6–8 months out. That
-> timeline was superseded (2026-07-13): the wallet was designed and built early instead
-> (`CommissionAccount`/`CommissionLedger`/`TopUp`, §6), still ships **inert at 0%** so nothing was
-> pre-committed on the take-rate itself — only the collection mechanism shipped early, not the number.
-
-> Cost: a few enum columns + one stub table. Benefit: verticals are additive, not a rewrite.
+Merchant orders start in `requested` while the venue accepts and prepares them (a `merchant_phase`
+sub-state), then join the same delivery states once a biker accepts the job. Details:
+[ARCHITECTURE §7](ARCHITECTURE.md#7-order-lifecycle-state-machine).
 
 ---
 
-## 5c. Live tracking & journey window (initiator view)
+## 5b. Superapp "seams" (cheap now, saves a rewrite)
 
-> **Decision (Office Hours):** once a rider is selected, the **initiator** (the customer who created the
-> transaction) gets a single **tracking window** that follows the rider through the whole journey —
-> acceptance → item/note confirmation → ride start with live position → items collected → en route →
-> delivered → rate. It is the customer's home screen for an active order, replacing the offer-selection list
-> the moment a rider is assigned.
+Low-cost data decisions so new verticals plug in as **additive order types**, not migrations:
+
+1. **Generic `orders`** with an `order_type` enum — `parcel` and `merchant` today — and **line items**,
+   not a single item field (`Order.items`).
+2. **`merchants`** with `merchant_id` on orders — now used by restaurants, shops and pharmacy.
+3. **Saved `addresses`** per user.
+4. **One identity, expandable roles** — customer / rider / merchant / admin.
+
+Payments stay a seam, not a feature: the payment-rail interface exists with a stub behind it
+(`apps/api/src/adapters/payments/`), and the wallet ledger is ready for a rail to credit it.
+
+---
+
+## 5c. Live tracking & the order screen
+
+> Once a biker is selected, the customer gets **one order screen** that follows the order through every
+> stage — a full-bleed live map and a sheet that changes with the stage. It is the customer's home for an
+> active order. Parcel and merchant orders use the same screen.
 
 ### Why it matters
-In a **cash, low-trust** market the customer has handed a stranger their parcel and is waiting on a delivery
-they've already agreed to pay for. A legible, real-time "where is my bike" view is the single biggest **trust
-and anxiety-reducer** for the initiator, and it's what makes the two-way rating at the end feel earned. It
-reuses the **same WebSocket channel (Socket.IO + Redis)** already built for the offer loop and rider
-location — no new infrastructure.
+In a cash, low-trust market the customer has handed a stranger their parcel, or is waiting for food they
+will pay for at the door. A clear "where is my biker" view is the biggest **trust and anxiety reducer**,
+and it is what makes the rating at the end feel earned.
 
-### The journey, as the initiator sees it
-A vertical **stepper/timeline** at the top (each step lights up as it happens, stamped with a time), a **live
-map** in the middle once the rider is moving, and a **rider card** (name, photo, rating, bike reg, call
-button) throughout. The steps map 1:1 to order statuses:
+### The journey (parcel)
 
-| # | Initiator sees | Order status | What happened | Map |
-|---|---|---|---|---|
-| 1 | **Ride accepted** | `assigned` | Customer selected this rider from the offer list; `agreed_fare` locked. **Live location starts streaming immediately.** | **live**, rider's position |
-| 2 | **Items & note confirmed** | `confirmed` | Rider has read the `item_desc` + customer `note` and tapped **Confirm details**. `confirmed_at` set. | **live**, rider's position |
-| 3 | **Ride started — rider on the way to pickup** | `en_route_pickup` | Rider tapped **Start ride** and is travelling to the sender. `pickup_started_at` set. | **live**, rider → sender, ETA to pickup |
-| 4 | **Items collected** | `picked_up` | Rider confirms parcel in hand; **photo at pickup** captured. `collected_at` set. | rider at pickup pin |
-| 5 | **On the way to drop-off** | `en_route_dropoff` | Rider riding to the receiver; **live location continues**. | **live**, rider → receiver, ETA to drop-off |
-| 6 | **Delivered** | `delivered` | Receiver gives the **delivery OTP**; rider enters it → verified handover. | rider at drop-off pin |
-| 7 | **Rate your rider** | `completed` | Order closes; **two-way rating** prompt opens. The initiator **must rate to close the order** (and the rider rates the customer). | — |
+| # | Customer sees | Order status | What happened |
+|---|---|---|---|
+| 1 | **Biker on the way** | `assigned` | Customer selected this biker; `agreed_fare` locked. **Live location starts streaming.** |
+| 2 | **Details confirmed** | `confirmed` | The biker read the items and note and confirmed them. |
+| 3 | **Heading to pickup** | `en_route_pickup` | The biker is travelling to the sender; ETA to pickup. |
+| 4 | **Collected** | `picked_up` | Parcel in hand; **photo at pickup** captured. |
+| 5 | **On the way** | `en_route_dropoff` | Riding to the receiver; live location continues. |
+| 6 | **Delivered** | `delivered` | The receiver gives the **6-digit delivery code**; the biker enters it. |
+| 7 | **Rate your biker** | `completed` | Two-way rating. If the customer never rates, the order closes on its own after the rating window. |
 
-> Steps **2** and **4** are explicit **rider confirmations** the initiator can see ("the rider has confirmed
-> the items / has them in hand"), which is exactly the reassurance the request calls for. At step 2 the rider
-> can **only confirm** — if something is wrong (item larger than described, can't take it), the path is to
-> **cancel the order** (per the cancellation policy, §9), not to renegotiate inline; this keeps the offer loop
-> strictly one round.
+> At step 2 the biker can **only confirm**. If something is wrong (item larger than described), the path
+> is to **cancel** (a biker cancel counts as a strike), not to renegotiate — the offer loop stays one round.
 
-### How it works (mechanism)
-- **State machine.** Each transition writes an `order_events` row (`status`, optional `lat/lng`, `at`). The
-  tracking window renders its timeline straight from this **append-only feed**, so history and live state come
-  from one source of truth.
-- **Live position.** From the moment the rider is selected (`assigned`) through `delivered`, the rider app
-  pushes its GPS to `riders.current_lat/lng` on a **throttled** interval (data is expensive — §3.4); the
-  initiator subscribes via the **WebSocket gateway (Socket.IO)** and the map marker animates between updates. The customer
-  sees the bike right away, not just once it starts moving. Location streaming is **scoped to the active
-  order** and **stops at `delivered`** (privacy + battery + data).
-- **ETA.** Google Maps Platform gives ETA to the current target (pickup pin, then drop-off pin); shown on the
-  map and in the active step.
-- **Notifications.** Each step also fires a **push (SMS fallback)** to the initiator — "Rider confirmed your
-  items", "Rider has collected your parcel", "Delivered" — so they don't have to keep the window open (§3.10).
-- **Rating gate.** The rating prompt is unlocked **only at `completed`**, tied to the `ratings` table; the
-  order can't be rated before delivery is OTP-verified. The initiator's rating is **required to close the
-  order** — the order stays in a "needs rating" state until submitted — which maximises rating coverage from
-  day one (the rider's rating of the customer is likewise prompted).
-
-### Scope discipline (MVP)
-- **Ship:** the 7-step timeline, live map from acceptance through delivery, rider card with call button,
-  per-step push/SMS, **rating required at completion**.
-- **Defer (fast-follow):** in-app chat, route polyline replay/history, share-a-live-link with a third party,
-  predictive "rider is 2 min away" geofenced alerts. The MVP shows **position + status + ETA**, nothing heavier.
+### How it works
+- **State machine.** Each transition writes an `order_events` row; the timeline renders from that
+  append-only feed.
+- **Live position.** From `assigned` through `delivered`, the biker app sends its GPS on a throttled
+  interval (data is expensive — §3.4). The customer subscribes over the WebSocket gateway. Streaming is
+  scoped to the active order and stops at `delivered`.
+- **Notifications.** Each step also fires a push, so the customer doesn't need the screen open (§3.10).
+- **Rating.** Unlocked only after a verified delivery.
 
 ---
 
 ## 5d. Identity, onboarding & profiles
 
-> **Decision (Office Hours):** account creation is **deliberately low-friction** — **phone number + name**,
-> verified by a **WhatsApp code** — while identity is made **trustworthy where it matters** (riders, who carry
-> strangers' parcels) via **automated KYC**. Users can **view each other's profiles**, but a **phone number is
-> never shown except during an active ride**.
+> Account creation is **low-friction** — phone number + name, verified by a one-time code — while identity
+> is made **trustworthy where it matters** (bikers carry strangers' goods) via **automated KYC**. Users can
+> view each other's profiles, but a **phone number is never shown except during an active order**.
 
-### Signup (low friction, one account)
-1. Enter **phone number** (required) → receive a **verification code via WhatsApp** and enter it.
-   **WhatsApp-only — there is no SMS fallback for the signup OTP.** (SMS still backstops *other* critical
-   notifications; the OTP itself is WhatsApp.)
-2. Enter **name** and **national ID number**. **Email is optional.**
-3. You now have a **customer** account. There is **one account per person**, role-expandable
-   (matches the customer ↔ rider toggle and the §5b "one identity, expandable roles" seam).
+### Signup (one account)
+1. Enter a **phone number** → receive a **6-digit code** and enter it. The verify screen is built for a
+   WhatsApp-first send with a per-number SMS fallback, and names the channel the code actually went by
+   (`apps/mobile/app/verify.tsx`). The deployment picks the channel (`OTP_CHANNEL`, §3.11).
+2. Enter **first and last name**. A national ID is optional for customers and stored **unverified**.
+3. You now have a **customer** account — one per person, role-expandable.
 
-> **WhatsApp-only is a deliberate trade-off:** it's cheap and ubiquitous among Zimbabwean smartphone users, but
-> it **excludes anyone without WhatsApp** and depends on **WhatsApp Business API** availability/cost — flagged
-> in §3 and §9.
-
-### Becoming a rider (upgrade path + gating)
-"**Become a rider**" adds, on top of the customer account:
-- **ID verification via an automated KYC service** (selfie + ID match). **No admin in the loop** — verification
-  is fully automatic; `kyc_status` moves `pending → verified | failed`. Admin only **monitors/supports**.
-- **Motorbike ZIM registration number** — **stored as entered, not live-checked** (no reliable public registry
-  API); it sits alongside the verified ID and the photo as the trust bundle.
-- **Profile photo — required** (recognition and trust at handover).
-- **Gating:** an unverified rider can sign up and look around but **gets rides only after KYC completes**
-  (`kyc_status = verified`) — they cannot go online or accept jobs until then.
-
-> **Customers are NOT KYC-verified.** Their `id_number` is **stored but unverified** — enough accountability for
-> a cash market without adding signup friction.
+### Becoming a biker
+"**Become a biker**" adds, on top of the customer account:
+- **ID verification by Didit** (ID document + selfie). **Fully automatic, no human in the loop:** Didit's
+  verdict decides, and our face-match threshold (`KYC_THRESHOLDS` in `packages/shared/src/policy.ts`)
+  can only tighten it. Didit's "In Review" counts as a decline (`apps/api/src/kyc/didit-decision.ts`).
+  `kyc_status` moves `pending → verified | failed`, and to `expired` when the ID lapses. Admin only
+  **monitors and supports**, with an audited override as a backstop.
+- **Bike registration** — stored as entered, not live-checked.
+- **Profile photo — required.**
+- **Gating:** a biker can go online and take jobs **only once verified**.
 
 ### Viewable profiles
-Either party can open the other's profile. **Public name everywhere = first name + last initial** (e.g.
-"Tendai M."). **Phone number is never on the profile.**
+**Public name everywhere = first name + last initial** (e.g. "Tendai M."). **Phone never on a profile.**
 
-| Profile | Shows | Notes |
-|---|---|---|
-| **Rider** | photo (required) · first name + last initial · **number of trips** · **date joined** · **rating (avg ★ + count)** | the customer reads this when choosing among offers (§1) and while tracking (§5c); `rating_avg`/`rating_count` denormalized from `ratings` |
-| **Customer** | first name + last initial · optional photo · **number of orders** · **date joined** | what a rider sees before accepting/while delivering |
+| Profile | Shows |
+|---|---|
+| **Biker** | photo · first name + last initial · trips · date joined · rating (avg ★ + count) |
+| **Customer** | first name + last initial · optional photo · orders · date joined |
 
-> Ratings on the profile are **score + count only** — no written comments displayed in the MVP (comments are
-> still stored in `ratings` for moderation/analytics).
+Ratings on profiles are **score + count only**.
 
-### Phone privacy (reveal window)
-The **real phone number** (tap to call / WhatsApp) is revealed to the counterparty **only while the order is
-active — from `assigned` through `completed`** — then **hidden again**. This is the same active-order window the
-tracking view uses (§5c), so the two stay in lockstep. No proxy/masking layer in the MVP (cost/complexity); the
-number is simply gated by order state.
+### Phone privacy
+The **real phone number** is revealed to the counterparty **only while the order is active**, then hidden
+again. No proxy/masking layer; the number is gated by order state.
 
 ### Editing
 - **Name, photo, email** — editable anytime.
-- **Phone number** — change requires **re-verifying via WhatsApp**.
-- **Verified ID / bike reg** — **locked**; changing them requires re-verification.
+- **Phone number** — change requires re-verifying with a code.
+- **Verified ID / bike registration** — locked; changing them needs re-verification.
 
 ---
 
-## 6. Pricing guide & revenue (model decided; revenue deferred ~6–8 months)
+## 6. Pricing guide & revenue
 
-**Pricing exists only to drive matching — not payment.**
-- **Suggested price** = base + (per-km rate × distance), shown in **USD** as a guide. The **customer sets the proposed price** (notch up/down, no hard floor); riders **accept it or counter**, and the **agreed fare** is the selected offer's amount. These are the numbers the **bidding loop** runs on (`suggested_fare`/`proposed_fare`/`agreed_fare`); nothing here moves money.
+**Parcel pricing drives matching, not payment.**
+- **Suggested price** = base + per-km × distance, in **USD**, as a guide. The **customer sets the proposed
+  price**; bikers **accept it or counter**; the **agreed fare** is the selected offer's amount. The customer
+  pays the biker in cash. See [PRICING](PRICING.md).
 
-**Revenue model — DECIDED (2026-06-27): rider commission, inDrive-style.**
-- Lynia takes a **percentage of the agreed fare** the rider is paid (a **rider-side commission**, deducted from the rider's earnings — not a customer surcharge). This is the inDrive model adapted to the Zimbabwe cash market.
-- **Commission is 0% for the first ~6–8 months.** The launch period charges nothing — its job is to build **supply, demand, and liquidity**, not to monetize. Riders keep the **full agreed fare** during this window.
-- **Collection model — prepaid per-ride.** When the rate turns on, commission is **deducted per ride from a commission account the rider pre-funds** (a prepaid float, not post-paid billing): each completed delivery debits the % of the amount paid, and a low balance blocks going online until the rider tops up. This replaces the earlier post-paid weekly cash-settlement idea — a prepaid float fits a cash, low-trust market (no per-rider credit risk, no collection, no negative balances). Rate/gating live in one place (`@lynia/shared` `COMMISSION`); the full plan is [`docs/archive/plans/2026-biker-prepaid-commission.md`](archive/plans/2026-biker-prepaid-commission.md).
-- **The revenue infrastructure has since been built (2026-07-13/16), well ahead of the original ~6–8-month estimate.** The prepaid wallet (balance ledger, top-ups intent flow, per-ride deduction — `apps/api/src/wallet/*`, design: [`docs/archive/plans/2026-rider-wallet-design.md`](archive/plans/2026-rider-wallet-design.md)) shipped as PR1 core. It runs inert at the 0% launch rate (no ledger rows written, no rider gated), and the **top-up payment rails are not yet functionally wired** (see `docs/KNOWN_BUGS.md` DOC-16-02) — monetization itself still waits on a deliberate, later rate-flip decision. The data model is **payment-agnostic** (§5b), which is exactly what let commission slot in without a rewrite.
-- **Pilot stance (unchanged):** the pilot earns **no revenue** and Lynia remains a **matchmaker, not a payment processor** — the fare is settled rider-direct in cash, outside the app, for now.
+**Merchant orders** have a fixed delivery fee by distance (`deliveryFeeForDistance`). The customer pays for
+the goods and the fee in cash at the door. A venue can choose to fund delivery itself.
 
-> **Resolved (2026-06-27):** model = rider commission (% of agreed fare), 0% for ~6–8 months, infra built
-> later. **Still to calibrate on real corridor data before charging:** the take-rate %, and the base +
-> per-km suggested-price guide (placeholder: base $1.50 + $0.50/km — a matching guide, not a revenue figure).
+**Revenue model: biker commission, prepaid.**
+- Lynia takes a **percentage of what the biker earns** on each completed job — a parcel's agreed fare, or a
+  merchant job's delivery fee. It comes off the biker's side, never added to the customer's price.
+- **Rate: 10%** (`COMMISSION.ratePct`; a deployment can override it with `COMMISSION_RATE_PCT`). A
+  biker's **first 10 completed jobs are free**. Every job type counts toward the 10, and every job type is
+  charged after.
+- **Collection: prepaid per job.** The biker pre-funds a commission wallet; each completed job debits the
+  commission. There is **no minimum balance**: a biker is only stopped from taking a job whose commission
+  is more than their balance (`canCoverJobCommission`, `packages/shared/src/policy.ts`). No credit risk,
+  no collection, no negative balances.
+- **Top-ups today are an admin manual credit** after the biker calls support. The in-app top-up screen is
+  a real client of the wallet API, but no payment rail can confirm a top-up yet
+  ([PAYMENT-RAIL-OUTSTANDING](PAYMENT-RAIL-OUTSTANDING.md)).
+- Lynia remains a **matchmaker, not a payment processor**: the fare and the goods money move in cash,
+  outside the app.
 
----
-
-## 7. One-month plan (revised for straight-to-app)
-
-> **Historical (pre-build plan).** This was the original week-by-week intent. The actual build followed a
-> different sequence and timeline (vendor spikes → backend lifecycle → two eng reviews → both mobile sides
-> → design consultation → cross-cutting flows → comprehensive review), all shipped and CI-gated. The
-> Weeks 1–3 product scope is **built**; Week 4 (real pilot, Play Store) is gated on the dev build + cloud.
-> Kept as the planning record. Current status: `docs/PILOT-READINESS.md`.
-
-**Week 1 — Foundations + parallel recruitment**
-- Scaffold: Expo app shell (**role toggle**), Postgres schema via Prisma (incl. `offers`, `order_events`), Next.js admin app, repo CI.
-- **Onboarding + identity:** phone auth via **WhatsApp OTP**, name + ID, optional email, **one-account role upgrade**, **rider automated KYC + ZIM bike reg + required photo** (rides only after verified), **viewable profiles** (§5d).
-- Customer happy-path skeleton: set pickup/dropoff pins, **suggested + adjustable price**.
-- Register the business; draft rider agreement + declared-value/prohibited-items policy. *(Payment-gateway setup deferred — revenue model undecided, §6.)*
-- **Recruit 5–15 riders** in the launch corridor.
-
-**Week 2 — The offer loop (core differentiator)**
-- Broadcast → `open_for_offers` → **riders accept/counter (one round)** → **interested riders displayed** → **customer selects** → assigned.
-- No-offers expire + **re-broadcast prompt**; item photo upload; push + **SMS** wired.
-
-**Week 3 — Fulfilment + live tracking**
-- Rider: status transitions, **live location sharing**, **trip log** (informational; no payments).
-- **Delivery OTP** handover, **initiator tracking window** (7-step timeline + live map, §5c), two-way ratings (**required to close**), cancellation/no-show policy.
-
-**Week 4 — Pilot, harden, ship**
-- Real orders through the app in the corridor; fix top breakages; tune offer-window length & broadcast radius on real supply.
-- **Google Play** submission. iOS TestFlight if time allows.
+**Still to calibrate on real data:** the parcel suggested-price curve, the merchant delivery fee, and the
+take rate.
 
 ---
 
-## 8. Success metrics (pilot)
+## 7. How we build
 
-- Orders/day and week-over-week growth in the corridor.
+Each surface is built against its design handoff (`packages/design/handoff/`), and every owner decision is
+recorded in `docs/DESIGN-DEVIATIONS.md`. Every PR goes through CI (typecheck, lint, tests, schema
+constraints, design guardrails). A merge reaches no device on its own: mobile builds are dispatched by hand
+(`docs/PLAY-STORE-SUBMISSION.md`), the API releases to Azure through `release-azure.yml`, and the web apps
+deploy to Cloudflare Workers. Ops commands: [AZURE-OWNER-RUNBOOK](AZURE-OWNER-RUNBOOK.md).
+
+---
+
+## 8. Success metrics
+
+- Orders per day and week-over-week growth, by order type.
 - Delivery completion rate (target ≥ 90%).
-- **Offer-loop health:** offers per broadcast, time-to-first-offer, share of broadcasts that get ≥1 offer, customer selection time, re-broadcast rate.
+- **Offer-loop health:** offers per broadcast, time to first offer, share of broadcasts with ≥ 1 offer,
+  customer selection time, re-broadcast rate.
+- **Merchant health:** accept rate and time, prep time against the promise, time to find a biker, no-biker
+  cancels.
 - Median pickup ETA and total delivery time.
-- Rider utilization (jobs per online hour).
+- Biker utilisation (jobs per online hour) and wallet top-up rate.
 - Repeat-customer rate.
-- Gross margin per order.
+- Commission revenue per completed job.
 
 ---
 
-## 9. Open decisions (pending — to resolve in Plan stage)
+## 9. Open decisions
 
-- **Offer-loop tuning:** broadcast radius, offer-window length, max offers shown, offer/selection expiry timers — start with placeholders, calibrate on real corridor supply. *(The **offer-window now has a real value — 90s**, `OFFER_WINDOW_MS` in `@lynia/shared`. The **broadcast radius now also has real policy values** — `BROADCAST` in `@lynia/shared`: base 5 km, widening to 8 km at 30 s and 12 km at 60 s inside the window, corridor-capped, and deploy-tunable via `BROADCAST_BASE_RADIUS_M` without a code change. Keep "calibrate on real data" — the step timings/radii are launch assumptions — but neither is a bare placeholder any more.)*
-- **Legal / regulatory:** business registration, ZIMRA tax, motorbike commercial-use rules, rider licensing & insurance, goods/rider liability, data privacy. Verify with a local advisor before *public* launch (not a blocker for a closed pilot).
-- **Brand & language:** is "Lynia" the final consumer name? English first; Shona/Ndebele later?
-- **Launch corridor:** which specific Harare suburbs go first (drives rider recruitment + demand seeding)?
-- **WhatsApp OTP provider:** which WhatsApp Business API BSP/aggregator delivers the signup code — cost per message, verification-template approval, delivery reliability in Zimbabwe.
-- **KYC vendor (riders): ✅ DECIDED — Didit.** The automated ID-verification vendor is chosen and **integrated** (`apps/api/src/kyc/didit.ts`; the deploy defaults `KYC_PROVIDER=didit`, with the manual admin review kept as the backstop). What remains is not a decision but a measurement: the **real ZIM-ID coverage run** (false-reject rate on genuine Zimbabwean national IDs) — tracked in `docs/PILOT-READINESS.md`.
-- **SMS gateway:** which local aggregator for non-OTP critical notifications (push fallback)?
-- **Cancellation/no-show enforcement** in a cash model (hard to charge fees) — the **mechanism is now BUILT**: a rider-initiated cancel is a no-show strike, and every 3rd strike **forces the rider offline on a 2-hour cooldown** (a strike counter + cooldown in `apps/api/src/orders/order-lifecycle.service.ts`, no money required). What may still calibrate on real data is the *policy* — strike threshold and cooldown length. Still includes the **rider-can't-take-it case** at the item-confirm step (§5c step 2): since confirm is confirm-only, a rider problem cancels the order — and the customer is re-served via the re-broadcast prompt.
+- **Offer-loop tuning.** The offer window is **90 s** (`OFFER_WINDOW_MS` in `@lynia/shared`). Parcel
+  broadcast reach is **nationwide** (`BROADCAST` in `packages/shared/src/policy.ts`, D-99); the old
+  5 → 8 → 12 km widening is retired, but the hook remains. Merchant dispatch reaches 15 km, offers the
+  first round to 10 bikers, and runs six 60-second rounds (`RESTAURANTS_DISPATCH` in
+  `packages/shared/src/restaurants-order.ts`). Calibrate all of these on real data.
+- **Penalties.** Automatic behaviour penalties are **suspended** (owner, 2026-10-12). Strikes and
+  reliability are still recorded, but no hold, cooldown or cash ban applies while `PENALTIES_SUSPENDED`
+  is not `"false"` (`apps/api/src/common/penalties.ts`). The mechanism (every 3rd biker cancel → a 2-hour
+  offline cooldown) is built; when to switch it back on is open.
+- **Payment rail.** Which mobile-money rail (EcoCash, InnBucks, O'mari) to wire first, and when.
+- **Legal / regulatory:** business registration, ZIMRA tax, motorbike commercial-use rules, biker
+  licensing and insurance, goods and biker liability, data privacy, pharmacy rules. Verify with a local
+  advisor.
+- **Brand & language:** English first; Shona/Ndebele later?
+- **KYC coverage:** the false-reject rate on genuine Zimbabwean IDs, now that there is no human review band.
 
 ---
 
-## 10. Next steps (gstack flow)
+## 10. Where to look next
 
-- ✅ **Think → Office Hours** (this doc).
-- ✅ **Office Hours follow-up** — added the **initiator live-tracking window** (§5c): live location from acceptance, rider confirm-only at item check, rating required to close.
-- ✅ **Office Hours follow-up** — **deferred payments & revenue entirely** to a later phase: removed Paynow / commission / `rider_ledger` / top-ups / cash-settlement from the MVP; the app agrees a fare (bidding loop intact) but moves no money; revenue model (gateway, own rails, or cash) undecided; Lynia stays a matchmaker. See §6.
-- ✅ **Office Hours follow-up** — added **account creation, identity & profiles** (§5d): low-friction phone+name+ID signup, **WhatsApp-only OTP**, **one-account upgrade-to-rider**, **automated KYC** (no admin, rides only after verified) + ZIM bike reg + required rider photo, **viewable profiles** (first name + last initial), **phone hidden except `assigned`→`completed`**.
-- ✅ **CEO / product review** — `docs/archive/CEO-REVIEW.md` — the living product review log (Plan pressure-test →
-  Build checkpoint → Ship triage).
-- ✅ **Engineering review** — `docs/archive/ENG-REVIEW.md` — the living engineering review log (Plan architecture
-  gate → Build first-principles P0 audits → Ship provisioning/ship-prep).
-- ✅ **Design review** — `docs/archive/DESIGN-REVIEW.md` (the review log) against the `docs/DESIGN.md` spec
-  (full two-sided journey).
-- ✅ **Build** — backend lifecycle + both mobile app sides shipped to `main`, CI-gated; a delivery
-  completes end-to-end in code.
-- ✅ **Review** — comprehensive post-build eng + design conformance pass, fixes merged.
-- ✅ **Revenue model decided** (§6) — rider commission, 0% for ~6–8 months, infra built later.
-- ✅ **Cloud chosen, provisioned + deployed — Google Cloud** (chosen 2026-06-27, live 2026-06-29):
-  region Johannesburg `africa-south1`, default `CLOUD_PROVIDER=gcp` behind the D7 adapter seam
-  (GCS-only since the Azure impl was removed). The project (`lynia-500911`) is Terraform-provisioned and the API is CI-deployed to
-  Cloud Run behind an external HTTPS load balancer (`https://api.lyniago.com`). Closes T0.
-- ✅ **Phase-3 build shipped (2026-06-30 → 07-01)** — native map + tap-to-pin for pickup/drop-off and a
-  **live tracking map** on the customer order and rider job screens; rider-broadcast push + batched FCM;
-  in-app KYC hand-off with auto-poll; FCM device-token registration + `google-services.json` build wiring.
-  The vendor integrations are now **built behind flags**: WhatsApp Cloud API OTP **send** (was a stub) and
-  Didit v3 KYC + a one-command founder-wiring script (`pnpm didit:setup`).
-- ⬜ **Remaining (founder account/key + dev build, not code):** an approved WhatsApp authentication
-  template + a real Didit ZIM-ID run + a Firebase project (`google-services.json`), and a greenlit dev
-  build → then on-device `/qa`. See `docs/PILOT-READINESS.md`.
-
-> Note: gstack skills (`/plan-ceo-review`, etc.) require gstack installed locally; the equivalents above
-> were run manually. **Current overall status lives in `docs/PILOT-READINESS.md`.**
+- [ARCHITECTURE](ARCHITECTURE.md) — how it is wired.
+- [PRICING](PRICING.md) — the fare model and offer ranking.
+- [SECURITY](SECURITY.md) and [DATA-RETENTION](DATA-RETENTION.md) — threat model and privacy.
+- [PAYMENT-RAIL-OUTSTANDING](PAYMENT-RAIL-OUTSTANDING.md) — the money plumbing still missing.
+- `docs/DESIGN-DEVIATIONS.md` — the ledger of owner decisions (the D-numbers cited above).

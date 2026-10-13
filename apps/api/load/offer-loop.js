@@ -1,9 +1,9 @@
 // Core load scenario (LR11/LR12): the offer loop under concurrency. Ramps to the launch envelope
-// (docs/LOAD-MODEL.md) and asserts the SLO p95 thresholds + the atomic-select invariant (N riders bid,
-// exactly one wins). Scale with STRESS (1 = steady, 5 = stress).
+// (apps/api/load/README.md) and asserts the SLO p95 thresholds + the atomic-select invariant (N riders
+// bid, exactly one wins). Scale with STRESS (1 = steady, 5 = stress).
 //
-// Run: BASE_URL=https://<staging> k6 run apps/api/load/offer-loop.js
-//      BASE_URL=https://<staging> STRESS=5 k6 run apps/api/load/offer-loop.js
+// Run: BASE_URL=http://localhost:3000 k6 run apps/api/load/offer-loop.js
+//      BASE_URL=http://localhost:3000 STRESS=5 k6 run apps/api/load/offer-loop.js
 import { check, sleep } from "k6";
 import { Counter } from "k6/metrics";
 import { signIn, createOrder, makeOffer, selectOffer, json, STRESS } from "./lib.js";

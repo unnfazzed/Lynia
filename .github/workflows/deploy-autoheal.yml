@@ -147,7 +147,7 @@ jobs:
             echo
             echo "Please diagnose from the log tail below and drive this back to green:"
             echo "1. **Code or workflow bug** → open a PR against \`main\` with the fix. The merge redeploys staging, and a green staging run auto-promotes the same image to production (the release workflow's staging-gate)."
-            echo "2. **Missing/invalid cloud config** (repo Variables/Secrets, IAM/RBAC, Terraform; for an Azure run, dispatch the Azure Diagnose workflow and paste its Recap) → do NOT guess values; comment here with the exact arming step from docs/LAUNCH-EXECUTION-RUNBOOK.md the founder must run."
+            echo "2. **Missing/invalid cloud config** (repo Variables/Secrets, IAM/RBAC, Terraform; for an Azure run, dispatch the Azure Diagnose workflow and paste its Recap) → do NOT guess values; comment here with the exact arming step from docs/AZURE-OWNER-RUNBOOK.md the founder must run."
             echo "3. **Production canary failure** → traffic was already rolled back automatically to the previous revision (release.yml / release-azure.yml); verify \`/healthz\` first, then treat the candidate revision's defect as case 1 or 2."
             echo
             echo "<details><summary>Failed-job log tail (attempt 2, last 40 KB)</summary>"

@@ -1,26 +1,24 @@
 # Admin Console — Launch Smoke-Test Runbook
 
-**Purpose.** Everything in `apps/admin` has been unit/integration-tested and rendered locally against a
-mock API, but it has **never run against the real database or real Google IAP** — because the site is
-IAP-gated and CI/agents can't reach it. This runbook is the **go/no-go gate**: a maintainer with IAP
-access walks every operator journey against the live API and confirms each one produces the right
-**database effect** and **audit row**. Nothing here is optional for launch.
+**Purpose.** The go/no-go walk of every operator journey in `apps/admin` against the live API: each
+action must produce the right **database effect** and **audit row**. CI and agents can't reach the
+console (it sits behind Microsoft sign-in), so a maintainer runs this by hand.
 
-**Who runs it.** A maintainer whose Google account has IAP access to the console (see §1) and who can
-reach the production Postgres (Cloud SQL) read-only for verification.
+**Who runs it.** An operator who can sign in to the console (§1) and can run read-only SQL against the
+production database.
 
-**Time budget.** ~45–60 min. Do it end-to-end in one sitting so the audit trail reads as one session.
+**Time budget.** About 45–60 min. Do it in one sitting so the audit trail reads as one session.
 
-**Known environment (from prod, 2026-07-18):**
+**Known environment:**
 
 | Thing | Value |
 |---|---|
 | Admin URL | `https://admin.lyniago.com/` |
-| GCP project | `lynia-500911` |
-| Cloud Run service | `lynia-admin` |
-| IAP backend service | `lynia-admin-backend` (global), IAP **enabled** |
-| IAP OAuth client | `407250490173-sfa8p2bajrg7pjaplld66jb20libtogm.apps.googleusercontent.com` |
-| Console runtime env | `NODE_ENV=production`, `API_BASE_URL`, `ADMIN_CONSOLE_IAP_AUDIENCE`, secret `ADMIN_API_TOKEN` |
+| Container app | `ca-lynia-admin` in `rg-lynia-prod-san`, **single revision mode** (`infra/azure/containerapps.tf`) |
+| Sign-in | Easy Auth with a Microsoft Entra app (`lynia-admin-console-production`), **Assignment required = Yes** |
+| Operator allowlist | repo Variable `ADMIN_CONSOLE_ALLOWED_OPERATORS`, applied by `deploy-admin-azure.yml` only when Easy Auth is on (ADM-11) |
+| Console runtime env | `ADMIN_CONSOLE_REQUIRE_AUTH`, `ADMIN_CONSOLE_PROXY_HEADER`, `API_BASE_URL`, the `admin-api-token` secret (Key Vault `ADMIN-API-TOKEN`); **no** `ADMIN_CONSOLE_IAP_AUDIENCE` |
+| Database | Azure PostgreSQL Flexible Server `psql-lynia-prod-*`, private access (VNet only) |
 
 > Convention below: **UI** = what you should see; **DB** = a read-only SQL check on the prod database;
 > **Audit** = the `audit_logs` row the action must write. Fill the **✅ / ❌** column as you go.
@@ -29,45 +27,41 @@ reach the production Postgres (Cloud SQL) read-only for verification.
 
 ## 1. Prerequisites & access
 
-- [ ] **1.1 IAP access for your operator account.** Your Google account must hold
-  `roles/iap.httpsResourceAccessor` on the backend service. Grant (founder, once per operator):
+- [ ] **1.1 Your operator account can sign in.** It must be (a) assigned to the Entra app and (b) on
+  `ADMIN_CONSOLE_ALLOWED_OPERATORS`. The owner adds both in one step (Azure Cloud Shell):
   ```bash
-  gcloud iap web add-iam-policy-binding \
-    --project=lynia-500911 \
-    --resource-type=backend-services --service=lynia-admin-backend \
-    --member="user:OPERATOR@gmail.com" \
-    --role=roles/iap.httpsResourceAccessor
+  curl -fsSL https://raw.githubusercontent.com/unnfazzed/Lynia/main/infra/azure/admin-auth.sh | ADMIN_OPERATORS="OPERATOR@example.com" bash
   ```
-- [ ] **1.2 DB read access.** Open a read-only psql to the prod database for the verification queries:
-  ```bash
-  gcloud sql connect <INSTANCE> --project=lynia-500911 --user=<readonly-user>
-  # then: \c <database>
-  ```
-  (Use the same DB the API's `DATABASE_URL` points at. A read replica is fine.)
-- [ ] **1.3 A safe test rider + test customer + one test order.** Prefer real pilot fixtures you can
-  mutate without harming a live delivery. Note their ids: `RIDER_ID`, `CUSTOMER_ID`, `ORDER_ID`.
+  then runs **Deploy Admin Console (Azure)** with `environment: production`. Its summary must say
+  *allowlist applied*. Error messages and fixes: `infra/azure/README.md` Step 6.
+- [ ] **1.2 DB read access.** The database has no public endpoint, so the SQL checks need a shell inside
+  the VNet with `psql` and a read-only role. The repo documents no standing read-only path (unverified);
+  set one up with the owner before the session, or skip the **DB** lines and rely on the console's own
+  pages and the **Audit** checks.
+- [ ] **1.3 A safe test rider + test customer + one test order.** Use fixtures you can change without
+  harming a live delivery. Note their ids: `RIDER_ID`, `CUSTOMER_ID`, `ORDER_ID`.
 
 ---
 
 ## 2. Config & deploy verification (before you click anything)
 
-- [ ] **2.1 IAP is on** (already confirmed): `iap.enabled: true` on `lynia-admin-backend`.
-- [ ] **2.2 The serving revision is current.** The deployed revision should match the latest green
-  `deploy-admin` run on `main`:
+- [ ] **2.1 Easy Auth is on.** The latest **Deploy Admin Console (Azure)** run on `main` is green and its
+  summary says the allowlist was applied, after the forged-principal gate (G-ADM) refused a forged
+  `X-MS-CLIENT-PRINCIPAL-NAME` header.
+- [ ] **2.2 The serving revision is current.**
   ```bash
-  gcloud run services describe lynia-admin --region=<REGION> --project=lynia-500911 \
-    --format='value(status.latestReadyRevisionName, status.traffic)'
+  az containerapp revision list -n ca-lynia-admin -g rg-lynia-prod-san \
+    --query "[?properties.active].{name:name, image:properties.template.containers[0].image, traffic:properties.trafficWeight}" -o table
   ```
-- [ ] **2.3 The console's env is complete.** Confirm the runtime carries the API base, the IAP audience
-  (turns on signed-JWT verification), and the admin token secret:
+  The image tag should be the commit of the latest green deploy.
+- [ ] **2.3 The console's env is complete.**
   ```bash
-  gcloud run services describe lynia-admin --region=<REGION> --project=lynia-500911 \
-    --format='yaml(spec.template.spec.containers[].env)'
+  az containerapp show -n ca-lynia-admin -g rg-lynia-prod-san \
+    --query "properties.template.containers[0].env[].name" -o tsv
   ```
-  Expect `NODE_ENV=production`, a non-empty `API_BASE_URL`, a non-empty `ADMIN_CONSOLE_IAP_AUDIENCE`,
-  and `ADMIN_API_TOKEN` sourced from Secret Manager. **If `ADMIN_CONSOLE_IAP_AUDIENCE` is empty, STOP** —
-  the console would run in unverified proxy-header mode (the middleware now logs a one-time warning for
-  exactly this; grep the logs for "UNVERIFIED proxy-header mode").
+  Expect `API_BASE_URL`, `ADMIN_CONSOLE_REQUIRE_AUTH`, `ADMIN_CONSOLE_PROXY_HEADER`,
+  `ADMIN_CONSOLE_ALLOWED_OPERATORS` and `ADMIN_API_TOKEN`. **If `ADMIN_CONSOLE_IAP_AUDIENCE` is present,
+  STOP**: it switches the console into GCP IAP-JWT mode and every request fails.
 
 ---
 
@@ -75,16 +69,16 @@ reach the production Postgres (Cloud SQL) read-only for verification.
 
 | # | Step | Expected | ✅/❌ |
 |---|---|---|---|
-| 3.1 | Open the URL in a fresh/incognito window while **signed out** of Google | Google's IAP consent/login screen — **never** the console | |
-| 3.2 | Sign in with an operator account that **lacks** IAP access | IAP "you don't have access" — the app never renders | |
-| 3.3 | Sign in with a granted operator account | The Overview loads | |
-| 3.4 | Look at the sidebar footer | Your **operator identity** (your email/name), not a generic "Ops admin", and a **Sign out** link | |
-| 3.5 | Click **Sign out** | You're bounced back through Google; returning requires re-auth | |
-| 3.6 | (fail-closed spot check) `curl -s -o /dev/null -w '%{http_code}' https://admin.lyniago.com/` with no IAP cookie | `302` to Google (or `401`) — **never 200** | |
+| 3.1 | Open the URL in a private window while **signed out** | Microsoft's sign-in page — **never** the console | |
+| 3.2 | Sign in with a Microsoft account that is **not assigned** to the app | `AADSTS50105` — the console never renders | |
+| 3.3 | Sign in with an assigned account that is **not on the allowlist** | 403 "This account (X) is not authorized" | |
+| 3.4 | Sign in with a granted operator account | The Overview loads | |
+| 3.5 | Look at the sidebar footer | Your **operator identity** (your email), not a generic "Ops admin", and a **Sign out** link | |
+| 3.6 | Click **Sign out** | Returning requires signing in again | |
+| 3.7 | (fail-closed spot check) `curl -s -o /dev/null -w '%{http_code}' https://admin.lyniago.com/` | `302` to Microsoft sign-in (or `401`) — **never 200** | |
 
-- [ ] **3.7 Audit actor is your real identity.** After any action below, the `audit_logs.actor` must be
-  your **operator email** (e.g. `accounts.google.com:ops@lynia.com` or the normalized email), proving
-  the IAP `X-Operator` forwarding works — not `system`, not a uuid.
+- [ ] **3.8 Audit actor is your real identity.** After any action below, the `audit_logs.actor` must be
+  your **operator email**, proving the console forwards the Easy Auth identity — not `system`, not a uuid.
 
 ---
 
@@ -103,7 +97,7 @@ error. Click into one detail from each list.
 | 4.6 | **Customers** `/customers` | Masked phones, spend, cancel-rate, flags; a row opens the customer detail | |
 | 4.7 | **Issues** `/issues` | Open/investigating/resolved; a row opens the investigation (evidence, statements, resolution) | |
 | 4.8 | **SOS** `/sos` | Pending-first; a row links to the order; a pending alert shows **Acknowledge** | |
-| 4.9 | **Commission** `/cash` | 0%-launch banner; rides/fares KPIs; by-rider table | |
+| 4.9 | **Commission** `/cash` | the live rate (10% after a biker's first 10 jobs, `packages/shared/src/policy.ts`); rides/fares KPIs; by-rider table | |
 
 ---
 
@@ -196,7 +190,7 @@ This is the launch top-up rail; it moves real balance. It was just hardened for 
 
 - [ ] **7.1 Not-found**: open `/orders/<garbage-id>` → "Record not found" (not "endpoint hasn't shipped").
 - [ ] **7.2 Empty states**: a rider with no trips, a clean customer, an empty SOS list → sensible empty copy.
-- [ ] **7.3 Unreachable (optional, if you can briefly point the console at a dead API in staging)**: the
+- [ ] **7.3 Unreachable (optional, locally: point a dev console at a dead API)**: the
   banner reads "API unreachable" and does **not** leak the raw `API_BASE_URL` env-var name to the operator.
 
 ---
@@ -219,15 +213,13 @@ This is the launch top-up rail; it moves real balance. It was just hardened for 
 
 ---
 
-## 9. Rollback drill (know it before you need it)
+## 9. Rollback (know it before you need it)
 
-If a smoke step reveals a serving-revision problem, roll back the console in seconds (traffic re-point,
-no rebuild):
-```bash
-gcloud run services update-traffic lynia-admin --region=<REGION> --project=lynia-500911 \
-  --to-revisions <PREVIOUS_REVISION>=100
-```
-(Find `<PREVIOUS_REVISION>` from `gcloud run revisions list --service=lynia-admin`.)
+The admin app runs in **single revision mode**: a deploy switches over only once the new revision is
+ready, and a revision that never gets ready leaves the old one serving. So a crash-on-boot build fails
+the deploy without an outage. To go back to an older build that boots but misbehaves, revert the commit
+on `main` and let **Deploy Admin Console (Azure)** redeploy it. There is no traffic split to re-point.
+`rollback-azure.yml` is for the API only.
 
 ---
 
@@ -247,6 +239,5 @@ gcloud run services update-traffic lynia-admin --region=<REGION> --project=lynia
 is exactly-once, and every action is attributed to a real operator in the audit log. A failure in §6 or
 §8 is a **hard blocker**.
 
-> Scope note: this runbook covers the **admin console only**. The broader launch gates (WhatsApp BSP + SMS
-> gateway, a real ZIM-ID Didit run, live FCM, on-device QA, load/chaos drills, crash telemetry) are tracked
-> as **KB-OPS-GATE** in `docs/KNOWN_BUGS.md` and are separate from this checklist.
+> Scope note: this runbook covers the **admin console only**. Device QA is `docs/QA-DEVICE-CHECKLIST.md`;
+> production operations are `docs/AZURE-OWNER-RUNBOOK.md`.

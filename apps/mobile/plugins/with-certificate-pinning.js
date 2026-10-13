@@ -6,8 +6,8 @@
 // fresh NATIVE build (it edits the Android network-security-config + iOS Info.plist, so it is NOT
 // OTA-able — the fingerprint runtimeVersion shifts and a store release is required).
 //
-// ⚠️  Read docs/MOBILE-CERT-PINNING.md before arming. The API is behind a Google-managed cert that
-//     AUTO-ROTATES. Pin an intermediate/root SPKI (Google Trust Services), NOT the leaf, and ALWAYS
+// ⚠️  Read docs/SECURITY-OPS.md §C before arming. The API is behind an Azure Container Apps managed cert
+//     that AUTO-ROTATES and whose CA we don't choose. Pin root/intermediate SPKIs, NOT the leaf, and ALWAYS
 //     include a backup pin — a wrong or backup-less pin bricks every installed app's connectivity on
 //     the next rotation, unrecoverable without a forced update. The Android pin-set also carries an
 //     `expiration` safety valve (pinning is bypassed past that date) — keep it ahead of your CA's
@@ -120,7 +120,7 @@ module.exports = function withCertificatePinning(config) {
   if (!expiration || !/^\d{4}-\d{2}-\d{2}$/.test(expiration)) {
     throw new Error(
       "[cert-pinning] LYNIA_TLS_PINS is set but LYNIA_TLS_PIN_EXPIRATION (YYYY-MM-DD) is missing/invalid — " +
-        "the Android pin-set expiration is a required safety valve. See docs/MOBILE-CERT-PINNING.md.",
+        "the Android pin-set expiration is a required safety valve. See docs/SECURITY-OPS.md §C.",
     );
   }
   config = withAndroidPinning(config, host, pins, expiration);

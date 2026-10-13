@@ -10,7 +10,7 @@ starts from reasoning, not archaeology.
 - **What:** Periodic job (or ops procedure) matching Econet's merchant statement exports
   against confirmed `TopUp` rows.
 - **Why:** The nightly integrity job (`WalletIntegrityService`, `POST /admin/wallet/integrity-check`,
-  scheduled in `infra/terraform/scheduler.tf`) proves our own ledger is internally consistent —
+  run nightly by the `caj-lynia-wallet-integrity` job in `infra/azure/jobs.tf`) proves our own ledger is internally consistent —
   balance == sum(ledger), every confirmed top-up credited, no orphan credits; only statement
   matching catches money that reached the merchant account but never credited a wallet (or a
   credit with no matching receipt).
@@ -21,8 +21,9 @@ starts from reasoning, not archaeology.
   `docs/archive/plans/2026-rider-wallet-design.md`). The wallet ships with an internal
   ledger-vs-balance integrity job only — that job (design step 6) was specified but unbuilt
   until roadmap item 1.3 landed it; this remaining item is the *external* statement-matching half.
-- **Trigger / blocked by:** EcoCash rail live (wallet PR2) AND commission rate flipped
-  AND sustained top-up volume (guide: >20 confirmed top-ups/week).
+- **Trigger / blocked by:** EcoCash rail live (wallet PR2) AND sustained top-up volume (guide: >20
+  confirmed top-ups/week). The rider commission is already on: 10% after a rider's first 10 jobs
+  (`COMMISSION` in `packages/shared/src/policy.ts`, owner 2026-10-12).
 
 ### 2. InnBucks / O'mari automation decision checkpoint
 
@@ -42,46 +43,6 @@ starts from reasoning, not archaeology.
   at the calibration rate) approximate future top-up volume before the flip.
 - **Depends on:** Post-flip top-up volume data; thresholds above are launch guesses to
   calibrate against reality.
-
-### 3. Generate wallet visual mockups with the gstack designer
-
-- **What:** Run `$D variants` against the wallet screens now fully specified in
-  `docs/archive/plans/2026-rider-wallet-design.md` (UI Specification block): Wallet balance
-  hero, show-the-math receipt rows, USSD wait state, gate state — pick a direction on
-  the comparison board.
-- **Why:** The 2026-07-13 design review ran text-only — the designer binary was
-  present but needs an `OPENAI_API_KEY` the remote container doesn't have. The spec is
-  complete; nobody has *seen* the wallet yet.
-- **Context:** The brief is assemblable directly from the UI Specification block +
-  `docs/DESIGN.md` tokens. Run before (or as part of) the build's
-  `/design-consultation` → `/design-html` pass so layouts are coded from an approved
-  visual, not from prose.
-- **Depends on:** `OPENAI_API_KEY` (or `$D setup`) on the machine running it; best on
-  a local session where the comparison board can open in a browser.
-
-## Observability / crash reporting
-
-### 1. Activate mobile Sentry (EAS build secrets) — after Expo setup
-
-- **What:** Set the EAS build env vars that switch on the already-merged mobile crash reporting:
-  `EXPO_PUBLIC_SENTRY_DSN` (plaintext) + `SENTRY_AUTH_TOKEN` (secret) + `EXPO_PUBLIC_SENTRY_ENVIRONMENT`,
-  and a GitHub repo secret `EXPO_PUBLIC_SENTRY_DSN` for the OTA/QA-APK lanes (they build on the runner,
-  so the EAS variable is out of scope there). Org/project are no longer env vars — `lyniago` /
-  `lynia-mobile` are committed as plugin props in `app.config.ts`. Then cut a `preview` build and fire
-  **both** crash tests from the TEST BUILD banner's long-press. Commands: `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5.
-- **Why:** `@sentry/react-native` is fully wired (`src/telemetry/sentry.ts`, `app/_layout.tsx`,
-  the `app.config.ts` plugin, `metro.config.js`) but **inert until `EXPO_PUBLIC_SENTRY_DSN` is set** —
-  so mobile crashes (JS **and** native) on riders'/customers' phones are still invisible until this is
-  done. The API half is already live in production.
-- **Context:** The dedicated React Native project **exists** (`lyniago/lynia-mobile`, created 2026-08-05),
-  separate from the API's `lynia-api` Node project so native symbolication + mobile release-health work
-  and events aren't mixed. Full step-by-step (dashboard + `eas env:create` CLI) is in
-  `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5, with the device exit test in `docs/QA-DEVICE-CHECKLIST.md` → LR20.
-  Native SDK ⇒ needs a **new binary** (EAS build), NOT OTA; verification is device-gated. The bundle
-  size cost (+974 KB Hermes, +19%) was measured and accepted; a trim was investigated and ruled out
-  (Expo tree-shaking needs the package-exports resolution `metro.config.js` deliberately avoids).
-- **Trigger / blocked by:** Founder's EAS/Expo account setup complete. The EAS project already exists
-  (`25b2785d-94e0-4ecc-9940-bd9f9d8eb27c`); only the env vars + a release build remain.
 
 ## Merchant verticals (from /plan-eng-review 2026-07-27, plan §0b)
 
@@ -115,7 +76,8 @@ starts from reasoning, not archaeology.
 
 - **What:** The actual weekly billing/settlement path (statements, payment collection,
   reconciliation) for merchant commission.
-- **Why:** Launch runs 0% commission with ledger accrual only; the concept defers settlement
+- **Why:** Merchant commission is still 0% (`RESTAURANTS_COMMISSION` in
+  `packages/shared/src/restaurants-order.ts`; the rider commission is separate) with ledger accrual only; the concept defers settlement
   infra ~6–8 months, but nothing tracked says so — the accruing ledger silently becomes real
   money owed with no way to collect it.
 - **Pros:** Converts an implicit deferral into a scheduled decision with a tripwire.
@@ -192,22 +154,6 @@ starts from reasoning, not archaeology.
 - **Effort:** human S / CC S. **Priority:** P3.
 - **Trigger / blocked by:** the Piranha pass itself.
 
-### TODO-6 · Reach for a business's own riders beyond Send's radius
-
-- **What:** Let a business's preferred riders see its open bookings on their board beyond Send's widening
-  radius (5 → 8 → 12 km). For example, the board also lists open orders whose broadcast sent-set holds
-  the caller, with the push and the listing agreeing.
-- **Why:** The CEO review dropped an extra push to preferred riders up to 10 km away (OV-2). A rider
-  opening that push lands on a 5 km board (`apps/mobile/app/rider/(tabs)/index.tsx:694`) that doesn't list
-  the job for 30–60 s (`apps/api/src/orders/orders.service.ts:563`). Being in the sent set would also make
-  `expandBroadcast` skip them (`matching.service.ts:335-340`).
-- **Pros:** A shop's own courier gets its jobs from farther away. **Cons:** A change on Send's hottest
-  read path.
-- **Context:** Must stay Send-side with no merchant import (depcruise `express-no-merchant-coupling`).
-- **Effort:** human M / CC S. **Priority:** P3.
-- **Trigger / blocked by:** pilot data showing preferred riders' offers arriving late or not at all
-  because they were out of range.
-
 ### TODO-7 · "Share my location" link for buyers
 
 - **What:** The business sends the buyer a `wa.me` message with a LyniaGo link. The buyer taps it, the
@@ -238,7 +184,7 @@ starts from reasoning, not archaeology.
 
 ### TODO-9 · A support WhatsApp number for the merchant web
 
-- **What:** A `NEXT_PUBLIC_SUPPORT_WHATSAPP` build arg (Dockerfile and `deploy-merchant-azure.yml`), from a
+- **What:** A `NEXT_PUBLIC_SUPPORT_WHATSAPP` build arg (`deploy-merchant-web.yml`), from a
   repository variable, that turns on "Message LyniaGo on WhatsApp" on a restaurant's go-live card and
   the Help nav item. Both stay hidden while the number is unset, as the mobile help row does.
 - **Why:** The design doc puts a WhatsApp button on the not-live checklist, and Help routes to WhatsApp

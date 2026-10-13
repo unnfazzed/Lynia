@@ -218,7 +218,7 @@ implements:
   iPhones get `MIN_SUPPORTED_APP_VERSION_IOS`, and Android (plus every build that predates the
   parameter) keeps `MIN_SUPPORTED_APP_VERSION`. Both default to off. So an Android-driven bump no
   longer locks iPhone users out while their update waits on App Review. Raise the iPhone minimum only
-  once that version is live on the App Store (`docs/LAUNCH-EXECUTION-RUNBOOK.md` "Force-update gate").
+  once that version is live on the App Store (`docs/AZURE-OWNER-RUNBOOK.md` §9 "Force-update gate").
 
 ### B6. iOS behaviour fixes: the code sweep's fixes are DONE (JS only); the rest needs a device
 

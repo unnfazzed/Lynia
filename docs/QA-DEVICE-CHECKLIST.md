@@ -1,33 +1,23 @@
 # On-device QA & real-network checklist (LR16–LR20)
 
-> The device track is **hardware-gated** — an emulator can't reproduce real-network flakiness, a real FCM
-> token (Expo Go can't mint one), or native GPS/permission behaviour. This is the runbook to execute on a
-> **dev build** on a **real, low-end Android phone**. Build the test APK via the `Android Test APK`
-> workflow (`.github/workflows/android-test-apk.yml`); QA-mode config in `docs/PILOT-READINESS.md`.
+> The device track is **hardware-gated**: an emulator can't reproduce real-network flakiness, a real FCM
+> token, or native GPS/permission behaviour. Run this on a **real, low-end Android phone**.
 >
-> **Since 2026-08-04 there is a second, better-fidelity way to get the app onto a phone:** install the
-> **internal-track release build** from Play (v0.17.9 / vc 2 and onward). Prefer it for anything where
-> the *shipped* configuration matters — it is the R8-shrunk, Play-signed artifact real users will get,
-> whereas the QA APK is a debug-ish build installed with `--config.node-linker=hoisted` and a throwaway
-> keystore. Two caveats: the release build has **no `/qa` mode** (LR16 below still needs the dev build),
-> and builds made **before Sentry was provisioned** (the DSN-less era — every internal-track build up to
-> the point `EXPO_PUBLIC_SENTRY_DSN` was set per LR20 below) have **no Sentry**, so a crash on one leaves
-> no trace beyond Play Console vitals — write down what you did by hand. Builds made after provisioning
-> fail fast at build time without the DSN (`app.config.ts`), ship crash telemetry, and MUST pass the
-> LR20 forced-crash gate below — the "no Sentry" caveat does not excuse them.
+> Two ways to get the app on a phone:
+> - **The Closed testing build from Play** (v0.51.0 / vc 45 and later, plus OTA updates). This is the
+>   R8-shrunk, Play-signed build users get, with Sentry. Prefer it whenever the shipped configuration
+>   matters.
+> - **The `Android Test APK` workflow** (`.github/workflows/android-test-apk.yml`): a sideloadable APK
+>   with a throwaway keystore and the gold TEST BUILD banner (its long-press holds the crash tests). It
+>   talks to the live API, so it signs in like any user. The vendor-free QA bypass runs only on a local
+>   API (`docs/AZURE-OWNER-RUNBOOK.md` §8).
 
-## 🔴 First pass on the SDK 54 / API-36 build — shipped; the hardware items are open
+## 🔴 SDK 54 / API-36 — the hardware items still open
 
-The Expo SDK 52 → 54 upgrade (React Native 0.76 → 0.81, React 18 → 19, `targetSdkVersion` 35 → 36;
-`docs/KNOWN_BUGS.md` "Expo SDK 54 upgrade 2026-09-28") merged as #959 on 2026-09-28. It moves the
-Android fingerprint, so OTA cannot undo a bad binary: check it on a phone before dispatching the store
-build. Use the `Android Test APK` workflow's APK (no EAS build quota). Run 36422118525's APK was built
-from the same tree as `main` at `209ba356`. At least one handset must run **Android 16**, where
-targeting 36 changes back handling.
-
-**Status 2026-09-28:** the store build shipped to `Closed testing` as v0.50.1 / vc 39 after the
-emulator lane below, not a handset pass (the owner's call: "just test SDK 54 yourself then ship").
-The items still open below are checked on the testers' phones.
+The Expo SDK 54 upgrade (React Native 0.81, React 19, `targetSdkVersion` 36; `docs/KNOWN_BUGS.md` "Expo
+SDK 54 upgrade 2026-09-28") shipped to `Closed testing` after an emulator pass, not a handset pass. Check
+these on the testers' phones. At least one handset must run **Android 16**, where targeting 36 changes
+back handling.
 
 The `Android Emulator Smoke` workflow (`.github/workflows/android-emulator-smoke.yml`) runs that APK on
 Android 10, 13 and 16 emulators and walks everything a signed-out user can reach: cold start,
@@ -62,27 +52,11 @@ anything behind sign-in, push, background GPS, the camera, and low-end CPU speed
 - [ ] **Crash reporting** — the LR20 forced-crash gate below reaches Sentry
       (`@sentry/react-native` 6 → 7).
 
-## 🔴 First pass on the API-35 build — do this before promoting anything
-
-`targetSdkVersion` moved 34 → 35 on 2026-08-04 (Play's hard floor for new apps). On **Android 15**
-handsets that turns on **enforced edge-to-edge**: the system no longer insets your content for the
-status and navigation bars, so anything that assumed it did now draws underneath them. Older Android
-versions are unaffected, which is exactly why this is easy to miss — it needs an Android 15 device
-specifically. This shipped straight to the internal track without a device pass.
-
-- [ ] **Android 15 device, every top-level screen** — no header, title, or action row hidden behind the
-      status bar; no tab bar, primary CTA, or bottom sheet under the navigation bar / gesture pill.
-- [ ] **The high-stakes ones first** — rider job screen (accept/arrived/deliver buttons), customer order
-      tracking (map overlay + status card), OTP hand-off entry, and any full-screen map: a CTA that is
-      unreachable behind a system bar is a stuck delivery, not a cosmetic bug.
-- [ ] **Keyboard-open layouts** — compose/bid/OTP inputs still visible and submittable with the IME up.
-- [ ] **Both gesture and 3-button navigation** (they inset differently).
-- [ ] **Landscape / large font / display-size scaling** on at least one screen.
-
-## LR16 — on-device `/qa` (dev build, real device)
+## LR16 — on-device checks (real device)
 
 - [ ] **Native map + tap-to-pin** — pickup & drop-off pins drop where tapped; reverse-geocoded landmark
-      shows; out-of-corridor pin is rejected with the honest "out of service area" state.
+      shows; a pin outside Zimbabwe is rejected with the honest "out of service area" state (the service area
+      is the whole country, D-99).
 - [ ] **Live tracking map** (both sides) — rider marker interpolates smoothly; camera fits once then a
       recenter button works (no camera-fight); pickup/drop-off pins render.
 - [ ] **FCM device token** — after sign-in the app mints a **native** device token
@@ -120,72 +94,36 @@ Run the core journeys on a **≤2 GB-RAM device** under **throttled 3G/EDGE** an
       (`apiFetch`), never an unbounded hang; `OfflineBanner` shows; `websocket→polling` fallback engages;
       optimistic mutations roll back honestly when the write is lost.
 - [ ] **Marker interpolation** stays smooth under 2–5 s WS latency (no teleport).
-- [ ] **Data usage per delivery** measured (expensive-data reality check for the corridor).
+- [ ] **Data usage per delivery** measured (expensive-data reality check).
 
 ## LR20 — crash telemetry (Sentry) + store readiness
 
-### Crash telemetry (roadmap 1.1) — CODE WIRED; founder finishes on a device build
+### Crash telemetry (Sentry) — wired; verify it on each new binary
 
-`@sentry/react-native` (~6.10) is now integrated (catches JS **and** native crashes — the gap client
-RUM/PostHog couldn't see):
-- `apps/mobile/src/telemetry/sentry.ts` — `initSentry()` (inert unless `EXPO_PUBLIC_SENTRY_DSN` is set;
-  perf tracing OFF by default for the metered-data market; no PII).
-- `app/_layout.tsx` — `initSentry()` at module load, `Sentry.wrap(RootLayout)`, and the `ErrorBoundary`
-  reports render crashes.
-- `app.config.ts` — the `@sentry/react-native` config plugin; `metro.config.js` uses
-  `getSentryExpoConfig` (source-map upload hook, posthog resolver preserved).
-- **Size:** adds ~974 KB to the Hermes bundle (+19%) / ~817 KB to the export total — `size-budget.json`
-  raised accordingly (a real metered-data cost; see APP-SIZE.md). Trimming it would mean stripping
-  Sentry's optional Replay/tracing via Metro flags — a follow-on if the size is a concern.
+`@sentry/react-native` catches JS **and** native crashes. It is wired in `src/telemetry/sentry.ts`
+(`initSentry()`, no PII, tracing off by default), `app/_layout.tsx` (`Sentry.wrap`, the
+`ErrorBoundary`), the `app.config.ts` plugin (org `lyniago`, project `lynia-mobile`, R8 mapping upload
+via `enableAndroidGradlePlugin`) and `metro.config.js`. A release build **fails fast** when
+`EXPO_PUBLIC_SENTRY_DSN` or `SENTRY_AUTH_TOKEN` is missing on EAS (`app.config.ts`), and `mobile-ota.yml`
+and `android-test-apk.yml` pass the DSN from the `EXPO_PUBLIC_SENTRY_DSN` repo secret, because they build
+on the runner.
 
-**Build wiring (done in-repo).** Org `lyniago` / project `lynia-mobile` are committed as plugin props
-in `app.config.ts`, along with `experimental_android.enableAndroidGradlePlugin` — that last one is
-opt-in and is what uploads the R8 `mapping.txt`. Without it, `enableProguardInReleaseBuilds` leaves
-every native Java/Kotlin frame obfuscated (`a.b.c(SourceFile:1)`), which is precisely the layer this
-SDK exists to see. `eas.json` no longer sets `SENTRY_DISABLE_AUTO_UPLOAD`, so uploads run; both
-release profiles pin an explicit EAS `environment`, and `mobile-ota.yml` / `android-test-apk.yml`
-pass the DSN through (those lanes build on the runner, not on EAS servers).
+Verify on every new binary before promoting it:
 
-**Founder steps to activate (device-gated — not verifiable off-device):**
-1. Set the EAS variables — `EXPO_PUBLIC_SENTRY_DSN` (plaintext), `SENTRY_AUTH_TOKEN` (secret, **no**
-   `EXPO_PUBLIC_` prefix), `EXPO_PUBLIC_SENTRY_ENVIRONMENT` per environment — plus a GitHub repo
-   secret `EXPO_PUBLIC_SENTRY_DSN` with the same DSN for the OTA/QA-APK lanes. Exact commands:
-   `docs/LAUNCH-EXECUTION-RUNBOOK.md` §5. A release build now **fails fast** with a message naming
-   the missing variable rather than shipping blind.
-2. Build the `preview` profile, install it, long-press the gold TEST BUILD banner → "Crash telemetry
-   test", and fire **both** options. Passing one proves nothing about the other:
-   **JS error** → source maps uploaded; **Native crash** → R8 mapping uploaded. Confirm each lands
-   with a readable stack, `environment: preview`, and release `zw.co.lynia@<version>+<versionCode>`.
+- [ ] Install it, long-press the gold TEST BUILD banner → "Crash telemetry test", and fire **both**
+      options. **JS error** proves the source maps; **Native crash** proves the R8 mapping. Each lands in
+      Sentry with a readable stack, the right `environment`, and release `zw.co.lynia@<version>+<versionCode>`.
+- [ ] The app boots and logcat shows no Sentry integration errors (this also covers the Metro shim
+      `metro-shims/sentry-browser-redirect.js`, MOB-BOOT-03-SIB-1, which jest cannot test).
+- [ ] After an OTA, a forced JS error still arrives (proves the OTA carried the DSN).
 
-Keep the DSN unset in dev so local runs stay quiet — the seam is inert without it, by design.
+**API side.** `@sentry/node` reports every unexpected 500 with its correlationId. It is on when the repo
+Variable `SENTRY_ENABLED=true` and the `SENTRY_DSN` secret is in Key Vault
+(`infra/azure/vendor-secrets.sh`, `docs/AZURE-OWNER-RUNBOOK.md` §3); the release then sets
+`SENTRY_ENVIRONMENT=production-azure`.
 
-- [ ] Activate per the founder steps; **both** forced crashes visible and readable from a release build.
-- [ ] **MOB-BOOT-03-SIB-1 shim check (2026-08-17):** the forced-crash test above is ALSO the
-  verification gate for the Metro shim that stubs Sentry's browser-only replay/feedback subtree
-  (`metro-shims/sentry-browser-redirect.js` — jest cannot cover a Metro resolver redirect). On the
-  next EAS build: confirm the app boots, both forced crashes arrive symbolicated, and logcat shows no
-  Sentry integration errors — before that build is promoted.
+- [ ] Force a test error on the API and confirm it appears with its correlationId.
 - [ ] Consider the same for the admin app (`@sentry/nextjs`) — lower priority.
-
-> **API side wired (roadmap 1.1).** `@sentry/node` is initialized in `apps/api/src/main.ts` via
-> `observability/sentry.ts`, `AllExceptionsFilter` reports every unexpected 500 (with its
-> correlationId), and the deploy plumbing exists: `release.yml` injects `SENTRY_DSN` (secret) +
-> `SENTRY_ENVIRONMENT=production` behind the **`SENTRY_ENABLED`** repo Variable, exactly like the
-> Didit/WhatsApp/Bird vendor gates. It is **inert until activated** — founder steps:
->
-> 1. Create a Sentry project (Node.js) → copy its DSN.
-> 2. `gcloud secrets create SENTRY_DSN …` + `gcloud secrets versions add SENTRY_DSN --data-file=-` with
->    the DSN, then grant the **runtime SA** `roles/secretmanager.secretAccessor` on it.
-> 3. Set the repo Variable **`SENTRY_ENABLED=true`** (optionally `SENTRY_TRACES_SAMPLE_RATE`, default 0.1).
-> 4. Deploy (push to `main`); the startup log should read `Sentry enabled (env=production)`. Force a
->    test error and confirm it appears in the dashboard with its correlationId.
->
-> Order matters: create the secret (step 2) **before** flipping `SENTRY_ENABLED` (step 3), or the
-> `--set-secrets` deploy fails on a missing target — the same rule the vendor gates follow.
->
-> The mobile (`@sentry/react-native`) and admin (`@sentry/nextjs`) halves are the device/build-gated
-> steps above and are intentionally left for an on-device pass so the calibrated JS bundle-size budget
-> isn't changed blind.
 
 ## Background GPS during Maps navigation (foreground service) — NEW BINARY required
 
@@ -229,4 +167,4 @@ view (`order/[id]`) on the second. Location permission granted as **"While using
 - [ ] **Privacy notice** URL (from `docs/DATA-RETENTION.md`) — must state what's collected + retention +
       how to request erasure; the app's "delete my account" action calls `DELETE /auth/me`.
 - [ ] Play **data-safety form** matches what the app actually collects (location, phone, national ID).
-- [ ] Staged rollout: internal → closed track → the corridor.
+- [ ] Staged rollout: Closed testing → production at 10% once Play grants production access.
