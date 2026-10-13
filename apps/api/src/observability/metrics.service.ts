@@ -98,7 +98,8 @@ export type WalletIntegrityDrift =
   | "balance_mismatch" // cached balance ≠ sum(ledger) for an account
   | "missing_topup_credit" // a confirmed TopUp with no matching ledger credit
   | "missing_receipt" // a ride_commission row missing its ratePct/fare show-the-math fields
-  | "orphan_topup_credit"; // a ledger credit whose topUp is missing or not confirmed
+  | "orphan_topup_credit" // a ledger credit whose topUp is missing or not confirmed
+  | "free_job_nonzero"; // a free_job receipt that moved money (it must always be $0)
 
 /** The two BullMQ queues — CLOSED vocabulary for the `queue` label (a new queue adds its literal
  *  name here, never a dynamic string). The `state` label vocabulary is QUEUE_JOB_STATES

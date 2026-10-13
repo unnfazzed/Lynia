@@ -29,6 +29,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { FREE_JOBS_ACTION, FREE_JOBS_COPY, FREE_JOBS_PUSH_KIND, type FreeJobsMilestone, freeJobsMilestoneAt } from "./free-jobs-reminder";
+import { type DomainEventData, domainEvents } from "../common/domain-events";
 
 /** Page size for the ledger history feed. */
 const LEDGER_PAGE_SIZE = 25;
@@ -59,6 +60,10 @@ function topupMeta(rail: TopupRail, t: { providerRef: string | null; amount?: Pr
 
 /** What applying a rail's answer to a top-up did. */
 export type TopupSettleOutcome = "credited" | "already_settled" | "declined" | "pending" | "short_paid" | "not_found";
+
+/** `TopUp.declineReason` codes (admin console v2 §3): the rail said no, or the window lapsed unpaid. */
+export const TOPUP_DECLINE_RAIL_FAILED = "rail_failed";
+export const TOPUP_DECLINE_EXPIRED = "expired";
 
 /** Integer cents, for comparing money without float error. */
 function toCentsSafe(usd: number): number {
@@ -163,7 +168,9 @@ export class WalletService {
   /** Reverse-chronological ledger page. Cursor is the last entry id from the previous page. */
   async getLedger(riderId: string, cursor?: string): Promise<WalletLedgerPage> {
     const rows = await this.prisma.commissionLedger.findMany({
-      where: { riderId },
+      // `free_job` $0 receipts (admin console v2 §3) are an ops record, not a rider-facing entry: the shared
+      // WalletEntryType has no such value, so an installed app's strict parse would reject the page.
+      where: { riderId, type: { not: "free_job" } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: LEDGER_PAGE_SIZE + 1,
       include: { topUp: { select: { rail: true, providerRef: true, amount: true, charged: true } } },
@@ -263,6 +270,19 @@ export class WalletService {
   ): Promise<void> {
     const { orderId, riderId } = args;
     const orderType = args.orderType ?? "parcel";
+    // Every completion path increments `tripsCount` for THIS order earlier in the same transaction, under
+    // the rider row lock, so the value read here is this job's ordinal (see the free-jobs note below). Read
+    // once: the biker funnel's first-job / 10th-job steps (admin console v2 §3) and the free-job check.
+    const tripsRow = await tx.rider.findUnique({ where: { profileId: riderId }, select: { tripsCount: true } });
+    const jobOrdinal = tripsRow?.tripsCount ?? null;
+    if (jobOrdinal === 1 || jobOrdinal === 10) {
+      await domainEvents.riderStep(tx, riderId, jobOrdinal === 1 ? "first_job" : "job_10", {
+        actorId: null,
+        actorRole: "system",
+        orderId,
+        data: { orderType },
+      });
+    }
     const basis = jobCommissionBasis({
       orderType,
       agreedFare: args.agreedFare != null ? Number(args.agreedFare) : null,
@@ -299,12 +319,11 @@ export class WalletService {
     // existing ride_commission row, has nothing to correct). A cancelled/undelivered job never increments
     // `tripsCount`, so it never consumes the allowance. Idempotent: a replayed completion never reaches
     // here (the completion CAS claims once), and the count only grows, so a job judged paid stays paid.
-    const tripsRow = await tx.rider.findUnique({ where: { profileId: riderId }, select: { tripsCount: true } });
-    if (tripsRow && isFreeJob(tripsRow.tripsCount)) {
+    const freeJob = jobOrdinal != null && isFreeJob(jobOrdinal);
+    if (freeJob) {
       this.logger.log(
-        `commission_free_job orderId=${orderId} riderId=${riderId} job=${tripsRow.tripsCount}/${COMMISSION.freeFirstJobs} waived=${amount}`,
+        `commission_free_job orderId=${orderId} riderId=${riderId} job=${jobOrdinal}/${COMMISSION.freeFirstJobs} waived=${amount}`,
       );
-      return;
     }
 
     // Lazy-upsert the account, then lock its row so a concurrent debit/credit serialises (balance and
@@ -315,14 +334,36 @@ export class WalletService {
       SELECT balance FROM commission_accounts WHERE rider_id = ${riderId}::uuid FOR UPDATE`;
 
     // Check-then-insert idempotency (design 1A): the unique constraint is a backstop, not control flow —
-    // no unique-violation path aborts the completion transaction.
+    // no unique-violation path aborts the completion transaction. A free job checks its own type (backed by
+    // the `commission_ledger_free_job_once` partial unique index, migration 0092), a paid one ride_commission.
+    const entryType = freeJob ? "free_job" : "ride_commission";
     const existing = await tx.commissionLedger.findFirst({
-      where: { riderId, orderId, type: "ride_commission" },
+      where: { riderId, orderId, type: entryType },
       select: { id: true },
     });
     if (existing) return;
 
     const balance = Number(locked[0]?.balance ?? 0);
+    if (freeJob) {
+      // Admin console v2 §3: a $0 receipt, so the money pages can tell a free job from one never charged.
+      // Commission timing is unchanged — nothing is debited; the balance is untouched. ratePct + fare record
+      // what WOULD have been charged (the waived amount = rate% of fare), the same show-the-math fields.
+      // A later admin fare-adjust still finds no ride_commission row, so it still has nothing to correct.
+      await tx.commissionLedger.create({
+        data: {
+          riderId,
+          orderId,
+          type: "free_job",
+          amount: 0,
+          balanceAfter: balance,
+          ratePct: rate,
+          fare: basis,
+          note: `Free job ${jobOrdinal} of ${COMMISSION.freeFirstJobs}`,
+          actor: "system",
+        },
+      });
+      return;
+    }
     const balanceAfter = subMoney(balance, amount);
     await tx.commissionLedger.create({
       data: {
@@ -507,10 +548,16 @@ export class WalletService {
 
   /** Mark a top-up `declined` (from `pending`, or a lapsed `expired`). The only writer of `declined`.
    *  Returns the row, or null if it had already settled. */
-  async declineTopup(topUpId: string, railPayload?: unknown) {
+  async declineTopup(topUpId: string, railPayload?: unknown, reason: string = TOPUP_DECLINE_RAIL_FAILED) {
     const moved = await this.prisma.topUp.updateMany({
       where: { id: topUpId, status: { in: ["pending", "expired"] } },
-      data: { status: "declined", resolvedAt: new Date(), ...(railPayload !== undefined ? { railPayload: railPayload as Prisma.InputJsonValue } : {}) },
+      data: {
+        status: "declined",
+        resolvedAt: new Date(),
+        // Admin console v2 §3: why it ended (a closed code — the rail's free-text detail stays in railPayload).
+        declineReason: reason,
+        ...(railPayload !== undefined ? { railPayload: railPayload as Prisma.InputJsonValue } : {}),
+      },
     });
     if (moved.count === 0) return null;
     return this.prisma.topUp.findUnique({ where: { id: topUpId } });
@@ -535,12 +582,15 @@ export class WalletService {
     if (paid != null && toCentsSafe(paid) < toCentsSafe(credit)) {
       this.logger.error(`top-up ${topUpId}: rail reports $${paid.toFixed(2)} paid, less than the $${credit.toFixed(2)} credit — NOT credited, needs ops`);
       await this.prisma.topUp.update({ where: { id: topUpId }, data: { railPayload: (result.raw ?? null) as Prisma.InputJsonValue } }).catch(() => undefined);
+      // Admin console v2 §3: an ops queue row, not only a log line.
+      await this.noteTopupAnomaly(topUpId, "short_paid", { riderId: topUp.riderId, paid, credit, status: topUp.status, providerRef: result.providerRef ?? null });
       return "short_paid";
     }
     if (topUp.status === "declined") {
       // A rail can't pay a charge it already called final; if one ever does, the money moved and we didn't
       // credit it, so make it loud for ops rather than silently skipping.
       this.logger.error(`top-up ${topUpId}: rail reports PAID on a declined intent (ref ${result.providerRef ?? "?"}) — needs ops`);
+      await this.noteTopupAnomaly(topUpId, "paid_on_declined", { riderId: topUp.riderId, paid: paid ?? null, credit, providerRef: result.providerRef ?? null });
       return "already_settled";
     }
     await this.prisma.topUp
@@ -571,7 +621,10 @@ export class WalletService {
     const result = await this.rail.confirm(topUp.providerRef ?? topUp.id, { pollUrl: topUp.pollUrl ?? undefined, topUpId: topUp.id });
     const outcome = await this.settleTopupFromRail(topUpId, result);
     if (outcome === "pending" && topUp.status === "pending" && topUp.expiresAt.getTime() <= Date.now()) {
-      await this.prisma.topUp.updateMany({ where: { id: topUpId, status: "pending" }, data: { status: "expired", resolvedAt: new Date() } });
+      await this.prisma.topUp.updateMany({
+        where: { id: topUpId, status: "pending" },
+        data: { status: "expired", resolvedAt: new Date(), declineReason: TOPUP_DECLINE_EXPIRED },
+      });
     }
     return outcome;
   }
@@ -601,7 +654,7 @@ export class WalletService {
     if (topUp.status === "pending" && topUp.expiresAt.getTime() <= Date.now()) {
       const expired = await this.prisma.topUp.updateMany({
         where: { id, status: "pending" },
-        data: { status: "expired", resolvedAt: new Date() },
+        data: { status: "expired", resolvedAt: new Date(), declineReason: TOPUP_DECLINE_EXPIRED },
       });
       if (expired.count > 0) return this.toTopup({ ...topUp, status: "expired" });
       // WD-007: count === 0 means a concurrent write already moved this row off `pending` (e.g. a
@@ -695,7 +748,8 @@ export class WalletService {
     const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.topUp.updateMany({
         where: { id: topUpId, status: { in: ["pending", "expired"] } },
-        data: { status: "confirmed", resolvedAt: new Date(), ...(providerRef ? { providerRef } : {}) },
+        // declineReason cleared: an `expired` intent a late payment re-opened did not end that way after all.
+        data: { status: "confirmed", resolvedAt: new Date(), declineReason: null, ...(providerRef ? { providerRef } : {}) },
       });
       if (claimed.count === 0) return null; // already confirmed/declined — exactly-once, nothing to do.
       const topUp = await tx.topUp.findUnique({ where: { id: topUpId } });
@@ -710,6 +764,7 @@ export class WalletService {
         data: { riderId: topUp.riderId, type: "topup", amount, balanceAfter, topUpId, actor: "system" },
       });
       await tx.commissionAccount.update({ where: { riderId: topUp.riderId }, data: { balance: balanceAfter } });
+      await this.noteFirstTopup(tx, topUp.riderId, topUpId, topUp.rail);
       return { balance: balanceAfter };
     });
     // Rail-confirmation lag (initiatedAt → confirmed), recorded exactly once per top-up: only the
@@ -792,6 +847,7 @@ export class WalletService {
             balanceAfter,
           },
         });
+        await this.noteFirstTopup(tx, args.riderId, topUp.id, args.rail, args.actorProfileId);
         return { balance: balanceAfter };
       });
       // UX18-04 sibling: WalletService had no NotificationsService dependency at all, so a manual credit
@@ -811,6 +867,50 @@ export class WalletService {
         return this.getBalanceOnly(args.riderId);
       }
       throw err;
+    }
+  }
+
+  /**
+   * Admin console v2 §3: a `topup.anomaly` row for ops — once per top-up and kind. The sweep re-polls an
+   * unsettled intent every tick and Paynow re-delivers its webhook, so the same anomaly is seen again and
+   * again; one indexed existence read (subject_id, created_at) keeps the queue to one row. Best-effort: no
+   * transaction here, and it never throws.
+   */
+  private async noteTopupAnomaly(topUpId: string, kind: "short_paid" | "paid_on_declined", data: DomainEventData): Promise<void> {
+    try {
+      const seen = await this.prisma.domainEvent?.findFirst({
+        where: { subjectId: topUpId, type: "topup.anomaly", data: { path: ["kind"], equals: kind } },
+        select: { id: true },
+      });
+      if (seen) return;
+    } catch (err) {
+      this.logger.warn(`topup.anomaly dedupe read failed for ${topUpId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await domainEvents.record(this.prisma, { type: "topup.anomaly", actorRole: "system", subjectType: "topup", subjectId: topUpId, data: { kind, ...data } });
+  }
+
+  /**
+   * Admin console v2 §3: the biker funnel's `first_topup` step, inside the confirming transaction — written
+   * when the top-up just confirmed is the rider's only confirmed one (rail or manual). One indexed count.
+   * Never throws: a failure here is logged, the credit stands.
+   */
+  private async noteFirstTopup(
+    tx: Prisma.TransactionClient,
+    riderId: string,
+    topUpId: string,
+    rail: string,
+    actorProfileId?: string,
+  ): Promise<void> {
+    try {
+      const confirmedCount = await tx.topUp.count({ where: { riderId, status: "confirmed" } });
+      if (confirmedCount !== 1) return;
+      await domainEvents.riderStep(tx, riderId, "first_topup", {
+        actorId: actorProfileId ?? null,
+        actorRole: actorProfileId ? "admin" : "system",
+        data: { topUpId, rail },
+      });
+    } catch (err) {
+      this.logger.warn(`first_topup step not recorded for ${riderId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

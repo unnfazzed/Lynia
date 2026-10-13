@@ -38,8 +38,9 @@ const MAX_REPORTED = 100;
  *   2. missing_topup_credit — every confirmed TopUp has exactly one ledger credit (the unique
  *      `topUpId` already blocks *double* credits; this catches the *missing* direction).
  *   3. missing_receipt      — every ride_commission debit carries its ratePct + fare (the
- *      show-the-math receipt fields).
+ *      show-the-math receipt fields). A `free_job` $0 receipt is not a ride_commission and never counts here.
  *   4. orphan_topup_credit  — no ledger credit points at a TopUp that isn't confirmed.
+ *   5. free_job_nonzero     — every free_job receipt is exactly $0 (it records a waived charge, moves nothing).
  *
  * It is READ-ONLY: it never mutates money, only observes and alerts. Findings are logged with a
  * `wallet_integrity` tag and counted into `wallet_integrity_drift_total` (kind label) so 1.5's
@@ -61,6 +62,7 @@ export class WalletIntegrityService {
       missing_topup_credit: 0,
       missing_receipt: 0,
       orphan_topup_credit: 0,
+      free_job_nonzero: 0,
     };
     const record = (kind: WalletIntegrityDrift, ref: string, detail: string) => {
       driftByKind[kind] += 1;
@@ -108,6 +110,18 @@ export class WalletIntegrityService {
     });
     for (const r of missingReceipt) {
       record("missing_receipt", r.id, `order=${r.orderId ?? "null"}`);
+    }
+
+    // (5) free_job_nonzero — a free_job receipt (admin console v2 §3) must never move money. Its ratePct/fare
+    //     are the WAIVED figures, so it is deliberately not part of the missing_receipt sweep above (which is
+    //     ride_commission-only) — a free job is never a "missing rate/fare" violation.
+    const nonzeroFree = await this.prisma.commissionLedger.findMany({
+      where: { type: "free_job", amount: { not: 0 } },
+      select: { id: true, orderId: true, amount: true },
+      take: MAX_REPORTED + 1,
+    });
+    for (const r of nonzeroFree) {
+      record("free_job_nonzero", r.id, `order=${r.orderId ?? "null"} amount=${r.amount.toFixed(2)}`);
     }
 
     // (4) orphan_topup_credit — a ledger credit pointing at a TopUp that isn't confirmed.

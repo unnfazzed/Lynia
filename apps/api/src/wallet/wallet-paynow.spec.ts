@@ -30,7 +30,17 @@ function world(env: Partial<Env>, rail?: Partial<PaymentRail>, seed?: Partial<Ro
   const rows = new Map<string, Row>();
   if (seed) rows.set(seed.id ?? "t1", { id: "t1", riderId: "r1", status: "pending", amount: 5, rail: "ecocash", phone: "0771111111", expiresAt: new Date(Date.now() + 60_000), initiatedAt: new Date(), ...seed } as Row);
   const credit = vi.fn();
+  const events: Array<Record<string, unknown>> = [];
   const prisma = {
+    domainEvent: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        events.push(data);
+        return {};
+      },
+      // The anomaly dedupe read: same subject, type and data.kind.
+      findFirst: async ({ where }: { where: { subjectId: string; type: string; data: { equals: string } } }) =>
+        events.find((e) => e.subjectId === where.subjectId && e.type === where.type && (e.data as { kind?: string }).kind === where.data.equals) ?? null,
+    },
     rider: { findUnique: async () => ({ profileId: "r1", kycStatus: "verified" }) },
     topUp: {
       findFirst: async () => null,
@@ -64,7 +74,7 @@ function world(env: Partial<Env>, rail?: Partial<PaymentRail>, seed?: Partial<Ro
     rows.set(id, { ...row, status: "confirmed" });
     return { balance: row.amount };
   });
-  return { svc, rows, credit };
+  return { svc, rows, credit, events };
 }
 
 const railReturning = (result: PaymentRailResult | Error) => {
@@ -142,15 +152,41 @@ describe("settleTopupFromRail", () => {
   });
 
   it("NEVER credits a short payment (Paynow moved less than we'd credit) — left for ops", async () => {
-    const { svc, credit } = world(PAYNOW_ENV, undefined, { id: "t1", amount: 5 });
+    const { svc, credit, events } = world(PAYNOW_ENV, undefined, { id: "t1", amount: 5 });
     expect(await svc.settleTopupFromRail("t1", { status: "confirmed", amount: 4.99 })).toBe("short_paid");
     expect(credit).not.toHaveBeenCalled();
+    // Admin console v2 §3: an ops queue row, not only a log line.
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "topup.anomaly",
+        subjectType: "topup",
+        subjectId: "t1",
+        data: expect.objectContaining({ kind: "short_paid", riderId: "r1", paid: 4.99, credit: 5 }),
+      }),
+    ]);
+  });
+
+  it("a short payment seen again (the sweep re-polls, Paynow re-delivers) stays ONE anomaly row", async () => {
+    const { svc, events } = world(PAYNOW_ENV, undefined, { id: "t1", amount: 5 });
+    await svc.settleTopupFromRail("t1", { status: "confirmed", amount: 4.99 });
+    await svc.settleTopupFromRail("t1", { status: "confirmed", amount: 4.99 });
+    expect(events).toHaveLength(1);
+  });
+
+  it("a PAID report on a declined intent is recorded as a paid_on_declined anomaly, never credited", async () => {
+    const { svc, credit, events } = world(PAYNOW_ENV, undefined, { id: "t1", amount: 5, status: "declined" });
+    expect(await svc.settleTopupFromRail("t1", { status: "confirmed", amount: 5, providerRef: "999" })).toBe("already_settled");
+    expect(credit).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      expect.objectContaining({ type: "topup.anomaly", subjectId: "t1", data: expect.objectContaining({ kind: "paid_on_declined", providerRef: "999" }) }),
+    ]);
   });
 
   it("a final failure declines; a replay of it is a no-op", async () => {
     const { svc, rows } = world(PAYNOW_ENV, undefined, { id: "t1" });
     expect(await svc.settleTopupFromRail("t1", { status: "failed" })).toBe("declined");
     expect(rows.get("t1")!.status).toBe("declined");
+    expect((rows.get("t1") as Record<string, unknown>).declineReason).toBe("rail_failed");
     expect(await svc.settleTopupFromRail("t1", { status: "failed" })).toBe("already_settled");
   });
 
@@ -172,6 +208,7 @@ describe("reconcileTopup (the sweep's step)", () => {
     const { svc, rows } = world(PAYNOW_ENV, rail, { id: "t1", expiresAt: new Date(Date.now() - 1000), pollUrl: "https://www.paynow.co.zw/poll" });
     expect(await svc.reconcileTopup("t1")).toBe("pending");
     expect(rows.get("t1")!.status).toBe("expired");
+    expect((rows.get("t1") as Record<string, unknown>).declineReason).toBe("expired");
     expect(rail.confirm).toHaveBeenCalledWith(expect.any(String), { pollUrl: "https://www.paynow.co.zw/poll", topUpId: "t1" });
   });
 
