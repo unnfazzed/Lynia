@@ -5478,6 +5478,16 @@ components, and record them all here. Each also follows D-105 below 900px.
 | 3 | Shell search box: above the content at 1440; top of the phone menu panel below 900px | `.console-search`, `.sidenav-search` |
 | 3 | "Audit" nav item (lucide `history` icon) | sidebar nav item |
 | 3 | Timeline card on biker, customer and merchant pages; Audit card on biker, customer, order and merchant pages | card, `table.data`, pills |
+| 4 | `/merchants?status=…` application queue: a chip per state; Type, Area, Waiting (SLA pill), Checks (5/7), Status; the directory's Pilot column becomes a Status pill | subnav chips, `table.data`, pills |
+| 4 | Merchant detail: Application card (checklist ✅/❌ rows, status + SLA pills, Log call / Licence / Review / Approve / Reject / Go live / Resume), Suspend… in the header, licence warnbar for a live pharmacy, Performance card | card, `.kv`, pills, warnbar, confirm modal (gains optional text fields) |
+| 4 | Badge on the Merchants nav item (applications past 24h) | sidebar nav badge |
+| 6 | `/cash/topups`: two chip rows, table, row actions (Re-poll, Credit what was paid, Mark resolved), Previous / Next | subnav chips, `table.data`, confirm modal |
+| 6 | `/cash/owed`: money-owed table with a Call button | `table.data`, quiet button |
+| 6 | `/cash`: chip row (commission / top-ups / money owed) and a Platform money card (7/30-day chips, CSV link, six KPI tiles, ledger-check pill + Run now, by-day table) | subnav chips, card, KPI panel, pills, `table.data` |
+| 6 | Biker page wallet card: four KPI tiles, Detail and By columns, Reverse… and Take off balance… buttons | KPI panel, `table.data`, confirm modal |
 
 One literal: inputs use 16px text on a phone so iOS doesn't zoom on focus.
+
+The amber SLA pill (`.kpill.warn`, PR 4) reuses `--highlight-wash`, `--highlight-border` and `--highlight-ink`, which the
+admin face had kept for the "recommended" marker; this entry extends them to "waiting too long". No new colours.
 
