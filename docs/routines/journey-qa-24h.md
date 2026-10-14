@@ -1,420 +1,569 @@
 # Journey QA: 24-hour routine plan (2026-10-14 → 2026-10-15)
 
-Goal: a biker and a customer can each get through their core journeys without hitting a blocker, a
+**Goal:** a biker and a customer can each get through their core journeys without hitting a blocker, a
 crash, a glitch, a slow screen or a dead end, **on a budget Android phone with a weak network**.
 
 The owner's brief (2026-10-14):
 
-- **Biker:** onboarding, KYC, bidding, tracking, finishing a send-package job, wallet top-up, and switching between customer and biker.
+- **Biker:** onboarding, KYC, bidding, tracking, completing a send-package job, wallet top-up, and switching between customer and biker.
 - **Customer:** onboarding, Send, and tracking orders.
-- **What to look for:** blockers, UI/UX problems, system bugs, crashes and glitches, speed, low connectivity, budget phones.
-- **Report only.** No new features or UI. Fixes only when they are absolutely necessary.
-- **The code is the truth.** Docs are claims to check.
+- **Look for:** blockers, UI/UX issues, system bugs, crashes and glitches, speed, low connectivity and budget phones.
+- **Report only.** No new features and no new UI. Fixes only when they are absolutely necessary.
+- **The code is the truth.** Docs are claims to verify.
 - **Save tokens.**
 
-This plan is a one-off. It does **not** restart the dormant weekly lanes in `docs/ROUTINES.md`, and
-it overrides that spec's "every routine fixes everything and auto-merges" rule for these runs: the
-lanes only report, and one closing run fixes the must-fix items (see "Fix threshold" below).
+This plan was verified against the code on 2026-10-14 by an Opus planning review at extra-high
+effort. It checked every path, route and env var below, citing `file:line`.
+
+It is a one-off plan. It does **not** restart the dormant weekly lanes in `docs/ROUTINES.md`, and it
+overrides that spec's "every routine fixes everything and auto-merges" rule for these runs:
+
+- the lanes report only;
+- one closing run fixes the must-fix items (see §5).
 
 ---
 
-## 1. Schedule (UTC; Harare = UTC+2), with one model per run
+## 1. Schedule (UTC; Harare = UTC+2) and the model for each run
 
-| # | Runs at (UTC) | Routine | Main model | Helpers it may start | What it does |
+| # | Fires (UTC) | Routine | Model | Helper allowed | Live or static |
 |---|---|---|---|---|---|
-| R0 | 14 Oct 11:00 | Baseline & harness check | **Haiku** | none | Sets up the stack and runs the journey test suites. Records what is already red, so the other lanes don't rediscover it. |
-| R7 | 14 Oct 11:30 | Field signals (real testers) | **Haiku** | none | Pulls Play crashes/ANRs, Expo metrics, slow screens by device and reviews, then maps each one to `file:line`. |
-| R1 | 14 Oct 12:00 | Biker onboarding + KYC | **Sonnet** | 1 Opus verifier, only for P0/P1 | |
-| R4 | 14 Oct 13:00 | Customer onboarding + Send | **Sonnet** | none | |
-| R2 | 14 Oct 14:00 | Biker job loop: board → bid → accept → pick up → deliver → complete | **Sonnet** | 1 Opus verifier, only for P0/P1 | |
-| R5 | 14 Oct 15:00 | Customer order tracking | **Sonnet** | none | |
-| R3 | 14 Oct 16:00 | Biker wallet top-up + switching between customer and biker | **Sonnet** | 1 Opus verifier, only for P0/P1 | |
-| R6 | 14 Oct 17:00 | Low connectivity + budget phone | **Sonnet** | 1 Haiku runner (throttled renders, bundle size) | |
-| R8 | 14 Oct 20:00 | Synthesis + must-fix | **Opus** | none | Dedupes everything, fixes only the must-fix list, opens the PR and drives it to green. |
-| R9 | 15 Oct 08:00 | Close-out check | **Haiku** | none | Checks R8's PR state and that every lane delivered. Reports any gaps. Writes no code. |
+| R0 | 14 Oct 12:00 | Harness + baseline | **Sonnet** | none | Live. Publishes the shared harness scripts. |
+| R7 | 14 Oct 12:00 | Field signals (real testers) | **Haiku** | none | Read-only (Expo/Play) |
+| R1 | 14 Oct 13:30 | Biker onboarding + KYC | **Sonnet** | 1 Opus skeptic, P0/P1 only | Live |
+| R4 | 14 Oct 14:30 | Customer onboarding + Send | **Sonnet** | none | Live |
+| R2 | 14 Oct 15:30 | Biker job loop + the customer's live view of it | **Sonnet** | 1 Opus skeptic, P0/P1 only | Live; records a trace for R5 |
+| R3 | 14 Oct 16:30 | Biker wallet top-up + switching between customer and biker | **Sonnet** | 1 Opus skeptic, money P0/P1 only | Live (wallet); static (switch) |
+| R5 | 14 Oct 17:30 | Customer order tracking | **Sonnet** | none | Static, plus R2's trace (no harness boot) |
+| R6 | 14 Oct 18:30 | Low connectivity + budget phone | **Sonnet** | none | Live, through a latency/drop proxy |
+| R8 | 14 Oct 21:30 | Synthesis + must-fix | **Opus** | none | Writes code |
+| R9 | 15 Oct 09:00 | Close-out | **Haiku** | none | Read-only |
 
 Why the models are split this way:
 
-- **Haiku** gets the mechanical work: running commands, pulling data, filling tables.
-- **Sonnet** gets the code-reading lanes, where judgement matters but the volume is high.
-- **Opus** runs only twice: as a one-shot skeptic on P0/P1 findings in the sensitive areas (KYC gating,
-  bid acceptance and assignment, money), and for the one run that changes code.
-- Nothing runs on Opus "just in case".
+- **Haiku** only does pure data pulls.
+- **Sonnet** does the code-reading and journey-driving lanes.
+- **R0 runs on Sonnet, not Haiku**, because it writes the harness every later lane reuses. Getting
+  that right once is cheaper than six lanes each rediscovering the routes.
+- **Opus** is used only for:
+  - a one-shot skeptic pass on P0/P1 findings in the sensitive areas: KYC gating, bid acceptance and assignment, money;
+  - R8, the only run that changes code.
 
-How the lanes are spaced:
+On timing:
 
-- The lanes run an hour apart, so every report lands on the shared branch before R8 starts.
-- R8 starts 3 hours after the last lane, which leaves slack for a lane that overruns.
+- R1 and the later lanes start after R0, so they inherit its harness.
+- R5 starts after R2, so it can read R2's trace.
+- R8 has a 3-hour buffer after the last lane.
 
 ## 2. Token rules (every routine)
 
-1. **Use the file map below; don't explore.** Each lane is handed its exact files. Do not list
-   directories or read unrelated modules. `rg` first, then read narrow line windows (`sed -n a,bp`).
-   Never read a file over 400 lines in full.
-2. **Never read `docs/KNOWN_BUGS.md` in full** (it is 3,200+ lines). Dedup with
-   `rg -n "<file name>|<symbol>|<lane id>" docs/KNOWN_BUGS.md`, then read only the rows that hit.
-   Read the ONB-HP, KYC-R26 and NET-FF sections (2026-10-12) only where they touch your lane.
-3. **Don't read the design handoffs, the gallery or parity docs.** This is not a pixel-parity audit.
-   A "UI/UX issue" here means something that blocks, confuses, misleads, glitches or is slow, not a
-   pixel mismatch with a mock.
-4. **Run targeted tests only:** `pnpm --filter @lynia/mobile exec jest <paths>` and
-   `pnpm --filter @lynia/api exec vitest run <paths>`. Never run the whole monorepo `pnpm test`,
-   except R0 once and R8 before pushing.
-5. **Caps:** at most **12 verified findings** per lane, P0 and P1 first. Stop exploring once you
-   have 12, or after about 90 minutes. A clean lane with a short report is a fine result.
-6. **Helpers:** start at most one, and only where the table above allows it. Give it a
-   self-contained prompt that includes the `file:line` evidence, so it does not re-explore.
-7. **No workflows.** Don't run the `lane-bug-hunt` workflow: its finder × 3-skeptic fan-out costs
-   far more than this budget allows.
-8. **Write the report once at the end.** Don't paste file dumps into it.
+1. **Use the file map in your lane block; don't explore.**
+   - `rg` first, then read narrow windows (`sed -n a,bp`).
+   - Never read a file over 400 lines in full.
+   - Don't list directories outside your lane.
+2. **Use the route table (§4) and the harness (§3). Don't rediscover endpoints.**
+3. **Never read `docs/KNOWN_BUGS.md` in full** (it is 3,200+ lines).
+   - Dedup with `rg -n "<file>|<symbol>|<id>" docs/KNOWN_BUGS.md` and read only the rows that hit.
+   - The 2026-10-12 sections `ONB-HP`, `KYC-R26` and `NET-FF` are the most relevant.
+4. **Skip the design handoffs, the gallery and the parity docs.** This is not a pixel audit. A "UI/UX
+   issue" here means something that blocks, confuses, misleads, glitches or is slow.
+5. **Run targeted tests only.**
+   - Mobile: `pnpm --filter @lynia/mobile exec jest '<path>'`. Escape parentheses in paths, e.g. `'app/rider/\(tabs\)'`.
+   - API unit tests: `pnpm --filter @lynia/api exec vitest run <path>`.
+   - API int specs: `pnpm --filter @lynia/api test:int <path>`. The plain `vitest run` excludes `*.int.spec.ts` and forces commission to 0%.
+   - The full suite is for R8 only.
+6. **Caps:** at most **12 verified findings** per lane, P0 and P1 first. Stop at 12 or after about 90
+   minutes. A clean lane with a short report is a good result.
+7. **Helpers:** at most one, and only where §1 allows it. Give it a self-contained prompt with the
+   `file:line` evidence, so it doesn't re-explore.
+8. **No workflows.** `lane-bug-hunt`'s finder × 3-skeptic fan-out is far over budget.
+9. **Write the report once, at the end. Keep file dumps out of it.**
 
-## 3. Shared harness: a real end-to-end stack with no vendors
+## 3. Shared harness: a real stack with no vendors
 
-The code supports a vendor-free QA mode (`apps/api/src/config/env.ts`):
-
-- `OTP_CHANNEL=console` plus `OTP_TEST_PHONES`: requesting an OTP returns the code.
-- `KYC_PROVIDER=stub`: KYC runs without calling Didit.
-- `PAYMENT_RAIL=stub`: top-up without calling PayNow.
-
-The seed (`apps/api/prisma/seed.ts`) creates a customer (`+263771111111`), 5 verified online
-riders around Harare, and an open order.
+There is **no Docker daemon** in the cloud container (`/var/run/docker.sock` is missing).
+`redis-server` and Postgres 16 are installed natively, but PostGIS is not. Spend at most **10 minutes**
+on getting PostGIS. If it fails, say so in the report and run static-only, naming each claim that is
+static.
 
 ```bash
-pnpm install --frozen-lockfile
-docker compose up -d postgres redis          # postgis/postgis:16-3.4
-export DATABASE_URL=postgresql://lynia:lynia@localhost:5432/lynia
-pnpm --filter @lynia/api prisma:generate && pnpm db:migrate && pnpm db:seed
-OTP_CHANNEL=console OTP_TEST_PHONES=+263771111111,+263772222222,+263773333333 \
-KYC_PROVIDER=stub PAYMENT_RAIL=stub \
-  pnpm --filter @lynia/api start:dev &      # :3000; wait on GET /health
+pnpm install --frozen-lockfile && pnpm --filter @lynia/shared build    # shared resolves to dist/
+redis-server --daemonize yes
+# PostGIS, option (a): sudo dockerd >/tmp/dockerd.log 2>&1 & sleep 5 && docker compose up -d postgres
+# PostGIS, option (b): sudo apt-get install -y postgresql-16-postgis-3 && sudo pg_ctlcluster 16 main start
+#                       then create the role and database lynia/lynia (CREATEDB) and CREATE EXTENSION postgis
+export NODE_ENV=development
+export DATABASE_URL='postgresql://lynia:lynia@localhost:5432/lynia?schema=public'
+export REDIS_URL=redis://localhost:6379
+export OTP_CHANNEL=console KYC_PROVIDER=stub KYC_MODE=auto PAYMENT_RAIL=stub PUSH_PROVIDER=noop
+# Dev defaults for the JWT/PII secrets are fine (only refused in production). Commission defaults to 10% after 10 free jobs.
+pnpm --filter @lynia/api prisma:generate && pnpm db:migrate
+pnpm --filter @lynia/api test:int src/<lane>.int.spec.ts      # BEFORE seeding: int specs deleteMany profiles/riders/orders
+pnpm db:seed
+pnpm --filter @lynia/api build && (cd apps/api && node dist/main.js > /tmp/api.log 2>&1 &)
+until curl -sf localhost:3000/healthz; do sleep 2; done      # /healthz, not /health
+# Admin JWT (admin sign-in by OTP is refused):
+ADMIN_ID=$(psql "$DATABASE_URL" -tAc "select id from profiles where phone='+263770000000'")
+ADMIN_JWT=$(cd apps/api && node -e 'console.log(require("jsonwebtoken").sign({role:"admin"},"dev-insecure-secret-change-me-please",{subject:process.argv[1],expiresIn:"2h",algorithm:"HS256"}))' "$ADMIN_ID")
 ```
 
-Then drive the journey over HTTP (`curl` or a throwaway script in the scratchpad) against the real
-controllers. Use `+263772222222` for a new customer and `+263773333333` for a new biker. The
-integration specs exercise the real SQL, so run the ones for your lane:
+### Facts the harness depends on
 
-```bash
-pnpm --filter @lynia/api test:int src/riders/rider-onboarding.int.spec.ts   # etc.
-```
+- **The API does not load `.env`.** Export the variables.
+- **Sockets:** `socket.io-client` lives only in `apps/mobile`, so run socket scripts with
+  `NODE_PATH=apps/mobile/node_modules`.
+- **OTP:** with `OTP_CHANNEL=console` in development, `POST /auth/otp/request` returns `devCode` for
+  **any** `+263` phone (`auth.service.ts:482-485`). `OTP_TEST_PHONES` only matters in production.
+- **Seeded accounts:**
+  - customer `+263771111111`;
+  - admin `+263770000000`;
+  - **merchant `+263773333333`** (don't use it as a biker: `role_not_allowed`);
+  - riders `+263782000000` … `+263782000004`.
+- **Fresh test phones:** customer `+263772222222`, biker `+263774444444`.
+- **The `/riders/become` gate:** it needs a name set first (`PATCH /auth/me`), or it fails with
+  `name_required`.
+- **KYC outcomes can't be chosen through the stub vendor:**
+  - With `KYC_MODE=auto` the rider is verified instantly at `/riders/become` (`rider.service.ts:458-464`).
+  - To test pending, failed or retry, restart the API with `KYC_MODE=manual` and decide with
+    `POST /admin/riders/:profileId/kyc` (admin JWT).
+  - To test the webhook race: set `riders.kyc_ref`, then POST an unsigned body to `/kyc/callback`.
+    Only a dev + stub stack accepts that (`kyc.controller.ts:138-141`).
+- **A top-up on the stub rail never completes.** The intent expires after 90 s
+  (`wallet.service.ts:505-507`), and there is no confirm call or webhook.
+  - Credit through the admin routes in §4 instead.
+  - Test replays with the `idempotencyKey` on `POST /wallet/topups`.
+  - The Paynow webhook only runs with `PAYMENT_RAIL=paynow` plus its four secrets.
+- **Seeded riders can't bid as-is.** They have 30–70 trips and a $0 wallet, so the commission-cover
+  check refuses them (`offers.service.ts:146`, `matching.service.ts:121`).
+  - Credit them first, or use a fresh biker, who gets 10 free jobs.
+  - Bids stay choosable only while the rider is reachable (about 15 min, `common/rider-selectable.ts`),
+    so send `POST /riders/heartbeat` before bidding.
+- **The rider has no "complete" call.**
+  - `POST /orders/:id/deliver` with the 6-digit code makes the order `delivered`.
+  - It becomes `completed` when the customer rates it (`POST /orders/:id/rating`) or when it auto-closes.
+  - Commission is charged at completion (`wallet.service.ts:292`, `order-lifecycle.transitions.ts:306-324`).
+- **Upload URLs** (`/uploads/*`) will probably 500 locally, because there are no storage credentials.
+  Treat photo upload as static-only.
+- **Socket lifetime:** the server closes a socket when its access token expires (15 min,
+  `tracking.gateway.ts`). That matters for long trips.
 
-**If Docker or the image pull fails:** note it in the report. Fall back to static review plus the
-unit and jest tests, and say exactly which claims are static only. Do not spend more than 10 minutes
-fighting the setup.
+### R0 publishes the harness, every later lane reuses it
 
-## 4. Severity and the fix threshold
+R0 commits `docs/reports/journey-qa-2026-10-15/harness/up.sh` (the block above, made idempotent) and
+`drive.mjs`. `drive.mjs` exposes these helpers:
 
-| Sev | Meaning | What the lane does | What R8 does |
+- `login(phone)` through `devCode`;
+- `adminJwt()`;
+- `setName`, `become`, `credit(riderId, amt)`, `heartbeat`;
+- `createSend`, `bid`, `select`, `stage(to)`, `pickupPhoto`, `revealCode`, `deliver(code)`, `rate`, `cancel`;
+- `listen(orderId)`, a socket listener that logs events with timestamps.
+
+**Lanes import it. They never rewrite it.**
+
+## 4. Route table (no global prefix; bearer token on everything except OTP, `/kyc/callback` and `/healthz`)
+
+| Step | Method + path | Body / notes | Code |
 |---|---|---|---|
-| **P0** | Crash, hard blocker (a user cannot finish the journey), money or data wrong or lost, or a security hole | Report it with a repro and `file:line`. An Opus skeptic confirms it (R1/R2/R3). | **Fixes it**: minimal diff plus a regression test |
-| **P1** | Journey completes, but only with a workaround; stuck states that recover only on restart; spinners past 10 s on Slow 3G; double-submits | Report | Fixes it **only** if the fix is under about 30 lines, touches no UI, and adds no feature. Otherwise it becomes a ledger row. |
-| **P2** | Glitch, confusing state, wrong or missing feedback, slow but working | Report | Ledger row only |
-| **P3** | Polish | Report as one line, or skip | Nothing |
+| Request OTP | POST `/auth/otp/request` | `{phone}` → `{sent, channel, deliveryChannel, devCode}` | auth.controller.ts:37 |
+| Verify OTP | POST `/auth/otp/verify` | `{phone, code}`; optional `x-device-id` (3 new accounts per device per day) → tokens, role, needsProfile | :50 |
+| Name / me | PATCH `/auth/me {firstName,lastName}` · GET `/auth/me` | GET includes the KYC state | :92 / :83 |
+| Bootstrap | GET `/app/bootstrap` | | app-bootstrap.controller.ts:39 |
+| Rider profile | PATCH `/riders/profile {firstName,lastName,idNumber}` | | riders.controller.ts:82 |
+| Become biker (starts KYC) | POST `/riders/become {bikeReg?, photoUrl?}` | | :92 |
+| KYC retry / launched | POST `/riders/kyc/retry {force?}` · POST `/riders/kyc/launched` | | :104 / :115 |
+| KYC decision (manual mode) | POST `/admin/riders/:profileId/kyc` | admin; `{status: pending\|verified\|failed\|expired, reasonCode?, resetAttempts?}` | kyc.controller.ts:240 |
+| KYC webhook | POST `/kyc/callback` | `{session_id: kyc_ref, status, webhook_type:"status.updated"}` | :116 |
+| Upload URL | POST `/uploads/{kyc-photo,pickup-photo,delivery-proof} {contentType}` | probably 500s locally | uploads.controller.ts:48/62/76 |
+| Online / heartbeat | PATCH `/riders/online {online,lat,lng}` · POST `/riders/heartbeat {lat,lng}` | | :120 / :129 |
+| Create Send | POST `/orders` | `{pickup:{point:{lat,lng}}, dropoff, proposedFare, idempotencyKey?, disclaimerVersion?}`; 20/min | orders.controller.ts:22 |
+| Raise price | POST `/orders/:id/price {proposedFare}` | | :138 |
+| Board | GET `/orders/open?lat&lng&radiusM` · WS `board:subscribe` | | :75 |
+| Bid / withdraw | POST `/orders/:id/offers {type:accept\|counter, offeredFare, etaMinutes}` · DELETE `/orders/:id/offers/mine` | commission-cover check | offers.controller.ts:19 / :30 |
+| List bids | GET `/orders/:id/offers` | | :36 |
+| **Customer accepts a bid** | POST `/orders/:id/offers/:offerId/select` | | matching.controller.ts:15 |
+| Rider stages | POST `/orders/:id/status {to}` | confirmed → en_route_pickup → picked_up → en_route_dropoff | lifecycle.controller.ts:30 |
+| Pickup photo | POST `/orders/:id/pickup-photo {key}` | not required for parcels | :52 |
+| Delivery code (customer) | POST `/orders/:id/delivery-code/reveal` · `/rotate` | | :118 / :127 |
+| Deliver | POST `/orders/:id/deliver {code}` | 6 digits, 5 attempts (`order-lifecycle.service.ts:415`) | :75 |
+| Complete | POST `/orders/:id/rating {score,…}` (customer) | | :96 |
+| Undelivered / cancel | POST `/orders/:id/undelivered {reason}` · POST `/orders/:id/cancel {reason}` | | :86 / :147 |
+| Read | GET `/orders/:id`, `/orders/mine/active-orders`, `/orders/mine/history`, `/orders/history` | | orders.controller.ts |
+| Wallet | GET `/wallet`, `/wallet/config`, `/wallet/ledger` | | wallet.controller.ts |
+| Top-up | POST `/wallet/topups {amount, rail:"ecocash", phone, idempotencyKey?}` · GET `/wallet/topups/:id` | stub: stays pending, expires after 90 s | :45 / :51 |
+| Credit (stands in for the stub rail) | POST `/admin/riders/:id/wallet-credit {amount, rail:"manual", idempotencyKey}` · POST `/admin/topups/:id/credit-paid {reason}` | admin; daily cap | admin.controller.ts:731 / :768 |
+| Integrity check | POST `/admin/wallet/integrity-check` | admin | wallet-integrity.controller.ts:17 |
+| Socket | `io(API,{auth:{token}})`; emit `subscribe:order`, `board:subscribe`, `rider:location`; listen `order:status`, `position` | closed when the token expires (15 min) | tracking.gateway.ts:159 / :234 |
+
+## 5. Severity and the fix threshold
+
+| Sev | Meaning | Lane | R8 |
+|---|---|---|---|
+| **P0** | Crash; hard blocker (the user cannot finish the journey); money or data wrong or lost; a security hole | Report with a repro and `file:line`. In R1/R2/R3 the Opus skeptic must confirm it. | **Fix**: minimal diff plus one regression test |
+| **P1** | Completes only with a workaround; stuck until restart; a double-submit; a wait longer than the `src/net/network-policy.ts` timeout tier with no feedback | Report | Fix **only if** the fix is under about 30 lines, touches no UI and adds no feature. Otherwise it becomes a ledger row. |
+| **P2** | Glitch, confusing or wrong feedback, slow but works | Report | Ledger row |
+| **P3** | Polish | One line, or skip | Nothing |
 
 **Never, in any run:**
 
-- new screens, new copy, layout changes or new features;
+- new screens, copy, layout or features;
 - touching `packages/design/**`;
 - skipping or disabling a test.
 
-**If a P0 can only be fixed with a UI change:** R8 reports it at the top of the PR body as
-**NEEDS OWNER**, and does not build it.
+**If a P0 needs a UI change to fix,** R8 lists it as **NEEDS OWNER** at the top of the PR. It does not
+build it.
 
-## 5. Output protocol: one branch, one PR
+**Mark findings that main already fixes.** Testers run builds older than #1185/#1187, and OTA updates
+publish only by manual dispatch. Tag a finding `fixed-on-main-not-shipped` when main already fixes it.
+That is a shipping problem, not a code fix.
 
-- All lanes push **only their own report file** to the shared branch
-  `claude/journey-qa-2026-10-15`, at `docs/reports/journey-qa-2026-10-15/<Rn>-<lane>.md`.
-  - Run `git fetch && git pull --rebase` before pushing.
-  - Each lane writes a different file, so rebases can't conflict.
+## 6. Output protocol: one branch, one PR
+
+- **Shared branch:** `claude/journey-qa-2026-10-15`. The first lane to find it missing creates it from
+  `origin/main`.
+- **What lanes push:** only `docs/reports/journey-qa-2026-10-15/<Rn>-<lane>.md`, plus R0's `harness/`
+  and R2's `R2-trace.jsonl`.
+  - `git pull --rebase` before pushing; files never overlap.
   - Retry the push with backoff (2/4/8/16 s).
   - **Lanes open no PR and change no code.**
-- Report format: a header (lane, model, harness status: dynamic or static only), then a table with
-  the columns `id | sev | journey step | symptom (user's words) | repro | evidence file:line | test
-  that proves it | already in KNOWN_BUGS?`.
+- **Report layout:** a header (lane, model, harness: live or static-only, main SHA), then a table with
+  the columns `id | sev | journey step | what the user sees | repro | evidence file:line | proof (test,
+  trace or command) | in KNOWN_BUGS? | fixed-on-main-not-shipped?`.
   - IDs look like `JQ-R2-03`.
-  - Measured timings go in a separate "Speed" table.
-- **R8** works on the same branch:
-  - writes `00-SUMMARY.md` (top blockers per journey, per side);
-  - adds the new rows to `docs/KNOWN_BUGS.md` under a `## Journey QA 2026-10-15 (JQ)` section;
-  - commits the must-fix fixes;
-  - opens **one** draft PR, marks it ready once CI is green, and squash-merges on green (the
-    CLAUDE.md merge-on-green policy).
+  - Timings go in a separate "Speed" table.
+- **R8:**
+  - writes `00-SUMMARY.md` on the same branch;
+  - adds a `## Journey QA 2026-10-15 (JQ)` section to `docs/KNOWN_BUGS.md`;
+  - commits the fixes;
+  - opens **one** PR and squash-merges it on green (the CLAUDE.md merge-on-green policy).
 
 ---
 
-## 6. Routine prompts
+## 7. Routine prompts (the preamble plus one lane block)
 
-Every prompt starts with the same preamble. Paste it, then the lane block.
+> **Preamble (every routine):** You are routine `<Rn>` of the Lynia Journey QA plan. Read
+> `docs/routines/journey-qa-24h.md` on `origin/main` (`git fetch origin main && git show
+> origin/main:docs/routines/journey-qa-24h.md`). Follow §2 (tokens), §3 (harness), §4 (routes), §5
+> (severity; report only) and §6 (output) exactly. The code is the truth: every finding cites
+> `file:line` plus a test, trace or command output. The UI says "biker"; code and routes say `rider`.
+> Rider mode is Android-only (`src/rider-mode.ts`). Jest runs as iOS with rider mode mocked on, so
+> testing the iOS/web gate needs a per-test override. Don't open a PR, edit app code or merge. Push your
+> report to `claude/journey-qa-2026-10-15`, then stop.
 
-> **Preamble (all routines):** You are running routine `<Rn>` of the Lynia Journey QA plan. First run
-> `git fetch origin main && git show origin/main:docs/routines/journey-qa-24h.md`, and follow §2
-> (token rules), §3 (harness), §4 (severity, report only) and §5 (output) exactly. Treat the code as
-> the truth: every finding cites `file:line` and a command output, test or HTTP trace. Biker copy
-> reads "biker" in the UI, while code and routes say `rider`. Do not open a PR, edit code or merge.
-> Push only your report to `claude/journey-qa-2026-10-15`, then end.
+### R0: Harness + baseline (Sonnet)
 
-### R0: Baseline & harness check (Haiku)
-
-1. Bring up §3. Record whether Docker, migrate, seed and API boot worked, and how long each took.
-2. Run the mobile jest suites for the journey screens:
-   - `app/rider/__tests__`
-   - `app/__tests__`
-   - `src/realtime/__tests__`
-   - `src/kyc/__tests__`
-   - `src/net/__tests__`
-   - `src/query/__tests__`
-3. Run all `apps/api` `*.int.spec.ts`.
-4. Run the API unit tests for `offers`, `matching`, `orders`, `kyc`, `wallet`, `tracking`, `riders` and `auth`.
-5. Run `node scripts/check-bundle-size.mjs` and compare against `apps/mobile/size-budget.json`.
-6. Report every red test as a finding: the failing assertion plus `file:line`. Don't diagnose further.
-   Write `R0-baseline.md`, including a "known-red" list for the other lanes to skip.
+1. **Known-red list from main's latest CI.** Read the last completed `ci.yml` run on `main` with
+   GitHub Actions (list runs, then the job logs). Don't re-run the suites locally. Record:
+   - every red job and test;
+   - the `mobile-bundle-size` measurement against `apps/mobile/size-budget.json`.
+2. **Bring up §3.** Record whether each step worked and how long it took. Spend at most 10 minutes on PostGIS.
+3. **Write `harness/up.sh` and `harness/drive.mjs`** (§3).
+4. **Prove the harness with one full happy path, timing each call:**
+   1. new customer `+263772222222`: login → create Send;
+   2. new biker `+263774444444`: login → name → become (auto-verified) → online → heartbeat → bid;
+   3. select → stages → reveal code → deliver → rate;
+   4. check `/wallet/ledger`.
+5. **Run the int specs before seeding:** `offer-loop`, `order-lifecycle`, `orders-idempotency`,
+   `tracking`, `rider-onboarding`, `refresh-rotation`. Then seed again.
+6. **Report:** any step that fails is a finding. Write `R0-baseline.md` with the known-red list, harness
+   status, the happy-path timings, and anything the later lanes must know.
 
 ### R7: Field signals (Haiku, Expo connector)
 
-1. Using the Expo tools, pull the following for the last 14 days of the closed-testing build:
-   - `playstore_crashes` (crashes and ANRs);
-   - `observe_metrics_summary` and `observe_metrics` (cold start, TTI and screen times, by device model, RAM and Android version);
-   - `observe_routes` (the slowest routes);
-   - `observe_events` (error events);
-   - `playstore_reviews`.
-2. For each crash or slow route, find the code it points to with a stack-frame or route `rg`, and
-   cite `file:line`.
-3. Sort the findings by user impact.
-4. Flag anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10. Those are the
-   budget phones.
-5. Write `R7-field.md`.
-6. If the Expo tools are unavailable, say so in the report and stop. Do not substitute guesses.
+1. `build_list`: find the build that closed testers run now, and record its commit SHA and date.
+   Compare it with the SHAs of `main`'s #1185/#1187/#1160 merges.
+2. `playstore_crashes`: crashes and ANRs from the last 14 days. Group them by signature, and add the
+   device model, RAM and Android version.
+3. `playstore_reviews`: reviews from the same period.
+4. Try `observe_metrics_summary` and `observe_routes` too. The app ships no Expo Observe SDK, so they are
+   probably empty; record that rather than guessing.
+5. Map each crash or ANR to code with `rg` on its stack frames or route, citing `file:line`. Flag
+   anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
+6. **NEEDS OWNER:** the real field telemetry no connector can reach:
+   - Sentry (`src/telemetry/sentry.ts`);
+   - PostHog (`src/telemetry/analytics.tsx`);
+   - client RUM sent to `/client-metrics` (`apps/api/src/observability/client-metrics.controller.ts`).
+7. Write `R7-field.md`. If the Expo tools are unavailable, say so and stop.
 
 ### R1: Biker onboarding + KYC (Sonnet; Opus skeptic for P0/P1)
 
-**Journey:** sign in → role fork → R1–R3 first run → permissions P1–P16 → personal details →
-bike & documents → ID check (F1–F8 outcomes) → pending → approved → first time online.
+**Journey:** sign in → role fork → first run R1–R3 → permissions P1–P16 → personal details →
+bike & documents → ID check (outcomes F1–F8) → pending → approved → first time online.
 
 **Files:**
 
-- `apps/mobile/app/{phone,verify,onboarding,permissions}.tsx`
-- `app/rider/{become,documents}.tsx`
-- `app/profile/setup.tsx`
-- `src/kyc/*`
-- `src/permissions/*`
-- `src/rider-route-gate.tsx`
-- `src/rider-mode.ts`
-- `apps/api/src/kyc/*`
-- `apps/api/src/riders/{rider-profile.service,rider.service,online-gate,riders.controller}.ts`
-- `apps/api/src/uploads/*`
-- `apps/api/src/auth/auth.{service,controller}.ts`
+- Screens: `apps/mobile/app/{phone,verify,onboarding,permissions}.tsx`, `app/rider/{become,documents}.tsx`,
+  `app/rider/(tabs)/index.tsx` (KYC pending/outcome UI and the permission board), `app/profile/setup.tsx`.
+- `src/kyc/{KycCheckHost.tsx,launch-hint.ts,verify.ts,navigation.ts}`
+- `src/logic/{become-state,kyc-outcome,kyc-draft,rider-gate,rider-perm-flow,rider-documents,national-id,rider-welcome,image-downscale}.ts`
+- `src/ui/firstrun/RiderPermBoard*`, `src/permissions/*`
+- `src/auth/{device-state,session-role-sync,dev-code-handoff}.ts`
+- `src/api/{riders,uploads}.ts`
+- `src/rider-route-gate.tsx`, `src/rider-mode.ts`
+- API: `apps/api/src/kyc/*`, `riders/{rider.service,rider-profile.service,online-gate,riders.controller}.ts`,
+  `auth/auth.{service,controller}.ts`, `uploads/*`, `adapters/storage/{azure-blob.storage,upload-verifier}.ts`
 
-**Dynamic:** run the whole journey over HTTP with `+263773333333`, using stub KYC (pass, reject and
-retry). Then run `rider-onboarding.int.spec.ts` and `plate-review-backfill.int.spec.ts`.
+**Check first (recent changes):**
+
+- #1160: `rider.service.ts`, `become.tsx`, `rider/(tabs)/index.tsx`, `kyc-reconcile.service.ts`,
+  `auth/device-state.ts`, `kyc/launch-hint.ts`.
+- #1185: the auth calling-code check, refused sessions and rate-limit refunds.
+- #1185: the Azure upload link is now create-only, so a retried PUT gets 409; the new client treats
+  409 as success. Builds without that client show "Photo upload failed" on a slow-network retry.
+  Confirm this, and tag it `fixed-on-main-not-shipped` if it holds.
+
+**Live runs:**
+
+- `+263774444444` through become (auto mode).
+- Restart with `KYC_MODE=manual` and run pending → failed → `/riders/kyc/retry` → verified.
+- The webhook race: `/kyc/callback` against the app's poll.
+- Try to go online before KYC passes, and check the biker is not still blocked after it passes.
+- The one-ID-one-account rule: become with an `idNumber` that is already in use.
 
 **Hunt for:**
 
-- dead ends: a denied permission, a rejected ID, a retry after rejection;
-- resume after the app is killed mid-upload;
-- a photo upload on a slow uplink: does it time out per `src/net/network-policy.ts`, and is it retried and resumable?
-- a KYC webhook racing the app's poll;
+- dead ends after a denied permission or a rejected ID;
+- resuming after the app is killed mid-step (`kyc-draft`);
 - a pending state that never resolves;
-- a biker who can go online before KYC passes, or who stays blocked after it passes;
-- the one-ID-one-account rule.
-
-Dedup against KNOWN_BUGS `KYC-R26` and `ONB-HP`.
+- the role fork sending a biker to the wrong home.
 
 ### R4: Customer onboarding + Send (Sonnet)
 
-**Journey:** cold start → splash → C1–C5 onboarding → phone/OTP → profile → permissions PC1–PC11 →
-Home → Send (four steps, inline address editing) → price → place → order screen.
+**Journey:** cold start → splash → C1–C5 → phone/OTP → profile → permissions PC1–PC11 → Home → Send
+(4 steps) → price → place → order screen.
 
 **Files:**
 
-- `apps/mobile/app/{index,_layout,onboarding,phone,verify,permissions,send}.tsx`
-- `app/(tabs)/home.tsx`
-- `app/profile/setup.tsx`
-- `src/boot/*`
-- `src/auth/*`
-- `src/query/{use-bootstrap,client,persist}.ts`
-- `apps/api/src/auth/*`
-- `apps/api/src/orders/{orders.controller,orders.service,waypoints}.ts`
-- `apps/api/src/pricing/*`
+- Screens: `apps/mobile/app/{index,_layout,onboarding,phone,verify,permissions,send}.tsx`,
+  `app/(tabs)/home.tsx`, `app/profile/setup.tsx`.
+- Boot and auth: `src/boot/*` (incl. `BootSplash.tsx`, `boot-readiness.ts`), `src/auth/*`,
+  `src/query/{use-bootstrap,client,persist}.ts`.
+- Send: `src/logic/{send-draft,send-steps,order-draft,use-placing-guard,fare-band,otp,boot-route,sign-in-route}.ts`,
+  `src/ui/send/*`, `src/api/{auth,orders,places}.ts`.
+- API: `apps/api/src/auth/*`, `app-bootstrap/*`, `orders/{orders.controller,orders.service,waypoints}.ts`,
+  `pricing/*`.
 
-**Dynamic:**
+**Check first:**
 
-- Sign up `+263772222222` over HTTP and create a send order.
-- Repeat the create with the same idempotency key and with a different one (`orders-idempotency.int.spec.ts`).
-- Try OTP expiry, a wrong code, and the resend cap (`OTP_RL_PHONE_MAX`).
-- Place an order with Places unavailable, so it has to fall back to pin-on-map.
+- #1185: `phone.tsx`, `verify.tsx`.
+- #1160: the boot splash, `use-bootstrap.ts`, `app/index.tsx`, `_layout.tsx`, `onboarding.tsx`, `permissions.tsx`.
+- #1155: `orders.service.ts`, `waypoints.ts`.
+
+**Live runs:**
+
+- Sign up `+263772222222`: wrong code, expired code, the resend cap (`OTP_RL_PHONE_MAX`), and the
+  per-device cap on new accounts.
+- `POST /orders` twice with the same `idempotencyKey`, and with none.
+- The 20/min rate limit.
+- Create with an out-of-area pickup.
 
 **Hunt for:**
 
-- a double-placed order on a slow network;
-- a lost draft after backgrounding or process death;
-- an OTP screen that can't be escaped;
-- price and quote mismatches between the app and the API;
-- boot paths that hang the splash.
+- an order placed twice on a slow network (`use-placing-guard`);
+- a draft lost after backgrounding or process death;
+- an OTP screen with no way out;
+- the app's fare band disagreeing with the server's check;
+- a splash that hangs at boot;
+- Places failing without falling back to pin-on-map.
 
-### R2: Biker job loop (Sonnet; Opus skeptic for P0/P1)
+### R2: Biker job loop + the customer's live view (Sonnet; Opus skeptic for P0/P1)
 
-**Journey:** go online → board shows the job → open the offer → bid → customer accepts → navigate →
-pickup proof → deliver with the 6-digit code (3+3) → complete → commission debit.
+**Journey:** online → board → offer → bid → customer selects → stages → (pickup photo) → reveal
+code → deliver → customer rates → completed → commission debit.
 
 **Files:**
 
-- `apps/mobile/app/rider/(tabs)/index.tsx`
-- `app/rider/offer/[jobId].tsx`
-- `app/rider/job.tsx`
-- `src/realtime/{use-rider-board,use-rider-job-socket,use-rider-location,use-rider-heartbeat,background-location-task,location-buffer,socket}.ts`
-- `src/query/use-pickup-photo.ts`
-- `apps/api/src/offers/*`
-- `apps/api/src/matching/*`
-- `apps/api/src/orders/order-lifecycle.*`
-- `apps/api/src/tracking/*`
-- `apps/api/src/riders/{online-gate,reliability}.ts`
+- Screens: `apps/mobile/app/rider/(tabs)/index.tsx`, `app/rider/offer/[jobId].tsx`, `app/rider/job.tsx`
+  (the send-package job; `food-*` is out of scope).
+- Realtime: `src/realtime/{use-rider-board,use-rider-job-socket,use-rider-location,use-rider-heartbeat,background-location-task,location-buffer,socket}.ts`.
+- `src/logic/{rider-job,rider-job-stage,rider-bid-draft,board-poll,journey,pickup-photo-draft,delivery-proof}.ts`
+- `src/ui/rider/{job-resume,use-back-to-board,board}*`
+- `src/api/{offers,orders,rider-v2,client}.ts`
+- `src/query/{use-pickup-photo,use-sent-offers}.ts`, `src/net/last-active-store.ts`
+- API:
+  - bid `offers/offers.service.ts:42`;
+  - select `matching/matching.service.ts:58`;
+  - deliver-code check `orders/order-lifecycle.service.ts:415`;
+  - `orders/order-lifecycle.*`;
+  - `common/{commission-cover,rider-selectable,offer-window,broadcast-policy}.ts`;
+  - `tracking/*`;
+  - `riders/{online-gate,reliability}.ts`.
 
-**Dynamic:**
+**Check first:**
 
-- Seeded online riders bid on a new order over HTTP.
-- Two riders bid at the same time, then the customer accepts.
-- The accepted rider cancels.
-- Deliver with a wrong code, then the right one.
-- Run `offer-loop`, `order-lifecycle` and `tracking` `.int.spec.ts`.
+- #1185: `tracking.gateway.ts` `scheduleAuthExpiry` (closes the socket at 15 min) and `evictFromOrderRoom`.
+- #1187: `socket.ts` renew-and-reconnect, and `client.ts` `renewSessionForSocket`.
+- #1185: `commission-cover.ts` now counts delivered-but-open jobs as owed.
+- #1157: "no bids while on a job".
+- #1155/#1156: background location, the heartbeat, `offer-expiry.service.ts`, `rider-nudge.service.ts`.
+- **For the Opus skeptic:** #1188's `domain-events.ts` writes inside the match, offer and lifecycle
+  transactions. It says it "never fails the caller", but in Postgres a caught error still aborts the
+  whole transaction. Confirm or refute this.
+
+**Live runs** (with `listen()` attached as both the customer and the rider, saving everything to
+`R2-trace.jsonl`):
+
+- The happy path.
+- Two bikers bid at once, and the customer selects one.
+- Selecting a biker whose heartbeat has lapsed.
+- The chosen biker cancels.
+- A wrong code ×5, then the right code.
+- `/deliver` twice and `/rating` twice.
+- A trip that runs past the 15-minute token expiry: does the socket recover?
 
 **Hunt for:**
 
-- a bid that is accepted but whose job never appears for the rider (socket missed, no refetch);
-- two riders who both believe they won;
-- the board showing a job that is already taken;
-- a lost stream of location updates in the background;
-- complete tapped twice;
-- debit missing or doubled;
-- a job stuck after the app restarts.
+- a biker who was selected but never sees the job;
+- two bikers who both think they won;
+- a job on the board that is already taken;
+- position updates that stop while the app is in the background;
+- a job stuck after a restart;
+- commission debit missing or doubled.
 
-Sensitive lane: the Opus skeptic must confirm every P0/P1 before it is reported as such.
-
-### R5: Customer order tracking (Sonnet)
-
-**Journey:** order placed → waiting for bids → biker assigned → live map → picked up → code shown →
-delivered/undelivered/cancelled → Orders tab history → notification taps.
+### R3: Biker wallet top-up + switching between customer and biker (Sonnet; Opus skeptic for money P0/P1)
 
 **Files:**
 
-- `apps/mobile/app/order/[id].tsx`
-- `app/(tabs)/orders.tsx`
-- `app/notifications/index.tsx`
-- `app/order-updates.tsx`
+- Wallet screens: `apps/mobile/app/wallet/top-up.tsx`, `app/rider/(tabs)/{money,account}.tsx`,
+  `app/(tabs)/account.tsx`, `app/history/*`.
+- Wallet logic: `src/ui/rider/TopUpFlow.tsx`, `src/logic/{topup,money,money-feed,gates,wallet-ledger}.ts`,
+  `src/query/{use-topup,use-wallet,use-history-feed}.ts`, `src/api/wallet.ts`.
+- **The switch is client-only. There is no API route for it.** A profile has one role, and
+  `/riders/become` flips it once, from customer to rider (`rider.service.ts:476`). Read
+  `src/logic/{switch-to-customer,boot-route,sign-in-route,native-intent,side-nav}.ts`,
+  `src/auth/{session,session-role-sync}.ts` (`saveRolePreference`), `src/push/push.ts:154`,
+  `app/+native-intent.tsx`, `src/rider-route-gate.tsx` and `src/rider-mode.ts`.
+- API: `apps/api/src/wallet/*`, `common/commission-cover.ts`, `adapters/payments/*`,
+  `packages/shared/src/policy.ts`. Skip `settlements/*`, which is only an admin read view.
+
+**Check first:**
+
+- #1173: `wallet.service.ts`, `topup-reconcile.service.ts`, `TopUpFlow.tsx`, migration 0090.
+- #1185: the daily cap on manual credits.
+- #1188/#1189: `wallet-integrity.service.ts`, migration 0092 (one free-job receipt per order).
+- #1169/#1172: `topup.ts`, `gates.ts`, `money.tsx`.
+- #1154: `online-gate.ts`, `free-jobs-reminder.ts`.
+- #1160: `session-role-sync.ts`, `native-intent.ts`, `side-nav.ts`.
+
+**Live runs:**
+
+- A stub top-up: confirm it expires after 90 s, and check what the app shows (the timeline in `logic/topup.ts`).
+- The same `idempotencyKey` twice.
+- An admin credit with the same `idempotencyKey` twice, and up to the daily cap.
+- Free jobs 1–10, then the 11th job's commission debit.
+- A balance below cover: does bid or select refuse with a clear reason?
+- Run `/admin/wallet/integrity-check` and confirm the sum of the ledger equals the balance.
+
+**Static checks for the switch:**
+
+- switching while a job is active or an order is open;
+- a push for the other side arriving while on this side;
+- a rider-only route opened from customer mode;
+- the iOS/web gate.
+
+**Hunt for:**
+
+- money credited twice or never;
+- a balance that stays stale after a credit;
+- the top-up gate blocking a biker who has paid;
+- the switch stranding the user on the wrong tab stack, or hiding an active job.
+
+### R5: Customer order tracking (Sonnet, static + R2's trace; no harness boot)
+
+**Journey:** placed → waiting for bids → biker chosen → live map → picked up → code → delivered,
+undelivered or cancelled → Orders tab history → notification taps.
+
+**Files:**
+
+- Screens: `apps/mobile/app/order/[id].tsx` (includes the accept-bid UI), `app/(tabs)/orders.tsx`,
+  `app/notifications/index.tsx`, `app/order-updates.tsx`.
+- `src/logic/{order-stage,order-offers,order-tracking,eta}.ts`
+- `src/ui/order/{OrderSheet,OrderMap,panels,cards}*`
 - `src/realtime/{use-order-socket,use-foreground-refetch,self-heal-gate,socket-identity}.ts`
-- `src/query/{use-order-flow,use-customer-orders,use-sent-offers,seed-order,use-notifications-unread}.ts`
-- `src/push/*`
-- `apps/api/src/tracking/*`
-- `apps/api/src/orders/{lifecycle.controller,cancel-reason}.ts`
-- `apps/api/src/notifications/*`
+- `src/query/{use-customer-orders,seed-order,use-notifications-unread}.ts`
+- `src/net/{order-copy-store,offline-banner-owner}.ts`, `src/push/*`
+- API: `tracking/{tracking.gateway,tracking.service}.ts` (#1185 removed the REST controller),
+  `orders/{lifecycle.controller,cancel-reason}.ts`, `notifications/*`.
 
-**Dynamic:** drive an order through every terminal state over HTTP while a socket client listens.
-Kill the socket mid-trip and confirm the screen recovers by refetching.
+**Inputs:**
+
+- Read `R2-trace.jsonl` from the shared branch.
+- For each status change the server sent, check how `order-stage` and `use-order-socket` render it,
+  and what happens when that event is missed. Is there a refetch on reconnect or foreground?
+- Run `pnpm --filter @lynia/mobile exec jest app/order src/realtime src/logic/__tests__/order`.
 
 **Hunt for:**
 
 - a map frozen on a stale position;
 - the stage sheet stuck after a missed event;
 - a push opening the wrong order;
-- a cancel race with an accept;
-- the code not shown or wrong;
-- history missing just-finished orders.
+- a cancel racing an accept;
+- the code missing or stale after rotation;
+- history without a just-finished order;
+- the socket closing at 15 minutes as the customer sees it.
 
-### R3: Biker wallet top-up + switching between customer and biker (Sonnet; Opus skeptic for money P0/P1)
+### R6: Low connectivity + budget phone (Sonnet; live through a proxy, static for the device side)
 
-**Journey:** Money tab → top up (stub rail) → balance → job debit → low-balance gate → top-up gate.
-Switch from customer to biker and back, both from Account and through a push or deep link.
+1. **A latency/drop proxy.** Put a small Node TCP proxy in front of `:3000` that adds 400 ms of latency
+   and drops ~10 % of responses **after** the request has reached the server. Route `drive.mjs`
+   through it.
+   - Measure retry safety for: order create, bid, select, stage, deliver, rate and top-up. Only order
+     create and top-up carry an `idempotencyKey`. What does a retried bid, select or deliver do?
+   - Measure socket reconnects through #1187's backoff (1 s → 60 s).
+2. **Static review:**
+   - `src/api/client.ts` (timeouts, single-flight refresh);
+   - `src/net/*` (tiers in `network-policy.ts`; reachability and NET-FF false-offline flags);
+   - `src/query/{client,persist}.ts`, `src/realtime/socket.ts`;
+   - `src/logic/image-downscale.ts`, `src/api/uploads.ts` (the 409 handling);
+   - polling intervals that cost data or battery;
+   - work done during boot (`src/boot/*`).
+3. **Run** `pnpm --filter @lynia/mobile exec jest app/order/__tests__ src/net src/realtime`. This
+   covers the offline cold start and the order-screen perf tests.
+4. **Budget phone, static only:**
+   - the Hermes bundle against its budget (from R0, which read main's CI);
+   - image sizes;
+   - re-renders on the map screens.
 
-**Files:**
-
-- `apps/mobile/app/wallet/top-up.tsx`
-- `app/rider/(tabs)/{money,account}.tsx`
-- `app/(tabs)/account.tsx`
-- `app/history/*`
-- `src/query/{use-topup,use-wallet,use-history-feed}.ts`
-- `src/rider-mode.ts`
-- `src/rider-route-gate.tsx`
-- `app/+native-intent.tsx`
-- `apps/api/src/wallet/*`
-- `apps/api/src/settlements/*`
-
-**Dynamic:**
-
-- Run a top-up over HTTP, replaying the confirm and webhook twice.
-- Run the integrity check with `wallet-integrity.service`.
-- Check that the sum of ledger rows equals the balance after a job.
-- Switch roles while a job is active or an order is open.
-
-**Hunt for:**
-
-- money credited twice or never;
-- a balance that is stale after a top-up;
-- the top-up gate blocking a biker who has already paid;
-- a role switch that strands the user on the wrong tab stack;
-- a rider-only route reachable from customer mode, or the other way round;
-- an active job hidden after switching;
-- iOS and web, where rider mode must be absent.
-
-### R6: Low connectivity + budget phone (Sonnet + 1 Haiku runner)
-
-**Static review of:**
-
-- `apps/mobile/src/net/*` (timeouts, reachability, the offline banner, NET-FF false flags);
-- `src/query/{client,persist}.ts` (retry, cache, persistence);
-- `src/realtime/socket.ts` (reconnect and backoff);
-- every mutation the journeys use (place order, bid, accept, pickup, deliver, top-up): is it retry-safe after a timeout whose request actually reached the server?
-- image and photo sizes;
-- work done at boot (`src/boot/*`).
-
-**The Haiku runner (dynamic):**
-
-- Render the customer and biker journey screens through the react-native-web lane (`tools/parity/render-mobile.mjs`) in Playwright (Chromium at `/opt/pw-browsers`).
-- Use CDP `Network.emulateNetworkConditions` for Slow 3G (400 kbps, 400 ms RTT) and offline toggles, with `Emulation.setCPUThrottlingRate` 6× as the budget-phone proxy.
-- Record the time to first meaningful content per screen, any long tasks over 200 ms, console errors, and whether the offline and retry states appear and then clear.
-- Also report the Android Hermes bundle size against its budget, and JS work on the critical boot path.
-
-**Hunt for:**
-
-- infinite spinners;
-- silent failures with no retry;
-- a "you're offline" banner while online (NET-FF);
-- re-uploading whole photos on a retry;
-- polling that drains data or battery;
-- heavy re-renders on the map screens.
+   Say plainly that this is static.
+5. **Optional, only if 30 minutes or more remain:**
+   - Build a web export with a **non-loopback** `EXPO_PUBLIC_API_URL`, because a production build refuses
+     loopback (`src/config.ts:65-70`).
+   - Point Chromium (`/opt/pw-browsers`) at it with `--host-resolver-rules`, and set `CORS_ALLOWED_ORIGINS`.
+   - Apply CDP Slow 3G and 6× CPU throttling, then time the customer Home → Send → order screens.
+   - Don't use the parity renderer: it serves fixtures, so throttling would measure nothing.
 
 ### R8: Synthesis + must-fix (Opus)
 
-1. Check out `claude/journey-qa-2026-10-15`. Read all the `R*.md` reports (not the code yet).
-2. Dedupe across lanes, then re-check each P0 and P1 against the code at `file:line`. Drop anything
-   that doesn't reproduce.
+1. Check out `claude/journey-qa-2026-10-15` and read every `R*.md`.
+2. Dedupe across lanes. Re-verify each P0 and P1 at `file:line` against current `main`, and drop
+   anything that doesn't reproduce.
 3. Write `00-SUMMARY.md`:
    - the top problems per journey, biker and customer;
    - a speed table;
    - a low-connectivity verdict;
-   - a NEEDS OWNER list.
-4. Add the JQ rows to `docs/KNOWN_BUGS.md`, using `rg` to find where they go.
-5. Fix the P0s, plus any P1s that pass the §4 filter. Each fix gets one regression test. No UI, no
-   copy, no features, nothing in `packages/design/**`.
-6. Run `pnpm typecheck && pnpm test` before pushing.
-7. Open **one** draft PR. Subscribe to its activity, drive CI to green, mark it ready and
-   squash-merge it on green.
-8. If a fix touches anything mobile, note that it reaches testers only after a `closed`-profile EAS
-   build. Do not dispatch that build; that is the owner's call.
+   - a `fixed-on-main-not-shipped` list (which tells the owner whether a `closed`-profile build is due);
+   - NEEDS OWNER.
+4. Add the JQ section to `docs/KNOWN_BUGS.md`; use `rg` to find where it goes.
+5. Fix every P0, plus the P1s that pass §5. Each fix gets one regression test. No UI, copy, features or
+   `packages/design/**`.
+6. Run `pnpm typecheck && pnpm test` before pushing. Run int specs for any API change.
+7. Open **one** PR, subscribe to it, drive CI to green, and squash-merge on green.
+8. Do not dispatch an EAS build; that is the owner's call. Say in the summary whether one is needed.
 
 ### R9: Close-out (Haiku)
 
-1. Check that R0–R8 each produced their file and that R8's PR is merged or green.
-2. List any missing lane, red check or NEEDS OWNER item in a short comment on that PR.
+1. Confirm R0–R8 each produced their file, and that R8's PR is merged or green.
+2. Post one short comment on that PR listing any missing lane, red check or NEEDS OWNER item.
 3. No code.
 
 ---
 
-## 7. Creating the triggers
+## 8. Creating the triggers
 
-- **Kind:** one-shot `run_once_at` Routines, with `create_new_session_on_fire=true`, so each run
+- **Kind:** one-shot `run_once_at` Routines with `create_new_session_on_fire=true`, so each run
   starts clean.
-  - The prompt is the preamble plus the lane block above.
-  - Connectors: `[]`, except R7 (`["Expo"]`) and R8/R9 (none; they use GitHub through the session).
-- **Model:** set each Routine's model per §1 with `update_trigger` straight after it is created.
-- **Plan on `main` first:** this plan must be on `main` before R0 fires, because the preamble reads
-  it from `origin/main`.
-- **Expected total:** roughly 3 Haiku runs, 6 Sonnet runs, Opus for a handful of skeptic checks, and
-  1 Opus fix run. That is about a third of the cost of running the eight lanes on Opus.
+  - The prompt is the §7 preamble plus the lane block.
+  - Connectors: `[]`, except R7 (`["Expo"]`).
+  - Set each Routine's model with `update_trigger` as in §1.
+- **This plan must be on `main` before R0 fires,** because the preamble reads it from `origin/main`.
+- **Rough cost:** 2 Haiku runs, 7 Sonnet runs (R0 included), a handful of one-shot Opus skeptic calls,
+  and 1 Opus fix run. The R0 harness and the §4 route table spare every later lane from rediscovering
+  the stack.
