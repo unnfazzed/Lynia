@@ -244,7 +244,7 @@ describe("TopUpFlow — audit fixes", () => {
     const retry = first.root.findAll((n) => typeof n.props?.label === "string" && n.props.label.startsWith("Request") && typeof n.props.onPress === "function")[0];
     act(() => retry?.props.onPress());
     await flush();
-    const keyOf = (i: number): string | undefined => (mockCreateTopup.mock.calls[i]?.[0] as { idempotencyKey?: string }).idempotencyKey;
+    const keyOf = (i: number): string | undefined => (mockCreateTopup.mock.calls[i]?.[0] as { idempotencyKey?: string } | undefined)?.idempotencyKey;
     expect(mockCreateTopup).toHaveBeenCalledTimes(2);
     expect(keyOf(1)).toBe(keyOf(0));
     act(() => first.unmount());
