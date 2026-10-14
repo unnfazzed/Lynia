@@ -1,0 +1,66 @@
+# R3 — Biker wallet top-up + switching between customer and biker
+
+Lane: R3 · Model: Sonnet (+1 Opus skeptic on the money P0) · Harness: **live** (native PG16/PostGIS, redis, API on :3000, `PAYMENT_RAIL=stub`, `KYC_MODE=auto`) for the API/wallet half; **static** (+ targeted jest, 69 tests green) for the app and the switch · main SHA: `28e4437` · run 2026-10-14 ~16:30 UTC
+
+Known-red list (R0): main CI is fully green, no red job to exclude. R0's open question ("confirm the free-job counter, and that paid jobs write a ledger row") is answered below: yes.
+
+## 1. Findings
+
+| id | sev | journey step | what the user sees | repro | evidence file:line | proof | in KNOWN_BUGS? | fixed-on-main-not-shipped? |
+|---|---|---|---|---|---|---|---|---|
+| JQ-R3-01 | **P1** (false "Top-up done"; ledger stays correct; I proposed P0, skeptic downgraded, see below) | Biker → Money → Top up → 2nd and later top-ups | The biker taps through Provider → Amount → Phone with the defaults (`$5.00`, saved number) a second time. **No EcoCash prompt is sent** and nothing is charged, but the app shows "Top-up done". If the first intent had expired, it instantly shows "Top-up didn't go through" instead. The balance never moves, so the next bid is refused `commission_low_balance`. | Fresh biker. Open Top up, leave `5.00` + number, go to Approve (intent 1). Let it settle. Leave the screen. Open Top up again with the same amount/number/provider. | Key = `uuidV4FromSeed(\`topup\|${attempt}\|${amountRaw}\|${phone}\|${rail}\`)` with `attempt` = `useState(0)` per mount: `apps/mobile/src/ui/rider/TopUpFlow.tsx:84,104` (only `restart()` bumps it, `:108`). `uuidV4FromSeed` is a pure hash, no nonce, time or rider id: `apps/mobile/src/util.ts:37-52`. Server replays any earlier row for `(riderId, idempotencyKey)` with no status or age check and never calls the rail: `apps/api/src/wallet/wallet.service.ts:514-516`. `confirmed` is mapped to `succeeded`: `wallet.service.ts:713-717`. Success screen renders on `hasIntent && status==="succeeded"`: `TopUpFlow.tsx:136-143`. | **Live**: `harness/r3-replay.mjs`. `keys_equal true`; 2nd `POST /wallet/topups` returned the *same* intent id with `status: "succeeded"`; `top_ups` row count stayed 1. (The rail confirm was emulated by `UPDATE top_ups SET status='confirmed'`, because the stub rail never confirms; on Paynow the first intent is confirmed by the webhook, which is the identical row state.) | No. Related but different: BH-09 (key added), UX16-08 (key rotation on cancel). Both predate the #1173 rewrite, which replaced the rotating key with a deterministic seed. | Unknown; ask R7. #1173 is the only commit touching `TopUpFlow.tsx` (`git log`). |
+| JQ-R3-02 | P2 (wrong feedback on money; could cause a second payment) | Top-up Approve step on a slow network | The biker approves the EcoCash prompt at, say, 100 s (USSD is slow). The app already showed "Top-up didn't go through … **Nothing was taken from your EcoCash**." The server later credits the late payment exactly once, with no push and no message. A biker who believes the copy taps "Try again" and pays a second time (both are credited, so money is not lost, but it is unexpected cash out). | Paynow rail; approve after `TOPUP_WINDOW_MS` (90 s). Cannot be run on the stub (a rail confirm is required), so statically traced. | App copy: `apps/mobile/src/ui/rider/copy.ts:558` (`failB`). Server deliberately re-opens expired intents for 1 h: `wallet.service.ts:644-663,666-675` (`TOPUP_LATE_PAYMENT_WINDOW_MS`), `creditFromTopup` claims `status in (pending, expired)`: `:780-784`; it calls no `notifications` (unlike `creditManual`, `:895-901`). The app clears its recovery marker on any terminal status including `expired`: `apps/mobile/src/query/use-topup.ts:100-103`, so the Money tab's "paid-but-unseen" reconciliation (`app/rider/(tabs)/money.tsx:38-75`) does not run for it. The balance does refresh on the next Money focus (`money.tsx:175-181`). | Static trace; live half confirmed the 90 s expiry (below). | No | n/a |
+| JQ-R3-03 | P2 (dead end after a refused bid) | Bid with a balance below the job's commission | Bid is refused with a clear server message ("Your wallet balance doesn't cover this job's commission — top up to take it") shown as a toast on the offer screen. There is **no button to the top-up screen**; the biker must back out and find Money. The designed top-up wall (`topUpGate`/`Gate case "topup"`) can never show: it is only set from a go-online or heartbeat 403, and since PR #1154 the server never refuses those for balance. | Fresh biker with 10 trips and $0: bid on any $5 job. | Refusal: `apps/api/src/common/commission-cover.ts:99-103`, `offers.service.ts:146`. App handles 403 as plain text: `apps/mobile/app/rider/offer/[jobId].tsx:120-123`. Wall only wired to go-online/heartbeat errors: `app/rider/(tabs)/index.tsx:523-528,626-629`, `src/logic/rider-gate.ts:70`. | **Live**: `r3-jobs.mjs` C-case: `403 {"reason":"commission_low_balance","message":"Your wallet balance doesn't cover this job's commission — top up to take it","commission":0.5}`. | No | n/a |
+| JQ-R3-04 | P2 (weak network) | Biker → Account → switch to customer | With no data the switch still happens (side saved, customer Home shown) but `PATCH /riders/online {online:false}` fails; the only signal is a transient toast "Couldn't go offline. Check your data." with no retry. The biker stays `is_online` server-side and can be picked for a job while on the customer UI (it reaches them as a push → `/rider/job`, so it is not lost). Heartbeats stop, so it lapses after about 15 min. Separately, `activeJob` is read from a query that may not have resolved yet; on a slow link the biker is told the C4 text and `switchToCustomer(false)` goes offline mid-job. That is **not** harmful server-side: I took a biker offline with an active order and every stage + `deliver` still succeeded (`r3-offline-midjob.mjs`), only `heartbeat` returns 403 "You're offline". | Airplane mode on, Account → Customer → confirm. | `apps/mobile/src/logic/switch-to-customer.ts:14-20` (side saved first, offline call best-effort); callers `app/rider/(tabs)/account.tsx:53`, `app/notifications/index.tsx:330`, `app/rider/(tabs)/index.tsx:279`; `activeJob` from `useQuery` with no loading guard `account.tsx:38-39`. | Live: `r3-offline-midjob.mjs` (`offline_midjob 200`, `heartbeat_after_offline 403`, stages 201, deliver 201). | No | n/a |
+| JQ-R3-05 | P3 | Stale code comment | `use-topup.ts:10-21` says no payment-rail client exists and every attempt runs the window down and expires. True only for `PAYMENT_RAIL=stub`. Misleading for the next reader; no user impact. | – | `apps/mobile/src/query/use-topup.ts:10-21` vs `wallet.service.ts:144,158` | – | No | n/a |
+
+### Skeptic verdict on JQ-R3-01
+
+**CONFIRMED, could not be refuted (Opus skeptic). Severity P1, not P0.** The index is `top_ups(rider_id, idempotency_key) WHERE idempotency_key IS NOT NULL` (migration `0029_topup_idempotency_index`, not 0090), so a confirmed or expired row keeps its key forever. Nothing salts the key (`TopUpFlow.tsx:104`, `util.ts:37-52`, `api/wallet.ts:21-22`); a remount resets `attempt` to 0; the success screen needs only `hasIntent && status==="succeeded"` (`:136-141`). No charge and no double credit happen, so the ledger is right: the harm is a false "Top-up done" and then refused bids. Changing the amount or tapping "Top up again" in the same screen avoids it; the same defaults on any later visit hit it. R8 should still fix it (small, no UI).
+
+## 2. What was checked and is fine (so nobody re-checks it)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Stub top-up expiry | `pending` at 0 s; `expired` when polled at 92 s; `expiresAt = createdAt + 90 s` | `r3-run.mjs` (`topup_poll_0s`, `topup_poll_92s`) · `wallet.service.ts:526,683-699` |
+| Same `idempotencyKey` twice (server) | Same intent id both times, one row; ~7 ms | `r3-run.mjs` `topup_same_key` · `wallet.service.ts:514-516,534-540` |
+| Amount clamp / rail gate | 999 → clamped to 50 (`charged` 51.25 = 2.5% fee); InnBucks → 403 `topup_rail_unavailable` "coming soon" | `r3-run.mjs` · `wallet.service.ts:521-523` |
+| Admin credit, same `idempotencyKey` twice | Both 201, balance moved once (20, not 40); ledger has one row | `r3-run.mjs` `credit_replay` · `wallet.service.ts:909-915` |
+| Daily cap on manual credits | $20 + $50 = $70 ok; next $50 → 409 "…$70.00 in manual credits in the last 24 hours. The limit is $100.00." (cap is `manualCreditDailyCapUsd`, the env cap of $50 is per credit). Balance stayed 70. | `r3-run.mjs` `credit_cap` · `wallet.service.ts:855-865` |
+| Free jobs | Job 10 writes a `$0 free_job` receipt "Free job 10 of 10", balance untouched; job 11 writes `ride_commission` −$0.30 (10% of $3) → 5.00 → 4.70. The rider-facing ledger hides `free_job` rows by design (`wallet.service.ts:203-205`). | `r3-jobs.mjs` A-case; `psql` of `commission_ledger` |
+| Balance below cover | Bid refused 403 `commission_low_balance`, `commission: 0.5`, message clear | `r3-jobs.mjs` C-case |
+| Hold several jobs on a thin balance | Second bid refused 403 "Finish your current job before making another offer", so the "balance < in-flight commission" overdraft I was hunting is closed by the one-active-job rule. Final balance 0.60 − 0.50 = 0.10. | `r3-jobs.mjs` B-case |
+| Integrity check | `ok:true`, 0 drift in all five kinds, after every run (3 accounts, 4 confirmed top-ups) | `POST /admin/wallet/integrity-check` |
+| Ledger sum = balance | 20 + 50 = 70 = wallet balance; 5 − 0.30 = 4.70 | `r3-run.mjs`, `r3-jobs.mjs` |
+| `/wallet/ledger` first page / paging | Cursor is `ParseUUIDPipe`-validated; page size 25 with `nextCursor`; app has `loadMore` | `wallet.controller.ts:42-49`, `use-wallet.ts:48-66` |
+| Switch: rider-only routes from customer mode on iOS/web | `RiderRouteGate` bounces `rider`/`wallet` segments to `/home`; boot, sign-in and push routes all strip rider destinations (`withoutRiderRoutes`) | `rider-route-gate.tsx:15-22`, `rider-mode.ts:29`, `push.ts:170-180`, `boot-route.ts:25-27` · jest below |
+| Switch: active job while on customer side | Customer Home shows a "your job" bar for a rider with an active job, and C5 keeps them online | `app/(tabs)/home.tsx:281-285,391-394`; `switch-to-customer.ts:15` |
+| Switch: push for the other side | Push taps use the per-order `data.to`, falling back to the session role, and `openDestination` clears the stack and saves the rider side, so Back never jumps sides | `push.ts:196-240`, `side-nav.ts:49-62` |
+| Cold start after switching | The saved side wins, then the server role; a rider with a saved `customer` side opens customer Home | `boot-route.ts:24-28`, `session-role-sync.ts:24-31` |
+
+Targeted jest: `pnpm --filter @lynia/mobile exec jest src/logic/topup src/logic/side-nav src/logic/boot-route src/logic/switch src/rider-route-gate src/auth/session-role-sync src/push` → 4 suites, **69 tests passed** (the existing suites never cover a second mount of the top-up flow, which is how JQ-R3-01 got through).
+
+## 3. Speed (localhost floor; field numbers are R6's)
+
+| Call | ms |
+|---|---|
+| `GET /wallet`, `/wallet/config` | 3 |
+| `GET /wallet/ledger` | 6 |
+| `GET /wallet/topups/:id` | 3 |
+| `POST /wallet/topups` (create / replay) | 5–8 |
+| `POST /admin/riders/:id/wallet-credit` (cold / replay / 409) | 27 / 18 / 8–11 |
+| `POST /admin/wallet/integrity-check` | 16 |
+
+Top-up approve window is fixed at `TOPUP_WINDOW_MS = 90 000` (`packages/shared/src/contracts.ts:756`) and the app polls every 2.5 s (`use-topup.ts:49`), about 36 reads worst case: fine on a weak link, and react-query pauses polling while offline.
+
+## 4. Not covered / caveats
+
+- Real Paynow flows (webhook, late payment, `short_paid`) need `PAYMENT_RAIL=paynow` plus four secrets; JQ-R3-02 is a code trace, not a run.
+- No device: the "weak network" half of the switch (JQ-R3-04) is a code trace plus the live offline-mid-job probe.
+- Harness note for R0/R8: `up.sh` runs `psql "$DATABASE_URL"`, which fails because the `?schema=public` suffix is not a libpq option. Output shows `psql: error: invalid URI query parameter: "schema"` three times; the script still works because the seed and admin checks fail soft, but the **admin JWT it exports is computed in a subshell and from an empty id**. Use `PGPASSWORD=lynia psql -h localhost -U lynia -d lynia` as in `r3-*.mjs`. Per-phone OTP rate limits (`otp_send_limit`, 1 h) block re-runs: `redis-cli --scan --pattern 'rl:*' | xargs redis-cli del` clears them.
+- Scripts added under `harness/`: `r3-run.mjs`, `r3-jobs.mjs`, `r3-offline-midjob.mjs`, `r3-replay.mjs` (all import `drive.mjs`, none rewrite it).
+
+## 5. For R8
+
+- **JQ-R3-01 is a must-fix (P1, under 30 lines, no UI).** Smallest correct fix is one line in `TopUpFlow.tsx`: make the key per *mount* rather than per *inputs* (e.g. add a `useRef(randomUUID-like nonce)` to the seed), so a retry in the same session still dedupes (BH-09) but a later session does not. A server-side alternative (ignore the replay when the earlier row is terminal) is also small but changes API semantics. Needs one regression test that mounts the flow twice. No UI change.
+- JQ-R3-02/03/04 are P2 ledger rows; JQ-R3-02 and -03 need copy/UI so they are **NEEDS OWNER**, not R8 work.
