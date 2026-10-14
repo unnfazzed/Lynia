@@ -1,6 +1,6 @@
 // R3 JQ-R3-01: the app's top-up idempotency key is deterministic across screen mounts, the server replays any
 // prior intent for (rider,key) forever. Uses uuidV4FromSeed copied VERBATIM from apps/mobile/src/util.ts:37-52.
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as d from "./drive.mjs";
 function uuidV4FromSeed(seed) {
   const words = [0x811c9dc5, 0x811c9dc5, 0x811c9dc5, 0x811c9dc5];
@@ -13,7 +13,7 @@ function uuidV4FromSeed(seed) {
   chars[12] = "4"; chars[16] = ((parseInt(chars[16] ?? "0", 16) & 0x3) | 0x8).toString(16);
   const s = chars.join(""); return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20, 32)}`;
 }
-const sql = (q) => execSync(`psql -h localhost -U lynia -d lynia -tAc "${q}"`, { env: process.env }).toString().trim();
+const sql = (q) => execFileSync("psql", ["-h", "localhost", "-U", "lynia", "-d", "lynia", "-tAc", q], { env: process.env }).toString().trim();
 const ph = "+2637" + String(Math.floor(10000000 + Math.random() * 89999999)).slice(0, 8);
 const b = await d.login(ph); await d.setName(b.token); await d.become(b.token);
 const phone = "0771234567";

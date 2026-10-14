@@ -1,7 +1,7 @@
 // R3: free-job boundary (job 10 free, job 11 debit) + concurrent-jobs overdraft probe. Needs ADMIN_JWT, PGPASSWORD=lynia.
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as d from "./drive.mjs";
-const sql = (q) => execSync(`psql -h localhost -U lynia -d lynia -tAc "${q}"`, { env: process.env }).toString().trim();
+const sql = (q) => execFileSync("psql", ["-h", "localhost", "-U", "lynia", "-d", "lynia", "-tAc", q], { env: process.env }).toString().trim();
 const show = (k, v) => console.log(k, JSON.stringify(v));
 async function mkBiker(trips, creditAmt) {
   const ph = "+2637" + String(Math.floor(10000000 + Math.random() * 89999999)).slice(0, 8);

@@ -34,8 +34,8 @@ const offersOf = (r) => r.json?.offers ?? r.json;
 { const s = "S2-stale-heartbeat"; const o = await R(s, "createSend", d.createSend(C)); const oid = idOf(o);
   await R(s, "bid b3", d.bid(b3.token, oid)); const offs = offersOf(await d.listOffers(C, oid));
   await d.call("PSQL", "/x", { expect: false }).catch(() => {});
-  const { execSync } = await import("node:child_process");
-  execSync(`psql "postgresql://lynia:lynia@localhost:5432/lynia" -qc "update riders set last_heartbeat_at = now() - interval '30 minutes' where profile_id='${b3.id}'" 2>&1 || true`);
-  const cols = execSync(`psql "postgresql://lynia:lynia@localhost:5432/lynia" -tAc "select column_name from information_schema.columns where table_name='riders' and column_name like '%heart%'"`).toString().trim(); tr(s, "rider-cols", { cols });
+  const { execFileSync } = await import("node:child_process");
+  try { execFileSync("psql", ["postgresql://lynia:lynia@localhost:5432/lynia", "-v", `pid=${b3.id}`, "-qc", "update riders set last_heartbeat_at = now() - interval '30 minutes' where profile_id = :'pid'"], { stdio: "ignore" }); } catch {}
+  const cols = execFileSync("psql", ["postgresql://lynia:lynia@localhost:5432/lynia", "-tAc", "select column_name from information_schema.columns where table_name='riders' and column_name like '%heart%'"]).toString().trim(); tr(s, "rider-cols", { cols });
   const sel = await R(s, "select stale", d.select(C, oid, offs[0].id)); }
 console.log("done S1,S2");

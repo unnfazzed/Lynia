@@ -1,8 +1,8 @@
 // R2 scenarios part 2 (appends to R2-trace.jsonl; run after r2-run.mjs). Needs ADMIN_JWT, DATABASE_URL-less (psql via URL below).
-import { appendFileSync } from "node:fs"; import { execSync } from "node:child_process"; import { createRequire } from "node:module";
+import { appendFileSync } from "node:fs"; import { execFileSync } from "node:child_process"; import { createRequire } from "node:module";
 import * as d from "./drive.mjs";
 const OUT = process.env.TRACE ?? "docs/reports/journey-qa-2026-10-15/R2-trace.jsonl";
-const PG = "postgresql://lynia:lynia@localhost:5432/lynia"; const sql = (q) => execSync(`psql "${PG}" -tAc "${q}"`).toString().trim();
+const PG = "postgresql://lynia:lynia@localhost:5432/lynia"; const sql = (q) => execFileSync("psql", [PG, "-tAc", q]).toString().trim();
 const tr = (scenario, step, data) => appendFileSync(OUT, JSON.stringify({ ts: new Date().toISOString(), scenario, step, ...data }) + "\n");
 const R = async (s, step, p) => { const r = await p.catch((e) => ({ status: e.status, json: e.body, err: e.message })); tr(s, step, { status: r.status, ms: r.ms, body: JSON.stringify(r.json)?.slice(0, 500) }); return r; };
 const attach = (s, who, l) => { for (const ev of ["order:status","position","connect","disconnect","connect_error","order:taken","job:cancelled","bid:expired","offers:changed","presence:stale","presence:recovered","order:rebroadcast"]) l.socket.on(ev, (data) => tr(s, `ws:${who}:${ev}`, { data: JSON.stringify(data)?.slice(0, 300) })); };

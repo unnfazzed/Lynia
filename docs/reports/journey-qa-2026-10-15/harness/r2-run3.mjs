@@ -1,5 +1,5 @@
 // R2 S6: socket token-expiry behaviour. Mints a 6 s access token for biker 1 and watches the server close it.
-import { appendFileSync } from "node:fs"; import { createRequire } from "node:module"; import { execSync } from "node:child_process";
+import { appendFileSync } from "node:fs"; import { createRequire } from "node:module";
 import * as d from "./drive.mjs"; const OUT = "docs/reports/journey-qa-2026-10-15/R2-trace.jsonl";
 const tr = (step, data) => appendFileSync(OUT, JSON.stringify({ ts: new Date().toISOString(), scenario: "S6-token-expiry", step, ...data }) + "\n");
 const { io } = await import("socket.io-client"); const require = createRequire("/home/user/Lynia/apps/api/package.json"); const jwt = require("jsonwebtoken");
