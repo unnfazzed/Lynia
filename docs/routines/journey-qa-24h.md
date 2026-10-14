@@ -28,7 +28,7 @@ overrides that spec's "every routine fixes everything and auto-merges" rule for 
 | # | Fires (UTC) | Routine | Model | Helper allowed | Live or static |
 |---|---|---|---|---|---|
 | R0 | 14 Oct 12:00 | Harness + baseline | **Sonnet** | none | Live. Publishes the shared harness scripts. |
-| R7 | 14 Oct 12:00 | Field signals (real testers) | **Haiku** | none | Read-only (Expo/Play) |
+| R7 | 14 Oct 12:05 | Field signals (real testers) | **Haiku** | none | Read-only (Expo/Play) |
 | R1 | 14 Oct 13:30 | Biker onboarding + KYC | **Sonnet** | 1 Opus skeptic, P0/P1 only | Live |
 | R4 | 14 Oct 14:30 | Customer onboarding + Send | **Sonnet** | none | Live |
 | R2 | 14 Oct 15:30 | Biker job loop + the customer's live view of it | **Sonnet** | 1 Opus skeptic, P0/P1 only | Live; records a trace for R5 |
@@ -556,14 +556,42 @@ undelivered or cancelled → Orders tab history → notification taps.
 
 ---
 
-## 8. Creating the triggers
+## 8. How the routines are wired (created 2026-10-14 ~09:53 UTC)
 
-- **Kind:** one-shot `run_once_at` Routines with `create_new_session_on_fire=true`, so each run
-  starts clean.
-  - The prompt is the §7 preamble plus the lane block.
-  - Connectors: `[]`, except R7 (`["Expo"]`).
-  - Set each Routine's model with `update_trigger` as in §1.
-- **This plan must be on `main` before R0 fires,** because the preamble reads it from `origin/main`.
-- **Rough cost:** 2 Haiku runs, 7 Sonnet runs (R0 included), a handful of one-shot Opus skeptic calls,
-  and 1 Opus fix run. The R0 harness and the §4 route table spare every later lane from rediscovering
-  the stack.
+A trigger that starts a fresh session on firing gets **no repo source and no connectors**. So each
+routine instead has its own pre-created cloud session, and a one-shot trigger fires into it:
+
+- the session is created with `create_session`, with this repo as its source, `outcome_branch`
+  set to `claude/journey-qa-2026-10-15`, the §1 model, and the tag `journey-qa-2026-10-15`;
+- a one-shot `run_once_at` trigger then fires into that session through `persistent_session_id`.
+
+The trigger prompt is short. It points at this file's preamble and the routine's lane block, so
+**this file is the single source of truth**: edit it on `main` before a lane fires, and that lane
+picks up the change.
+
+The fired sessions' harness pushes a draft PR for the branch. Every lane prompt therefore says:
+
+- reuse ONE draft PR for the branch;
+- never merge it;
+- don't subscribe to its PR activity.
+
+Only R8 owns and merges the PR.
+
+| # | Fires (UTC) | Model | Session | Trigger |
+|---|---|---|---|---|
+| R0 | 14 Oct 12:00 | Sonnet | `session_01E1ZQnUUHSZWW98KQjop9BV` | `trig_01SjK1YYFXkZhn9gGPQyhRNs` |
+| R7 | 14 Oct 12:05 | Haiku | `session_01EF1dXy6hfD7FaEQZY3Z1eX` | `trig_01WmhBVyRJv3a3UnFDHo9HJ6` |
+| R1 | 14 Oct 13:30 | Sonnet | `session_01E6ypq34xKdMz8w9QbJPb8M` | `trig_01T5fwJw1m96rb2thXoNVWji` |
+| R4 | 14 Oct 14:30 | Sonnet | `session_01AjMoZRhkuSCsj7EYhyA3fe` | `trig_01FcsWAb3YrpodE3Hxes1MxP` |
+| R2 | 14 Oct 15:30 | Sonnet | `session_0197sUN8DRrbLotAX3u2Ux3H` | `trig_01SuNhw19apSsWYPtiDT6vF8` |
+| R3 | 14 Oct 16:30 | Sonnet | `session_0186NFtnBoioL6b3rXA32R6R` | `trig_01PHrodg7j7c37djVGaVBHwE` |
+| R5 | 14 Oct 17:30 | Sonnet | `session_01U8zreNDrJCbf66Leqbm2Lm` | `trig_01Fry5v5PVMbH5pPsjtWAdcB` |
+| R6 | 14 Oct 18:30 | Sonnet | `session_01MU92QbexbEGpeYQuWEg6BX` | `trig_015bLV2DCGU81SUvhJeUKFqz` |
+| R8 | 14 Oct 21:30 | Opus | `session_019iPdmYjPbxH8qynyJsMqEY` | `trig_01Q9nQdmVeobT6gHeXW715CE` |
+| R9 | 15 Oct 09:00 | Haiku | `session_01JNpdi7GW8px4yYTDRwmSrR` | `trig_01AhCXT4HBCamJMnwS7gdFVj` |
+
+**To cancel a lane,** delete its trigger. **To re-run a lane,** use `fire_trigger`, or send a message
+to its session.
+
+**Rough cost:** 2 Haiku runs, 7 Sonnet runs, a handful of one-shot Opus skeptic calls and 1 Opus fix
+run. The R0 harness and the §4 route table spare every later lane from rediscovering the stack.
