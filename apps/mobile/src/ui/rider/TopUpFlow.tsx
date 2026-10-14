@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type TopupProviderId, TOPUP_PROVIDERS, providerName } from "../../logic/rider-prefs";
 import { acceptAmountInput, validateTopupAmount } from "../../logic/topup";
 import { useTopUp } from "../../query/use-topup";
-import { uuidV4FromSeed } from "../../util";
+import { randomUuidV4, uuidV4FromSeed } from "../../util";
 import { Icon } from "../Icon";
 import { Tappable } from "../Tappable";
 import { useActionError } from "../index";
@@ -82,6 +82,10 @@ export function TopUpFlow({
   const [amountRaw, setAmountRaw] = React.useState("5.00");
   const [phone, setPhone] = React.useState(defaultPhone);
   const [attempt, setAttempt] = React.useState(0);
+  // JQ-R3-01: salt the key per mount. The server replays any earlier intent for (rider, key) forever,
+  // so a key built only from the inputs made a later visit with the same defaults get back an old,
+  // already-settled intent ("Top-up done" with no prompt sent). A retry within this mount still dedupes.
+  const [mountNonce] = React.useState(randomUuidV4);
   // Settings may load after mount; follow it until the rider changes the value themselves.
   const touched = React.useRef({ rail: false, phone: false });
   React.useEffect(() => {
@@ -101,7 +105,7 @@ export function TopUpFlow({
   const charged = amountOk ? addMoney(amount, fee) : amount;
   const phoneOk = phone.replace(/\D/g, "").length >= 9;
   const name = providerName(rail);
-  const idempotencyKey = React.useMemo(() => uuidV4FromSeed(`topup|${attempt}|${amountRaw}|${phone}|${rail}`), [attempt, amountRaw, phone, rail]);
+  const idempotencyKey = React.useMemo(() => uuidV4FromSeed(`topup|${mountNonce}|${attempt}|${amountRaw}|${phone}|${rail}`), [mountNonce, attempt, amountRaw, phone, rail]);
 
   const restart = (): void => {
     reset();

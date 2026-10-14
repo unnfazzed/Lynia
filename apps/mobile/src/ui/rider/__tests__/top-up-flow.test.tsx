@@ -235,6 +235,29 @@ describe("TopUpFlow — the server decides the outcome", () => {
 });
 
 describe("TopUpFlow — audit fixes", () => {
+  it("JQ-R3-01: a later visit with the same defaults opens a NEW intent; a retry within one visit keeps its key", async () => {
+    // Visit 1: the first send fails (lost answer), the retry must replay the same key (BH-09).
+    mockCreateTopup.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(topup());
+    mockGetTopup.mockResolvedValue(topup({ status: "succeeded" }));
+    const first = render();
+    await submit(first);
+    const retry = first.root.findAll((n) => typeof n.props?.label === "string" && n.props.label.startsWith("Request") && typeof n.props.onPress === "function")[0];
+    act(() => retry?.props.onPress());
+    await flush();
+    const keyOf = (i: number): string | undefined => (mockCreateTopup.mock.calls[i]?.[0] as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+    expect(mockCreateTopup).toHaveBeenCalledTimes(2);
+    expect(keyOf(1)).toBe(keyOf(0));
+    act(() => first.unmount());
+
+    // Visit 2: same amount, phone and provider. The server replays any earlier row for a key forever,
+    // so reusing visit 1's key would show its settled outcome with no prompt sent.
+    const second = render();
+    await submit(second);
+    expect(mockCreateTopup).toHaveBeenCalledTimes(3);
+    expect(keyOf(2)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(keyOf(2)).not.toBe(keyOf(0));
+  });
+
   it("MA-M4: a failed first poll still shows the countdown from the create response", async () => {
     mockCreateTopup.mockResolvedValue(topup());
     mockGetTopup.mockRejectedValue(new Error("offline"));
