@@ -1,10 +1,15 @@
 # Google Play submission package (LR20)
 
-> **Current state (2026-10-12).** The newest build is **v0.51.0 / versionCode 45** (EAS build `87291256`,
-> 2026-10-06), submitted to the **`Closed testing`** track (§8, "Build vc 45"). JS-only fixes since then
-> reach it by OTA on the `preview` branch. The app talks to the API on **Azure** (`api.lyniago.com`).
-> It is **not public**: Play has not granted production access, so `play.google.com/store/apps/details?id=zw.co.lynia`
-> returns 404 by design. Ship to testers with *Mobile Release (Play)* → `profile: closed`
+> **Current state (2026-10-14).** **Play granted production access on 2026-10-14** (founder, Play Console:
+> "Your app has been granted Google Play production access"; open testing is now available too). The
+> closed test (§8 step 2) is complete. The newest build is still **v0.51.0 / versionCode 45** (EAS build
+> `87291256`, 2026-10-06) on the **`Closed testing`** track; JS-only fixes reach it by OTA on the `preview`
+> branch. The app talks to the API on **Azure** (`api.lyniago.com`).
+> It is **still not public**: nothing has been released to the production track yet, so
+> `play.google.com/store/apps/details?id=zw.co.lynia` still returns 404. The next step is §8 step 3
+> (grant the service account *Release to production*, Sentry live, then a staged 10% production
+> release). Until the service-account permission is granted, a `profile: production` dispatch still
+> fails at submission; keep shipping testers with *Mobile Release (Play)* → `profile: closed`
 > (`docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b). Everything below is the dated record.
 
 > Everything needed to create, fill in and ship the **LyniaGo** Play Console listing, in the order the
@@ -1744,6 +1749,8 @@ Once §7.1 and §7.2 are closed:
    target network. This is also where the sensitive-permission review usually surfaces questions.
    When the window completes, **apply for production access** and answer the questionnaire about
    the test.
+   ✅ **DONE 2026-10-14 — production access granted** (Play Console, founder). Open testing is
+   unlocked by the same grant.
    **Which closed track:** there are two, and only one has testers. The clock and the tester list
    live on the custom track named **`Closed testing`** (0.48.3 promoted into it 2026-08-25); Play's
    built-in **Alpha** (`alpha`) is empty and nothing targets it. Ship to the testers with
@@ -2078,5 +2085,6 @@ recorded 2026-10-05 from the EAS build record and the status run below.
       notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
 - [ ] Sentry receiving crashes from a release build (LR20 exit test)
 - [ ] Internal track build installed and smoke-tested on a real device
-- [ ] Closed test run per Play's requirement (§8 step 2: opted-in testers, 14 consecutive days) and
-      **production access granted** — before any production rollout
+- [x] Closed test run per Play's requirement (§8 step 2: opted-in testers, 14 consecutive days) and
+      **production access granted** — before any production rollout (granted 2026-10-14)
+- [ ] Play service account granted **Release to production** (§7.2 deferral, §8 step 3)

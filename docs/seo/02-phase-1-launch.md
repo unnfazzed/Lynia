@@ -6,7 +6,7 @@ listings and press. This phase builds all of them in the weeks around the public
 
 ## Gates: do not start until all of these are true
 
-- [ ] **The Play listing is public** (closed test done, production access granted): [`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md). Until then, nothing may say "on Google Play".
+- [ ] **The Play listing is public** (closed test done ✅, production access granted ✅ 2026-10-14, production release live ⏳): [`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md). Until then, nothing may say "on Google Play".
 - [ ] **The backend is back** (Azure migration): [`../plans/2026-09-24-gcp-to-azure-migration.md`](../plans/2026-09-24-gcp-to-azure-migration.md). Reviews and press will send real users.
 - [ ] **The service area and pricing are final** (they replace the pilot values in `packages/shared/src/policy.ts` and `pricing.ts`). The Business Profile service areas and all copy must match them.
 - [ ] **A prohibited and oversized items notice exists** (design backlog A1-2). Press and customers will ask "what can I send?".

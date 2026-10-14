@@ -72,7 +72,7 @@ EAS-managed and the app is enrolled in Play App Signing. `versionCode` is EAS-ma
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the testers |
 | `preview` | `preview` | `internal` | pipeline check; no testers there |
-| `production` (the default) | `production` | `production`, 10% staged | ❌ not usable: Play has not granted production access |
+| `production` (the default) | `production` | `production`, 10% staged | ⚠️ Play granted production access 2026-10-14; usable once the service account has *Release to production* |
 
 So pass `profile: closed` explicitly. A default dispatch builds, then fails at submission and wastes one
 of the month's EAS builds.
@@ -90,7 +90,7 @@ Play Console, because Play refuses a versionCode it already has.
 **Before dispatching**, run `pnpm install --frozen-lockfile` locally if the lockfile moved. The release
 job installs strictly so both sides compute the same runtime version.
 
-**Production, later.** Once the 14-day closed test is done and Play grants production access: grant the
+**Production, next.** The closed test is done and Play granted production access on 2026-10-14. Grant the
 Play service account the *Release to production* permission, set `EAS_TAG_RELEASES_ENABLED=true`, and a
 `v*` tag (or `profile: production`) submits to production at 10% (`releaseStatus: inProgress`). Advance
 or halt in Play Console while crash-free users and ANRs hold (Play vitals and Sentry).

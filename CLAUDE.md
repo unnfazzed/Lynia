@@ -311,11 +311,12 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
 | `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
-| `production` (workflow default) | `production` | `production`, 10% staged rollout | ❌ SA holds testing-track permissions only, and Play has not granted production access |
+| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ Play granted production access 2026-10-14, but the SA still holds testing-track permissions only — fails at submission until it is granted *Release to production* |
 
 A default dispatch therefore builds fine and then fails at submission, burning one of a limited
 monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
-check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
+check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3:
+SA production permission, Sentry live, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`).
 
 **⚠️ The app has TWO closed-testing tracks and the testers are not on the default one.** Play's
 built-in closed track is **Alpha** (API id `alpha`); the founder created a second one named
@@ -349,9 +350,11 @@ release job uses a *strict* frozen install (deliberately diverging from CI's
 `--frozen-lockfile=false`) so both sides compute the same fingerprint runtimeVersion. Drift there
 killed build `5906d2f0`.
 
-**Current phase:** internal testing only — `play.google.com/store/apps/details?id=zw.co.lynia`
-returns 404 by design. Public release still needs a closed test, its mandatory ~14-day clock, and
-production access. Do not describe anything shipped today as being "on Google Play".
+**Current phase:** closed testing done; **Play granted production access on 2026-10-14**, but nothing
+has been released to the production track yet, so `play.google.com/store/apps/details?id=zw.co.lynia`
+still returns 404. Public release now needs only §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md` (SA
+*Release to production* permission, Sentry live, a staged production rollout). Do not describe anything
+as being "on Google Play" until a production release is live and the listing URL resolves.
 
 The running ledger of every build/submission attempt and its failure class is
 `docs/PLAY-STORE-SUBMISSION.md`; OTA-lane constraints are `REL-01`/`REL-02` in `docs/KNOWN_BUGS.md`
