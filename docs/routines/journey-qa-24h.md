@@ -283,13 +283,19 @@ except as noted.
     - Org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
     - Known issues on 2026-10-14: `LYNIA-MOBILE-3` and `LYNIA-MOBILE-6`, both "compose-map-not-loaded"
       (`src/ui/ComposeMap`, `app/order/[id]`; 3 users).
-  - **PostHog is empty.**
-    - The connector's only org is `LyniaGo`, and its only project is `664346` ("Default project", created
-      2026-10-14 10:28 UTC) with `ingested_event: false`.
-    - The app sends events only when the build was made with `EXPO_PUBLIC_POSTHOG_API_KEY` baked in
-      (`src/config.ts:114-123`, `analyticsEnabled()`). So no installed build reports to it yet.
-    - Check `ingested_event` once. If it is still false, record NEEDS OWNER ("PostHog has no events: the
-      next `closed` build must carry the Expo-synced PostHog key") and skip PostHog.
+  - **PostHog: the connector points at the wrong account.** Checked 2026-10-14 ~10:40 UTC.
+    - **The app's real PostHog is in the EU region**, in org `LyniaGo-iqIUfRem`:
+      - the EAS `preview` and `production` envs set `EXPO_PUBLIC_POSTHOG_HOST=https://eu.posthog.com`
+        plus an API key;
+      - `eas integrations:posthog:connect` reports the Expo account as linked to that EU org.
+    - **The claude.ai PostHog connector is signed in to a different, US-region org** (`LyniaGo`, project
+      `664346`, created 2026-10-14 10:28 UTC, `ingested_event: false`). Its data is not the app's.
+    - **The Expo↔PostHog link's refresh token is revoked.** `integrations:posthog:connect` fails with
+      "Invalid or revoked refresh token".
+    - **What R7 does:** run `organizations-list` once. If an EU org with events is visible, use it for
+      step 3. Otherwise record NEEDS OWNER, then skip PostHog:
+      - "reconnect the claude.ai PostHog connector to the EU org `LyniaGo-iqIUfRem`";
+      - "re-link PostHog in Expo → Project settings → Connections".
   - **LogRocket and Vexo** are linked in the Expo dashboard, but `apps/mobile` contains no SDK for either,
     so they have no data. Skip both.
 
@@ -304,7 +310,7 @@ Steps:
    - Run `get_sentry_resource` on each issue that hits a journey.
    - Group the issues by signature, and add release, device model, RAM and OS version.
    - If the Sentry tools don't load in this session, record that and continue.
-3. **PostHog, only if `ingested_event` is true for project 664346** (see above). Query these with the PostHog `exec` tool:
+3. **PostHog, only if the EU org with app events is reachable** (see above). Query these with the PostHog `exec` tool:
    - the funnel drop-off for the two journeys:
      - customer: onboarding → OTP verified → Send placed;
      - biker: become → KYC verified → first bid → first delivery;
