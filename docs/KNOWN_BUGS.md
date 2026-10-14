@@ -873,6 +873,26 @@ Owner report: on good Wi-Fi the boot splash said "Slow network" and the rider bo
 - **NET-FF-3** — the rider board read its socket's handshake (and the go-online call in flight) as "Reconnecting…" from the first frame. It now waits 8 s of a link that stays down (`useSettled`), or for go-online to actually fail.
 - **NET-FF-4** — a timed-out request said "The network is slow". It now says "This is taking longer than usual — please try again."
 
+## Journey QA 2026-10-15 (JQ)
+
+One-off 24-hour journey QA (`docs/routines/journey-qa-24h.md`; reports and `00-SUMMARY.md` in
+`docs/reports/journey-qa-2026-10-15/`). 0 P0. One P1 code defect, fixed. P2s are open ledger rows; P3s and harness
+notes are in the lane reports only.
+
+| ID | Description | Area | Sev | Status |
+|---|---|---|---|---|
+| JQ-R3-01 | **A second top-up with the same defaults replayed the first intent.** The key was `uuidV4FromSeed(topup\|attempt\|amount\|phone\|rail)` with `attempt` reset to 0 per mount, and the server replays any earlier `(rider, key)` row with no status/age check. A later visit showed the old intent's outcome ("Top-up done") with no prompt sent and no credit. Introduced by #1173, never shipped. | `apps/mobile/src/ui/rider/TopUpFlow.tsx`; `apps/api/src/wallet/wallet.service.ts:514-516` | P1 (money feedback) | **FIXED** — per-mount nonce in the seed; `top-up-flow.test.tsx` "JQ-R3-01" |
+| JQ-R3-02 | A top-up approved after the 90 s window is credited silently, after the app said "Nothing was taken from your EcoCash"; a biker may pay twice. `use-topup.ts` clears the recovery marker on `expired`; `creditFromTopup` sends no push. | `apps/mobile/src/ui/rider/copy.ts` `failB`; `wallet.service.ts` `creditFromTopup` | P2 | OPEN — NEEDS OWNER (copy/state) |
+| JQ-R3-03 | A bid refused for `commission_low_balance` shows a toast with no route to Top up; the top-up wall is wired only to go-online/heartbeat 403s, which the server no longer sends for balance (#1154). | `app/rider/offer/[jobId].tsx`; `src/logic/rider-gate.ts` | P2 | OPEN — NEEDS OWNER (UI) |
+| JQ-R3-04 | Switch to customer with no data: the best-effort `online:false` fails, the biker stays online server-side until heartbeats lapse; `activeJob` is read with no loading guard. | `src/logic/switch-to-customer.ts`; `app/rider/(tabs)/account.tsx` | P2 | OPEN |
+| JQ-R6-01 | Customer raise-price: a committed write whose answer was lost leaves a `ttl:0` failure toast; Try again 400s. `onError` does not refetch. | `app/order/[id].tsx` `raiseM` | P2 | OPEN (≈3 lines, no UI) |
+| JQ-R6-02 / JQ-R5-01 | Customer cancel: same shape; Try again 409s "can't be cancelled anymore" on an order that is cancelled or ended. Rider sibling fixed by UX15-08. | `app/order/[id].tsx` `cancelM` | P2 | OPEN (≈3 lines, no UI) |
+| JQ-R2-01 | Background GPS fixes are dropped when the OEM kills the JS runtime mid-job (`forwarder` is module state, null in a headless runtime); the customer's map freezes until the app reopens. Static. | `src/realtime/background-location-task.ts` | P2 | OPEN (needs a device) |
+| JQ-R1-01 | Upload re-PUT after a lost answer → Azure 409 → "Photo upload failed" on builds before #1185. | `src/api/uploads.ts:78` | P2 | FIXED on main, not shipped (needs a build) |
+| JQ-R7-04 | ~6.8 `/phone` views per user in PostHog; no loop reproduced (R4 live OTP, `phone.tsx`/`verify.tsx` back paths). | `app/phone.tsx`, `app/verify.tsx` | P2 | WATCH |
+
+---
+
 ## FIXED — latest sweep (BUGHUNT_FINDINGS.md F-01…F-19)
 
 Fixed by PR #192 (`3f15c42`, F-01…F-10) and PR #193 (`f9c2a12`, F-11…F-19). Verified in code.
