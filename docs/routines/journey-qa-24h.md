@@ -266,22 +266,69 @@ That is a shipping problem, not a code fix.
 6. **Report:** any step that fails is a finding. Write `R0-baseline.md` with the known-red list, harness
    status, the happy-path timings, and anything the later lanes must know.
 
-### R7: Field signals (Haiku, Expo connector)
+### R7: Field signals (Haiku; Expo, plus Sentry/PostHog if connected)
 
-1. `build_list`: find the build that closed testers run now, and record its commit SHA and date.
-   Compare it with the SHAs of `main`'s #1185/#1187/#1160 merges.
-2. `playstore_crashes`: crashes and ANRs from the last 14 days. Group them by signature, and add the
-   device model, RAM and Android version.
-3. `playstore_reviews`: reviews from the same period.
-4. Try `observe_metrics_summary` and `observe_routes` too. The app ships no Expo Observe SDK, so they are
-   probably empty; record that rather than guessing.
-5. Map each crash or ANR to code with `rg` on its stack frames or route, citing `file:line`. Flag
-   anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
-6. **NEEDS OWNER:** the real field telemetry no connector can reach:
-   - Sentry (`src/telemetry/sentry.ts`);
-   - PostHog (`src/telemetry/analytics.tsx`);
-   - client RUM sent to `/client-metrics` (`apps/api/src/observability/client-metrics.controller.ts`).
-7. Write `R7-field.md`. If the Expo tools are unavailable, say so and stop.
+These sources were checked on 2026-10-14 at 10:26 UTC. Don't spend calls re-proving the results,
+except as noted.
+
+- **Expo Observe is empty.** `observe_versions` and `observe_event_names` return nothing, because the app
+  ships no EAS Observe SDK. Skip all `observe_*` tools.
+- **Play crashes are broken right now.** `playstore_crashes` (package `zw.co.lynia`) fails with
+  `Google token exchange failed 400: invalid_grant: account not found`. Expo's Google service-account
+  credential is invalid. Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
+  Google Play service account in Expo") and move on.
+- **Sentry and PostHog are readable through their own claude.ai connectors** (connected 2026-10-14
+  ~10:30 UTC). The Expo connector itself has no tools for them.
+  - **Sentry works and has real data.**
+    - Org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
+    - Known issues on 2026-10-14: `LYNIA-MOBILE-3` and `LYNIA-MOBILE-6`, both "compose-map-not-loaded"
+      (`src/ui/ComposeMap`, `app/order/[id]`; 3 users).
+  - **PostHog works on the EU org.** The connector was reconnected 2026-10-14 ~10:50 UTC.
+    - Org `LyniaGo-iqIUfRem`, project `219333` (`https://eu.posthog.com/project/219333/`).
+    - Last 30 days: **2,538 `$screen` events** (latest 2026-10-14 08:16 UTC). Custom events are nearly
+      absent: 1 `rider_screen_shown` and 1 `rider_go_online`.
+    - **So build the journeys from `$screen` paths**, using `$screen_name`: `query-paths` and
+      `query-funnel` on screen views. Don't use custom events.
+    - `read-data-schema` returned an internal error on 2026-10-14. Use `execute-sql` on `events` instead.
+    - The Expo↔PostHog link's refresh token is revoked (`eas integrations:posthog:connect` fails), but
+      the EAS env already holds the EU key and host. Record it as NEEDS OWNER: re-link it in Expo →
+      Connections.
+  - **LogRocket and Vexo** are linked in the Expo dashboard, but `apps/mobile` contains no SDK for either,
+    so they have no data. Skip both.
+
+Steps:
+
+1. **Build info.** Use `build_list` (`appFullName: "@lyniago/lynia"`, ANDROID, limit 5) to find the build
+   closed testers run now. Record its commit SHA and date, and compare them with `main`'s
+   #1185/#1187/#1160 merges.
+2. **Sentry.** Load the Sentry tools with `ToolSearch` (e.g. `select:mcp__Sentry__search_issues,mcp__Sentry__get_sentry_resource`).
+   - Run `search_issues` on `lynia-mobile` and `lynia-api` (org `lyniago`, the regionUrl above, period
+     14d, sorted by `user`, limit 10).
+   - Run `get_sentry_resource` on each issue that hits a journey.
+   - Group the issues by signature, and add release, device model, RAM and OS version.
+   - If the Sentry tools don't load in this session, record that and continue.
+3. **PostHog (EU project 219333).** Use the `exec` tool, and `execute-sql` on `events` filtered by `$screen_name`:
+   - the funnel drop-off for the two journeys:
+     - customer: onboarding → OTP verified → Send placed;
+     - biker: become → KYC verified → first bid → first delivery;
+   - which screens are slow or hit errors.
+
+   - where sessions end, i.e. the last screen before quitting;
+   - screens with long dwell, i.e. waiting;
+   - repeat visits that suggest a loop.
+
+   Map each `$screen_name` to its route file with `rg`.
+   Note it as a finding that the app emits almost no custom journey events (`src/telemetry/analytics.tsx`).
+4. **Play.** Make one `playstore_crashes` attempt (see above). If it works, also pull `playstore_reviews`.
+5. **Map to code.** Map each crash, error or funnel cliff to code with `rg` on its stack frames, event or
+   route, citing `file:line`. Flag anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
+6. **NEEDS OWNER**, for each of these that stayed unreachable:
+   - the Sentry connector;
+   - the PostHog connector;
+   - the Play credential;
+   - client RUM sent to `/client-metrics` (`apps/api/src/observability/client-metrics.controller.ts`),
+     which has no connector.
+7. Write `R7-field.md`.
 
 ### R1: Biker onboarding + KYC (Sonnet; Opus skeptic for P0/P1)
 
@@ -346,6 +393,7 @@ bike & documents → ID check (outcomes F1–F8) → pending → approved → fi
 - #1185: `phone.tsx`, `verify.tsx`.
 - #1160: the boot splash, `use-bootstrap.ts`, `app/index.tsx`, `_layout.tsx`, `onboarding.tsx`, `permissions.tsx`.
 - #1155: `orders.service.ts`, `waypoints.ts`.
+- **Field signal:** Sentry `LYNIA-MOBILE-3` "compose-map-not-loaded" in `src/ui/ComposeMap` (the Send map; 2 users, 10 events). Find why the map fails to load, e.g. a slow link, a missing key or a WebView/tiles timeout.
 
 **Live runs:**
 
@@ -482,6 +530,8 @@ undelivered or cancelled → Orders tab history → notification taps.
 - `src/net/{order-copy-store,offline-banner-owner}.ts`, `src/push/*`
 - API: `tracking/{tracking.gateway,tracking.service}.ts` (#1185 removed the REST controller),
   `orders/{lifecycle.controller,cancel-reason}.ts`, `notifications/*`.
+
+**Field signal:** Sentry `LYNIA-MOBILE-6` "compose-map-not-loaded" in `app/order/[id]`. Find why the order screen's map fails to load and what the customer sees when it does.
 
 **Inputs:**
 
