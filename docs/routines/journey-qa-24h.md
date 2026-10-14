@@ -277,20 +277,34 @@ except as noted.
   `Google token exchange failed 400: invalid_grant: account not found`. Expo's Google service-account
   credential is invalid. Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
   Google Play service account in Expo") and move on.
-- **Sentry and PostHog are not readable through Expo.** The owner wires them through Expo (the SDKs and
-  build integration), but the Expo connector exposes no Sentry or PostHog tools. They are readable only
-  if their own claude.ai connectors are connected.
+- **Sentry and PostHog are readable through their own claude.ai connectors** (connected 2026-10-14
+  ~10:30 UTC). The Expo connector itself has no tools for them.
+  - **Sentry works and has real data.**
+    - Org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
+    - Known issues on 2026-10-14: `LYNIA-MOBILE-3` and `LYNIA-MOBILE-6`, both "compose-map-not-loaded"
+      (`src/ui/ComposeMap`, `app/order/[id]`; 3 users).
+  - **PostHog is empty.**
+    - The connector's only org is `LyniaGo`, and its only project is `664346` ("Default project", created
+      2026-10-14 10:28 UTC) with `ingested_event: false`.
+    - The app sends events only when the build was made with `EXPO_PUBLIC_POSTHOG_API_KEY` baked in
+      (`src/config.ts:114-123`, `analyticsEnabled()`). So no installed build reports to it yet.
+    - Check `ingested_event` once. If it is still false, record NEEDS OWNER ("PostHog has no events: the
+      next `closed` build must carry the Expo-synced PostHog key") and skip PostHog.
+  - **LogRocket and Vexo** are linked in the Expo dashboard, but `apps/mobile` contains no SDK for either,
+    so they have no data. Skip both.
 
 Steps:
 
 1. **Build info.** Use `build_list` (`appFullName: "@lyniago/lynia"`, ANDROID, limit 5) to find the build
    closed testers run now. Record its commit SHA and date, and compare them with `main`'s
    #1185/#1187/#1160 merges.
-2. **Sentry, if connected.** Run `ToolSearch` for "sentry". If its tools load:
-   - use `find_issues` for the mobile and API projects over the last 14 days, sorted by users and events;
-   - use `get_issue_details` on the top 10;
-   - group them by signature, and add release, device model, RAM and OS version.
-3. **PostHog, if connected.** Run `ToolSearch` for "posthog". If its tools load, query these through `query-run`:
+2. **Sentry.** Load the Sentry tools with `ToolSearch` (e.g. `select:mcp__Sentry__search_issues,mcp__Sentry__get_sentry_resource`).
+   - Run `search_issues` on `lynia-mobile` and `lynia-api` (org `lyniago`, the regionUrl above, period
+     14d, sorted by `user`, limit 10).
+   - Run `get_sentry_resource` on each issue that hits a journey.
+   - Group the issues by signature, and add release, device model, RAM and OS version.
+   - If the Sentry tools don't load in this session, record that and continue.
+3. **PostHog, only if `ingested_event` is true for project 664346** (see above). Query these with the PostHog `exec` tool:
    - the funnel drop-off for the two journeys:
      - customer: onboarding → OTP verified → Send placed;
      - biker: become → KYC verified → first bid → first delivery;
@@ -371,6 +385,7 @@ bike & documents → ID check (outcomes F1–F8) → pending → approved → fi
 - #1185: `phone.tsx`, `verify.tsx`.
 - #1160: the boot splash, `use-bootstrap.ts`, `app/index.tsx`, `_layout.tsx`, `onboarding.tsx`, `permissions.tsx`.
 - #1155: `orders.service.ts`, `waypoints.ts`.
+- **Field signal:** Sentry `LYNIA-MOBILE-3` "compose-map-not-loaded" in `src/ui/ComposeMap` (the Send map; 2 users, 10 events). Find why the map fails to load, e.g. a slow link, a missing key or a WebView/tiles timeout.
 
 **Live runs:**
 
@@ -507,6 +522,8 @@ undelivered or cancelled → Orders tab history → notification taps.
 - `src/net/{order-copy-store,offline-banner-owner}.ts`, `src/push/*`
 - API: `tracking/{tracking.gateway,tracking.service}.ts` (#1185 removed the REST controller),
   `orders/{lifecycle.controller,cancel-reason}.ts`, `notifications/*`.
+
+**Field signal:** Sentry `LYNIA-MOBILE-6` "compose-map-not-loaded" in `app/order/[id]`. Find why the order screen's map fails to load and what the customer sees when it does.
 
 **Inputs:**
 
