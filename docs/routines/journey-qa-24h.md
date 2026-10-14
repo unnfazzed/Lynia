@@ -283,19 +283,16 @@ except as noted.
     - Org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
     - Known issues on 2026-10-14: `LYNIA-MOBILE-3` and `LYNIA-MOBILE-6`, both "compose-map-not-loaded"
       (`src/ui/ComposeMap`, `app/order/[id]`; 3 users).
-  - **PostHog: the connector points at the wrong account.** Checked 2026-10-14 ~10:40 UTC.
-    - **The app's real PostHog is in the EU region**, in org `LyniaGo-iqIUfRem`:
-      - the EAS `preview` and `production` envs set `EXPO_PUBLIC_POSTHOG_HOST=https://eu.posthog.com`
-        plus an API key;
-      - `eas integrations:posthog:connect` reports the Expo account as linked to that EU org.
-    - **The claude.ai PostHog connector is signed in to a different, US-region org** (`LyniaGo`, project
-      `664346`, created 2026-10-14 10:28 UTC, `ingested_event: false`). Its data is not the app's.
-    - **The Expo↔PostHog link's refresh token is revoked.** `integrations:posthog:connect` fails with
-      "Invalid or revoked refresh token".
-    - **What R7 does:** run `organizations-list` once. If an EU org with events is visible, use it for
-      step 3. Otherwise record NEEDS OWNER, then skip PostHog:
-      - "reconnect the claude.ai PostHog connector to the EU org `LyniaGo-iqIUfRem`";
-      - "re-link PostHog in Expo → Project settings → Connections".
+  - **PostHog works on the EU org.** The connector was reconnected 2026-10-14 ~10:50 UTC.
+    - Org `LyniaGo-iqIUfRem`, project `219333` (`https://eu.posthog.com/project/219333/`).
+    - Last 30 days: **2,538 `$screen` events** (latest 2026-10-14 08:16 UTC). Custom events are nearly
+      absent: 1 `rider_screen_shown` and 1 `rider_go_online`.
+    - **So build the journeys from `$screen` paths**, using `$screen_name`: `query-paths` and
+      `query-funnel` on screen views. Don't use custom events.
+    - `read-data-schema` returned an internal error on 2026-10-14. Use `execute-sql` on `events` instead.
+    - The Expo↔PostHog link's refresh token is revoked (`eas integrations:posthog:connect` fails), but
+      the EAS env already holds the EU key and host. Record it as NEEDS OWNER: re-link it in Expo →
+      Connections.
   - **LogRocket and Vexo** are linked in the Expo dashboard, but `apps/mobile` contains no SDK for either,
     so they have no data. Skip both.
 
@@ -310,13 +307,18 @@ Steps:
    - Run `get_sentry_resource` on each issue that hits a journey.
    - Group the issues by signature, and add release, device model, RAM and OS version.
    - If the Sentry tools don't load in this session, record that and continue.
-3. **PostHog, only if the EU org with app events is reachable** (see above). Query these with the PostHog `exec` tool:
+3. **PostHog (EU project 219333).** Use the `exec` tool, and `execute-sql` on `events` filtered by `$screen_name`:
    - the funnel drop-off for the two journeys:
      - customer: onboarding → OTP verified → Send placed;
      - biker: become → KYC verified → first bid → first delivery;
    - which screens are slow or hit errors.
 
-   Use the event names the code emits: `rg` `src/telemetry/analytics.tsx` and its call sites.
+   - where sessions end, i.e. the last screen before quitting;
+   - screens with long dwell, i.e. waiting;
+   - repeat visits that suggest a loop.
+
+   Map each `$screen_name` to its route file with `rg`.
+   Note it as a finding that the app emits almost no custom journey events (`src/telemetry/analytics.tsx`).
 4. **Play.** Make one `playstore_crashes` attempt (see above). If it works, also pull `playstore_reviews`.
 5. **Map to code.** Map each crash, error or funnel cliff to code with `rg` on its stack frames, event or
    route, citing `file:line`. Flag anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
