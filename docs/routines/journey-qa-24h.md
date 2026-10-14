@@ -266,22 +266,47 @@ That is a shipping problem, not a code fix.
 6. **Report:** any step that fails is a finding. Write `R0-baseline.md` with the known-red list, harness
    status, the happy-path timings, and anything the later lanes must know.
 
-### R7: Field signals (Haiku, Expo connector)
+### R7: Field signals (Haiku; Expo, plus Sentry/PostHog if connected)
 
-1. `build_list`: find the build that closed testers run now, and record its commit SHA and date.
-   Compare it with the SHAs of `main`'s #1185/#1187/#1160 merges.
-2. `playstore_crashes`: crashes and ANRs from the last 14 days. Group them by signature, and add the
-   device model, RAM and Android version.
-3. `playstore_reviews`: reviews from the same period.
-4. Try `observe_metrics_summary` and `observe_routes` too. The app ships no Expo Observe SDK, so they are
-   probably empty; record that rather than guessing.
-5. Map each crash or ANR to code with `rg` on its stack frames or route, citing `file:line`. Flag
-   anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
-6. **NEEDS OWNER:** the real field telemetry no connector can reach:
-   - Sentry (`src/telemetry/sentry.ts`);
-   - PostHog (`src/telemetry/analytics.tsx`);
-   - client RUM sent to `/client-metrics` (`apps/api/src/observability/client-metrics.controller.ts`).
-7. Write `R7-field.md`. If the Expo tools are unavailable, say so and stop.
+These sources were checked on 2026-10-14 at 10:26 UTC. Don't spend calls re-proving the results,
+except as noted.
+
+- **Expo Observe is empty.** `observe_versions` and `observe_event_names` return nothing, because the app
+  ships no EAS Observe SDK. Skip all `observe_*` tools.
+- **Play crashes are broken right now.** `playstore_crashes` (package `zw.co.lynia`) fails with
+  `Google token exchange failed 400: invalid_grant: account not found`. Expo's Google service-account
+  credential is invalid. Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
+  Google Play service account in Expo") and move on.
+- **Sentry and PostHog are not readable through Expo.** The owner wires them through Expo (the SDKs and
+  build integration), but the Expo connector exposes no Sentry or PostHog tools. They are readable only
+  if their own claude.ai connectors are connected.
+
+Steps:
+
+1. **Build info.** Use `build_list` (`appFullName: "@lyniago/lynia"`, ANDROID, limit 5) to find the build
+   closed testers run now. Record its commit SHA and date, and compare them with `main`'s
+   #1185/#1187/#1160 merges.
+2. **Sentry, if connected.** Run `ToolSearch` for "sentry". If its tools load:
+   - use `find_issues` for the mobile and API projects over the last 14 days, sorted by users and events;
+   - use `get_issue_details` on the top 10;
+   - group them by signature, and add release, device model, RAM and OS version.
+3. **PostHog, if connected.** Run `ToolSearch` for "posthog". If its tools load, query these through `query-run`:
+   - the funnel drop-off for the two journeys:
+     - customer: onboarding → OTP verified → Send placed;
+     - biker: become → KYC verified → first bid → first delivery;
+   - which screens are slow or hit errors.
+
+   Use the event names the code emits: `rg` `src/telemetry/analytics.tsx` and its call sites.
+4. **Play.** Make one `playstore_crashes` attempt (see above). If it works, also pull `playstore_reviews`.
+5. **Map to code.** Map each crash, error or funnel cliff to code with `rg` on its stack frames, event or
+   route, citing `file:line`. Flag anything that only happens on devices with ≤ 3 GB of RAM or Android ≤ 10.
+6. **NEEDS OWNER**, for each of these that stayed unreachable:
+   - the Sentry connector;
+   - the PostHog connector;
+   - the Play credential;
+   - client RUM sent to `/client-metrics` (`apps/api/src/observability/client-metrics.controller.ts`),
+     which has no connector.
+7. Write `R7-field.md`.
 
 ### R1: Biker onboarding + KYC (Sonnet; Opus skeptic for P0/P1)
 
