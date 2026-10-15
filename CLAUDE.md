@@ -311,12 +311,12 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
 | `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
-| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ Play granted production access 2026-10-14, but the SA still holds testing-track permissions only — fails at submission until it is granted *Release to production* |
+| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ the app is public (0.52.0 promoted to production in Play Console, 2026-10-14), but the SA still holds testing-track permissions only — this profile fails at submission until it is granted *Release to production* |
 
 A default dispatch therefore builds fine and then fails at submission, burning one of a limited
 monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
 check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3:
-SA production permission, Sentry live, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`).
+SA production permission, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`; Sentry is live).
 
 **⚠️ The app has TWO closed-testing tracks and the testers are not on the default one.** Play's
 built-in closed track is **Alpha** (API id `alpha`); the founder created a second one named
@@ -350,11 +350,30 @@ release job uses a *strict* frozen install (deliberately diverging from CI's
 `--frozen-lockfile=false`) so both sides compute the same fingerprint runtimeVersion. Drift there
 killed build `5906d2f0`.
 
-**Current phase:** closed testing done; **Play granted production access on 2026-10-14**, but nothing
-has been released to the production track yet, so `play.google.com/store/apps/details?id=zw.co.lynia`
-still returns 404. Public release now needs only §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md` (SA
-*Release to production* permission, Sentry live, a staged production rollout). Do not describe anything
-as being "on Google Play" until a production release is live and the listing URL resolves.
+**Current phase: LIVE on Google Play.** Play granted production access on 2026-10-14 and the app is
+public the same day: <https://play.google.com/store/apps/details?id=zw.co.lynia> resolves (listing
+"LyniaGo: Food, Parcels by Bike", **v0.52.0**, "Updated on Oct 14, 2026", verified 2026-10-15). The
+production binary is **versionCode 47** (EAS build `e0e8c7f8`, commit `dbcb21f`), the `closed`-profile
+build promoted from *Closed testing* in Play Console — so **production phones are on OTA channel
+`preview`**, and every OTA published to `preview` now reaches the public as well as the testers. What
+is still open from §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md`: the SA *Release to production*
+permission (until then `profile: production` fails at submission; new public builds go
+`profile: closed` → promote in Play Console) and `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below).
+
+**Field signals — Sentry and PostHog are connected to Claude** (owner, 2026-10-15; claude.ai
+connectors, first wired 2026-10-14). Read crashes and analytics through them; do not ask the owner for
+dashboards or exports.
+
+- **Sentry:** org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
+  Load with `ToolSearch` (`select:mcp__Sentry__search_issues,mcp__Sentry__search_errors,mcp__Sentry__get_sentry_resource`).
+  Release builds report as `zw.co.lynia@<version>+<versionCode>`; vc 39–44 have sent events, so the LR20
+  "Sentry receiving crashes from a release build" gate is met. **The public binary reports
+  `environment: preview`**, not `production`, because it is the `closed`-profile build; filter by
+  release (`+47`), not by environment, to see public users.
+- **PostHog:** EU org, project `219333` (`https://eu.posthog.com/project/219333/`), via the PostHog
+  `exec` tool (`execute-sql` on `events`, e.g. by `$screen_name`).
+- After a release or OTA, check both for new issues on that release before calling it healthy. Halt a
+  staged rollout in Play Console on a crash spike.
 
 The running ledger of every build/submission attempt and its failure class is
 `docs/PLAY-STORE-SUBMISSION.md`; OTA-lane constraints are `REL-01`/`REL-02` in `docs/KNOWN_BUGS.md`

@@ -1,16 +1,27 @@
 # Google Play submission package (LR20)
 
-> **Current state (2026-10-14).** **Play granted production access on 2026-10-14** (founder, Play Console:
-> "Your app has been granted Google Play production access"; open testing is now available too). The
-> closed test (§8 step 2) is complete. The newest build is still **v0.51.0 / versionCode 45** (EAS build
-> `87291256`, 2026-10-06) on the **`Closed testing`** track; JS-only fixes reach it by OTA on the `preview`
-> branch. The app talks to the API on **Azure** (`api.lyniago.com`).
-> It is **still not public**: nothing has been released to the production track yet, so
-> `play.google.com/store/apps/details?id=zw.co.lynia` still returns 404. The next step is §8 step 3
-> (grant the service account *Release to production*, Sentry live, then a staged 10% production
-> release). Until the service-account permission is granted, a `profile: production` dispatch still
-> fails at submission; keep shipping testers with *Mobile Release (Play)* → `profile: closed`
-> (`docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b). Everything below is the dated record.
+> **Current state (2026-10-15): LIVE on Google Play.** Play granted production access on 2026-10-14
+> (founder, Play Console: "Your app has been granted Google Play production access"; open testing is
+> now available too) and the app went public the same day. The listing
+> <https://play.google.com/store/apps/details?id=zw.co.lynia> resolves (HTTP 200, checked 2026-10-15):
+> **"LyniaGo: Food, Parcels by Bike"**, version **0.52.0**, "Updated on Oct 14, 2026", 10+ downloads.
+> The production binary is **v0.52.0 / versionCode 47** — EAS build `e0e8c7f8` (commit `dbcb21f`,
+> profile `closed`, FINISHED 2026-10-12), promoted from **`Closed testing`** to production in Play
+> Console (the service account cannot release to production yet, and Play accepts a versionCode once,
+> so promotion is the only way vc 47 got there). Consequences:
+> - **Production installs listen on OTA channel `preview`** (the `closed` profile's channel), runtime
+>   of vc 47. An OTA published to `preview` now reaches the public, not only the testers — treat the
+>   *Mobile OTA Update* lane as a production lane.
+> - **Still open from §8 step 3:** grant the service account *Release to production* (until then a
+>   `profile: production` dispatch fails at submission) and set `EAS_TAG_RELEASES_ENABLED`.
+> - **Sentry is live** and readable from Claude through the Sentry connector (org `lyniago`, project
+>   `lynia-mobile`); release builds vc 39–44 have reported events (checked 2026-10-15). PostHog (EU
+>   project `219333`) is connected the same way. The public binary reports `environment: preview`;
+>   filter by release `zw.co.lynia@0.52.0+47` to see public users.
+>   Until those land, a new public build is *Mobile Release (Play)* → `profile: closed`, then promote
+>   it to production in Play Console (`docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b).
+> The app talks to the API on **Azure** (`api.lyniago.com`). Every "still 404s by design" line below
+> is the dated record from before 2026-10-14.
 
 > Everything needed to create, fill in and ship the **LyniaGo** Play Console listing, in the order the
 > console asks for it. Companions: `docs/AZURE-OWNER-RUNBOOK.md` §9 (arming the release
@@ -1750,13 +1761,17 @@ Once §7.1 and §7.2 are closed:
    When the window completes, **apply for production access** and answer the questionnaire about
    the test.
    ✅ **DONE 2026-10-14 — production access granted** (Play Console, founder). Open testing is
-   unlocked by the same grant.
+   unlocked by the same grant. **The same day v0.52.0 (vc 47, build `e0e8c7f8`) was promoted from
+   `Closed testing` to production in Play Console, and the listing went public** (verified 200,
+   2026-10-15).
    **Which closed track:** there are two, and only one has testers. The clock and the tester list
    live on the custom track named **`Closed testing`** (0.48.3 promoted into it 2026-08-25); Play's
    built-in **Alpha** (`alpha`) is empty and nothing targets it. Ship to the testers with
    *Mobile Release (Play)* → `profile: closed`, which submits to `Closed testing` because a track's
    API id is its console name — not with `preview` (→ `internal`, nobody) and not with `alpha`.
-3. **Production, staged.** First set the repo variable **`EAS_TAG_RELEASES_ENABLED=true`** — the
+3. **Production, staged.** ⏳ **Partly done:** the first production release (vc 47) went out by
+   console promotion on 2026-10-14, not through this pipeline. The steps below arm the pipeline so
+   later releases go out by tag. First set the repo variable **`EAS_TAG_RELEASES_ENABLED=true`** — the
    tag trigger is separately gated (2026-08-03) so that release-please's near-daily `v*` tags can
    never burn EAS build quota on premature production submits; arming it is the deliberate act of
    opening the release train. Also grant the Play service account the **Release to production**
@@ -2083,8 +2098,11 @@ recorded 2026-10-05 from the EAS build record and the status run below.
       Play Console fields (§4.1, §4.2) carry them.
 - [ ] CDPA duties closed (§7.3): POTRAZ controller registration, DPO appointed, cross-border transfer
       notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
-- [ ] Sentry receiving crashes from a release build (LR20 exit test)
+- [x] Sentry receiving crashes from a release build (LR20 exit test) — vc 39–44 report to `lyniago/lynia-mobile`
+      (checked 2026-10-15 through the Sentry connector)
 - [ ] Internal track build installed and smoke-tested on a real device
 - [x] Closed test run per Play's requirement (§8 step 2: opted-in testers, 14 consecutive days) and
       **production access granted** — before any production rollout (granted 2026-10-14)
+- [x] First production release live — v0.52.0 / vc 47 promoted from `Closed testing` in Play Console,
+      listing public 2026-10-14 (<https://play.google.com/store/apps/details?id=zw.co.lynia>)
 - [ ] Play service account granted **Release to production** (§7.2 deferral, §8 step 3)

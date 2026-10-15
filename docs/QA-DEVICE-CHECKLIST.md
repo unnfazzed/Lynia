@@ -167,4 +167,4 @@ view (`order/[id]`) on the second. Location permission granted as **"While using
 - [ ] **Privacy notice** URL (from `docs/DATA-RETENTION.md`) — must state what's collected + retention +
       how to request erasure; the app's "delete my account" action calls `DELETE /auth/me`.
 - [ ] Play **data-safety form** matches what the app actually collects (location, phone, national ID).
-- [ ] Staged rollout: Closed testing → production at 10% (Play granted production access 2026-10-14).
+- [x] Closed testing → production (v0.52.0 / vc 47 promoted in Play Console; listing public 2026-10-14).
