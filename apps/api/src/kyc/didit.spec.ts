@@ -668,13 +668,33 @@ describe("isSelfieCameraFailure", () => {
     },
   });
 
-  it("a blurry or dark selfie on an approved ID with its number is a camera failure", () => {
+  it("a blurry or dark selfie on an approved ID with its number, whose face matched the card, is a camera failure", () => {
     expect(isSelfieCameraFailure("Declined", 0.82, session())).toBe(true);
-    expect(isSelfieCameraFailure("In Review", 0.82, session({ liveness: { status: "In Review", warnings: [w("LOW_LIVENESS_SCORE")] } }))).toBe(true);
-    // No usable face: the face match couldn't be computed, so there is no score.
+    expect(isSelfieCameraFailure("In Review", 0.82, session({ liveness: { status: "In Review", warnings: [w("SELFIE_TOO_FAR"), w("FACE_NOT_CENTERED")] } }))).toBe(true);
+  });
+
+  // Owner hold on #1216 (2026-10-15): the selfie must actually have been compared to the card.
+  it("no face, no score, or a face match that didn't pass is never a camera failure — the selfie wasn't compared", () => {
+    // A covered or darkened selfie: no face found, the face match not computed, no score.
     expect(
       isSelfieCameraFailure("Declined", null, session({ liveness: { warnings: [w("NO_FACE_DETECTED")] }, face: { status: "Declined", score: undefined, warnings: [w("FACE_MATCH_NOT_COMPUTED")] } })),
-    ).toBe(true);
+    ).toBe(false);
+    // The score handed in is no substitute for a face-match result that compared and passed.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ face: { status: "Approved", score: undefined } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ face: { status: "In Review", score: 82 } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ face: { status: "Approved", score: 55 } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", null, session())).toBe(false);
+    const noFace = session();
+    delete (noFace.decision as Record<string, unknown>).face_matches;
+    expect(isSelfieCameraFailure("Declined", 0.82, noFace)).toBe(false);
+    for (const risk of ["NO_FACE_DETECTED", "FACE_NOT_FOUND", "LIVENESS_NOT_PERFORMED", "LIVENESS_NOT_COMPUTED", "COULD_NOT_DETECT_FACE", "FACE_OCCLUDED"]) {
+      expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w(risk)] } }))).toBe(false);
+    }
+  });
+
+  it("a low liveness score is Didit's anti-spoof signal (a printed photo, a screen replay), never a camera failure", () => {
+    expect(isSelfieCameraFailure("In Review", 0.82, session({ liveness: { status: "In Review", warnings: [w("LOW_LIVENESS_SCORE")] } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.95, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w("LOW_LIVENESS_SCORE")] } }))).toBe(false);
   });
 
   it("the V2 singular shapes read the same", () => {

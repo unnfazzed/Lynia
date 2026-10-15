@@ -306,9 +306,13 @@ export const SELFIE_CAMERA_QUALITY = "camera_quality";
 const IDENTITY_RISK =
   /SPOOF|ATTACK|INJECT|VIRTUAL_CAMERA|SCREEN_(REPLAY|CAPTURE)|DEEPFAKE|MASK|REPLAY|MULTIPLE_FACES|VIDEO_ANOMALY|DUPLICAT|BLOCKLIST|FRAUD|TAMPER|ALTER|PRINTED|PORTRAIT_REPLACE|LOW_FACE_MATCH|FACE_MISMATCH|SIMILARITY|NAME_MISMATCH|EXPIRED|EXPIRATION/;
 
-/** A selfie finding that a phone's camera produces: blur, light, distance, no usable face, an unsure read. */
-const CAMERA_QUALITY_RISK =
-  /QUALITY|BLUR|LUMINANCE|LIGHT|DARK|BRIGHT|NO_FACE|FACE_NOT_(DETECTED|FOUND)|NOT_DETECTED|NOT_COMPUTED|NOT_PERFORMED|COULD_NOT|LOW_LIVENESS_SCORE|UNCERTAIN|OCCLU|TOO_(FAR|CLOSE)|CENTER/;
+/**
+ * A selfie finding that a phone's camera produces: blur, light, distance, centring — and nothing else. A face that
+ * wasn't found, a check that couldn't run or a low liveness score is NOT a camera finding: a covered or darkened
+ * selfie produces the first two on purpose, and a low liveness score is Didit's anti-spoof signal for a printed
+ * photo or a screen replay (owner hold on #1216, 2026-10-15).
+ */
+const CAMERA_QUALITY_RISK = /QUALITY|BLUR|LUMINANCE|LIGHT|DARK|BRIGHT|TOO_(FAR|CLOSE)|CENTER/;
 
 /** Didit's per-feature results under the decision, V3 plural arrays first, then the V2 singular object. */
 function diditFeatureEntries(decision: Record<string, unknown>, v3: string, v2: string): Record<string, unknown>[] {
@@ -318,10 +322,9 @@ function diditFeatureEntries(decision: Record<string, unknown>, v3: string, v2: 
 }
 
 const DOC_FEATURES: [string, string] = ["id_verifications", "id_verification"];
-const SELFIE_FEATURES: [string, string][] = [
-  ["liveness_checks", "liveness"],
-  ["face_matches", "face_match"],
-];
+const LIVENESS_FEATURES: [string, string] = ["liveness_checks", "liveness"];
+const FACE_FEATURES: [string, string] = ["face_matches", "face_match"];
+const SELFIE_FEATURES: [string, string][] = [LIVENESS_FEATURES, FACE_FEATURES];
 
 /**
  * Owner 2026-10-15: a check whose ID document passed but whose SELFIE failed only because of the phone's camera
@@ -332,16 +335,17 @@ const SELFIE_FEATURES: [string, string][] = [
  *
  * True only when ALL of these hold (anything unrecognised reads false, so the decision falls back to today's):
  *  - Didit declined the session, or sent it to review;
- *  - the face match didn't measure a mismatch (no score, or a score at or above KYC_THRESHOLDS.needsReview);
+ *  - the selfie WAS compared to the card and matched: every face-match result is Approved with a score at or
+ *    above KYC_THRESHOLDS.needsReview (no score — nothing compared — is never enough);
  *  - every ID-document result is Approved, and the decision carries the document number (the ID is verified);
  *  - every other non-selfie result (IP analysis, AML…) that reports a status is Approved;
- *  - at least one selfie result (liveness, face match) is not Approved, and EVERY selfie finding is a camera
- *    one — a failed selfie with no finding at all is unexplained, and is not waved through;
+ *  - only liveness failed, and EVERY selfie finding is a camera one (blur, light, distance, centring) — a failed
+ *    liveness with no finding at all is unexplained, and is not waved through;
  *  - no identity finding anywhere (spoof, duplicate, tampering, a face mismatch, an expired card, under age).
  */
 export function isSelfieCameraFailure(status: string, score: number | null, payload: unknown): boolean {
   if (!(mapDiditStatus(status) === "failed" || isDiditInReview(status))) return false;
-  if (score !== null && score < KYC_THRESHOLDS.needsReview) return false;
+  if (score === null || score < KYC_THRESHOLDS.needsReview) return false;
   if (!payload || typeof payload !== "object") return false;
   const decision = ((payload as Record<string, unknown>).decision ?? {}) as Record<string, unknown>;
   const approved = (e: Record<string, unknown>) => typeof e.status === "string" && normDiditStatus(e.status) === "approved";
@@ -350,9 +354,17 @@ export function isSelfieCameraFailure(status: string, score: number | null, payl
   if (docs.length === 0 || !docs.every(approved)) return false;
   if (!extractDiditDocumentNumber(payload)) return false;
 
-  const selfie = SELFIE_FEATURES.flatMap(([v3, v2]) => diditFeatureEntries(decision, v3, v2));
-  // No selfie result at all, or every one approved: nothing on the selfie failed, so this isn't that case.
-  if (selfie.every(approved)) return false;
+  // The selfie must have been compared to the card, and matched: only liveness may have failed.
+  const faces = diditFeatureEntries(decision, ...FACE_FEATURES);
+  const matched = (e: Record<string, unknown>) => {
+    const s = percentToUnit(e.score);
+    return approved(e) && s !== null && s >= KYC_THRESHOLDS.needsReview;
+  };
+  if (faces.length === 0 || !faces.every(matched)) return false;
+  const liveness = diditFeatureEntries(decision, ...LIVENESS_FEATURES);
+  // No liveness result at all, or every one approved: nothing on the selfie failed, so this isn't that case.
+  if (liveness.every(approved)) return false;
+  const selfie = [...liveness, ...faces];
 
   const known = new Set([...DOC_FEATURES, ...SELFIE_FEATURES.flat()]);
   for (const [key, value] of Object.entries(decision)) {

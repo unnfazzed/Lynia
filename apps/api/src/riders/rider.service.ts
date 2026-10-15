@@ -97,6 +97,14 @@ export const SELFIE_CHECK_UNVERIFIED = "unverified";
 export const SELFIE_CHECK_RECHECK_REQUESTED = "recheck_requested";
 
 /**
+ * At most this many PAID selfie re-check sessions per biker per rolling day (owner hold on #1216). A re-check that
+ * fails writes no `rider.kyc_decline`, so KYC_DAILY_FIXABLE_DECLINE_LIMIT never bounds it; without this only the
+ * hourly paid-mint ceiling did (about 120 sessions a day). Counted from the `rider.kyc_session_minted` rows with
+ * path `recheck`.
+ */
+export const SELFIE_RECHECK_DAILY_LIMIT = 3;
+
+/**
  * KYC-R26-13: a `fixable` vendor decline (KYC_DECLINE_CLASS — a blurry photo, a face the camera didn't match, an
  * expired card) no longer costs a strike, so the A-02 lock no longer bounds how many paid sessions those
  * retries buy. This does: at most this many fixable declines in a rolling day before retryKyc stops minting
@@ -1060,9 +1068,11 @@ export class RiderService {
       if (rider.kycStatus !== "verified") {
         throw new ConflictException({ reason: "not_verified", message: "Only a verified biker's selfie can be re-checked. Decide their ID check first." });
       }
+      // A request also lets go of any re-check session still open: one whose verdict never arrived (a lost webhook,
+      // a review Didit later decided) would otherwise be handed back for ever, and the biker could never finish.
       const data =
         action === "request"
-          ? { selfieCheck: SELFIE_CHECK_RECHECK_REQUESTED, selfieCheckAt: new Date() }
+          ? { selfieCheck: SELFIE_CHECK_RECHECK_REQUESTED, selfieCheckAt: new Date(), selfieRecheckRef: null, selfieRecheckUrl: null }
           : { selfieCheck: null, selfieCheckReason: null, selfieCheckAt: null, selfieRecheckRef: null, selfieRecheckUrl: null };
       // CAS on the verified state read above, so a KYC decision landing mid-request isn't papered over.
       const res = await tx.rider.updateMany({ where: { profileId, kycStatus: "verified" }, data });
@@ -1092,17 +1102,19 @@ export class RiderService {
       select: { kycStatus: true, selfieCheck: true, selfieRecheckRef: true, selfieRecheckUrl: true },
     });
     if (!rider) throw new NotFoundException("Not a biker");
-    if (rider.kycStatus !== "verified" || !rider.selfieCheck) {
+    // Only a re-check ops asked for (owner hold on #1216): a flag alone is ops' to look at, not a paid session to buy.
+    if (rider.kycStatus !== "verified" || rider.selfieCheck !== SELFIE_CHECK_RECHECK_REQUESTED) {
       throw new ConflictException({ reason: "no_selfie_recheck", message: "There's no selfie check to redo." });
     }
     const claimAt = mintClaimAt(rider.selfieRecheckRef);
     if (rider.selfieRecheckRef && claimAt === null && rider.selfieRecheckUrl) return { verificationUrl: rider.selfieRecheckUrl };
     // Another tap is buying it right now (a fresh claim marker) — the same answer retryKyc gives.
     if (claimAt !== null && Date.now() - claimAt < KYC_MINT_CLAIM_TTL_MS) throw kycInProgress();
+    await this.assertUnderSelfieRecheckDailyLimit(profileId);
     await this.assertMayMint(profileId);
     const claim = `${KYC_MINT_CLAIM_PREFIX}${Date.now()}:${randomUUID()}`;
     const claimed = await this.prisma.rider.updateMany({
-      where: { profileId, kycStatus: "verified", selfieRecheckRef: rider.selfieRecheckRef },
+      where: { profileId, kycStatus: "verified", selfieCheck: SELFIE_CHECK_RECHECK_REQUESTED, selfieRecheckRef: rider.selfieRecheckRef },
       data: { selfieRecheckRef: claim, selfieRecheckUrl: null },
     });
     if (claimed.count !== 1) throw kycInProgress();
@@ -1126,6 +1138,25 @@ export class RiderService {
       data: { selfieRecheckRef: submission.ref, selfieRecheckUrl: submission.url },
     });
     return { verificationUrl: submission.url };
+  }
+
+  /** SELFIE_RECHECK_DAILY_LIMIT: refuse a fresh paid re-check, with the same 429 shape as the other KYC caps. */
+  private async assertUnderSelfieRecheckDailyLimit(profileId: string): Promise<void> {
+    const minted = await this.prisma.auditLog.count({
+      where: {
+        action: "rider.kyc_session_minted",
+        target: profileId,
+        reasonCode: "recheck",
+        createdAt: { gte: new Date(Date.now() - KYC_DAILY_LIMIT_WINDOW_MS) },
+      },
+    });
+    if (minted >= SELFIE_RECHECK_DAILY_LIMIT) {
+      this.logger.warn(`Selfie re-check for ${profileId} refused: ${minted} paid re-checks in the last 24h`);
+      throw new HttpException(
+        { statusCode: HttpStatus.TOO_MANY_REQUESTS, reason: "kyc_daily_limit", message: "You've tried the selfie check a few times today. Please try again tomorrow." },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
   }
 
   /** The biker whose selfie re-check this vendor session is, or null (owner 2026-10-15). */

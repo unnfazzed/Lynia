@@ -299,6 +299,13 @@ describe("KYC review: verified with the selfie not checked", () => {
     expect(screen.getByRole("button", { name: "Ask for a selfie re-check…" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Mark selfie checked…" })).toBeNull();
   });
+
+  it("a check held for review that carries the flag tells the reviewer the face was never checked", async () => {
+    await open(review({ status: "pending", kycHeld: true, kycVendorStatus: "Approved", selfieCheck: "unverified", selfieCheckReason: "camera_quality" }));
+    expect(warnbar("ID verified — selfie not checked.")).toBeNull();
+    expect(warnbar("Selfie not checked.")).toContain("nothing has compared their face with the ID");
+    expect(document.body.textContent).toContain("not checked (camera)");
+  });
 });
 
 describe("KYC review: a card that couldn't be read three times (owner 2026-10-15)", () => {

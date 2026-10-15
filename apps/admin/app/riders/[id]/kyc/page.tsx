@@ -118,8 +118,9 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
   // they never finished it — the approval then needs an explicit, noted acknowledgement.
   const progress = diditProgressLine(r.kycHeld, r.kycVendorStatus);
   const unfinished = !decided && diditUnfinished(r.kycHeld, r.kycVendorStatus);
-  // Owner 2026-10-15: verified on the ID, with a selfie the phone's camera couldn't make checkable.
-  const selfieCheck = r.status === "verified" ? (r.selfieCheck ?? null) : null;
+  // Owner 2026-10-15: verified on the ID, with a selfie the phone's camera couldn't make checkable. Shown on a
+  // held check too, so the reviewer deciding it knows the face was never checked.
+  const selfieCheck = r.selfieCheck ?? null;
   // Owner 2026-10-15 (option 2): the card couldn't be read a third time, so the check came to a person.
   const unreadableHold = !decided && r.kycHeld === true && r.declineReason === "id_unreadable";
 
@@ -157,16 +158,26 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
         <div className="warnbar">
           <IconAlert />
           <span className="t">
-            <b>ID verified — selfie not checked.</b> The ID check verified{" "}
-            <span className="mono">{r.verifiedIdNumber ?? r.idNumber ?? "this biker's ID"}</span>, but{" "}
-            {selfieCheck === "recheck_requested"
-              ? "you've asked for a new selfie and they haven't passed one yet"
-              : "their phone's camera couldn't take a selfie Didit could check"}
-            {r.selfieCheckReason && r.selfieCheckReason !== "camera_quality" ? (
-              <> (last re-check: {kycDeclineLabel(r.selfieCheckReason)})</>
-            ) : null}
-            . They can go online. Compare the selfie with the ID photo in Didit, then mark it checked or ask for a
-            re-check below.
+            {r.status === "verified" ? (
+              <>
+                <b>ID verified — selfie not checked.</b> The ID check verified{" "}
+                <span className="mono">{r.verifiedIdNumber ?? r.idNumber ?? "this biker's ID"}</span>, but{" "}
+                {selfieCheck === "recheck_requested"
+                  ? "you've asked for a new selfie and they haven't passed one yet"
+                  : "their phone's camera couldn't take a selfie Didit could check"}
+                {r.selfieCheckReason && r.selfieCheckReason !== "camera_quality" ? (
+                  <> (last re-check: {kycDeclineLabel(r.selfieCheckReason)})</>
+                ) : null}
+                . They can go online. Compare the selfie with the ID photo in Didit, then mark it checked or ask for a
+                re-check below.
+              </>
+            ) : (
+              <>
+                <b>Selfie not checked.</b> Their phone&apos;s camera couldn&apos;t take a selfie Didit could check, so
+                nothing has compared their face with the ID. Compare the selfie with the ID photo in Didit before you
+                decide.
+              </>
+            )}
           </span>
         </div>
       ) : null}

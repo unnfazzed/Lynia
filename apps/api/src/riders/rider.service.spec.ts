@@ -8,7 +8,7 @@ import type { KycVendor } from "../kyc/kyc-vendor";
 import { StubKycVendor } from "../kyc/kyc-vendor";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { canGoOnline, KYC_RESOLVED_BY_VENDOR, onlineRefusalReason, RiderService } from "./rider.service";
+import { canGoOnline, KYC_RESOLVED_BY_VENDOR, onlineRefusalReason, RiderService, SELFIE_RECHECK_DAILY_LIMIT } from "./rider.service";
 
 /** Real crypto with a fixed test key so hashId(...) is deterministic across the assertions below. */
 const pii = new PiiCryptoService({ PII_ENCRYPTION_KEY: "test-pii-key-0123456789abcdefghij" } as Env);
@@ -4199,12 +4199,37 @@ describe("RiderService — KYC-R26 decision guards", () => {
       });
 
       it("a vendor failure hands the claim back; nothing to redo is a 409", async () => {
-        const { prisma, row } = verified();
+        const { prisma, row } = verified({ selfieCheck: "recheck_requested" });
         const { s } = recheckSvc(prisma, vi.fn(async () => { throw new Error("503"); }));
         await expect(s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 503 });
         expect(row.selfieRecheckRef).toBeNull();
         const clean = verified({ selfieCheck: null });
         await expect(recheckSvc(clean.prisma).s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 409 });
+      });
+
+      // Owner hold on #1216: a paid re-check is only one ops asked for, and only a few a day.
+      it("a flag ops haven't asked about buys nothing: only a requested re-check starts a session", async () => {
+        const { prisma } = verified();
+        const { s, submit } = recheckSvc(prisma);
+        await expect(s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 409 });
+        expect(submit).not.toHaveBeenCalled();
+      });
+
+      it("at most SELFIE_RECHECK_DAILY_LIMIT paid re-checks a day, refused with the KYC caps' 429", async () => {
+        const { prisma, audit } = verified({ selfieCheck: "recheck_requested" });
+        for (let i = 0; i < SELFIE_RECHECK_DAILY_LIMIT; i++) audit.push({ action: "rider.kyc_session_minted", target: "p1", reasonCode: "recheck" });
+        const { s, submit } = recheckSvc(prisma);
+        await expect(s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 429, response: { reason: "kyc_daily_limit" } });
+        expect(submit).not.toHaveBeenCalled();
+      });
+
+      it("asking again lets go of a re-check session whose verdict never came, so the next tap starts afresh", async () => {
+        const { prisma, row } = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_lost", selfieRecheckUrl: "https://verify.didit.me/rc_lost" });
+        await withSpies(prisma).s.adminSetSelfieCheck("p1", "request", "admin:ops");
+        expect(row).toMatchObject({ selfieCheck: "recheck_requested", selfieRecheckRef: null, selfieRecheckUrl: null });
+        const { s, submit } = recheckSvc(prisma);
+        expect(await s.startSelfieRecheck("p1")).toEqual({ verificationUrl: "https://verify.didit.me/rc_1" });
+        expect(submit).toHaveBeenCalledTimes(1);
       });
 
       it("a pass on this biker's own ID clears the flag; another ID's document doesn't pass", async () => {

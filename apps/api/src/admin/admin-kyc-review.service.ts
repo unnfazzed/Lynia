@@ -154,10 +154,12 @@ export class AdminKycReviewService {
       kycVendorStatus: rider.kycVendorStatus ?? null,
       // Owner 2026-10-15: null = the selfie was checked as normal; `unverified` = verified on the ID with a selfie
       // the camera couldn't make checkable; `recheck_requested` = ops asked for a new one (a reminder, not a gate).
-      // The reason is why it was flagged (`camera_quality`), or why the latest re-check didn't pass.
-      selfieCheck: rider.kycStatus === "verified" ? (rider.selfieCheck ?? null) : null,
-      selfieCheckReason: rider.kycStatus === "verified" ? (rider.selfieCheckReason ?? null) : null,
-      selfieCheckAt: rider.kycStatus === "verified" && rider.selfieCheckAt ? rider.selfieCheckAt.toISOString() : null,
+      // The reason is why it was flagged (`camera_quality`), or why the latest re-check didn't pass. Shown whatever
+      // the KYC status: a check held for review (an ID collision) can carry the flag too, and the reviewer deciding
+      // it must know the face was never checked (owner hold on #1216).
+      selfieCheck: rider.selfieCheck ?? null,
+      selfieCheckReason: rider.selfieCheckReason ?? null,
+      selfieCheckAt: rider.selfieCheckAt ? rider.selfieCheckAt.toISOString() : null,
     };
   }
 }

@@ -5579,6 +5579,10 @@ the **ID passed** and the **selfie failed only on camera quality**, the biker is
 selfie flagged for ops; a selfie that doesn't match the ID, or any spoof sign, still declines. Ops can ask for a
 **selfie re-check**, which is a **reminder only** (never blocks going online). A card that **can't be read three
 times** goes to a person (the existing "under review" wall) instead of a fourth retry. No handoff draws any of it.
+Tightened on the owner's hold (#1216, 2026-10-15): "camera quality" means the selfie **was compared to the card and
+matched** (an Approved face match at or above `needsReview`) and only liveness failed, on blur, light, distance or
+centring. No face, no score or a low liveness score still declines. A paid re-check needs ops to have asked for one,
+and is capped at three a day.
 
 | Element | Drawn | Shipped |
 |---|---|---|
@@ -5588,6 +5592,7 @@ times** goes to a person (the existing "under review" wall) instead of a fourth 
 | Third unreadable card | F4a "Your photo was blurry" again | F2 "One more look" (the drawn held wall, `kycHeld`); no new screen, no push |
 | Admin KYC review (verified biker) | kit `kyc.html` detail | A warnbar **"ID verified — selfie not checked."** naming the verified ID number; "ID document · pass" and "Selfie · not checked / reminded" check rows; **"Ask for a selfie re-check…"** / **"Remind again…"** and **"Mark selfie checked…"** (note required) `ConfirmModal`s — kit primitives only (D-106) |
 | Admin KYC review (held unreadable card) | — | A warnbar **"ID card couldn't be read — three tries."** |
+| Admin KYC review (held check carrying the flag) | — | A warnbar **"Selfie not checked."** ("…nothing has compared their face with the ID. Compare the selfie with the ID photo in Didit before you decide.") and the same "Selfie · not checked" check row |
 
 Guards: `didit.spec.ts` "isSelfieCameraFailure", `kyc.controller.spec.ts` (camera-only selfie → verify with the
 flag; a re-check's verdict never reaches applyKycResult), `rider.service.spec.ts` "owner 2026-10-15" (the flag,
