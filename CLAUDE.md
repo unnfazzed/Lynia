@@ -311,9 +311,9 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
 | `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
-| `production` (workflow default) | `production` | `production`, 10% staged rollout | ✅ armed: the SA now has *Release to production* (owner-reported 2026-10-15; proven only once a `profile: production` submission reaches FINISHED). The first one moves public phones to OTA channel `production` |
+| `production` (workflow default) | `production` | `production`, **full rollout to 100%** (owner, 2026-10-15) | ✅ proven: build `ad40bbf3` (0.53.0 / vc 48), submission `4998a822` FINISHED on `production` (2026-10-15). Public phones on vc ≥ 48 listen on OTA channel `production` |
 
-A default dispatch now goes **straight to the public** (10% staged rollout), so dispatch
+A default dispatch now goes **straight to every public user** (full rollout, `releaseStatus: completed`), so dispatch
 `profile: production` only for a deliberate public release, and pass `profile: closed` (testers) or
 `profile: preview` (pipeline check) explicitly otherwise. The tag train (`EAS_TAG_RELEASES_ENABLED`)
 is still off (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
