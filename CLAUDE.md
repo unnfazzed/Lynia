@@ -355,7 +355,7 @@ public the same day: <https://play.google.com/store/apps/details?id=zw.co.lynia>
 "LyniaGo: Food, Parcels by Bike", **v0.52.0**, "Updated on Oct 14, 2026", verified 2026-10-15). The
 production binary is **versionCode 47** (EAS build `e0e8c7f8`, commit `dbcb21f`), the `closed`-profile
 build promoted from *Closed testing* in Play Console — so **production phones are on OTA channel
-`preview`**, and every OTA published to `preview` now reaches the public as well as the testers. What
+`preview`**, and every OTA published to `preview` now reaches the public as well as the testers.
 The Play service account now has **Release to production** (owner, 2026-10-15), so a public build
 can go out as `profile: production` instead of `closed` + console promotion. Not yet proven: no
 `profile: production` submission has run, so verify the first one's submission reaches FINISHED on
@@ -366,8 +366,12 @@ to `preview`, and a phone still on vc 47 keeps listening on `preview` until it u
 submission ERRORs on permissions, that box is the first suspect. Still open from
 §8 step 3: `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below). Separately, Expo's
 `playstore_crashes` still fails with `invalid_grant: account not found` (re-checked 2026-10-15 after
-the permission change), so the key Expo holds for reading Play vitals is not the working one; use
-Play Console or Sentry for crashes until it is re-uploaded.
+the permission change). Cause found the same day: the Expo account `lyniago` holds two Google service
+account keys, the dead `id-play-publisher@lynia-500911` (suspended GCP project, added 2026-08-03) and
+the working `play-upload@lyniago-app` (key `8ec1c154`, the app's submit key). The fix is to delete the
+dead one in Expo, enable the *Google Play Developer Reporting API* in GCP project `lyniago-app`, and
+give `play-upload@` *View app information and download bulk reports* in Play Console. Until then use
+Play Console or Sentry for crashes.
 
 **Field signals — Sentry and PostHog are connected to Claude** (owner, 2026-10-15; claude.ai
 connectors, first wired 2026-10-14). Read crashes and analytics through them; do not ask the owner for

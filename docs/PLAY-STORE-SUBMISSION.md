@@ -22,8 +22,10 @@
 >   doubt; otherwise read the next closed submission's status before assuming testers got it.
 > - **Still open from §8 step 3:** set `EAS_TAG_RELEASES_ENABLED` (the tag train).
 > - **Expo's Play-vitals credential is still broken:** `playstore_crashes` returns `invalid_grant:
->   account not found` (re-checked 2026-10-15, after the permission change). Re-upload a key for
->   the working service account in Expo.
+>   account not found` (re-checked 2026-10-15, after the permission change). Cause: the Expo account
+>   holds a second, dead key, `id-play-publisher@lynia-500911` (suspended project). Delete it in Expo,
+>   enable the *Google Play Developer Reporting API* in `lyniago-app`, and give `play-upload@` *View app
+>   information and download bulk reports* in Play Console.
 > - **Sentry is live** and readable from Claude through the Sentry connector (org `lyniago`, project
 >   `lynia-mobile`); release builds vc 39–44 have reported events (checked 2026-10-15). PostHog (EU
 >   project `219333`) is connected the same way. The public binary reports `environment: preview`;
