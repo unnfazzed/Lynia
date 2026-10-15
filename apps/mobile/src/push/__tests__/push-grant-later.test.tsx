@@ -69,7 +69,7 @@ async function flush(): Promise<void> {
 }
 async function foreground(): Promise<void> {
   await act(async () => {
-    for (const l of [...mockAppStateListeners]) l("active");
+    for (const l of mockAppStateListeners) l("active");
     for (let i = 0; i < 6; i++) await Promise.resolve();
   });
 }

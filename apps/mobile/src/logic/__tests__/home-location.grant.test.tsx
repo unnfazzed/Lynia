@@ -59,7 +59,7 @@ async function settle(): Promise<void> {
 }
 async function foreground(): Promise<void> {
   await act(async () => {
-    for (const l of [...appStateListeners]) l("active");
+    for (const l of appStateListeners) l("active");
   });
   await settle();
 }
