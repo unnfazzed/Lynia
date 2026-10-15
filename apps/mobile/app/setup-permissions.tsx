@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { refreshHomeLocation } from "../src/logic/home-location";
 import { type CustomerSignupStep, readCustomerSignupSteps, signupNext } from "../src/logic/signup-permissions";
-import { readLocation, requestLocation, switchOnLocation } from "../src/permissions/location";
+import { readLocation, requestLocation, turnOnGps } from "../src/permissions/location";
 import { requestNotif } from "../src/permissions/notifications";
 import { markSignupPermsShown, noteCustNotifAsked } from "../src/permissions/store";
 import { requestPushRegistration } from "../src/push/push-kick";
@@ -37,7 +37,14 @@ export default function SetupPermissionsScreen(): React.ReactElement {
   const [busy, setBusy] = useState(false);
   const counted = useRef(false);
 
-  const leave = (): void => router.replace(next);
+  // Set once the screen has moved on. An OS prompt still open when "Not now" is tapped (a browser prompt can
+  // wait indefinitely) must not move the user a second time when it is finally answered.
+  const left = useRef(false);
+  const leave = (): void => {
+    if (left.current) return;
+    left.current = true;
+    router.replace(next);
+  };
 
   useEffect(() => {
     void markSignupPermsShown();
@@ -61,6 +68,7 @@ export default function SetupPermissionsScreen(): React.ReactElement {
   }, [step]);
 
   const advance = (answer: string): void => {
+    if (left.current) return;
     track(EVENTS.signupPermAnswer, { screen: step, answer });
     if (steps && idx + 1 < steps.length) setIdx(idx + 1);
     else leave();
@@ -77,8 +85,9 @@ export default function SetupPermissionsScreen(): React.ReactElement {
   const askLocation = run(async () => {
     const loc = await requestLocation();
     if (loc !== "granted" && loc !== "coarse") return loc;
-    // Allowed with the phone's location switched off: Google's one-tap dialog, then carry on either way.
-    if (!(await readLocation()).gps) await switchOnLocation();
+    // Allowed with the phone's location switched off: Google's one-tap dialog, then carry on either way. Not
+    // switchOnLocation(): declining that dialog must not send a new customer into the phone's Settings.
+    if (!(await readLocation()).gps) await turnOnGps();
     // Home may already be mounted under this screen (a web reload): let it pick up the new answer.
     refreshHomeLocation();
     return loc;

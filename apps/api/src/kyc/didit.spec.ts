@@ -459,6 +459,10 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
     // Warning / error level, or no level at all, still count.
     expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", "error"]))).toBe("liveness_failed");
     expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", undefined]))).toBe("liveness_failed");
+    // A strike or final code is never a note, whatever level it is labelled.
+    expect(extractDiditDeclineReason(withLevel(["POSSIBLE_DUPLICATED_USER", "information"]))).toBe("duplicate");
+    expect(extractDiditDeclineReason(withLevel(["DOCUMENT_TAMPERING_DETECTED", "info"]))).toBe("doc_tampered");
+    expect(extractDiditDeclineReason(withLevel(["MINIMUM_AGE_NOT_MET", "information"]))).toBe("underage");
   });
 
   // KYC-R26-13: under age is the one `final` decline (it locks at once), so it wins over everything — and its
