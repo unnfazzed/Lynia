@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.54.0](https://github.com/unnfazzed/Lynia/compare/v0.53.0...v0.54.0) (2026-10-15)
+
+
+### Features
+
+* **customer-web:** iPhone Add to Home Screen tip ([#1206](https://github.com/unnfazzed/Lynia/issues/1206)) ([842e757](https://github.com/unnfazzed/Lynia/commit/842e757b16e8a3eb758eae6722ba16e9ffc7ab4f))
+* **mobile:** ask location + notifications right after sign-up (D-109) ([#1211](https://github.com/unnfazzed/Lynia/issues/1211)) ([c3a2931](https://github.com/unnfazzed/Lynia/commit/c3a293122f3f74f2defad1933915e82bd54b810b))
+* **pricing:** every fare is a whole number of 50c, enforced end to end ([#1212](https://github.com/unnfazzed/Lynia/issues/1212)) ([4cd90a5](https://github.com/unnfazzed/Lynia/commit/4cd90a5444de0ab726e1d1834355c0cd375a1232))
+
+
+### Bug Fixes
+
+* **mobile:** turn R8 optimization back off; ship production at 100% ([#1203](https://github.com/unnfazzed/Lynia/issues/1203)) ([8df4dc6](https://github.com/unnfazzed/Lynia/commit/8df4dc6ab29a410774b320b49b6f0b3308c69257))
+* **mobile:** web location-blocked copy + no duplicated typed address ([#1208](https://github.com/unnfazzed/Lynia/issues/1208)) ([929ef48](https://github.com/unnfazzed/Lynia/commit/929ef481e7a9a976a2b60fbbe1539df9b2cad2fa))
+* review follow-ups for tonight's merges ([#1211](https://github.com/unnfazzed/Lynia/issues/1211), [#1213](https://github.com/unnfazzed/Lynia/issues/1213), [#1214](https://github.com/unnfazzed/Lynia/issues/1214)) ([#1217](https://github.com/unnfazzed/Lynia/issues/1217)) ([5c2ca33](https://github.com/unnfazzed/Lynia/commit/5c2ca3301252e6243850c507691ae2b5a654a78e))
+* **rider:** no food line over an empty board before the first jobs read lands ([#1215](https://github.com/unnfazzed/Lynia/issues/1215)) ([c3fe0f7](https://github.com/unnfazzed/Lynia/commit/c3fe0f7a9e5f09484c8c2320fd6f2beda4e453a2))
+
 ## [0.53.0](https://github.com/unnfazzed/Lynia/compare/v0.52.0...v0.53.0) (2026-10-15)
 
 
