@@ -86,6 +86,44 @@ export const LAUNCH_EDITS = [
     decision: "owner 2026-09-28: approved (D-42); report upstream so the next export carries it",
     from: ".biz-ill{width:100%;max-width:540px;",
     to: ".biz-ill{width:100%;height:auto;max-width:540px;",
+  },  // README TODO #1, resolved once the Play listing went public (2026-10-14). Each app button goes to the smart
+  // link /download (apps/website/worker.js) rather than straight to Play, so iPhone visitors reach the web app
+  // and desktop visitors the QR code. Same tab: the README's target="_blank" would open a second copy of this
+  // page on desktop. "Become a biker" goes straight to Play: the biker app is Android-only.
+  {
+    id: "download-header",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone, QR on desktop) (D-42)",
+    from: '<a class="btn b-g" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-g" href="/download"><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "download-hero-send",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone, QR on desktop) (D-42)",
+    from: '<a class="btn b-yel" href="#app"><i data-i="play"></i>Send a parcel</a>',
+    to: '<a class="btn b-yel" href="/download"><i data-i="play"></i>Send a parcel</a>',
+  },
+  {
+    id: "download-steps",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone, QR on desktop) (D-42)",
+    from: '<a class="btn b-ink" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-ink" href="/download"><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "download-app-section",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone, QR on desktop) (D-42)",
+    from: '<a class="btn b-yel" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-yel" href="/download"><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "become-biker",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: Become a biker goes to the Play listing; the biker app is Android-only (D-42)",
+    from: '<a class="btn b-vio" href="#app">Become a biker</a>',
+    to: '<a class="btn b-vio" href="https://play.google.com/store/apps/details?id=zw.co.lynia&amp;referrer=utm_source%3Dlyniago.com%26utm_medium%3Dwebsite%26utm_campaign%3Dbiker">Become a biker</a>',
   },
 ];
 
@@ -118,6 +156,9 @@ const EXTRA_FILES = new Set([
  * us link was removed (owner, 2026-09-30); kept so a future placeholder link has a sanctioned home.
  */
 const INTENTIONAL_404 = new Set([]);
+
+/** Paths the site Worker (apps/website/worker.js) answers itself, with no file behind them. */
+const WORKER_ROUTES = new Set(["/download"]);
 
 /**
  * Every <script> element: group 1 = attributes, group 2 = text. Case-insensitive, and lenient about
@@ -332,7 +373,7 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
           fail(`${page}: "${ref}" is a same-page anchor on a page without that id.`);
           continue;
         }
-        if (INTENTIONAL_404.has(path)) continue;
+        if (INTENTIONAL_404.has(path) || WORKER_ROUTES.has(path)) continue;
         const target = path.startsWith("/") ? path.slice(1) : posix.normalize(posix.join(posix.dirname(page), path));
         if (!files.has(target === "" ? "index.html" : target)) fail(`${page}: "${ref}" does not resolve to a file in the site.`);
       }

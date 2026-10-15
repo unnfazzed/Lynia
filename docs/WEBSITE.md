@@ -28,11 +28,12 @@ byte-identical to the handoff, except for:
 |---|---|
 | `packages/design/handoff/lyniago-website/` | The handoff, **verbatim**: `README.md` (the spec), `CLAUDE-CODE-PROMPT.md`, `reference/LandingPage-reference-offline.html` (the approved design with every asset inlined) and `site/`. Current export: 2026-09-28, the "mobile optimisation" revision. |
 | `apps/website/site/` | The deploy root: the handoff's `site/` plus the launch edits and extra files. |
-| `apps/website/wrangler.jsonc` | The site Worker (`lyniago-website`): assets only, Custom Domain `lyniago.com`, unknown paths get `404.html`. |
+| `apps/website/wrangler.jsonc` | The site Worker (`lyniago-website`): static assets, Custom Domain `lyniago.com`, unknown paths get `404.html`. Only `/download` runs a script (`run_worker_first`). |
+| `apps/website/worker.js`, `download.js` (+ `worker.test.mjs`) | The smart download link `/download` (below). |
 | `apps/website/www-redirect/` | The `lyniago-www-redirect` Worker: `www.lyniago.com/*` → 301 → `https://lyniago.com/*`. |
 | `apps/website/site/_headers` | Cache and security headers (below). |
 | `apps/website/og-image/` | Source and renderer for `assets/og-image.png`, built to the handoff README's TODO #2 spec. |
-| `apps/website/smoke.sh` | Post-deploy checks: the page, fetched as a browser would, is byte-identical to the repo, every asset loads with the right type and cache header, `/about` is a 404, and `www` and `http` redirect. |
+| `apps/website/smoke.sh` | Post-deploy checks: the page, fetched as a browser would, is byte-identical to the repo, every asset loads with the right type and cache header, `/about` is a 404, `www` and `http` redirect, and `/download` sends Android, iPhone and desktop to the right place. |
 | `scripts/check-website.mjs` (+ `.test.mjs`) | The CI guard. `--write` regenerates `404.html` and the CSP hashes. |
 | `tools/website-parity/` | Pixel harness: renders the reference and the site (local or live) at the QA widths and diffs them. |
 | `.github/workflows/deploy-website.yml` | The deploy: check → `wrangler deploy` (both Workers) → smoke. |
@@ -41,12 +42,39 @@ byte-identical to the handoff, except for:
 
 | # | Item | Decision (owner, 2026-09-28) | Status |
 |---|---|---|---|
-| 1 | Play Store link | Keep `href="#app"` as designed while the listing is closed-testing only (the public listing 404s). | Open, **now unblocked** — the listing is public since 2026-10-14: add one `LAUNCH_EDITS` entry per button (the three "Download the app", "Send a parcel" and "Become a rider") pointing at `https://play.google.com/store/apps/details?id=zw.co.lynia` with `target="_blank" rel="noopener"`. "How it works" stays `#riders`. |
+| 1 | Play Store link | Kept `href="#app"` while the listing was closed-testing only. Once it went public (2026-10-14), the owner chose (2026-10-15) one smart link for the app buttons instead of a plain Play link: Android → Play, iPhone → the web app's Add to Home Screen tip, desktop → a QR code. | Done: the three "Download the app" buttons and "Send a parcel" go to `/download` (`LAUNCH_EDITS` `download-*`), same tab. "Become a biker" goes straight to Play (`become-biker`): the biker app is Android-only. "How it works" stays `#riders`. Two designs still to come (below). |
 | 2 | OG share image | Built to the README spec (green, mark + wordmark, "Stay home. We'll bring it."). | Done: `assets/og-image.png` |
 | 3 | About us | Launched without it; then **removed from the footer** (owner, 2026-09-30, `LAUNCH_EDITS` `about-removed`). `/about` still serves the 404 page like any unknown path. | Done. |
 | 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy`; Terms → `https://api.lyniago.com/legal/terms` (owner, 2026-09-30, D-49). | Done. |
 | 5 | Analytics | None. | No trackers, no cookies. |
 | — | Menu buttons stop short on phones (found in review) | Fix it: `width`/`height` on the lazy scooter illustration plus `.biz-ill{height:auto}` (`LAUNCH_EDITS` `biz-ill-*`). | Done. Report upstream so the next export carries it. |
+
+## Smart download link: `/download`
+
+Every app button on the page links to `https://lyniago.com/download` (owner, 2026-10-15). The same link
+works anywhere else: WhatsApp, Instagram, flyers. `apps/website/worker.js` answers it with a `302` chosen
+by the visitor's User-Agent:
+
+| Visitor | Goes to |
+|---|---|
+| Android | `https://play.google.com/store/apps/details?id=zw.co.lynia&referrer=utm_source=lyniago.com…` (the referrer shows website installs in Play Console → Statistics → acquisition) |
+| iPhone / iPod | `https://app.lyniago.com/?install=1`, the customer web app (`docs/CUSTOMER-WEB.md`) |
+| Desktop, and iPads (iPadOS 13+ Safari claims to be a Mac) | `https://lyniago.com/#app` |
+
+The answer is `Cache-Control: private, no-store` and `Vary: User-Agent`, so no cache hands one device's
+answer to another. Cloudflare runs the script for `/download` only (`run_worker_first`); everything else
+stays a free static-asset request. To change a destination, edit `apps/website/download.js` and its test.
+
+**Still to design (owner):**
+
+- **The QR code for desktop.** Desktop visitors land on the `#app` section. A QR code there, pointing at
+  `https://lyniago.com/download`, arrives as a new handoff export (the rule above), so the phone that scans
+  it gets the right store.
+- **The Add to Home Screen tip on iPhone.** The web app already installs (manifest, icons, iPhone Home
+  Screen tags) but draws no tip, and the app's pixel-parity rule forbids an undrawn screen. Until a mock
+  exists, `?install=1` is ignored and iPhone visitors land on the web app's Home. When the tip is designed,
+  it shows when `install=1` is present and the page is not already running from the Home Screen
+  (`navigator.standalone`).
 
 ## Search and AI visibility
 
