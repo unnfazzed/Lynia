@@ -108,6 +108,9 @@ jobs:
           EXPO_PUBLIC_LYNIA_WEB: "1"
           EXPO_NO_WEB_SETUP: "1"
           EXPO_PUBLIC_GOOGLE_PLACES_KEY: ${{ vars.CUSTOMER_WEB_GOOGLE_KEY }}
+          # Empty until the iPhone app is on the App Store; set the Variable to switch the Add to Home Screen
+          # tip to its "Delivered" sheet (docs/CUSTOMER-WEB.md § Add to Home Screen tip, ledger D-108).
+          EXPO_PUBLIC_APP_STORE_URL: ${{ vars.APP_STORE_URL }}
         run: pnpm exec expo export --platform web --output-dir ../customer-web/dist
 
       - name: Finish the build (Home Screen manifest, icons, headers)

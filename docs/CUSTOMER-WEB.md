@@ -28,6 +28,29 @@ Web-only differences from the phone app: ledger D-81 in [`DESIGN-DEVIATIONS.md`]
   screens sized from `useWindowDimensions` fit the column; `body` is transformed so `position: fixed` sheets and
   modals stay inside it. Phones (≤ 480px) are unchanged.
 
+## Add to Home Screen tip (iPhone)
+
+Handoff `packages/design/handoff/download-qr-install-tip-2026-10/` §2 (ledger D-108, owner 2026-10-15). iPhone
+visitors arrive from lyniago.com's app buttons (`/download`) as `https://app.lyniago.com/?install=1`.
+
+- **Capture:** `app/_layout.tsx` calls `captureInstallParam()` (`src/ui/install/install-param.ts`) as the app
+  loads, because `app/index.tsx`'s boot redirect drops the query string. It remembers the flag for the tab
+  (sessionStorage `lyniago.installTip.pending`) and strips `install=1` from the URL at once.
+- **Rules:** `installTipSurface()` (`src/logic/install-tip.ts`) is the handoff's "When it shows" table, unit-tested
+  row by row. iPhone/iPad **Safari** only (not Chrome/Firefox/Edge on iOS, not in-app web views), never when
+  opened from the Home Screen (standalone), never on the phone apps. The sheet shows on the download link;
+  after it is dismissed a pin row stays on Home until its own ✕ (owner: only for people who came through the
+  link). Dismissals live in localStorage under the handoff's keys (`lyniago.installTip.dismissed`,
+  `lyniago.installPin.dismissed`, `lyniago.appStoreTip.dismissed`), outside the `lynia.cache:` prefix so
+  sign-out doesn't bring the tip back.
+- **UI:** `InstallTipSheet` (default, small below 360 wide, launched) and `InstallPinRow` in `src/ui/install/`,
+  mounted on Home. Copy is `src/ui/install/copy.ts`, byte-identical to the handoff's (a test enforces it).
+- **When the iPhone app launches:** set the repo Variable `APP_STORE_URL` to the App Store link (the deploy
+  workflow passes it to the build as `EXPO_PUBLIC_APP_STORE_URL`) and redeploy. iPhone Safari users then get the "Delivered" sheet once, with "Get it on the App
+  Store", instead of the tip.
+- **Screenshot sheet:** `node tools/parity/shoot-install-tip.mjs --out docs/parity/INSTALL-TIP-<date>`
+  (handoff frames beside the real Home in the web build). Latest: `docs/parity/INSTALL-TIP-2026-10-15.png`.
+
 ## One-time setup (owner)
 
 1. **Google key** "LyniaGo Customer Web": Websites restriction `https://app.lyniago.com/*`; APIs: Maps

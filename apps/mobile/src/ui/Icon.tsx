@@ -87,6 +87,10 @@ import Sun from "lucide-react-native/dist/cjs/icons/sun";
 import Battery from "lucide-react-native/dist/cjs/icons/battery";
 import Upload from "lucide-react-native/dist/cjs/icons/upload";
 import RotateCcw from "lucide-react-native/dist/cjs/icons/rotate-ccw";
+// The web app's Add to Home Screen tip (handoff download-qr-install-tip-2026-10 §2).
+import Share from "lucide-react-native/dist/cjs/icons/share";
+import SquarePlus from "lucide-react-native/dist/cjs/icons/square-plus";
+import Ellipsis from "lucide-react-native/dist/cjs/icons/ellipsis";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -181,6 +185,9 @@ const ICONS = {
   upload: Upload,
   // Customer brief 09 (ledger D-97): R8e's Retake.
   "rotate-ccw": RotateCcw,
+  share: Share,
+  "square-plus": SquarePlus,
+  ellipsis: Ellipsis,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

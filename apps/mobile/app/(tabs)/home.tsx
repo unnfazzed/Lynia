@@ -52,6 +52,9 @@ import { SoftUpdateBanner } from "../../src/ui/firstrun/SoftUpdateBanner";
 import { SmBtn } from "../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../src/ui/rider/copy";
 import { ServiceSoonSheet, type SoonService } from "../../src/ui/home/ServiceSoonSheet";
+import { InstallPinRow } from "../../src/ui/install/InstallPinRow";
+import { InstallTipSheet } from "../../src/ui/install/InstallTipSheet";
+import { useInstallTip } from "../../src/ui/install/useInstallTip";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 import { prewarmGoogleMapsOnWeb } from "../../src/web/maps-prewarm";
 
@@ -359,6 +362,9 @@ export default function LauncherHomeScreen(): React.ReactElement {
   // First Run v2 PC1–PC7 (ledger D-82): H6 "Use my location" and H5 "Use my current location" open the
   // same location ask — PC1 explains before the Android dialog; granted fills the header + PC7 toast.
   const locationAsk = useLocationAskSheet(location, () => openLocation(true));
+  // The customer web app's Add to Home Screen tip (handoff download-qr-install-tip-2026-10 §2): iPhone
+  // Safari only, from lyniago.com/download. Always off on the phone apps.
+  const installTip = useInstallTip();
 
   return (
     // A plain root, not AppScreen: the mint header owns the top inset itself (it paints behind the
@@ -387,6 +393,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
             onSearch={() => router.push("/food/search?scope=all")}
           />
         </BootEntrance>
+        {installTip.pin ? <InstallPinRow onHow={installTip.reopen} onDismiss={installTip.dismissPin} /> : null}
         <SoftUpdateBanner tone="forest" />
         {riderJob && riderJobStage ? (
           // Rider v2 C5 (D-54): a rider in customer view mid-job — the way back to the job.
@@ -478,6 +485,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
       />
       {locationAsk.sheet}
       <ServiceSoonSheet visible={soon != null} service={soon ?? "shops"} onClose={() => setSoon(null)} />
+      {/* Held until the splash has handed off, so the sheet rises over Home, not over the splash. */}
+      <InstallTipSheet variant={bootSettled ? installTip.sheet : null} onDismiss={installTip.dismissSheet} onAppStore={installTip.openAppStore} />
     </View>
   );
 }
