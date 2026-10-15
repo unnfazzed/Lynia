@@ -7,8 +7,10 @@
 #  1. waits (up to ~10 min) for the Custom Domain's DNS + certificate on a first deploy
 #  2. the home page, fetched as a browser would, is byte-identical to apps/website/site/index.html
 #     (nothing on the edge rewrote it)
-#  3. every asset the home page references loads, with the right type and the immutable cache header
-#  4. an unknown path (/about, no longer linked) serves the 404 page with a 404 status; www and plain http redirect to https://lyniago.com
+#  3. every file under site/assets/ loads, with the right type and the immutable cache header; a 404
+#     is re-fetched with a cache-busting query to tell an edge-cached 404 (purge it) from a missing file
+#  4. an unknown path (/about, no longer linked) serves the 404 page with a 404 status, and a missing
+#     path under /assets/ is not cached as immutable; www and plain http redirect to https://lyniago.com
 #  5. /download (the app buttons) sends Android to Play, iPhone to the web app and desktop to /#app, uncached
 set -euo pipefail
 
@@ -66,9 +68,10 @@ fi
 enc=$(header "$(curl -sS -D - -o /dev/null "${BROWSER[@]}" -H 'Accept-Encoding: br, gzip' "$ORIGIN/")" content-encoding)
 [ -n "$enc" ] && ok "/ is compressed ($enc)" || err "/ is served uncompressed"
 
-# 3. Every asset the page references (the launch checklist's "no 404s").
-refs=$(grep -oE '(src|href)="assets/[^"]+"|url\("assets/[^"]+"\)' "$SITE_DIR/index.html" | grep -oE 'assets/[^"]+' | sort -u)
-refs="$refs"$'\n'"assets/og-image.png"
+# 3. Every file under site/assets/ (the launch checklist's "no 404s"). This probes one edge location,
+# the runner's, so it cannot see a 404 another location cached; _headers keeps such a 404 out of the
+# cache (docs/WEBSITE.md § Hosting). When this location does serve one, say which kind it is.
+refs=$(cd "$SITE_DIR" && find assets -type f | sort)
 count=0
 while read -r ref; do
   [ -n "$ref" ] || continue
@@ -84,11 +87,20 @@ while read -r ref; do
     *.png) want=image/png ;;
     *) want="" ;;
   esac
-  [ "$status" = 200 ] || { err "$ref → HTTP $status"; continue; }
+  if [ "$status" != 200 ]; then
+    edge="cf-cache-status $(header "$h" cf-cache-status), cf-ray $(header "$h" cf-ray), cache-control '$cache'"
+    fresh=$(curl -sS -o /dev/null -w '%{http_code}' "$ORIGIN/$ref?smoke=$(date +%s)")
+    if [ "$status" = 404 ] && [ "$fresh" = 200 ]; then
+      err "$ref → a CACHED 404 at this edge location ($edge); with a cache-busting query it is 200. Purge the URL: docs/WEBSITE.md § Deploying, verifying, rolling back."
+    else
+      err "$ref → HTTP $status ($edge; with a cache-busting query: HTTP $fresh)"
+    fi
+    continue
+  fi
   [ -z "$want" ] || [[ "$type" == "$want"* ]] || err "$ref content-type $type (want $want)"
   [[ "$cache" == *immutable* ]] || err "$ref cache-control '$cache' (want immutable)"
 done <<< "$refs"
-ok "$count referenced assets checked"
+ok "$count assets checked"
 
 # 3b. The email-signature image: mail clients hotlink it at this exact URL (no redirect, image/png).
 h=$(curl -sS -D - -o /dev/null "$ORIGIN/email/lyniago-signature-logo-tile.png")
@@ -107,6 +119,19 @@ h=$(curl -sS -D - -o "$page404" "${BROWSER[@]}" "$ORIGIN/about")
 status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
 [ "$status" = 404 ] && grep -q "Back home" "$page404" && ok "/about serves the 404 page" \
   || err "/about: HTTP $status (want 404 with the site's 404 page)"
+
+# A missing asset must not be cached: an edge that 404s a just-deployed file would otherwise keep
+# serving that 404 for a year (2026-10-15). A fresh name each run, so no earlier probe is cached.
+missing="assets/smoke-missing-$(date +%s)-$RANDOM.svg"
+h=$(curl -sS -D - -o /dev/null "$ORIGIN/$missing")
+status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
+cache=$(header "$h" cache-control)
+maxage=$(printf '%s' "$cache" | grep -oiE 'max-age=[0-9]+' | cut -d= -f2 || true)
+if [ "$status" = 404 ] && [[ "$cache" != *immutable* ]] && [ "${maxage:-0}" -le 300 ]; then
+  ok "a missing /assets/ path is a 404 that is not cached ('$cache')"
+else
+  err "/$missing: HTTP $status, cache-control '$cache' (want 404 with no immutable and max-age <= 300). A _headers rule with a wildcard under /assets/ sets Cache-Control (docs/WEBSITE.md § Hosting)."
+fi
 
 if [ "$ORIGIN" = "https://lyniago.com" ]; then
   www_ok() {

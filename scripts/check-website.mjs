@@ -24,10 +24,15 @@
  *      page, an external URL, or an INTENTIONAL_404 path.
  *   5. IMMUTABLE ASSETS (only when BASE_REF is set, i.e. on a PR). site/assets/* is served with a
  *      one-year immutable cache, so a changed asset must get a new name. Editing one in place fails.
+ *   6. CACHE RULES. _headers gives each file under site/assets/ its own exact immutable rule (the
+ *      generated block between "# BEGIN immutable assets" and "# END immutable assets"), and no
+ *      wildcard rule sets Cache-Control. _headers matches by path, not status, so a wildcard cache rule
+ *      also applies to the 404 page served at a missing path, and Cloudflare's edge then caches that
+ *      404 for as long as the rule says (docs/WEBSITE.md § Hosting).
  *
  * Usage:
  *   node scripts/check-website.mjs           check (CI)
- *   node scripts/check-website.mjs --write   regenerate site/404.html and the CSP hashes, then check
+ *   node scripts/check-website.mjs --write   regenerate site/404.html, the CSP hashes and the asset cache rules, then check
  *   BASE_REF=origin/main node scripts/check-website.mjs   also run the immutable-asset check
  * Tests: node --test scripts/check-website.test.mjs
  */
@@ -233,6 +238,28 @@ const WORKER_ROUTES = new Set(["/download"]);
  * way a browser runs it is seen by the CSP check.
  */
 const SCRIPT_TAG = /<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi;
+
+/** The cache header every file under site/assets/ gets (the handoff README, "Deploy" §4-5). */
+export const IMMUTABLE = "Cache-Control: public, max-age=31536000, immutable";
+const ASSET_RULES = /(# BEGIN immutable assets\n)([\s\S]*?)(# END immutable assets)/;
+/** Cloudflare's limit on rules in one _headers file. */
+const MAX_HEADER_RULES = 100;
+
+/** The generated _headers block: one exact rule per asset file (paths relative to site/). */
+export function assetCacheRules(files) {
+  return files.map((f) => `/${f}\n  ${IMMUTABLE}\n`).join("\n");
+}
+
+/** _headers as rules: [{ path, headers: ["Name: value", …] }]. Comments and blank lines are skipped. */
+export function parseHeaders(text) {
+  const rules = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    if (/^\s/.test(line)) rules.at(-1)?.headers.push(line.trim());
+    else rules.push({ path: line.trim(), headers: [] });
+  }
+  return rules;
+}
 
 const read = (p) => readFileSync(p, "utf8");
 const sha256 = (buf) => createHash("sha256").update(buf).digest();
@@ -472,12 +499,49 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
     }
   }
 
+  // ------------------------------------------------------------ 6. cache rules never match a missing path
+  function checkCacheRules() {
+    const path = join(SITE, "_headers");
+    if (!ASSET_RULES.test(read(path))) {
+      fail(`${SITE_REL}/_headers has no "# BEGIN immutable assets" … "# END immutable assets" block.`);
+      return;
+    }
+    const assets = walk(join(SITE, "assets")).map((f) => `assets/${f}`);
+    for (const f of assets) {
+      // A _headers path treats `*` as a splat and `:name` as a placeholder, either of which would
+      // also match paths that do not exist.
+      if (!/^[A-Za-z0-9._/-]+$/.test(f)) fail(`${SITE_REL}/${f}: an asset name may only use letters, digits, ".", "_", "-" and "/".`);
+    }
+    const want = assetCacheRules(assets);
+    if (write) writeFileSync(path, read(path).replace(ASSET_RULES, (_, a, __, b) => `${a}${want}${b}`));
+    if (read(path).match(ASSET_RULES)[2] !== want) {
+      fail(
+        `${SITE_REL}/_headers: the immutable asset rules do not match the files in site/assets/. ` +
+          "Run: node scripts/check-website.mjs --write",
+      );
+    }
+    const rules = parseHeaders(read(path));
+    for (const rule of rules) {
+      if (/[*:]/.test(rule.path) && rule.headers.some((h) => /^cache-control\s*:/i.test(h))) {
+        fail(
+          `${SITE_REL}/_headers: "${rule.path}" sets Cache-Control with a wildcard. _headers matches by path, not ` +
+            "status, so the 404 page served at a missing path would get it too and be cached at the edge. Give " +
+            "each file its own exact rule.",
+        );
+      }
+    }
+    if (rules.length > MAX_HEADER_RULES) {
+      fail(`${SITE_REL}/_headers has ${rules.length} rules; Cloudflare allows at most ${MAX_HEADER_RULES}.`);
+    }
+  }
+
   try {
     checkParity();
     check404();
     checkCsp();
     checkReferences();
     checkImmutableAssets();
+    checkCacheRules();
   } catch (e) {
     fail(e.message);
   }
@@ -492,6 +556,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
   console.log(
     `check-website: OK — ${SITE_REL} matches the handoff (${LAUNCH_EDITS.length} launch edits), 404.html and CSP ` +
-      "hashes are current, all references resolve.",
+      "hashes are current, all references resolve, every asset has its own cache rule.",
   );
 }

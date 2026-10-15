@@ -168,7 +168,8 @@ jobs:
   # lyniago.com marketing site (apps/website, docs/WEBSITE.md) — the design handoff shipped AS-IS.
   # Fails when the deployed site drifts from packages/design/handoff/lyniago-website beyond the
   # owner-approved launch edits, when the derived 404 page or CSP hashes are stale, when a link does
-  # not resolve, or (PRs only) when an immutable-cached asset is edited in place. Also proves both
+  # not resolve, when an asset lacks its exact cache rule in _headers, or (PRs only) when an
+  # immutable-cached asset is edited in place. Also proves both
   # Cloudflare Worker configs build (wrangler --dry-run needs no credentials).
   website:
     name: website · handoff parity + hosting config
