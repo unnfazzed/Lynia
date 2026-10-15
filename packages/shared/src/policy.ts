@@ -140,14 +140,14 @@ export const COMMISSION = {
    */
   lowBalanceBlockBelow: 0,
   /** Minimum top-up (USD) — the floor for the top-up flow, and the per-active-rider grace credit size. */
-  minTopUp: 5,
+  minTopUp: 3,
   /** Maximum top-up (USD) per request — clamps a single prepaid deposit. */
   maxTopUp: 50,
   /**
    * Grace / starting credit (USD) granted once per active rider at the flip, so flip day doesn't
    * instantly gate the whole fleet offline at a $0 balance below the floor. Equals {@link COMMISSION.minTopUp}.
    */
-  graceCredit: 5,
+  graceCredit: 3,
   /**
    * WD-012 (docs/KNOWN_BUGS.md DOC-16-04 / docs/archive/FRAUD-REVIEW.md P0-2): the COMMISSION-BASIS floor, as a
    * fraction of `suggestedFare` (the system's own fair-price anchor — see pricing.ts). `agreedFare` is
