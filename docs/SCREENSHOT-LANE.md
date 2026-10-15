@@ -40,6 +40,7 @@ and shoots the matching handoff frame. Its header comment gives the exact comman
 | `shoot-notifications-v1.mjs` | `notifications-v1` | D-66 | Notifications |
 | `shoot-merchant-v2.mjs` | `merchant-v2` | D-77 | merchant web app |
 | `shoot-merchant-mobile.mjs` | `merchant-mobile` | D-48 | merchant screens merchant-v2 doesn't redraw |
+| `shoot-install-tip.mjs` | `download-qr-install-tip-2026-10` (§2) | D-108 | Home in the customer web build, iPhone Safari |
 
 Mobile scripts need no server: the app renders through react-native-web. Example:
 

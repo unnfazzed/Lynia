@@ -35,6 +35,7 @@ import { RevealCorners } from "../src/boot/RevealCorners";
 import { RiderRouteGate } from "../src/rider-route-gate";
 import ForceUpdateScreen from "./force-update";
 import { isCustomerWebBuild } from "../src/web-build";
+import { captureInstallParam } from "../src/ui/install/install-param";
 
 /**
  * EVERY STATEMENT IN THIS BLOCK RUNS WHERE NOTHING CAN CATCH IT (MOB-BOOT-04,
@@ -94,6 +95,12 @@ bootStep(() => SplashScreen.setOptions({ fade: false, duration: 0 }));
 // actually depended on anything. See src/boot/prewarm.ts for the full shape of that bug.
 bootStep(prewarmFonts);
 bootStep(prewarmBootReads);
+
+// The customer web app's Add to Home Screen tip (handoff download-qr-install-tip-2026-10 §2) is opened by
+// `?install=1`, which index.tsx's boot redirect would drop: remember it for this tab now, before routing.
+bootStep(() => {
+  if (isCustomerWebBuild()) captureInstallParam();
+});
 
 /**
  * Syncs the device's FCM token with the signed-in profile. Renders nothing; lives under AuthProvider and

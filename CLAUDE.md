@@ -191,6 +191,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   (After Send v2 18d/18e/18b/18f), the venue's note on D3b (D3g), the code-changed CodeCard (2.14b–d) and removing a
   prescription page (R8c–R8e) align to `packages/design/handoff/customer-briefs-06-09/` (ledger D-97, owner
   2026-10-12). They add states to existing screens. Strings come from its `copy.ts`, verbatim.
+- **The web app's iPhone install tip follows its own handoff (`handoff/download-qr-install-tip-2026-10/`).** The
+  Add to Home Screen sheet, its small/launched states and the Home pin row (`src/ui/install/*`, customer web build
+  only) align to §2 of that handoff (ledger D-108, owner 2026-10-15). Its §1, the website's QR popup, is website
+  launch edits (D-42). Strings come from `src/ui/install/copy.ts` (the handoff's `copy.ts`, byte-identical).
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July
