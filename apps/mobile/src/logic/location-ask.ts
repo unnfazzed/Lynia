@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { type LocState, openPhoneSettings, readLocation, requestLocation, turnOnGps, useOnAppActive } from "../permissions/location";
+import { type LocState, openPhoneSettings, readLocation, requestLocation, switchOnLocation, useLocationReadyWatch, useOnAppActive } from "../permissions/location";
 import type { HomePlace } from "./home-location";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,8 @@ export function useLocationAsk({
     void (async () => {
       try {
         if (now === "gps") {
-          if (await turnOnGps()) {
+          // Google's one-tap dialog; the Location screen on phones without it (the watch below carries on).
+          if (await switchOnLocation()) {
             const { loc, gps } = await readLocation();
             go(loc, gps);
           }
@@ -132,6 +133,11 @@ export function useLocationAsk({
     void readLocation().then(({ loc, gps }) => {
       if (locationStep(loc, gps) !== now) go(loc, gps);
     });
+  });
+
+  // PC6: the switch turned on from the quick-settings shade (the app never leaves the foreground) — carry on.
+  useLocationReadyWatch(sheet === "gps", () => {
+    void readLocation().then(({ loc, gps }) => go(loc, gps));
   });
 
   return { sheet, busy, start, primary, alt, close };

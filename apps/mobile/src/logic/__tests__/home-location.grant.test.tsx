@@ -151,3 +151,29 @@ describe("home location · a grant after mount", () => {
     expect(apis.home!.source).toBe("none");
   });
 });
+
+describe("home location · the location switch turned on while the screen is open", () => {
+  it("re-detects by itself once the switch is on — no tap, no leaving the app (the quick-settings shade)", async () => {
+    jest.useFakeTimers();
+    try {
+      const gps = Location.hasServicesEnabledAsync as jest.Mock;
+      gps.mockResolvedValue(false);
+      getPerm.mockResolvedValue(GRANTED);
+      current.mockRejectedValue(new Error("location services off"));
+      await mount("home");
+      await settle();
+      expect(apis.home!.source).toBe("none");
+
+      gps.mockResolvedValue(true);
+      current.mockResolvedValue(LIVE);
+      await act(async () => {
+        jest.advanceTimersByTime(3_000);
+      });
+      await settle();
+
+      expect(apis.home!.label).toBe("12 Lanark Rd");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

@@ -39,6 +39,10 @@ let mockLocPermission: "granted" | "denied" | "undetermined" = "granted";
 /** False = the OS will no longer show the dialog (blocked). */
 let mockLocCanAskAgain = true;
 let mockLocFixFails = false;
+/** The phone's location switch, and Google's one-tap "turn on device location" dialog (accepted or not). */
+let mockGpsOn = true;
+let mockGpsDialogAccepts = true;
+let mockGpsDialogs = 0;
 /** A fresh fix that never arrives (a cold GPS indoors). */
 let mockLocFixHangs = false;
 /** The phone's cached position (`getLastKnownPositionAsync`), or null. */
@@ -75,6 +79,12 @@ jest.mock("expo-location", () => ({
     return { remove: () => undefined };
   },
   reverseGeocodeAsync: async () => [],
+  hasServicesEnabledAsync: async () => mockGpsOn,
+  enableNetworkProviderAsync: async () => {
+    mockGpsDialogs += 1;
+    if (!mockGpsDialogAccepts) throw new Error("declined");
+    mockGpsOn = true;
+  },
   Accuracy: { Balanced: 3 },
 }));
 jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn(), primeKycCamera: jest.fn(async () => true) }));
@@ -296,6 +306,9 @@ afterEach(() => {
   mockLocCanAskAgain = true;
   mockLocFixFails = false;
   mockLocFixHangs = false;
+  mockGpsOn = true;
+  mockGpsDialogAccepts = true;
+  mockGpsDialogs = 0;
   mockLastKnown = null;
   mockPermissionAsks = 0;
   mockBooting = false;
@@ -1539,6 +1552,64 @@ describe("biker board — the 8c mint header (owner 2026-08-17)", () => {
     expect(mockSetOnline).toHaveBeenCalledTimes(2);
     expect(mockSetOnline.mock.calls[1]).toEqual([true, { lat: -17.83, lng: 31.05 }]);
     expect(treeText(activeTree)).not.toContain("Can't find your location");
+  });
+
+  it("location switch off: 'Open location settings' turns it on in one tap (Google's dialog), and the shift starts with a fix", async () => {
+    const { Linking } = jest.requireActual<typeof import("react-native")>("react-native");
+    const openSettings = jest.spyOn(Linking, "openSettings").mockResolvedValue(undefined);
+    mockGpsOn = false;
+    mockLocFixFails = true;
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "Can't find your location.", "location_required"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain("Can't find your location");
+
+    mockLocFixFails = false;
+    const open = activeTree.root.findAll((n) => n.props.label === "Open location settings" && typeof n.props.onPress === "function")[0];
+    await act(async () => {
+      open!.props.onPress();
+    });
+    await settle();
+    await settle();
+
+    expect(mockGpsDialogs).toBe(1);
+    expect(openSettings).not.toHaveBeenCalled();
+    expect(mockSetOnline.mock.calls.at(-1)).toEqual([true, { lat: -17.83, lng: 31.05 }]);
+    expect(treeText(activeTree)).not.toContain("Can't find your location");
+    openSettings.mockRestore();
+  });
+
+  it("location switch off and the one-tap dialog declined or missing (Huawei): opens the phone's Location screen", async () => {
+    const { Linking } = jest.requireActual<typeof import("react-native")>("react-native");
+    const { Platform } = jest.requireActual<typeof import("react-native")>("react-native");
+    const os = jest.replaceProperty(Platform, "OS", "android");
+    const sendIntent = jest.spyOn(Linking, "sendIntent").mockResolvedValue(undefined);
+    mockGpsOn = false;
+    mockGpsDialogAccepts = false;
+    mockLocFixFails = true;
+    mockSetOnline.mockRejectedValueOnce(new ApiError(403, "Can't find your location.", "location_required"));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("o-1")]);
+
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const open = activeTree.root.findAll((n) => n.props.label === "Open location settings" && typeof n.props.onPress === "function")[0];
+    await act(async () => {
+      open!.props.onPress();
+    });
+    await settle();
+
+    expect(mockGpsDialogs).toBe(1);
+    expect(sendIntent).toHaveBeenCalledWith("android.settings.LOCATION_SOURCE_SETTINGS");
+    sendIntent.mockRestore();
+    os.restore();
   });
 
   it("the location-denied wall offers no shift control — there is no shift to end", async () => {

@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { classifyLocation, type LocState, useOnAppActive } from "../permissions/location";
+import { classifyLocation, LOCATION_WATCH_MS, type LocState, readGps, useOnAppActive } from "../permissions/location";
 import { withTimeout } from "../util";
 
 /**
@@ -311,13 +311,15 @@ interface Store {
   run: Promise<void> | null;
   /** A refresh asked for while `run` was in flight (a grant landed mid-chain): run once more after it. */
   rerun: boolean;
+  /** Polling the location switch after a detection found it off (see {@link watchForSwitch}). */
+  switchWatch: ReturnType<typeof setInterval> | null;
   listeners: Set<() => void>;
 }
 
 const INITIAL_SNAPSHOT: Snapshot = { place: null, source: "none", locating: true, denied: false };
 
 function newStore(): Store {
-  return { snap: INITIAL_SNAPSHOT, manual: false, gen: 0, pickSeq: 0, detectedAt: null, run: null, rerun: false, listeners: new Set() };
+  return { snap: INITIAL_SNAPSHOT, manual: false, gen: 0, pickSeq: 0, detectedAt: null, run: null, rerun: false, switchWatch: null, listeners: new Set() };
 }
 
 const stores: Record<Face, Store> = { customer: newStore(), detect: newStore() };
@@ -340,6 +342,7 @@ export function resetHomeLocationCache(): void {
     store.detectedAt = null;
     store.run = null;
     store.rerun = false;
+    stopSwitchWatch(store);
     publish(store, INITIAL_SNAPSHOT);
   }
 }
@@ -369,6 +372,28 @@ function ensureDetection(face: Face, queue = false): void {
       ensureDetection(face);
     }
   });
+}
+
+function stopSwitchWatch(store: Store): void {
+  if (store.switchWatch) clearInterval(store.switchWatch);
+  store.switchWatch = null;
+}
+
+/**
+ * The permission is granted but the phone's location switch is off, so the fix failed. Re-read the switch
+ * every few seconds while a screen shows this face, and re-detect the moment it is on — the quick-settings
+ * shade never takes the app out of the foreground, so the AppState re-read alone would miss it.
+ */
+function watchForSwitch(face: Face, store: Store): void {
+  if (store.switchWatch) return;
+  store.switchWatch = setInterval(() => {
+    if (store.listeners.size === 0) return stopSwitchWatch(store);
+    void readGps().then((on) => {
+      if (!on || !store.switchWatch) return;
+      stopSwitchWatch(store);
+      ensureDetection(face, true);
+    });
+  }, LOCATION_WATCH_MS);
 }
 
 /**
@@ -443,6 +468,7 @@ async function detect(face: Face, store: Store): Promise<void> {
   if (!current()) return;
   if (!isUsablePoint(live)) {
     publish(store, { locating: false });
+    if (!(await readGps()) && current()) watchForSwitch(face, store);
     return;
   }
   const resolved = await boundedAddressFor(live);

@@ -14,7 +14,8 @@ import {
   readPermissions,
   requestLocation,
   requestNotif,
-  turnOnGps,
+  switchOnLocation,
+  useLocationReadyWatch,
   useOnAppActive,
 } from "../src/permissions/state";
 import { markRiderPermFlowDone } from "../src/permissions/store";
@@ -176,6 +177,11 @@ export default function RiderPermissionsScreen(): React.ReactElement {
     else if (screen === "P16" && leftForBattery.current) leave();
   });
 
+  // P7: the switch turned on from the quick-settings shade, or on the Location screen — move on by itself.
+  useLocationReadyWatch(screen === "P7", () => {
+    void readLocation().then(({ loc, gps }) => gps && onLocation(loc, gps, "P7"));
+  });
+
   if (!screen) return <View testID="rider-perm-loading" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
 
   switch (screen) {
@@ -254,7 +260,7 @@ export default function RiderPermissionsScreen(): React.ReactElement {
               primary={{
                 label: PC.gpsCta,
                 onPress: withBusy(async () => {
-                  if (!(await turnOnGps())) return;
+                  if (!(await switchOnLocation())) return;
                   const { loc, gps } = await readLocation();
                   onLocation(loc, gps, "P7");
                 }),
