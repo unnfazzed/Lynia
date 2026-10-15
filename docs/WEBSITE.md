@@ -42,7 +42,7 @@ byte-identical to the handoff, except for:
 
 | # | Item | Decision (owner, 2026-09-28) | Status |
 |---|---|---|---|
-| 1 | Play Store link | Kept `href="#app"` while the listing was closed-testing only. Once it went public (2026-10-14), the owner chose (2026-10-15) one smart link for the app buttons instead of a plain Play link: Android → Play, iPhone → the web app's Add to Home Screen tip, desktop → a QR code. | Done: the three "Download the app" buttons and "Send a parcel" go to `/download` (`LAUNCH_EDITS` `download-*`), same tab. "Become a biker" goes straight to Play (`become-biker`): the biker app is Android-only. "How it works" stays `#riders`. Two designs still to come (below). |
+| 1 | Play Store link | Kept `href="#app"` while the listing was closed-testing only. Once it went public (2026-10-14), the owner chose (2026-10-15) one smart link for the app buttons instead of a plain Play link: Android → Play, iPhone → the web app's Add to Home Screen tip, desktop → a QR popup. | Done: the three "Download the app" buttons and "Send a parcel" go to `/download` (`LAUNCH_EDITS` `download-*`), same tab; on a desktop they open the QR popup (`download-qr-*`, below). "Become a biker" goes straight to Play (`become-biker`): the biker app is Android-only. "How it works" stays `#riders`. |
 | 2 | OG share image | Built to the README spec (green, mark + wordmark, "Stay home. We'll bring it."). | Done: `assets/og-image.png` |
 | 3 | About us | Launched without it; then **removed from the footer** (owner, 2026-09-30, `LAUNCH_EDITS` `about-removed`). `/about` still serves the 404 page like any unknown path. | Done. |
 | 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy`; Terms → `https://api.lyniago.com/legal/terms` (owner, 2026-09-30, D-49). | Done. |
@@ -65,16 +65,20 @@ The answer is `Cache-Control: private, no-store` and `Vary: User-Agent`, so no c
 answer to another. Cloudflare runs the script for `/download` only (`run_worker_first`); everything else
 stays a free static-asset request. To change a destination, edit `apps/website/download.js` and its test.
 
-**Still to design (owner):**
+### The desktop QR popup
 
-- **The QR code for desktop.** Desktop visitors land on the `#app` section. A QR code there, pointing at
-  `https://lyniago.com/download`, arrives as a new handoff export (the rule above), so the phone that scans
-  it gets the right store.
-- **The Add to Home Screen tip on iPhone.** The web app already installs (manifest, icons, iPhone Home
-  Screen tags) but draws no tip, and the app's pixel-parity rule forbids an undrawn screen. Until a mock
-  exists, `?install=1` is ignored and iPhone visitors land on the web app's Home. When the tip is designed,
-  it shows when `install=1` is present and the page is not already running from the Home Screen
-  (`navigator.standalone`).
+Designed in `packages/design/handoff/download-qr-install-tip-2026-10/` §1 (owner, 2026-10-15). On a desktop
+(`(min-width: 900px) and (hover: hover) and (pointer: fine)`), a click on any `data-download` button opens a
+small popup with the QR code for `https://lyniago.com/download`, so the phone that scans it gets the right
+place. Phones and tablets, and a desktop with JavaScript off or a modified click (new tab), follow the link
+instead. The popup is two launch edits: `download-qr-css` (CSS at the end of the page's `<style>`) and
+`download-qr-popup` (markup and a small inline script before `</body>`). The code image is
+`assets/download-qr-2026-10.svg`, verbatim from the handoff. **Never restyle the code itself** (square corner
+markers, dark modules on white, quiet zone, logo tile): rounded corner markers stopped it decoding. After a
+change, scan it from the popup at 100% zoom with a real Android and a real iPhone.
+
+The iPhone Add to Home Screen tip that `?install=1` opens is §2 of the same handoff, built in the customer web
+app (`docs/CUSTOMER-WEB.md`).
 
 ## Search and AI visibility
 

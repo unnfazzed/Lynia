@@ -225,19 +225,43 @@ footer{padding:56px 0 36px}
 /* hero collage: no phone frames, rounded screen corners only (2026-10) */
 .phones .ph{background:none;padding:0;height:auto;aspect-ratio:1/2;border-radius:0;box-shadow:0 30px 50px -18px rgba(0,0,0,.45)}
 .phones .ph img{height:auto;aspect-ratio:1/2;border-radius:0;background:none}
+/* Download QR popup (handoff download-qr-install-tip-2026-10 §1; launch edit download-qr-css) */
+.qrm{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px}
+.qrm[hidden]{display:none}
+.qrm-scrim{position:absolute;inset:0;background:rgba(20,24,27,.55)}
+.qrm-box{position:relative;width:440px;max-width:calc(100vw - 48px);background:#fff;border-radius:32px;overflow:hidden;padding:0 32px 28px;display:flex;flex-direction:column;align-items:center;text-align:center;box-shadow:0 40px 80px rgba(20,24,27,.35)}
+.qrm-band{position:absolute;left:0;right:0;top:0;height:170px;background:var(--g);overflow:hidden}
+.qrm-blob{position:absolute;border-radius:50%}
+.qrm-b1{width:120px;height:120px;left:-30px;top:-40px;background:var(--coral)}
+.qrm-b2{width:160px;height:160px;right:-50px;top:30px;background:var(--yel)}
+.qrm-b3{width:36px;height:36px;right:120px;top:18px;background:var(--pink)}
+.qrm-x{position:absolute;top:14px;right:14px;z-index:3;width:44px;height:44px;border:0;border-radius:999px;background:#fff;color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.qrm-x svg{width:24px;height:24px}
+.qrm-card{position:relative;z-index:2;margin-top:36px;background:#fff;border-radius:28px;padding:16px;transform:rotate(-3deg);box-shadow:0 24px 48px rgba(6,59,34,.3)}
+.qrm-card img{display:block;width:236px;height:236px}
+.qrm-sticker{position:absolute;top:-22px;right:-30px;height:46px;padding:0 20px;border-radius:999px;background:var(--yel);color:#3D3100;font:700 17px/1 Inter,system-ui,sans-serif;display:flex;align-items:center;white-space:nowrap;transform:rotate(9deg);box-shadow:0 10px 20px rgba(6,59,34,.25)}
+.qrm-box h2{position:relative;margin:24px 0 0;font-size:26px;line-height:1.15;letter-spacing:-.025em;color:var(--ink)}
+.qrm-box p{position:relative;margin:6px 0 0;font-size:16px;line-height:1.45;color:var(--mut)}
+html.qrm-lock{overflow:hidden}
+@media (prefers-reduced-motion:no-preference){
+.qrm .qrm-scrim{opacity:0;transition:opacity .16s}
+.qrm .qrm-box{opacity:0;transform:scale(.96);transition:opacity .2s cubic-bezier(.2,.8,.2,1),transform .2s cubic-bezier(.2,.8,.2,1)}
+.qrm.on .qrm-scrim,.qrm.on .qrm-box{opacity:1}
+.qrm.on .qrm-box{transform:none}
+}
 </style></head><body>
 
 <header class="nav"><div class="wrap">
 <a class="logo" href="#top"><img src="assets/brand/lyniago-mark.svg" alt="">LyniaGo</a>
 <nav class="links"><a href="#send">Send a parcel</a><a href="#business">For businesses</a><a href="#riders">Become a biker</a></nav>
-<a class="btn b-g" href="/download"><i data-i="play"></i>Download the app</a>
+<a class="btn b-g" href="/download" data-download><i data-i="play"></i>Download the app</a>
 </div></header>
 
 <section class="hero" id="top"><div class="wrap">
 <div>
 <h1>Stay home.<br><span>We'll bring it.</span></h1>
 <p>Parcels and deliveries across Harare, tracked to your door.</p>
-<div class="btns"><a class="btn b-yel" href="/download"><i data-i="play"></i>Send a parcel</a><a class="btn b-line" href="#business">Deliver for my business</a></div>
+<div class="btns"><a class="btn b-yel" href="/download" data-download><i data-i="play"></i>Send a parcel</a><a class="btn b-line" href="#business">Deliver for my business</a></div>
 </div>
 <div class="hero-art">
 <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
@@ -263,7 +287,7 @@ footer{padding:56px 0 36px}
 </div></section>
 
 <section class="how" id="send"><div class="wrap">
-<div class="head"><h2>Send in three steps</h2><a class="btn b-ink" href="/download"><i data-i="play"></i>Download the app</a></div>
+<div class="head"><h2>Send in three steps</h2><a class="btn b-ink" href="/download" data-download><i data-i="play"></i>Download the app</a></div>
 <div class="steps">
 <div class="step"><span class="n">1</span><h3>Set pickup and drop-off</h3><div class="shot" style="--c:#FFE7E0;--a:var(--coral);--r:-2deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-1-phone-2026-10.webp" width="500" height="605" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-1-hl-2026-10.webp" width="600" height="228" alt="Set pickup and drop-off — app screen"></div></div>
 <div class="step"><span class="n">2</span><h3>Name your price, pick a biker</h3><div class="shot" style="--c:#E3F6FE;--a:var(--sky);--r:1.5deg"><span class="sb"></span><img loading="lazy" decoding="async" class="sp" src="assets/screens/step-2-phone-2026-10.webp" width="500" height="537" alt=""><img loading="lazy" decoding="async" class="sh" src="assets/screens/step-2-hl-2026-10.webp" width="600" height="233" alt="Name your price, pick a biker — app screen"></div></div>
@@ -327,7 +351,7 @@ footer{padding:56px 0 36px}
 
 <section class="app" id="app"><div class="wrap">
 <div class="appbox">
-<div class="txt"><h2>Everything you send, in your pocket</h2><p>Book, track and pay in a few taps.</p><a class="btn b-yel" href="/download"><i data-i="play"></i>Download the app</a></div>
+<div class="txt"><h2>Everything you send, in your pocket</h2><p>Book, track and pay in a few taps.</p><a class="btn b-yel" href="/download" data-download><i data-i="play"></i>Download the app</a></div>
 <div class="phones">
 <div class="blob b1"></div><div class="blob b2"></div>
 <div class="ph p1"><img loading="lazy" decoding="async" src="assets/screens/app-splash-2026-10.webp" srcset="assets/screens/app-splash-2026-10.webp 1x, assets/screens/app-splash-2026-10-2x.webp 2x" width="265" height="530" alt="LyniaGo splash screen"></div>
@@ -381,5 +405,29 @@ const inside=(x,y)=>{let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++
 const bands=['#14181B','#FFD23F','#FF6B4A','#00B14F'];let d='';
 for(let y=5.5;y<H;y+=11)for(let x=5.5;x<W;x+=11)if(inside(x,y))d+=`<circle cx="${x}" cy="${y}" r="3.8" fill="${bands[Math.min(3,Math.floor(y/H*4))]}"/>`;
 document.getElementById('zmap').innerHTML=`<svg viewBox="-10 -10 ${W+20} ${H+20}">${d}<circle cx="${hx}" cy="${hy}" r="6" fill="#00B14F" class="zpulse"/><circle cx="${hx}" cy="${hy}" r="11" fill="#fff"/><circle cx="${hx}" cy="${hy}" r="7" fill="#00B14F"/></svg><div class="chip"><span class="dot" style="background:#FFD23F;box-shadow:0 0 0 4px rgba(255,210,63,.25)"></span>Harare</div>`;}
+</script>
+<div class="qrm" id="qrm" hidden>
+<div class="qrm-scrim" data-qr-close></div>
+<div class="qrm-box" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+<div class="qrm-band" aria-hidden="true"><span class="qrm-blob qrm-b1"></span><span class="qrm-blob qrm-b2"></span><span class="qrm-blob qrm-b3"></span></div>
+<button type="button" class="qrm-x" aria-label="Close" data-qr-close><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+<div class="qrm-card"><span class="qrm-sticker">Point. Scan. Go.</span><img src="assets/download-qr-2026-10.svg" width="236" height="236" alt="QR code to download LyniaGo"></div>
+<h2 id="qr-title">Scan to get LyniaGo</h2>
+<p>Point your phone’s camera at the code.</p>
+</div>
+</div>
+<script>
+(function(){
+var m=document.getElementById('qrm');if(!m)return;
+var x=m.querySelector('.qrm-x'),root=document.documentElement,opener=null;
+var desk=window.matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)');
+function open(b){opener=b;m.hidden=false;root.classList.add('qrm-lock');x.focus();requestAnimationFrame(function(){requestAnimationFrame(function(){m.classList.add('on');});});}
+function close(){m.classList.remove('on');m.hidden=true;root.classList.remove('qrm-lock');if(opener)opener.focus();opener=null;}
+document.querySelectorAll('a[data-download]').forEach(function(b){b.addEventListener('click',function(e){
+if(!desk.matches||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();open(b);});});
+m.addEventListener('click',function(e){if(e.target.closest('[data-qr-close]'))close();});
+document.addEventListener('keydown',function(e){if(m.hidden)return;
+if(e.key==='Escape'){e.preventDefault();close();}else if(e.key==='Tab'){e.preventDefault();x.focus();}});
+})();
 </script>
 </body></html>
