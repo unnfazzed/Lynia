@@ -438,17 +438,6 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
     expect(extractDiditDeclineReason(idv("LOW_FACE_MATCH_SIMILARITY"))).toBe("face_mismatch");
   });
 
-  // Owner 2026-10-15: the check is the ID plus the signup name (sent as expected_details), no selfie.
-  it("maps a name that doesn't match the signup name to `name_mismatch`", () => {
-    for (const code of ["NAME_MISMATCH_WITH_PROVIDED", "FULL_NAME_MISMATCH", "NAME_NOT_MATCH_WITH_PROVIDED", "EXPECTED_DETAILS_MISMATCH"]) {
-      expect(extractDiditDeclineReason(idv(code))).toBe("name_mismatch");
-    }
-    // A duplicate face under another name is a duplicate, not a typo.
-    expect(extractDiditDeclineReason(idv("DOCUMENT_SELFIE_DUPLICATED_FACE_NAME_MISMATCH"))).toBe("duplicate");
-    // Tampering outranks the name.
-    expect(extractDiditDeclineReason(idv("NAME_MISMATCH_WITH_PROVIDED", "DOCUMENT_TAMPERED"))).toBe("doc_tampered");
-  });
-
   // KYC-R26-13: under age is the one `final` decline (it locks at once), so it wins over everything — and its
   // match is narrow, because a false positive would lock an adult out for good.
   it("maps an under-age warning to `underage`, ahead of every other finding", () => {

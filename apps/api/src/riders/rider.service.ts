@@ -24,7 +24,7 @@ import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
-import { KYC_VENDOR, type KycExpectedDetails, type KycVendor } from "../kyc/kyc-vendor";
+import { KYC_VENDOR, type KycVendor } from "../kyc/kyc-vendor";
 import {
   classifyStoredDiditStatus,
   DIDIT_APPROVED_STATUS,
@@ -422,7 +422,7 @@ export class RiderService {
       where: { id: profileId },
       // role: what a failed vendor call restores when it hands the rider claim back (KYC-R26-10), and
       // the admin refusal below. firstName: the blank-name refusal below.
-      select: { idNumberHash: true, firstName: true, lastName: true, role: true },
+      select: { idNumberHash: true, firstName: true, role: true },
     });
     if (!profile) throw new NotFoundException("Profile not found");
     const previousRole = profile.role;
@@ -519,8 +519,7 @@ export class RiderService {
     // a token dropped on this path means every later resume mints a fresh paid session (P0-2 / D7).
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
     try {
-      // The ID is checked against the signup name (owner 2026-10-15: ID + name, no selfie).
-      submission = await this.vendor.submit(profileId, { firstName: profile.firstName, lastName: profile.lastName });
+      submission = await this.vendor.submit(profileId);
     } catch (err) {
       // A vendor outage must surface as a retryable 503, not an unhandled 500 — and the claimed row is
       // handed back, so a failed submit leaves no half-onboarded rider behind (the next tap claims afresh).
@@ -744,20 +743,6 @@ export class RiderService {
     await domainEvents.riderStep(this.prisma, profileId, "didit_started", { data: { path } });
   }
 
-  /**
-   * The signup name a new check compares the ID against (owner 2026-10-15: ID + name, no selfie). Best-effort:
-   * an unreadable profile mints the check without a name comparison rather than failing the rider's retry.
-   */
-  private async kycExpectedName(profileId: string): Promise<KycExpectedDetails | undefined> {
-    try {
-      const p = await this.prisma.profile.findUnique({ where: { id: profileId }, select: { firstName: true, lastName: true } });
-      return p ? { firstName: p.firstName, lastName: p.lastName } : undefined;
-    } catch (err) {
-      this.logger.warn(`Couldn't read the name for ${profileId}'s ID check: ${err instanceof Error ? err.message : String(err)}`);
-      return undefined;
-    }
-  }
-
   /** Both bounds on a paid retry: the daily cap on fixable declines (KYC-R26-13), then the hourly paid-mint ceiling. */
   private async assertMayMint(profileId: string): Promise<void> {
     await this.assertUnderKycDailyLimit(profileId);
@@ -974,9 +959,7 @@ export class RiderService {
 
     let submission: Awaited<ReturnType<KycVendor["submit"]>>;
     try {
-      // Read at mint time, so a biker who corrected their name after a name-mismatch decline is checked
-      // against the corrected one.
-      submission = await this.vendor.submit(profileId, await this.kycExpectedName(profileId));
+      submission = await this.vendor.submit(profileId);
     } catch (err) {
       this.logger.error(`KYC retry failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
       // The claim bought nothing — give it back, or the rider spends the rest of the window re-opening
