@@ -71,6 +71,17 @@ jest.mock("../../../src/auth/session", () => ({
   saveRolePreference: (r: string) => mockSaveRole(r),
 }));
 
+// The permission screens after sign-up (D-109) are tested in signup-permissions.test.ts: here sign-in lands
+// where it's going, unless a test sets the permission route.
+let mockPermRoute: string | null = null;
+const mockAfterSignInCalls: string[] = [];
+jest.mock("../../../src/logic/signup-permissions", () => ({
+  afterSignIn: async (dest: string) => {
+    mockAfterSignInCalls.push(dest);
+    return mockPermRoute ?? dest;
+  },
+}));
+
 import ProfileSetupScreen from "../setup";
 
 /** Fields are located by the accessibilityLabel `Field` derives from `label` (see src/ui/index.tsx). */
@@ -135,6 +146,8 @@ async function mountSetup(): Promise<renderer.ReactTestRenderer> {
 const text = (t: renderer.ReactTestRenderer): string => JSON.stringify(t.toJSON());
 
 beforeEach(() => {
+  mockPermRoute = null;
+  mockAfterSignInCalls.length = 0;
   secureStore = {};
   mockUpdateProfile.mockReset().mockResolvedValue({ ok: true });
   mockSignIn.mockClear();
@@ -171,6 +184,17 @@ describe("C5 · Name (Calm Mint v2, D-55)", () => {
     expect(mockUpdateProfile).toHaveBeenCalledWith({ firstName: "Chipo", lastName: "Marufu" });
     expect(mockSaveRole).toHaveBeenCalledWith("customer");
     expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("D-109: a new customer goes through the after-sign-up permission screens before Home", async () => {
+    mockPermRoute = "/setup-permissions?next=%2Fhome";
+    const tree = await mountSetup();
+    setFieldByAccessibilityLabel(tree, "First name", "Chipo");
+    setFieldByAccessibilityLabel(tree, "Surname", "Marufu");
+    await settle();
+    await pressStart(tree);
+    expect(mockAfterSignInCalls).toEqual(["/home"]);
+    expect(mockReplace).toHaveBeenCalledWith("/setup-permissions?next=%2Fhome");
   });
 
   it("a biker intent from C1 starts the account as a biker, straight on R1 (no board hop)", async () => {

@@ -46,9 +46,12 @@ export function afterLocationAnswer(loc: PermissionsSnapshot["loc"], gps: boolea
   return "P1"; // the dialog was dismissed — stay on the explainer
 }
 
-/** The steps a visit walks: the whole flow (from R3), or one step reopened from the board or Settings. */
-export function stepsFor(from: "flow" | "single", step: RiderPermStep | null): RiderPermStep[] {
+/** The steps a visit walks: the whole flow (from R3), the same asks right after sign-up (no P13: the rider
+ *  isn't verified yet, so there is nothing to go online to; ledger D-109), or one step reopened from the
+ *  board or Settings. */
+export function stepsFor(from: "flow" | "signup" | "single", step: RiderPermStep | null): RiderPermStep[] {
   if (from === "flow") return ["location", "notifications", "done"];
+  if (from === "signup") return ["location", "notifications"];
   return [step ?? "location"];
 }
 

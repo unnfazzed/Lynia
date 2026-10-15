@@ -37,6 +37,17 @@ jest.mock("../../src/auth/session", () => ({
   saveRolePreference: (r: string) => mockSaveRole(r),
 }));
 
+// The permission screens after sign-up (D-109) are tested in signup-permissions.test.ts: here sign-in lands
+// where it's going, unless a test sets the permission route.
+let mockPermRoute: string | null = null;
+const mockAfterSignInCalls: string[] = [];
+jest.mock("../../src/logic/signup-permissions", () => ({
+  afterSignIn: async (dest: string) => {
+    mockAfterSignInCalls.push(dest);
+    return mockPermRoute ?? dest;
+  },
+}));
+
 import { ApiError } from "../../src/api/client";
 import { ToastProvider } from "../../src/ui";
 import VerifyScreen, { type VerifyScreenProps } from "../verify";
@@ -65,6 +76,8 @@ async function type(t: renderer.ReactTestRenderer, value: string): Promise<void>
 }
 
 beforeEach(() => {
+  mockPermRoute = null;
+  mockAfterSignInCalls.length = 0;
   mockLocalSearchParams = { phone: "+263772451180", deliveryChannel: "whatsapp" };
   mockRole = null;
   mockStoredIntent = null;
@@ -119,6 +132,15 @@ describe("C4 · Code — the sixth digit verifies", () => {
     expect(mockVerifyOtp).toHaveBeenCalledWith("+263772451180", "418210");
     expect(mockSaveRole).toHaveBeenCalledWith("customer");
     expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+
+  it("D-109: the destination goes through the after-sign-up permission screens", async () => {
+    mockVerifyOtp.mockResolvedValue(ok);
+    mockPermRoute = "/setup-permissions?next=%2Fhome";
+    const t = mount({ initialCooldownS: 30 });
+    await type(t, "418210");
+    expect(mockAfterSignInCalls).toEqual(["/home"]);
+    expect(navCalls).toEqual(["dismissAll", "replace:/setup-permissions?next=%2Fhome"]);
   });
 
   it("the C1 biker path goes OTP → the biker side, no priming (D-82 G1) — straight to R1 for an account with no rider record", async () => {

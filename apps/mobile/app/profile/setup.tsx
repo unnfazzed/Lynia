@@ -10,6 +10,7 @@ import { loadRolePreference, saveRolePreference } from "../../src/auth/session";
 import { replaceClearingStack } from "../../src/logic/nav";
 import { clearProfileDraft, loadProfileDraft, profileDraftHasContent, saveProfileDraft } from "../../src/logic/profile-draft";
 import { parseSignInIntent, riderEntry, signedInDestination, startRoleFor } from "../../src/logic/sign-in-route";
+import { afterSignIn } from "../../src/logic/signup-permissions";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { OB } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, Note, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
@@ -120,7 +121,8 @@ export default function ProfileSetupScreen(): React.ReactElement {
       // Clear the stack: Back from the app must not return to sign-up (C-1).
       // A rider sign-up has no rider record yet: straight to R1, not through a board that would only
       // replace itself with R1.
-      replaceClearingStack(router, riderEntry(signedInDestination(chosen, intent, me.role ?? session?.role), me.role === "rider" || me.rider != null));
+      // The permission screens come first, once per install (D-109).
+      replaceClearingStack(router, (await afterSignIn(riderEntry(signedInDestination(chosen, intent, me.role ?? session?.role), me.role === "rider" || me.rider != null))) as never);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't save your details.");
     } finally {

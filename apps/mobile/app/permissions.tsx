@@ -18,7 +18,8 @@ import {
   useLocationReadyWatch,
   useOnAppActive,
 } from "../src/permissions/state";
-import { markRiderPermFlowDone } from "../src/permissions/store";
+import { markRiderPermFlowDone, markSignupPermsShown } from "../src/permissions/store";
+import { signupNext } from "../src/logic/signup-permissions";
 import { refreshHomeLocation } from "../src/logic/home-location";
 import { requestPushRegistration } from "../src/push/push-kick";
 import { EVENTS, track } from "../src/telemetry/events";
@@ -52,6 +53,8 @@ const parseStep = (v: unknown): RiderPermStep | null => (STEPS.includes(v as Rid
  *   ?step=location      P14 G8 / P15 Settings' Location row — the location step alone, then back.
  *   ?step=notifications P14 J8 / Settings' Job alerts row — the notification step alone, then back.
  *   ?step=battery       P16, from Settings only.
+ *   ?from=signup&next=  Right after sign-up (ledger D-109): the location and notification steps, then on to
+ *                       `next` (the board, or R1 for a new rider). It counts as the flow, so R3 goes straight online.
  *
  * The Android dialog opens only from a primary button (BRIEF 1). Every "Open phone settings" state re-reads
  * the permission when the rider comes back (BRIEF 7). We never ask for "Allow all the time" (BRIEF 6).
@@ -61,8 +64,9 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   const router = useRouter();
   const params = useLocalSearchParams<{ from?: string; step?: string; next?: string }>();
   const flow = params.from === "flow";
-  const legacy = !flow && params.step == null && params.next != null;
-  const steps = useRef(stepsFor(flow ? "flow" : "single", parseStep(params.step))).current;
+  const signup = params.from === "signup";
+  const legacy = !flow && !signup && params.step == null && params.next != null;
+  const steps = useRef(stepsFor(flow ? "flow" : signup ? "signup" : "single", parseStep(params.step))).current;
   const toast = useToast();
   const [stepIdx, setStepIdx] = useState(0);
   const [screen, setScreen] = useState<RiderPermScreen | null>(null);
@@ -72,9 +76,14 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   const leftForBattery = useRef(false);
 
   const leave = useCallback((): void => {
+    if (signup) {
+      // Sign-in cleared the stack; this screen is its last stop before the rider side.
+      router.replace(signupNext(params.next, "/rider"));
+      return;
+    }
     if (router.canGoBack()) router.back();
     else router.replace("/rider");
-  }, [router]);
+  }, [router, signup, params.next]);
 
   /** Enter step `i` (skipping any with nothing to ask); past the last one, leave. */
   const enter = useCallback(
@@ -97,22 +106,26 @@ export default function RiderPermissionsScreen(): React.ReactElement {
 
   useEffect(() => {
     if (legacy) router.replace("/rider");
-    else void enter(0);
+    else {
+      // After sign-up these screens are the rider flow, once per install (D-109): R3's "Go online" won't ask again.
+      if (signup) void Promise.all([markSignupPermsShown(), markRiderPermFlowDone()]);
+      void enter(0);
+    }
     // Entered once per visit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const next = useCallback((): void => void enter(stepIdx + 1), [enter, stepIdx]);
   // Funnel analytics: every P screen is `/permissions` to the screen tracker — name the step and its answer.
-  const answer = useCallback((value: string, at: RiderPermScreen | null = screen): void => track(EVENTS.permAnswer, { screen: at, answer: value, flow }), [screen, flow]);
+  const answer = useCallback((value: string, at: RiderPermScreen | null = screen): void => track(EVENTS.permAnswer, { screen: at, answer: value, flow: signup ? "signup" : flow }), [screen, flow, signup]);
   /** "Not now" / "Continue" past a step without granting it. */
   const skip = useCallback((): void => {
     answer("not_now");
     next();
   }, [answer, next]);
   useEffect(() => {
-    if (screen) track(EVENTS.permScreen, { screen, flow });
-  }, [screen, flow]);
+    if (screen) track(EVENTS.permScreen, { screen, flow: signup ? "signup" : flow });
+  }, [screen, flow, signup]);
 
   // P13 marks the flow done for this install (README §4 `riderPermFlowDone`).
   useEffect(() => {

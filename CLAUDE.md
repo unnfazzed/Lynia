@@ -181,6 +181,9 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   the `kyc-2026-08` outcome screens. Where it clashed with shipped screens the owner chose case by case (D-82 §2):
   the splash keeps splash-v1's look, Settings takes the new look but keeps every row, the toast is the new bottom
   toast app-wide. Strings come from the handoff's `copy.ts`, verbatim.
+  **Since D-109 (owner, 2026-10-15) both sides are also asked once right after sign-up**: customers on
+  `app/setup-permissions.tsx` (PC1 and PC8 full screen; location only on the web), bikers on
+  `app/permissions.tsx?from=signup` (P1–P12, no P13). The in-context asks stay as the second chance.
 - **The merchant app follows its own handoff (`handoff/merchant-v2/`).** Kitchens, shops and pharmacies
   (`apps/merchant`) align to `packages/design/handoff/merchant-v2/` (ledger D-77, owner 2026-10-04): one
   shell (4 tabs, the mint top card with a labelled open pill and one KPI strip, the dark live bar on the

@@ -35,6 +35,17 @@ jest.mock("../../src/auth/session", () => ({
   saveRolePreference: async () => undefined,
 }));
 
+// The permission screens after sign-up (D-109) are tested in signup-permissions.test.ts: here sign-in lands
+// where it's going, unless a test sets the permission route.
+let mockPermRoute: string | null = null;
+const mockAfterSignInCalls: string[] = [];
+jest.mock("../../src/logic/signup-permissions", () => ({
+  afterSignIn: async (dest: string) => {
+    mockAfterSignInCalls.push(dest);
+    return mockPermRoute ?? dest;
+  },
+}));
+
 import { clearDevCode, peekDevCode, stashDevCode } from "../../src/auth/dev-code-handoff";
 import { ToastProvider } from "../../src/ui";
 import VerifyScreen from "../verify";
@@ -73,6 +84,8 @@ afterEach(() => {
   live = null;
   clearDevCode();
   jest.clearAllMocks();
+  mockPermRoute = null;
+  mockAfterSignInCalls.length = 0;
 });
 
 describe("C4 · a code in the URL is inert", () => {

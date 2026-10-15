@@ -63,7 +63,8 @@ export function bootRedirectTarget(params: {
  * - `/onboarding`, `/phone`, `/verify` are the sign-in flow.
  * - `/profile/setup` comes straight after sign-in (verify.tsx); listed so a session still committing can
  *   never bounce a just-verified account back to the phone screen.
- * - `/force-update`, `/permissions` and `/order-updates` are the update screen and the permission asks.
+ * - `/force-update`, `/permissions`, `/setup-permissions` and `/order-updates` are the update screen and the
+ *   permission asks.
  *   They make no authed reads of their own and hand over to a route that is checked in turn.
  */
 export const SIGNED_OUT_ROUTES: readonly string[] = [
@@ -74,6 +75,7 @@ export const SIGNED_OUT_ROUTES: readonly string[] = [
   "/profile/setup",
   "/force-update",
   "/permissions",
+  "/setup-permissions",
   "/order-updates",
 ];
 

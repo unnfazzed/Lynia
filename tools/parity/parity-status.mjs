@@ -35,11 +35,11 @@ export const PARITY_STATUS = {
   "LJ.home_flag_off": { status: "PENDING" }, // Home · Food tile soon
   "LJ.perm_loc": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to. Since D-109 (owner, 2026-10-15) PC1's and PC8's designs also show full screen once right after sign-up (app/setup-permissions.tsx).",
   }, // Permission · location
   "LJ.perm_notif": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) retires the customer's first-run permission priming. Location is asked in context as a sheet over Home (PC1–PC7: explainer, approximate, denied once, blocked steps, GPS off, granted toast — src/ui/firstrun/CustomerLocationSheet.tsx, useLocationAsk in src/logic/home-location.ts) and notifications after an order (PC8–PC10, app/order-updates.tsx). app/permissions-location.view.tsx and permissions-notifications.view.tsx were deleted. Not aligned to. Since D-109 (owner, 2026-10-15) PC1's and PC8's designs also show full screen once right after sign-up (app/setup-permissions.tsx).",
   }, // Permission · notifications
   "LJ.notifications": {
     status: "PENDING",
@@ -234,11 +234,11 @@ export const PARITY_STATUS = {
   "RJ.role_select": { status: "PENDING" }, // Choose your role
   "RJ.perm_loc": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-82 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-82 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to. Since D-109 (owner, 2026-10-15) the location and notification steps also run once right after sign-up (app/permissions.tsx ?from=signup).",
   }, // Permission · location
   "RJ.perm_notif": {
     status: "PENDING",
-    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-82 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to.",
+    reason: "SUPERSEDED by docs/DESIGN-DEVIATIONS.md D-82 (owner, 2026-10-06): First Run v2 (packages/design/handoff/first-run-v2) replaces the rider's permission priming with the rider flow P1–P16 (app/permissions.tsx, violet tone): it starts from R3's 'Go online' (owner decision D-82 §2 #5), not after sign-in — location (P1, P3 + P8 toast, P4–P7), notifications (P9, P11, P12), P13 'Go online'; skipped steps resurface on the board as J8 / G8 (P14). Not aligned to. Since D-109 (owner, 2026-10-15) the location and notification steps also run once right after sign-up (app/permissions.tsx ?from=signup).",
   }, // Permission · notifications
   "RJ.kyc_form": { status: "PENDING" }, // KYC form + consent
   "RJ.photo_capture": {

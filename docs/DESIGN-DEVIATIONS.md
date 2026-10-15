@@ -5542,3 +5542,29 @@ Guards: `src/logic/__tests__/install-tip.test.ts` (every row of "When it shows")
 `src/ui/install/__tests__/install-tip.test.tsx` (copy byte-identical to the handoff; each sheet variant; the
 dismiss → pin → reopen → dismiss flow; standalone and phone builds show nothing). Picture:
 `docs/parity/INSTALL-TIP-2026-10-15.png` (`tools/parity/shoot-install-tip.mjs`).
+
+## D-109 · Permissions right after sign-up, for customers and bikers — APPROVED (owner, 2026-10-15)
+
+**Why:** customers met the location and notification asks only inside the app (Home's PC1 sheet, PC8 after the
+first order), so most used the app without them and had to stop to allow them later. The owner asked for both to
+be asked right after sign-up, before Home, for customers **and** bikers, on Android **and** the web app. This
+reverses First Run v2's "No first-run priming" (`first-run-v2/BRIEF.md` §2) and D-82 §2 #5 (the biker flow only
+from R3's "Go online"). No handoff draws this placement; the owner approved a flow built from the First Run v2
+screens (proposal page reviewed 2026-10-15) rather than waiting for new mocks.
+
+| Element | Drawn (First Run v2) | Shipped |
+|---|---|---|
+| Customer location | PC1, a sheet over Home from H6 / H5 | `app/setup-permissions.tsx`: PC1's hero, title, body and "Use my location", **full screen**, after C5 (or after the code for a returning account). Link **"Not now"** (`PC.notifAlt`) in place of "Type an address". Allowed with the phone's location off → Google's switch dialog, then on. Every other answer moves on; Home's PC1–PC6 stay the fallback |
+| Customer order updates | PC8 after the first order, with the "Order placed" pill | Same screen, next step: PC8 **without the pill** (no order yet), the same samples (code 482 193, D-82 §4), "Turn on updates" / "Not now". A decline goes on to Home (no PC10). The visit counts toward PC8's 3-per-install cap, so the in-app re-ask stays at 3 in total |
+| Biker | P1–P12 from R3's "Go online", ending on P13 | `app/permissions.tsx?from=signup`: the same location and notification steps right after sign-up, then on to R1 (new biker) or the board — **no P13** (nothing to go online to yet). It marks the biker flow done, so R3's "Go online" goes straight online; skipped steps resurface as J8 / G8 as before |
+| Web app | — | Location only: the customer web build has no push (D-81), so the updates step is skipped there |
+
+**Rules** (`src/logic/signup-permissions.ts` `afterSignIn`, used by `app/verify.tsx` and `app/profile/setup.tsx`):
+once per install (`lynia.signupPermsShown.v1`, survives sign-out); a step the phone already allows is skipped, and a
+blocked location is left to Home's PC5; with nothing to ask, sign-in goes straight on. An unreadable store skips
+the screens rather than showing them on every sign-in.
+
+Guards: `src/logic/__tests__/signup-permissions.test.ts`, `app/__tests__/setup-permissions.test.tsx`,
+`app/__tests__/permissions-flow.test.tsx` ("right after sign-up"), the D-109 cases in
+`verify-otp-states.test.tsx` and `profile/__tests__/setup.test.tsx`. Picture:
+`docs/parity/SIGNUP-PERMISSIONS-2026-10-15.png` (`tools/parity/shoot-signup-perms.mjs`).

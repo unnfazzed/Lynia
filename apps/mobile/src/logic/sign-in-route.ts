@@ -25,10 +25,10 @@ export function startRoleFor(chosen: StartRole | null, intent: SignInIntent, ser
 
 /**
  * Where a signed-in, profile-complete account goes (verify.tsx for a returning user, profile/setup.tsx
- * after a new account names itself). A customer lands on Home — location and notifications are asked
- * in context there. A rider goes straight to the rider side (C1 rider path: OTP → R1, First Run v2 G1):
- * the permission priming that used to sit here is gone (owner decision D-82 §2 #5) — the rider flow
- * (P1…P13) runs from R3's "Go online", and a returning rider's missing permission shows on the board.
+ * after a new account names itself): Home for a customer, the rider side for a rider (C1 rider path: OTP →
+ * R1, First Run v2 G1). Both pass it through `afterSignIn` (logic/signup-permissions.ts), which puts the
+ * permission screens in front of it once per install (owner, ledger D-109; it reverses D-82's "no first-run
+ * priming"). What's skipped there is still asked in context: Home's PC1, PC8 after an order, the board's J8/G8.
  */
 export function signedInDestination(chosen: StartRole | null, intent: SignInIntent = null, serverRole?: string | null): "/rider" | "/home" {
   return startRoleFor(chosen, intent, serverRole) === "customer" ? "/home" : "/rider";

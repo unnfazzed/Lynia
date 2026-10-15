@@ -47,3 +47,23 @@ export async function noteCustNotifAsked(): Promise<void> {
     /* best-effort */
   }
 }
+
+/** Set when the after-sign-up permission screens first show (ledger D-109): they run once per install. */
+export const SIGNUP_PERMS_KEY = "lynia.signupPermsShown.v1";
+
+export async function signupPermsShown(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(SIGNUP_PERMS_KEY)) === "1";
+  } catch {
+    // Unreadable: answer "shown", so a broken store never puts the screens in front of every sign-in.
+    return true;
+  }
+}
+
+export async function markSignupPermsShown(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(SIGNUP_PERMS_KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+}
