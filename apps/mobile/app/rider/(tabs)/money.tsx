@@ -33,7 +33,7 @@ import type { IconName } from "../../../src/ui";
  * out of the approve step lands here with the marker set), polls while the intent is pending (the server
  * expires it on read once `expiresAt` passes), and drops the notice once the marker is gone.
  */
-type PendingTopupNotice = { kind: "succeeded"; amount: number } | { kind: "pending"; provider: string; amount: number } | { kind: "terminal"; amount: number };
+type PendingTopupNotice = { kind: "succeeded"; amount: number } | { kind: "pending"; provider: string; amount: number } | { kind: "terminal"; amount: number; late: boolean };
 const PENDING_POLL_MS = 5_000;
 function usePendingTopupReconciliation(focused: boolean): PendingTopupNotice | null {
   const qc = useQueryClient();
@@ -64,7 +64,8 @@ function usePendingTopupReconciliation(focused: boolean): PendingTopupNotice | n
           setNotice({ kind: "succeeded", amount: topup.amount });
         } else if (outcome === "terminal") {
           void clearPendingTopup();
-          setNotice({ kind: "terminal", amount: topup.amount });
+          // JQ-R3-02: a timed-out intent can still be credited by a late approval — not "nothing was taken".
+          setNotice({ kind: "terminal", amount: topup.amount, late: topup.status === "expired" });
         } else {
           setNotice({ kind: "pending", amount: topup.amount, provider: topup.rail === "innbucks" ? "InnBucks" : topup.rail === "omari" ? "O'mari" : "EcoCash" });
           timer = setTimeout(recheck, PENDING_POLL_MS);
@@ -233,7 +234,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
           ) : pending.kind === "pending" ? (
             <Notice icon="hourglass" text={RF.pendingWait(pending.provider, pending.amount)} />
           ) : (
-            <Notice icon="circle-alert" text={RF.pendingFail(pending.amount)} />
+            <Notice icon="circle-alert" text={pending.late ? RF.pendingLate(pending.amount) : RF.pendingFail(pending.amount)} />
           )
         ) : null}
 

@@ -204,7 +204,9 @@ describe("Money · the pending top-up notice (MA-M2, MA-L2)", () => {
     });
     expect(mockGetTopup).toHaveBeenCalledTimes(2);
     const all = texts(t);
-    expect(all).toContain(RF.pendingFail(5));
+    // JQ-R3-02: a timed-out intent can still be credited late — never "Nothing was taken".
+    expect(all).toContain(RF.pendingLate(5));
+    expect(all).not.toContain(RF.pendingFail(5));
     expect(all).not.toContain(RF.pendingWait("EcoCash", 5));
     expect(mockMarker).toBeNull();
   });

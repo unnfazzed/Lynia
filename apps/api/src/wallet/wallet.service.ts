@@ -125,6 +125,12 @@ const RAIL_LABEL: Record<TopupRail, string> = {
  * The rate is server-authoritative (design 2A): resolved ONCE from the `COMMISSION_RATE_PCT` env
  * override (the "flip"), never a hardcoded constant, and served to every client in {@link getConfig}.
  */
+/** JQ-R3-02 (owner 2026-10-15, ledger D-106): the push for a top-up approved after its window closed. */
+export const TOPUP_LATE_CREDIT_PUSH = (amount: number): { title: string; body: string } => ({
+  title: "Top-up added",
+  body: `Your late approval went through: $${amount.toFixed(2)} is on your balance. No need to pay again.`,
+});
+
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
@@ -777,12 +783,16 @@ export class WalletService {
   async creditFromTopup(topUpId: string, providerRef?: string): Promise<{ balance: number } | null> {
     // Captured inside the tx, recorded only AFTER it commits — a rollback/retry must never record.
     let confirmed: { rail?: string; initiatedAt?: Date; resolvedAt?: Date | null } | undefined;
+    // JQ-R3-02: true when the payment landed after the app had already shown the timed-out screen.
+    let late = false;
     const result = await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.topUp.updateMany({
-        where: { id: topUpId, status: { in: ["pending", "expired"] } },
-        // declineReason cleared: an `expired` intent a late payment re-opened did not end that way after all.
-        data: { status: "confirmed", resolvedAt: new Date(), declineReason: null, ...(providerRef ? { providerRef } : {}) },
-      });
+      // declineReason cleared: an `expired` intent a late payment re-opened did not end that way after all.
+      const data = { status: "confirmed" as const, resolvedAt: new Date(), declineReason: null, ...(providerRef ? { providerRef } : {}) };
+      let claimed = await tx.topUp.updateMany({ where: { id: topUpId, status: { in: ["pending"] } }, data });
+      if (claimed.count === 0) {
+        claimed = await tx.topUp.updateMany({ where: { id: topUpId, status: { in: ["expired"] } }, data });
+        late = claimed.count > 0;
+      }
       if (claimed.count === 0) return null; // already confirmed/declined — exactly-once, nothing to do.
       const topUp = await tx.topUp.findUnique({ where: { id: topUpId } });
       if (!topUp) return null;
@@ -797,8 +807,17 @@ export class WalletService {
       });
       await tx.commissionAccount.update({ where: { riderId: topUp.riderId }, data: { balance: balanceAfter } });
       await this.noteFirstTopup(tx, topUp.riderId, topUpId, topUp.rail);
-      return { balance: balanceAfter };
+      return { balance: balanceAfter, riderId: topUp.riderId, amount };
     });
+    // JQ-R3-02 (owner 2026-10-15): a late approval used to land silently, after the app had shown the
+    // timed-out screen — tell the biker it arrived, so they don't pay a second time. Post-commit and
+    // best-effort, like creditManual's push. An on-time credit needs no push: the app is watching.
+    if (result && late) {
+      void this.notifications?.notifyProfiles([result.riderId], {
+        ...TOPUP_LATE_CREDIT_PUSH(result.amount),
+        data: { kind: "account" },
+      });
+    }
     // Rail-confirmation lag (initiatedAt → confirmed), recorded exactly once per top-up: only the
     // call that won the CAS gets here with `confirmed` set. Guarded field access because unit
     // harnesses model the TopUp row minimally — a missing timestamp skips the record, never throws.
@@ -807,7 +826,7 @@ export class WalletService {
       const resolved = confirmed.resolvedAt?.getTime() ?? Date.now();
       this.metrics.recordTopupConfirmLag(resolved - initiated, confirmed.rail);
     }
-    return result;
+    return result ? { balance: result.balance } : null;
   }
 
   /**

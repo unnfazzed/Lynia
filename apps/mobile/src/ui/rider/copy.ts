@@ -538,6 +538,8 @@ export const RF = {
   pendingOk: (amt: number): string => `Your ${usd(amt)} top-up went through while the app was closed.`,
   pendingWait: (provider: string, amt: number): string => `Waiting for ${provider} to confirm your ${usd(amt)} top-up…`,
   pendingFail: (amt: number): string => `Your ${usd(amt)} top-up didn't go through. Nothing was taken.`,
+  /** Undrawn (owner 2026-10-15, ledger D-107; JQ-R3-02): the Money notice for a top-up that timed out (not declined). */
+  pendingLate: (amt: number): string => `Your ${usd(amt)} top-up timed out. If you approve it late, we'll add it and let you know.`,
   cashOnly: (amt: number): string => `Cash with you now: ${usd(amt)}. It's all yours.`,
   lTop: (provider: string): string => `Top-up · ${provider}`,
   lMeta: (kind: string, time: string): string => `${kind} · ${time}`,
@@ -556,6 +558,9 @@ export const RF = {
   okB: (amount: number, balance: number | null): string =>
     balance != null ? `${usd(amount)} added. Your balance is ${usd(balance)}.` : `${usd(amount)} added.`,
   failB: (provider: string): string => `The prompt timed out or was declined. Nothing was taken from your ${provider}.`,
+  /** Undrawn (owner 2026-10-15, ledger D-107; JQ-R3-02): T6 for a prompt that TIMED OUT. The server still credits
+   *  a late approval for an hour, so "Nothing was taken" was not true — a biker who believed it could pay twice. */
+  failLateB: (provider: string): string => `The prompt timed out. If you still approve it on ${provider}, we'll add it to your balance and let you know. Check before you try again.`,
   /* account */
   ratingLine: (rating: number | null, jobs: number): string =>
     rating != null ? `${rating.toFixed(1)} · ${plural(jobs, "job", "jobs")}` : plural(jobs, "job", "jobs"),
