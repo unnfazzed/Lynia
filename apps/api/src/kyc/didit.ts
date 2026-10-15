@@ -235,6 +235,10 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
     for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
       if (key === "warnings" && Array.isArray(value)) {
         for (const w of value) {
+          // Owner 2026-10-15 ("remove pain points"): an information-level note is not a finding. The one real
+          // session so far carried LIVENESS_VIDEO_ANOMALY at that level — read as a finding, a decline on the
+          // same session would have cost an honest biker a liveness strike. A warning with no level still counts.
+          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>)) continue;
           const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
           if (typeof risk === "string") risks.push(risk.toUpperCase());
         }
@@ -258,12 +262,23 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
     !/NOT_DETECTED|COULD_NOT|UNABLE|NOT_READ|UNKNOWN/.test(r);
   if (risks.some(underage)) return KycDeclineReason.UNDERAGE;
   if (has(/DUPLICAT|BLOCKLIST|FRAUD/)) return KycDeclineReason.DUPLICATE;
-  if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE|INVALID_MRZ|INCONSISTENT|INVALID_VALIDATION/)) return KycDeclineReason.DOC_TAMPERED;
+  // Only direct evidence of a forged document is a tampering strike. A machine-readable zone, a cross-field check
+  // or a validation that fails is, on a worn card or a soft photo, far more often a misread than a forgery (owner
+  // 2026-10-15) — those fall to "unreadable" below: declined all the same, retried with a better photo, no strike.
+  if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE/)) return KycDeclineReason.DOC_TAMPERED;
   if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|SCREEN_CAPTURE|VIDEO_ANOMALY|MULTIPLE_FACES/)) return KycDeclineReason.LIVENESS_FAILED;
   if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
   if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
-  if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT/)) return KycDeclineReason.ID_UNREADABLE;
+  if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT|MRZ|INCONSISTENT|INVALID_VALIDATION/)) {
+    return KycDeclineReason.ID_UNREADABLE;
+  }
   return null;
+}
+
+/** A Didit warning marked information-level (`log_type`, or a `level` / `severity` alias): a note, not a finding. */
+function isInformationalWarning(w: Record<string, unknown>): boolean {
+  const level = w.log_type ?? w.level ?? w.severity;
+  return typeof level === "string" && /^info(rmation(al)?)?$/i.test(level.trim());
 }
 
 /** Didit's "In Review", with the same separator-tolerant normalisation as mapDiditPendingState: Didit has
