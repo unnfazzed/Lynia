@@ -33,8 +33,8 @@ byte-identical to the handoff, except for:
 | `apps/website/www-redirect/` | The `lyniago-www-redirect` Worker: `www.lyniago.com/*` → 301 → `https://lyniago.com/*`. |
 | `apps/website/site/_headers` | Cache and security headers (below). |
 | `apps/website/og-image/` | Source and renderer for `assets/og-image.png`, built to the handoff README's TODO #2 spec. |
-| `apps/website/smoke.sh` | Post-deploy checks: the page, fetched as a browser would, is byte-identical to the repo, every asset loads with the right type and cache header, `/about` is a 404, `www` and `http` redirect, and `/download` sends Android, iPhone and desktop to the right place. |
-| `scripts/check-website.mjs` (+ `.test.mjs`) | The CI guard. `--write` regenerates `404.html` and the CSP hashes. |
+| `apps/website/smoke.sh` | Post-deploy checks: the page, fetched as a browser would, is byte-identical to the repo, every file under `assets/` loads with the right type and cache header (a 404 is re-fetched to tell an edge-cached 404 from a missing file), `/about` is a 404, a missing `/assets/` path is not cached, `www` and `http` redirect, and `/download` sends Android, iPhone and desktop to the right place. |
+| `scripts/check-website.mjs` (+ `.test.mjs`) | The CI guard. `--write` regenerates `404.html`, the CSP hashes and the per-asset cache rules in `_headers`. |
 | `tools/website-parity/` | Pixel harness: renders the reference and the site (local or live) at the QA widths and diffs them. |
 | `.github/workflows/deploy-website.yml` | The deploy: check → `wrangler deploy` (both Workers) → smoke. |
 
@@ -92,12 +92,28 @@ forms:
 
 ## Hosting
 
-- **Assets-only Worker.** There is no Worker script for the site, so every request is a free,
-  unmetered static-asset request served from Cloudflare's edge (including Harare). Only `www` traffic
-  runs a script (the redirect).
-- **Caching** (`_headers`, from the handoff README): `/` and `/index.html` get `no-cache`, and
-  `/assets/*` gets `public, max-age=31536000, immutable`. Because assets are immutable, **a changed
-  asset must get a new file name**. On a PR, CI fails any in-place edit under `site/assets/`.
+- **Static assets first.** Every request except `/download` is a free, unmetered static-asset
+  request served from Cloudflare's edge (including Harare). Unknown paths get `404.html` from the
+  asset layer and never reach the script either. `www` traffic runs its own script (the redirect).
+- **Caching** (`_headers`, from the handoff README): `/` and `/index.html` get `no-cache`, and every
+  file under `assets/` gets `public, max-age=31536000, immutable`. Because assets are immutable, **a
+  changed asset must get a new file name**. On a PR, CI fails any in-place edit under `site/assets/`.
+- **A missing asset is never cached.** `_headers` matches by path, not status. A `/assets/*` rule
+  also stamped the immutable header on the 404 page served at a *missing* path, and Cloudflare's edge
+  cached that 404 for a year. On 2026-10-15, right after the deploy of #1205, one edge location still
+  had the previous version, 404ed `assets/download-qr-2026-10.svg` and kept serving that 404 after
+  the deploy landed. So `_headers` gives **each asset its own exact rule** (a generated block between
+  `# BEGIN immutable assets` and `# END immutable assets`), and a missing path matches none. It gets
+  Cloudflare's default `public, max-age=0, must-revalidate`. `check-website.mjs` fails CI when the
+  block doesn't match `site/assets/`, when any wildcard rule sets `Cache-Control`, or when `_headers`
+  passes Cloudflare's 100-rule limit (about 45 today). `--write` regenerates the block, so a new asset
+  needs no hand edit. Options weighed and not taken:
+  - *Scoping `_headers` by status* isn't supported, and the 404-page response can't be excluded.
+  - *Running the Worker for `/assets/*`* to rewrite 404 headers would make every asset request a
+    metered Worker request on the free plan's 100,000/day, for a problem the per-file rules solve at
+    no cost.
+  - *A zone Cache Rule* (status-code TTL for 404) only fixes the edge, not browsers, and lives in the
+    dashboard where CI can't check it. Not needed now.
 - **Content types** come from the file extension: `.woff2` `font/woff2`, `.webp` `image/webp`,
   `.svg` `image/svg+xml`. Cloudflare compresses HTML and SVG with brotli or gzip. The files are never
   re-encoded.
@@ -110,10 +126,8 @@ forms:
   scanned by osv-scanner in CI and kept current by Dependabot. It is installed with
   `npm ci --ignore-scripts` in a step that never sees the token.
 - **Known limitations.**
-  - `_headers` matches by path, not status, so a 404 for a missing file under `/assets/` also gets the
-    one-year immutable header. Deploys are atomic and changed assets get new names, so this only bites
-    a URL that never existed. An optional zone Transform Rule (response code 404 → `Cache-Control:
-    no-store`) closes it.
+  - The smoke check probes one edge location (the runner's). It can't see a 404 another location
+    cached. The per-file rules keep such a 404 out of the cache in the first place.
   - In CI, wrangler takes over any conflicting DNS record or Custom Domain at `lyniago.com` and
     `www.lyniago.com`, and only there. Keep those two names for this site.
 - The app hostnames (`api.`, `admin.`, `merchant.lyniago.com`) are unaffected. They remain DNS-only
@@ -182,6 +196,12 @@ merchant web's one-time cutover step, [`MERCHANT-WEB.md`](MERCHANT-WEB.md)).
   `node tools/website-parity/compare.mjs --site https://lyniago.com`.
 - **Roll back:** revert the commit on `main` (the deploy re-runs), or use Cloudflare → **Workers & Pages
   → lyniago-website → Deployments → Rollback** for an instant switch to the previous version.
+- **A cached 404 (or any stale URL):** the symptom is a URL that 404s while the same URL with a query
+  (`…svg?x=1`) is 200, and the smoke check names it as "a CACHED 404 at this edge location". Purge the
+  exact URL: Cloudflare → **lyniago.com → Caching → Configuration → Purge Cache → Custom Purge → URL**,
+  enter `https://lyniago.com/assets/<file>`, then **Purge**. It takes effect worldwide within seconds.
+  Re-run `bash apps/website/smoke.sh` to confirm. A purge clears Cloudflare only. A browser that
+  cached a 404 under the old `/assets/*` rule keeps it until its cache is cleared.
 
 ## Updating from a new handoff export
 
@@ -195,4 +215,5 @@ merchant web's one-time cutover step, [`MERCHANT-WEB.md`](MERCHANT-WEB.md)).
    immutable-asset check fails the PR. Returning visitors' browsers would otherwise keep the old file
    for a year. Ask Design to re-export that asset under a new name. The handoff copy stays verbatim, so
    the fix never happens on this side.
-5. Run `node scripts/check-website.mjs --write`, then `node --test scripts/check-website.test.mjs`.
+5. Run `node scripts/check-website.mjs --write` (it also gives each new asset its cache rule in
+   `_headers`), then `node --test scripts/check-website.test.mjs`.

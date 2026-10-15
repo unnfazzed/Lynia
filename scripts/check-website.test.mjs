@@ -137,3 +137,19 @@ test("editing an immutable asset in place fails; renaming it does not", () => {
   git(root, "commit", "-qm", "rename");
   assert.ok(!checkWebsite({ root, baseRef: "HEAD~1" }).some((e) => e.includes("changed in place")));
 });
+
+test("every asset gets its own exact cache rule, and --write regenerates the list", () => {
+  const root = tempRepo();
+  edit(root, `${SITE}/_headers`, (s) => s.replace(/\/assets\/og-image\.png\n {2}Cache-Control:[^\n]*\n\n?/, ""));
+  assert.ok(checkWebsite({ root }).some((e) => e.includes("immutable asset rules do not match")));
+  assert.deepEqual(checkWebsite({ root, write: true }), []);
+  assert.match(readFileSync(join(root, SITE, "_headers"), "utf8"), /\n\/assets\/og-image\.png\n {2}Cache-Control: public, max-age=31536000, immutable\n/);
+});
+
+test("a wildcard Cache-Control rule fails: it would also cache the 404 page at a missing path", () => {
+  const root = tempRepo();
+  edit(root, `${SITE}/_headers`, (s) => `${s}\n/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n`);
+  assert.ok(checkWebsite({ root }).some((e) => e.includes('"/assets/*" sets Cache-Control with a wildcard')));
+  edit(root, `${SITE}/_headers`, (s) => s.replace("/assets/*\n", "/email/:name\n"));
+  assert.ok(checkWebsite({ root }).some((e) => e.includes('"/email/:name" sets Cache-Control with a wildcard')));
+});

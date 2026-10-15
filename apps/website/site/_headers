@@ -23,10 +23,133 @@
 
 # Assets: cached for a year and never revalidated. A changed asset MUST get a new file name;
 # check-website.mjs fails any PR that edits a file under site/assets/ in place.
-/assets/*
+#
+# One exact rule per file, never a wildcard: _headers matches by path, not by status, so `/assets/*`
+# also stamped the one-year immutable header on the 404 page served at a MISSING path, and Cloudflare's
+# edge cached that 404 for a year (2026-10-15: a just-deployed asset requested at an edge location
+# that still had the previous version). A missing path now matches no cache rule, so it is never
+# cached as immutable (docs/WEBSITE.md § Hosting). check-website.mjs fails CI when this list does not
+# match site/assets/, and `node scripts/check-website.mjs --write` regenerates it.
+# BEGIN immutable assets
+/assets/brand/lyniago-mark.svg
   Cache-Control: public, max-age=31536000, immutable
+
+/assets/download-qr-2026-10.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/fonts/fredoka-600.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/fonts/inter-400.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/fonts/inter-600.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/fonts/inter-700.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-auto-shops.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-boutiques.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-butcheries.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-grocers.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-online-stores.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-pharmacies.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-restaurants.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-retailers.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-scooter-rider.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/biz-small-business.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/hero-rider.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/hours.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/price.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/rider-night.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/trust-code.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/trust-payment.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/trust-tracking.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/illustrations/trust-verified.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/og-image.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-rider-2026-10-2x.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-rider-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-send-2026-10-2x.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-send-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-splash-2026-10-2x.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-splash-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-tracking-2026-10-2x.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/app-tracking-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-1-hl-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-1-phone-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-2-hl-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-2-phone-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-3-hl-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/screens/step-3-phone-2026-10.webp
+  Cache-Control: public, max-age=31536000, immutable
+# END immutable assets
 
 # Email-signature image (owner, 2026-10-12): mail clients hotlink it at this exact URL, so its name
 # never changes. Cached for a year but not immutable, so a replacement still reaches clients.
-/email/*
+/email/lyniago-signature-logo-tile.png
   Cache-Control: public, max-age=31536000
