@@ -104,12 +104,42 @@ interface RawPlace {
   displayName?: RawText;
 }
 
+/** Street-type words Google spells out in a suggestion's name but abbreviates in `formattedAddress`. */
+const STREET_ABBR: Record<string, string> = {
+  avenue: "ave",
+  boulevard: "blvd",
+  close: "cl",
+  court: "ct",
+  crescent: "cres",
+  drive: "dr",
+  lane: "ln",
+  place: "pl",
+  road: "rd",
+  street: "st",
+  way: "wy",
+};
+
+/** Lowercased, punctuation-free, street types abbreviated: "22 Bingley Drive" and "22 Bingley Dr" agree. */
+function addressKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[.,]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => STREET_ABBR[w] ?? w)
+    .join(" ");
+}
+
 /** Build a human landmark from a Details result — name + address, deduped, capped to the Waypoint max. */
 function landmarkFrom(name: string, formatted: string): string {
   const parts = [name, formatted].filter((s) => s.length > 0);
   // If the name is already the head of the formatted address, don't repeat it ("Eastgate Mall,
-  // Eastgate Mall, Robert Mugabe Rd" → "Eastgate Mall, Robert Mugabe Rd").
-  const joined = parts.length === 2 && formatted.startsWith(name) ? formatted : parts.join(", ");
+  // Eastgate Mall, Robert Mugabe Rd" → "Eastgate Mall, Robert Mugabe Rd"). The head is compared
+  // abbreviation-blind, because a typed street address comes back as "22 Bingley Drive" beside
+  // "22 Bingley Dr, Harare" — a plain prefix check printed both.
+  const head = formatted.split(",")[0] ?? "";
+  const repeats = formatted.startsWith(name) || addressKey(head) === addressKey(name);
+  const joined = parts.length === 2 && repeats ? formatted : parts.join(", ");
   return joined.slice(0, 160).trim();
 }
 

@@ -54,6 +54,7 @@ import { SendPriceStep } from "../src/ui/send/SendPriceStep";
 import { SendReviewPriceBar, SendReviewStep } from "../src/ui/send/SendReviewStep";
 import { SendWhatStep } from "../src/ui/send/SendWhatStep";
 import { parseNum, randomUuidV4, uuidV4FromSeed, withTimeout } from "../src/util";
+import { LOCATION_OFF_MSG } from "../src/permissions/location";
 
 /**
  * Send a parcel — the stepped compose flow (ledger D-52; handoff `packages/design/handoff/send-compose-v2`):
@@ -340,7 +341,7 @@ export default function SendScreen(): React.ReactElement {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          setError("Location is off — tap the map to drop your pin, or turn it on in Settings.");
+          setError(LOCATION_OFF_MSG);
           return;
         }
         const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
