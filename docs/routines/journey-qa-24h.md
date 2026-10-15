@@ -275,7 +275,9 @@ except as noted.
   ships no EAS Observe SDK. Skip all `observe_*` tools.
 - **Play crashes are broken right now.** `playstore_crashes` (package `zw.co.lynia`) fails with
   `Google token exchange failed 400: invalid_grant: account not found`. Expo's Google service-account
-  credential is invalid. Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
+  credential is invalid. **Re-checked 2026-10-15 ~08:55 UTC after the owner updated the Play service
+  account in Expo: still the same `invalid_grant: account not found`.** (`playstore_reviews` returns
+  "No reviews found" without an auth error, so it does not prove the credential works.) Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
   Google Play service account in Expo") and move on.
 - **Sentry and PostHog are readable through their own claude.ai connectors** (connected 2026-10-14
   ~10:30 UTC). The Expo connector itself has no tools for them.
