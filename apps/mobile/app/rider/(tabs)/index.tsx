@@ -894,6 +894,10 @@ export default function RiderHome(): React.ReactElement {
   const [sheetVisible, setSheetVisible] = useState(0);
   const empty = online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
   const loadFailed = openQ.isError && openQ.data == null;
+  // The first seconds after sign-in: go-online and the first open-jobs read are still in flight. Rider v2
+  // draws no loading state for the board, so the sheet holds no list chrome (no "N near you", no food line)
+  // until that read lands — then it is J1 or J4 straight away, never J1's chrome over an empty list first.
+  const boardLoading = !openQ.isError && openQ.data == null && jobs.length === 0 && myOffers.length === 0;
   // Peek 50% of the screen (44% when empty), measured from the screen's top, as the handoff draws it. The
   // floating tab bar (tab bar v1, D-56) takes no layout space, so the area runs to the screen's bottom
   // and everything above it is the mint top card; the sheet continues behind the bar.
@@ -1032,7 +1036,7 @@ export default function RiderHome(): React.ReactElement {
               <Text style={{ fontSize: tokens.font.size.caption, color: tokens.color.muted }}>{R.nearest}</Text>
             </View>
           ) : null}
-          {!myOffers.length && !loadFailed && (busyLine || foodOn) ? (
+          {!myOffers.length && !loadFailed && !boardLoading && (busyLine || foodOn) ? (
             <View style={{ gap: 4 }}>
               {busyLine ? <DemandLine text={busyLine} /> : null}
               {foodOn ? (
