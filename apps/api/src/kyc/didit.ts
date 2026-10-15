@@ -238,9 +238,12 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
           // Owner 2026-10-15 ("remove pain points"): an information-level note is not a finding. The one real
           // session so far carried LIVENESS_VIDEO_ANOMALY at that level — read as a finding, a decline on the
           // same session would have cost an honest biker a liveness strike. A warning with no level still counts.
-          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>)) continue;
+          // Never for a strike or final code, though: a duplicate, fraud, forgery or under-age finding counts at any level.
           const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
-          if (typeof risk === "string") risks.push(risk.toUpperCase());
+          if (typeof risk !== "string") continue;
+          const code = risk.toUpperCase();
+          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>) && !NEVER_A_NOTE.test(code)) continue;
+          risks.push(code);
         }
       } else {
         walk(value, depth + 1);
@@ -274,6 +277,10 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   }
   return null;
 }
+
+/** Codes that cost a strike or lock the account (duplicate, forgery, under age): counted whatever level Didit
+ *  reports them at, so an information-level label can never turn one into a free retry. Deliberately broad. */
+const NEVER_A_NOTE = /DUPLICAT|BLOCKLIST|FRAUD|TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE|UNDER_?AGE|MINIMUM_AGE|BELOW_(MINIMUM_)?AGE/;
 
 /** A Didit warning marked information-level (`log_type`, or a `level` / `severity` alias): a note, not a finding. */
 function isInformationalWarning(w: Record<string, unknown>): boolean {
