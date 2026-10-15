@@ -112,7 +112,8 @@ export type KycWebhookRejection = "bad_signature" | "stale_timestamp" | "unconfi
 /** Where a Didit verdict came from: the signed webhook, the lost-webhook sweep, or the `/auth/me` poll's read. */
 export type KycDecisionSource = "webhook" | "sweep" | "poll";
 /** Which path bought a paid Didit session. CLOSED vocabulary. */
-export type KycMintPath = "become" | "retry";
+// `recheck`: a verified biker's selfie re-check (owner 2026-10-15).
+export type KycMintPath = "become" | "retry" | "recheck";
 /** The push `data.kind` of a push that reached no device. Closed: only the kinds whose loss is counted. */
 export type PushUndeliveredKind = "account";
 

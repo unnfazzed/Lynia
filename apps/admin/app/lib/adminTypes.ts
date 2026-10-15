@@ -248,6 +248,14 @@ export interface KycReview {
   /** Didit's own session status ("Approved", "In Review", "Declined", "Not Started", "In Progress",
    *  "Abandoned", "Expired"), or null when no Didit result was ever recorded. */
   kycVendorStatus?: string | null;
+  /** Owner 2026-10-15, verified bikers only: null = the selfie was checked as normal; `unverified` = verified on
+   *  the ID with a selfie the phone's camera couldn't make checkable; `recheck_requested` = ops asked for a new
+   *  selfie (a reminder — it never blocks going online). Optional: an older API omits it. */
+  selfieCheck?: "unverified" | "recheck_requested" | null;
+  /** Why it was flagged (`camera_quality`), or why the latest re-check didn't pass (a decline-reason key). */
+  selfieCheckReason?: string | null;
+  /** When it was flagged, or when the re-check was asked for (ISO). */
+  selfieCheckAt?: string | null;
 }
 
 /** One other account sharing this rider's national ID (A-04 duplicate-account guard). */

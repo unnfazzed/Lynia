@@ -111,6 +111,12 @@ describe("pushDestination", () => {
     expect(pushDestination({ kind: "account", orderId: "" }, true)).toBe("/rider");
   });
 
+  // D-110: the selfie re-check reminder opens Bike & documents, where the Redo is.
+  it("routes the selfie re-check reminder to Bike & documents", () => {
+    expect(pushDestination({ kind: "account", kyc: "selfie_recheck" }, true)).toBe("/rider/documents");
+    expect(pushDestination({ kind: "account", kyc: "verified" }, true)).toBe("/rider");
+  });
+
   // BH-18: AdminCustomersService.holdCustomer/liftCustomerHold push a THIRD kind:"account" no-orderId
   // shape — about the CUSTOMER themselves, not a rider's own standing — stamped `to:"customer"`. Without
   // honoring it, a plain customer (isRider=false, no rider profile) landed on the rider-onboarding

@@ -5570,3 +5570,31 @@ Guards: `src/logic/__tests__/signup-permissions.test.ts`, `app/__tests__/setup-p
 `app/__tests__/permissions-flow.test.tsx` ("right after sign-up"), the D-109 cases in
 `verify-otp-states.test.tsx` and `profile/__tests__/setup.test.tsx`. Picture:
 `docs/parity/SIGNUP-PERMISSIONS-2026-10-15.png` (`tools/parity/shoot-signup-perms.mjs`).
+
+## D-110 · Biker ID check: a selfie the camera couldn't check, ops' re-check reminder, and the unreadable-card hold — APPROVED (owner, 2026-10-15)
+
+**Why:** bikers on low-end phones were stuck in the ID check: a camera that can't take a usable selfie (or can't
+read the card) fails every retry the same way, and they ended up on WhatsApp. The owner chose (2026-10-15): when
+the **ID passed** and the **selfie failed only on camera quality**, the biker is verified and can ride, with the
+selfie flagged for ops; a selfie that doesn't match the ID, or any spoof sign, still declines. Ops can ask for a
+**selfie re-check**, which is a **reminder only** (never blocks going online). A card that **can't be read three
+times** goes to a person (the existing "under review" wall) instead of a fourth retry. No handoff draws any of it.
+Tightened on the owner's hold (#1216, 2026-10-15): "camera quality" means the selfie **was compared to the card and
+matched** (an Approved face match at or above `needsReview`) and only liveness failed, on blur, light, distance or
+centring. No face, no score or a low liveness score still declines. A paid re-check needs ops to have asked for one,
+and is capped at three a day.
+
+| Element | Drawn | Shipped |
+|---|---|---|
+| Bike & documents, National ID row, re-check asked for | E1/E5: "National ID" + "Verified" | The same row with sub **"Please redo your selfie check"** and the trailing value **"Redo"** (the slot E1 uses for "Edit" / "Change"), tappable → the re-check opens in the existing in-app ID-check sheet. Strings: `src/ui/rider/selfie-recheck-copy.ts` (`SR`). Shown only for `selfieCheck: recheck_requested`; otherwise E1/E5 as drawn |
+| Re-check couldn't start | — | The existing toast with F7's words, **"Couldn’t open the ID check"** (`KY.cantA` + `KY.cantB`), or `KYC_RETRY_TRY_LATER` on a 429. No new copy |
+| Push when ops ask for a re-check | not drawn | Title **"Please redo your selfie check"**, body **"It takes about 2 minutes. You can keep taking jobs."** (`KYC_PUSH_COPY.selfie_recheck`, `kind: account`, `kyc: selfie_recheck`); the tap opens Bike & documents |
+| Third unreadable card | F4a "Your photo was blurry" again | F2 "One more look" (the drawn held wall, `kycHeld`); no new screen, no push |
+| Admin KYC review (verified biker) | kit `kyc.html` detail | A warnbar **"ID verified — selfie not checked."** naming the verified ID number; "ID document · pass" and "Selfie · not checked / reminded" check rows; **"Ask for a selfie re-check…"** / **"Remind again…"** and **"Mark selfie checked…"** (note required) `ConfirmModal`s — kit primitives only (D-106) |
+| Admin KYC review (held unreadable card) | — | A warnbar **"ID card couldn't be read — three tries."** |
+| Admin KYC review (held check carrying the flag) | — | A warnbar **"Selfie not checked."** ("…nothing has compared their face with the ID. Compare the selfie with the ID photo in Didit before you decide.") and the same "Selfie · not checked" check row |
+
+Guards: `didit.spec.ts` "isSelfieCameraFailure", `kyc.controller.spec.ts` (camera-only selfie → verify with the
+flag; a re-check's verdict never reaches applyKycResult), `rider.service.spec.ts` "owner 2026-10-15" (the flag,
+the third-unreadable hold and its repeat guard, the re-check request / start / verdict), admin
+`riders/[id]/kyc/page.test.tsx`, mobile `documents.test.tsx` (D-110) and `push.test.ts`.

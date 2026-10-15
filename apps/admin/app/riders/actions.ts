@@ -55,6 +55,20 @@ export async function resetKycAttempts(profileId: string, note?: string): Promis
 }
 
 /**
+ * Owner 2026-10-15: ask a verified biker for a new selfie check (`request` — the biker gets a reminder push and a
+ * Redo on Bike & documents; it never stops them going online), or mark their selfie checked (`clear`).
+ * `POST /admin/riders/:id/selfie-check` writes the flag and its audit row in one transaction, so the modal sets
+ * `auditInEndpoint`. A refusal (e.g. the biker isn't verified) comes back as a failed `KycWriteResult`.
+ */
+export async function setSelfieCheck(profileId: string, action: "request" | "clear", note?: string): Promise<KycWriteResult> {
+  const res = await adminPostResult(`/admin/riders/${profileId}/selfie-check`, { action, note: note || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/riders/${profileId}/kyc`);
+  revalidatePath(`/riders/${profileId}`);
+  return { ok: true };
+}
+
+/**
  * Rider account-status mutations (item 1) — suspend / lift / ban via
  * `POST /admin/riders/:id/{suspend|lift|ban}`. The domain half of a <ConfirmModal> confirm (the audit
  * row is already written by submitAdminAction). `action` is the endpoint segment; the body carries the

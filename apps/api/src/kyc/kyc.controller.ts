@@ -57,6 +57,12 @@ export const AdminKyc = z
     }
   });
 
+/** Owner 2026-10-15: ask a verified biker for a new selfie check, or mark their selfie checked. */
+export const AdminSelfieCheck = z.object({
+  action: z.enum(["request", "clear"]),
+  note: z.string().max(2000).nullish(),
+});
+
 /**
  * The /kyc/return landing (see the route's doc comment). Static, self-contained, no reflected input.
  * Colours come from the shared design tokens (the CTA green + ink pair every app face uses) so this
@@ -247,5 +253,19 @@ export class KycController {
     return this.riders.adminSetKyc(profileId, body.status, body.reasonCode ?? null, actor, body.note ?? null, {
       resetAttempts: body.resetAttempts === true,
     });
+  }
+
+  /**
+   * Owner 2026-10-15: `request` asks a verified biker for a new selfie check (a pushed reminder — it never stops
+   * them going online); `clear` marks their selfie checked. Written with its audit row in one transaction.
+   */
+  @Post("admin/riders/:profileId/selfie-check")
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  adminSelfieCheck(
+    @Param("profileId", ParseUUIDPipe) profileId: string,
+    @Body(new ZodBody(AdminSelfieCheck)) body: z.infer<typeof AdminSelfieCheck>,
+    @AdminActor() actor: string,
+  ) {
+    return this.riders.adminSetSelfieCheck(profileId, body.action, actor, body.note ?? null);
   }
 }

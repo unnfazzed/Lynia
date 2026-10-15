@@ -403,6 +403,16 @@ model Rider {
   // The reason code from the most recent admin decline (admin A-02). Surfaced to the rider app so they
   // know what to fix on a resubmit, and recorded alongside the audit-log row. Cleared on approve.
   kycDeclineReason  String?                                @map("kyc_decline_reason")
+  // Owner 2026-10-15 (migration 0104): the ID passed but the selfie couldn't be checked because of the phone's
+  // camera — verified with the selfie flagged. null = checked as normal; "unverified" = verified without a
+  // selfie check; "recheck_requested" = ops asked for a re-check (a reminder only — never blocks the biker).
+  selfieCheck       String?                                @map("selfie_check")
+  // Why it was flagged ("camera_quality"), or why the last re-check didn't pass (a decline-reason key).
+  selfieCheckReason String?                                @map("selfie_check_reason")
+  selfieCheckAt     DateTime?                              @map("selfie_check_at")
+  // The re-check's own Didit session (the webhook routes on it) and its link (SECRET, like kycSessionUrl).
+  selfieRecheckRef  String?                                @map("selfie_recheck_ref")
+  selfieRecheckUrl  String?                                @map("selfie_recheck_url")
   // Account standing (A-04) — only `active` may go online. suspended/banned are admin actions or a
   // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
   accountStatus     RiderAccountStatus                     @default(active) @map("account_status")

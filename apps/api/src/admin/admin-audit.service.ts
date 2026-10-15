@@ -29,6 +29,12 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // "system:kyc-webhook") in the same transaction as the DOC-16-05 duplicate-ID hold-for-review decision —
   // a real, domain-owned compliance entry the free-text path must not be able to forge either.
   "rider.kyc_review_required",
+  // Owner 2026-10-15: the selfie re-check trail — ops' request / clear (RiderService.adminSetSelfieCheck, with the
+  // flag write) and the webhook's verdict on the re-check (applySelfieRecheck). Domain-owned, never free text.
+  "rider.selfie_recheck_request",
+  "rider.selfie_check_clear",
+  "rider.selfie_recheck_pass",
+  "rider.selfie_recheck_fail",
   // Written by RiderService itself (becomeRider's claim, each paid Didit mint): the biker's own sign-up and the
   // vendor bill per biker, which retryKyc's paid-mint ceiling counts — a forged row could lock a biker out.
   "rider.become",

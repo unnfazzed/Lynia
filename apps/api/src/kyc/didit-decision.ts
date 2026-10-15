@@ -1,19 +1,53 @@
 import type { Logger } from "@nestjs/common";
 import type { RiderService } from "../riders/rider.service";
 import {
+  classifyDiditSession,
   decideDiditKyc,
   extractDiditDocumentExpiry,
   extractDiditDocumentNumber,
   extractDiditScore,
+  isDiditDecisionStatus,
   isDiditReviewHold,
+  isSelfieCameraFailure,
   mapDiditStatus,
+  SELFIE_CAMERA_QUALITY,
 } from "./didit";
 
 /** The rider-side writes a Didit decision can make — the subset of RiderService this path needs. */
 export type DiditDecisionRiders = Pick<
   RiderService,
   "applyKycResult" | "recordHeldVerifiedId" | "recordKycVendorStatus" | "kycSessionOwner"
->;
+> &
+  // Owner 2026-10-15: a selfie re-check's verdict. Optional so a caller built before it simply never routes one.
+  Partial<Pick<RiderService, "selfieRecheckOwner" | "applySelfieRecheck">>;
+
+/**
+ * Owner 2026-10-15: the verdict for a SELFIE RE-CHECK session (the biker is already verified; ops asked for a new
+ * selfie). It never touches the biker's verification — applySelfieRecheck only clears or keeps the selfie flag.
+ * Undecided statuses change nothing; a dead session is let go so the next tap starts a fresh one.
+ */
+async function applyRecheckDecision(
+  riders: DiditDecisionRiders,
+  logger: Pick<Logger, "log" | "warn">,
+  owner: string,
+  input: DiditDecisionInput,
+): Promise<Record<string, unknown>> {
+  const { sessionId, status, payload, source } = input;
+  const vendorData = payload && typeof payload === "object" ? (payload as Record<string, unknown>).vendor_data : undefined;
+  if (typeof vendorData === "string" && vendorData.trim() !== "" && vendorData.trim() !== owner) {
+    logger.warn(`Selfie re-check ${source} for session ${sessionId}: vendor_data names a different biker — not applied (KYC-R26-07)`);
+    return { ignored: true, reason: "vendor_data_mismatch" };
+  }
+  if (classifyDiditSession(status) === "dead") return riders.applySelfieRecheck!(sessionId, { kind: "dead" });
+  if (!isDiditDecisionStatus(status)) return { ignored: true, status };
+  const score = extractDiditScore(payload);
+  const decided = decideDiditKyc(status, score, payload);
+  const verdict =
+    decided.status === "verified"
+      ? ({ kind: "passed" } as const)
+      : ({ kind: "failed", reason: isSelfieCameraFailure(status, score, payload) ? SELFIE_CAMERA_QUALITY : (decided.reason ?? "other") } as const);
+  return riders.applySelfieRecheck!(sessionId, verdict, extractDiditDocumentNumber(payload));
+}
 
 export interface DiditDecisionInput {
   /** Didit's session id — the rider's stored kycRef. */
@@ -51,6 +85,9 @@ export async function applyDiditDecision(
   input: DiditDecisionInput,
 ): Promise<Record<string, unknown>> {
   const { sessionId, status, payload, eventAt, source } = input;
+  // Owner 2026-10-15: a selfie re-check has its own session, never the biker's kycRef — route it first.
+  const recheckOwner = riders.selfieRecheckOwner && riders.applySelfieRecheck ? await riders.selfieRecheckOwner(sessionId) : null;
+  if (recheckOwner) return applyRecheckDecision(riders, logger, recheckOwner, input);
   const vendorData = payload && typeof payload === "object" ? (payload as Record<string, unknown>).vendor_data : undefined;
   if (typeof vendorData === "string" && vendorData.trim() !== "") {
     const owner = await riders.kycSessionOwner(sessionId);
@@ -65,7 +102,13 @@ export async function applyDiditDecision(
   // and a sub-threshold score are declines, with the reason Didit's warnings point at. Only a session Didit
   // never finished judging stays `pending`.
   const score = extractDiditScore(payload);
-  const decision = decideDiditKyc(status, score, payload);
+  // Owner 2026-10-15: the ID passed and the selfie failed only because of the phone's camera → verified, with the
+  // selfie flagged for ops (who can ask for a re-check), instead of a decline the camera can't get them past.
+  const selfieUnverified = isSelfieCameraFailure(status, score, payload);
+  if (selfieUnverified) {
+    logger.log(`KYC ${source} for session ${sessionId}: ID verified, selfie failed on camera quality only — verified, selfie flagged`);
+  }
+  const decision = selfieUnverified ? { status: "verified" as const, reason: undefined } : decideDiditKyc(status, score, payload);
   // IR26-07 coverage signals. On a Didit approval our bands are the last check, so say when they
   // could not run, and when they held a rider Didit approved (nothing else records why it's pending).
   if (mapDiditStatus(status) === "verified") {
@@ -114,6 +157,7 @@ export async function applyDiditDecision(
     // First Run v2 F6 (D-82 §4): the document's expiry date, so an expired rider can be told the day — and
     // KYC-R26-08: a verify whose document already expired is declined `id_expired` downstream.
     extractDiditDocumentExpiry(payload),
+    { selfieUnverified },
   );
   if (res.updated === 0 && !res.skipped) {
     // No rider has this ref, or the event was stale. (A KYC-R26-01 repeat or a KYC-R26-02 admin-decided check

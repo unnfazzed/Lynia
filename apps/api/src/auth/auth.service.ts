@@ -159,6 +159,8 @@ export class AuthService {
             // on a resubmit and the attempt-2 lock state (item 4).
             kycDeclineReason: true,
             kycAttempts: true,
+            // Owner 2026-10-15: the selfie re-check reminder.
+            selfieCheck: true,
             // Owner-only (see the payload note below on why this never leaves this endpoint).
             kycSessionToken: true,
             // Neither is returned: the session ref is the pending-state derivation's input, and the url
@@ -296,6 +298,10 @@ export class AuthService {
             // hold — a review-band face match, an ID collision). The app draws the "under review" wall and
             // polls slowly; an older app ignores it and keeps `in_flight`'s R2.
             kycHeld,
+            // Owner 2026-10-15, additive: `recheck_requested` when ops asked a verified biker for a new selfie
+            // check (Bike & documents shows the reminder; it never blocks going online). `unverified` (verified
+            // without a checked selfie, nothing asked yet) and null both mean the app shows nothing.
+            selfieCheck: p.rider.kycStatus === "verified" ? p.rider.selfieCheck : null,
           }
         : null,
     };

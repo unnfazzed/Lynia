@@ -152,6 +152,12 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
       "kyc_vendor_status",
       "kyc_vendor_status_at",
       "kyc-vendor-session",
+      // Owner 2026-10-15: whether the face photo was checked, and the selfie re-check's own vendor session.
+      "selfie_check",
+      "selfie_check_reason",
+      "selfie_check_at",
+      "selfie_recheck_ref",
+      "selfie_recheck_url",
     ],
   },
   {

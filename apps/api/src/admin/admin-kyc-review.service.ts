@@ -39,6 +39,10 @@ export class AdminKycReviewService {
         kycDeclineReason: true,
         // KYC-R26 admin fields: the vendor's last stored status for the current check (kycHeld + display).
         kycVendorStatus: true,
+        // Owner 2026-10-15: the selfie flag and its reason.
+        selfieCheck: true,
+        selfieCheckReason: true,
+        selfieCheckAt: true,
         idVerified: true,
         duplicateIdFlag: true,
         verifiedIdHash: true,
@@ -148,6 +152,14 @@ export class AdminKycReviewService {
       // The raw Didit status string last stored for the current check (e.g. "In Review", "Approved",
       // "Abandoned"), or null when none is stored (no webhook yet, a decided check, an admin reset).
       kycVendorStatus: rider.kycVendorStatus ?? null,
+      // Owner 2026-10-15: null = the selfie was checked as normal; `unverified` = verified on the ID with a selfie
+      // the camera couldn't make checkable; `recheck_requested` = ops asked for a new one (a reminder, not a gate).
+      // The reason is why it was flagged (`camera_quality`), or why the latest re-check didn't pass. Shown whatever
+      // the KYC status: a check held for review (an ID collision) can carry the flag too, and the reviewer deciding
+      // it must know the face was never checked (owner hold on #1216).
+      selfieCheck: rider.selfieCheck ?? null,
+      selfieCheckReason: rider.selfieCheckReason ?? null,
+      selfieCheckAt: rider.selfieCheckAt ? rider.selfieCheckAt.toISOString() : null,
     };
   }
 }
