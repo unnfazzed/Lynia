@@ -2,7 +2,7 @@ import { Logger } from "@nestjs/common";
 import type { Env } from "../config/env";
 import { mapDiditPendingState } from "./didit";
 import type { ServerKycPendingState } from "./kyc-pending-state";
-import type { KycSubmission, KycVendor } from "./kyc-vendor";
+import type { KycExpectedDetails, KycSubmission, KycVendor } from "./kyc-vendor";
 
 /**
  * Didit KYC (verifies Zimbabwean national IDs). Creates a verification session; the rider opens
@@ -22,18 +22,31 @@ const DIDIT_DECISION_TIMEOUT_MS = 3_000;
  *  little longer than the `/auth/me` read — still bounded, so a hung vendor can't stall a sweep or an erase. */
 const DIDIT_BACKGROUND_TIMEOUT_MS = 8_000;
 
+/**
+ * The signup name as Didit's session `expected_details` (owner 2026-10-15: ID + name, no selfie). Didit
+ * compares it to the name it reads off the document and applies the workflow's
+ * `expected_details_mismatch_action`. Blank parts are left out — an empty `last_name` would read as a
+ * mismatch against any document — and a name with nothing in it sends no expected details at all.
+ */
+export function diditExpectedDetails(expected?: KycExpectedDetails): { first_name: string; last_name?: string } | null {
+  const first = expected?.firstName?.trim();
+  if (!first) return null;
+  const last = expected?.lastName?.trim();
+  return last ? { first_name: first, last_name: last } : { first_name: first };
+}
 
 export class DiditKycVendor implements KycVendor {
   private readonly logger = new Logger(DiditKycVendor.name);
 
   constructor(private readonly env: Env) {}
 
-  async submit(riderId: string): Promise<KycSubmission> {
+  async submit(riderId: string, expected?: KycExpectedDetails): Promise<KycSubmission> {
     const apiKey = this.env.DIDIT_API_KEY;
     const workflowId = this.env.DIDIT_WORKFLOW_ID;
     if (!apiKey || !workflowId) {
       throw new Error("Didit not configured (DIDIT_API_KEY / DIDIT_WORKFLOW_ID)");
     }
+    const expectedDetails = diditExpectedDetails(expected);
 
     let res: Response;
     try {
@@ -44,6 +57,7 @@ export class DiditKycVendor implements KycVendor {
           workflow_id: workflowId,
           vendor_data: riderId,
           ...(this.env.DIDIT_CALLBACK_URL ? { callback: this.env.DIDIT_CALLBACK_URL } : {}),
+          ...(expectedDetails ? { expected_details: expectedDetails } : {}),
         }),
         signal: AbortSignal.timeout(DIDIT_SESSION_TIMEOUT_MS),
       });

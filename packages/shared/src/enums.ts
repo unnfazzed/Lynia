@@ -228,7 +228,11 @@ export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
  *   fixable  a retry with a better photo / the right card / more light can pass: NO strike. Bounded instead by
  *            the daily cap on fresh paid sessions (retryKyc, `kyc_daily_limit`), so it can't run up vendor cost.
  *   strike   evidence about the identity itself (an altered document, a spoofed face, an ID another account
- *            holds, a name or number that isn't the account's): +1 strike, two lock (A-02).
+ *            holds, a number that isn't the account's): +1 strike, two lock (A-02).
+ *
+ * `name_mismatch` is fixable (owner 2026-10-15): the biker check is now the ID plus the signup name, so a
+ * mismatch is most often a typo or a short form of the name, which the biker fixes in Personal details before
+ * the retry (retryKyc reads the name afresh). The daily cap still bounds it.
  *   final    nothing the rider can do will change it (under age): locks at once (kycAttempts := max(n, 2)).
  *
  * A HUMAN decline (adminSetKyc) is not classified: it always counts one strike, whatever its reason.
@@ -243,7 +247,7 @@ export const KYC_DECLINE_CLASS: Record<KycDeclineReason, KycDeclineClass> = {
   liveness_failed: "strike",
   duplicate: "strike",
   id_mismatch: "strike",
-  name_mismatch: "strike",
+  name_mismatch: "fixable",
   underage: "final",
 };
 

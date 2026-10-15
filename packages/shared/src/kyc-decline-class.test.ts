@@ -12,7 +12,14 @@ describe("KYC_DECLINE_CLASS (KYC-R26-13)", () => {
 
   it("honest mistakes are fixable, identity evidence is a strike, under age is final", () => {
     for (const r of ["id_unreadable", "face_mismatch", "id_expired", "other"]) expect(kycDeclineClass(r)).toBe("fixable");
-    for (const r of ["doc_tampered", "liveness_failed", "duplicate", "id_mismatch", "name_mismatch"]) expect(kycDeclineClass(r)).toBe("strike");
+    for (const r of ["doc_tampered", "liveness_failed", "duplicate", "id_mismatch"]) expect(kycDeclineClass(r)).toBe("strike");
+  });
+
+  it("a signup name that doesn't match the ID is fixable — corrected in Personal details, then retried (owner 2026-10-15)", () => {
+    expect(kycDeclineClass("name_mismatch")).toBe("fixable");
+  });
+
+  it("under age stays final", () => {
     expect(kycDeclineClass("underage")).toBe("final");
     expect(KYC_DECLINE_REASON_LABELS.underage).toBe("You must be 18 or older to ride");
   });

@@ -20,9 +20,22 @@ export interface KycSubmission {
   token?: string;
 }
 
+/**
+ * The identity the account claims, sent with the session so the vendor checks the ID against it (owner
+ * 2026-10-15: the biker check is the ID document plus the signup name — no selfie). Didit compares these to
+ * what it reads off the document and declines a mismatch (`expected_details_mismatch_action`).
+ */
+export interface KycExpectedDetails {
+  firstName: string;
+  lastName?: string | null;
+}
+
 export interface KycVendor {
-  /** Submit a rider for verification; returns a reference the callback will quote. */
-  submit(riderId: string): Promise<KycSubmission>;
+  /**
+   * Submit a rider for verification; returns a reference the callback will quote. `expected` is the
+   * signup name the document must match — omitted, the vendor runs the check without a name comparison.
+   */
+  submit(riderId: string, expected?: KycExpectedDetails): Promise<KycSubmission>;
 
   /**
    * Read whether a still-pending session is actually in flight or is waiting on the rider (P0-1 / D6).

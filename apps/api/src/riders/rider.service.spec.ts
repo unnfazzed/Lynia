@@ -144,20 +144,24 @@ describe("RiderService.becomeRider", () => {
 
   it("auto mode submits to the vendor and returns the verification url", async () => {
     let submitted: string | undefined;
+    let expected: unknown;
     const vendor: KycVendor = {
-      submit: async (riderId) => {
+      submit: async (riderId, exp) => {
         submitted = riderId;
+        expected = exp;
         return { ref: "sess_1", status: "pending", url: "https://verify.didit.me/sess_1" };
       },
     };
     const prisma = {
       rider: { findUnique: async () => null, create: async () => ({}), updateMany: async () => ({ count: 1 }) },
-      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
+      profile: { update: async () => ({}), findUnique: async () => ({ firstName: "Tafadzwa", lastName: "Moyo", idNumberHash: pii.hashId("63-1-A") }), count: async () => 0 },
       $transaction: async () => [],
     };
     const s = svc(prisma, { KYC_MODE: "auto" }, vendor);
     const res = await s.becomeRider("p1", { bikeReg: "ABZ 1", photoUrl: "kyc/p1/photo.jpg" });
     expect(submitted).toBe("p1");
+    // Owner 2026-10-15: the ID is checked against the signup name — no selfie.
+    expect(expected).toEqual({ firstName: "Tafadzwa", lastName: "Moyo" });
     expect(res).toEqual({ kycStatus: "pending", mode: "auto", verificationUrl: "https://verify.didit.me/sess_1" });
   });
 
@@ -4009,7 +4013,8 @@ describe("RiderService — KYC-R26 decision guards", () => {
     const declineFresh = async (s: RiderService, row: Record<string, unknown>, reason: string | null, at: Date) =>
       s.applyKycResult(row.kycRef as string, "failed", at, reason);
 
-    for (const reason of ["id_unreadable", "face_mismatch", "id_expired", "other", null]) {
+    // name_mismatch is fixable since the check became ID + signup name (owner 2026-10-15): the biker fixes the name.
+    for (const reason of ["id_unreadable", "face_mismatch", "id_expired", "name_mismatch", "other", null]) {
       it(`a fixable decline (${reason ?? "no reason"}) costs no strike`, async () => {
         const { prisma, row } = memPrisma({ kycAttempts: 1 });
         const { s } = autoSvc(prisma);
@@ -4018,7 +4023,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
       });
     }
 
-    for (const reason of ["doc_tampered", "liveness_failed", "duplicate", "id_mismatch", "name_mismatch"]) {
+    for (const reason of ["doc_tampered", "liveness_failed", "duplicate", "id_mismatch"]) {
       it(`a strike decline (${reason}) counts one`, async () => {
         const { prisma, row } = memPrisma({ kycAttempts: 1 });
         const { s } = autoSvc(prisma);
@@ -4083,7 +4088,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
         OR: [{ reasonCode: { in: string[] } }, { reasonCode: null }];
       };
       expect(where).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1" });
-      expect(where.OR[0].reasonCode.in.sort()).toEqual(["face_mismatch", "id_expired", "id_unreadable", "other"]);
+      expect(where.OR[0].reasonCode.in.sort()).toEqual(["face_mismatch", "id_expired", "id_unreadable", "name_mismatch", "other"]);
       expect(where.OR[1]).toEqual({ reasonCode: null });
       expect(before - where.createdAt.gte.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
       expect(before - where.createdAt.gte.getTime()).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);

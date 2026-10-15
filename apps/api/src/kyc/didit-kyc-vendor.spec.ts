@@ -9,6 +9,31 @@ const respond = (status: number, body: unknown = {}) =>
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("DiditKycVendor.submit — the signup name as expected_details (owner 2026-10-15)", () => {
+  const sessionOk = () => respond(201, { session_id: "sess_1", url: "https://verify.didit.me/s/1", session_token: "tok" });
+  const sentBody = (fetchMock: ReturnType<typeof respond>) =>
+    JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string) as Record<string, unknown>;
+
+  it("sends the first and last name the ID must match", async () => {
+    const fetchMock = sessionOk();
+    vi.stubGlobal("fetch", fetchMock);
+    await new DiditKycVendor(env).submit("p1", { firstName: " Tendai ", lastName: "Moyo " });
+    expect(sentBody(fetchMock)).toMatchObject({ workflow_id: "wf", vendor_data: "p1", expected_details: { first_name: "Tendai", last_name: "Moyo" } });
+  });
+
+  it("leaves a blank last name out, and sends nothing when there is no name", async () => {
+    let fetchMock = sessionOk();
+    vi.stubGlobal("fetch", fetchMock);
+    await new DiditKycVendor(env).submit("p1", { firstName: "Tendai", lastName: "  " });
+    expect(sentBody(fetchMock).expected_details).toEqual({ first_name: "Tendai" });
+
+    fetchMock = sessionOk();
+    vi.stubGlobal("fetch", fetchMock);
+    await new DiditKycVendor(env).submit("p1");
+    expect(sentBody(fetchMock)).not.toHaveProperty("expected_details");
+  });
+});
+
 describe("DiditKycVendor.deleteSession (KYC-R26-05)", () => {
   it("DELETEs /v3/session/{id}/delete/ with the API key", async () => {
     const fetchMock = respond(200, {});

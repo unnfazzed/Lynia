@@ -261,6 +261,9 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE|INVALID_MRZ|INCONSISTENT|INVALID_VALIDATION/)) return KycDeclineReason.DOC_TAMPERED;
   if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|SCREEN_CAPTURE|VIDEO_ANOMALY|MULTIPLE_FACES/)) return KycDeclineReason.LIVENESS_FAILED;
   if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
+  // The ID's name against the signup name sent as `expected_details` (owner 2026-10-15). Matched on keywords,
+  // like the rest: any NAME…MISMATCH / NAME…NOT_MATCH code, or one naming the expected details.
+  if (has(/NAME.*(MISMATCH|NOT_MATCH|DOES_NOT_MATCH)|EXPECTED_DETAILS/)) return KycDeclineReason.NAME_MISMATCH;
   if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
   if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT/)) return KycDeclineReason.ID_UNREADABLE;
   return null;
