@@ -69,6 +69,14 @@ Two levers are applied in this program (in `apps/mobile`, via the sibling change
    shrinks the **binary**, not the OTA JS bundle. Because Expo CNG regenerates `android/`, this MUST
    live in config, never a hand-edit of `build.gradle`.
 
+   **Optimization (2026-10-15).** Minify alone never optimized: the SDK 54 template passes R8 AGP's
+   `proguard-android.txt`, which says `-dontoptimize`. Play vitals flagged release 47 (0.52.0) with
+   "Optimization isn't enabled". `plugins/with-r8-optimize.js` swaps it for
+   `proguard-android-optimize.txt` (no inlining/class merging/dead-branch folding before). Optimization
+   can strip code reached only by reflection, so the release-build smoke test below applies to it too.
+   Play's third item on that card, "Android Gradle plugin 9.0+", can't be done in config: React Native
+   0.81 pins AGP 8.11.0, and it moves only with an Expo SDK upgrade.
+
    ⚠️ **Resource shrinking (`android.enableShrinkResourcesInReleaseBuilds`) is OFF as of 2026-08-04
    — it shipped a build that could not start.** The smoke test this section used to merely
    *recommend* was never run, and v0.17.12 reached the Play internal track unable to get past the
