@@ -13,7 +13,11 @@
 >   of vc 47. An OTA published to `preview` now reaches the public, not only the testers — treat the
 >   *Mobile OTA Update* lane as a production lane.
 > - **Still open from §8 step 3:** grant the service account *Release to production* (until then a
->   `profile: production` dispatch fails at submission), set `EAS_TAG_RELEASES_ENABLED`, Sentry live.
+>   `profile: production` dispatch fails at submission) and set `EAS_TAG_RELEASES_ENABLED`.
+> - **Sentry is live** and readable from Claude through the Sentry connector (org `lyniago`, project
+>   `lynia-mobile`); release builds vc 39–44 have reported events (checked 2026-10-15). PostHog (EU
+>   project `219333`) is connected the same way. The public binary reports `environment: preview`;
+>   filter by release `zw.co.lynia@0.52.0+47` to see public users.
 >   Until those land, a new public build is *Mobile Release (Play)* → `profile: closed`, then promote
 >   it to production in Play Console (`docs/LAUNCH-DEPLOYMENT-STRATEGY.md` §1b).
 > The app talks to the API on **Azure** (`api.lyniago.com`). Every "still 404s by design" line below
@@ -2094,7 +2098,8 @@ recorded 2026-10-05 from the EAS build record and the status run below.
       Play Console fields (§4.1, §4.2) carry them.
 - [ ] CDPA duties closed (§7.3): POTRAZ controller registration, DPO appointed, cross-border transfer
       notified, IR runbook carries the 24-hour POTRAZ clock, corporate identity on the pages ratified
-- [ ] Sentry receiving crashes from a release build (LR20 exit test)
+- [x] Sentry receiving crashes from a release build (LR20 exit test) — vc 39–44 report to `lyniago/lynia-mobile`
+      (checked 2026-10-15 through the Sentry connector)
 - [ ] Internal track build installed and smoke-tested on a real device
 - [x] Closed test run per Play's requirement (§8 step 2: opted-in testers, 14 consecutive days) and
       **production access granted** — before any production rollout (granted 2026-10-14)

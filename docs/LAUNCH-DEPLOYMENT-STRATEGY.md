@@ -98,7 +98,9 @@ reaches the public. Until the pipeline is armed, ship a public build as `profile
 in Play Console. To arm it: grant the
 Play service account the *Release to production* permission, set `EAS_TAG_RELEASES_ENABLED=true`, and a
 `v*` tag (or `profile: production`) submits to production at 10% (`releaseStatus: inProgress`). Advance
-or halt in Play Console while crash-free users and ANRs hold (Play vitals and Sentry).
+or halt in Play Console while crash-free users and ANRs hold (Play vitals and Sentry). Sentry (`lyniago/lynia-mobile`)
+and PostHog (EU project `219333`) are readable from Claude through their connectors; the public vc 47 reports
+`environment: preview`, so filter Sentry by release `zw.co.lynia@0.52.0+47`.
 
 ### 1c. Channel C — the compatibility contract
 

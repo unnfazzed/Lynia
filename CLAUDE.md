@@ -316,7 +316,7 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 A default dispatch therefore builds fine and then fails at submission, burning one of a limited
 monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
 check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3:
-SA production permission, Sentry live, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`).
+SA production permission, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`; Sentry is live).
 
 **⚠️ The app has TWO closed-testing tracks and the testers are not on the default one.** Play's
 built-in closed track is **Alpha** (API id `alpha`); the founder created a second one named
@@ -358,7 +358,22 @@ build promoted from *Closed testing* in Play Console — so **production phones 
 `preview`**, and every OTA published to `preview` now reaches the public as well as the testers. What
 is still open from §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md`: the SA *Release to production*
 permission (until then `profile: production` fails at submission; new public builds go
-`profile: closed` → promote in Play Console), `EAS_TAG_RELEASES_ENABLED`, and Sentry live.
+`profile: closed` → promote in Play Console) and `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below).
+
+**Field signals — Sentry and PostHog are connected to Claude** (owner, 2026-10-15; claude.ai
+connectors, first wired 2026-10-14). Read crashes and analytics through them; do not ask the owner for
+dashboards or exports.
+
+- **Sentry:** org `lyniago`, `regionUrl: https://us.sentry.io`, projects `lynia-mobile` and `lynia-api`.
+  Load with `ToolSearch` (`select:mcp__Sentry__search_issues,mcp__Sentry__search_errors,mcp__Sentry__get_sentry_resource`).
+  Release builds report as `zw.co.lynia@<version>+<versionCode>`; vc 39–44 have sent events, so the LR20
+  "Sentry receiving crashes from a release build" gate is met. **The public binary reports
+  `environment: preview`**, not `production`, because it is the `closed`-profile build; filter by
+  release (`+47`), not by environment, to see public users.
+- **PostHog:** EU org, project `219333` (`https://eu.posthog.com/project/219333/`), via the PostHog
+  `exec` tool (`execute-sql` on `events`, e.g. by `$screen_name`).
+- After a release or OTA, check both for new issues on that release before calling it healthy. Halt a
+  staged rollout in Play Console on a crash spike.
 
 The running ledger of every build/submission attempt and its failure class is
 `docs/PLAY-STORE-SUBMISSION.md`; OTA-lane constraints are `REL-01`/`REL-02` in `docs/KNOWN_BUGS.md`
