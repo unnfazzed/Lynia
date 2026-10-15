@@ -438,6 +438,29 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
     expect(extractDiditDeclineReason(idv("LOW_FACE_MATCH_SIMILARITY"))).toBe("face_mismatch");
   });
 
+  // Owner 2026-10-15 ("remove pain points"): a misread card is a retake, not a forgery strike.
+  it("reads a failed MRZ / cross-field / validation check as unreadable (fixable), not tampering", () => {
+    for (const code of ["INVALID_MRZ", "MRZ_NOT_DETECTED", "INCONSISTENT_DATA", "INVALID_VALIDATION"]) {
+      expect(extractDiditDeclineReason(idv(code))).toBe("id_unreadable");
+    }
+    // Direct forgery evidence on the same session still wins.
+    expect(extractDiditDeclineReason(idv("INVALID_MRZ", "PRINTED_COPY_DETECTED"))).toBe("doc_tampered");
+    expect(extractDiditDeclineReason(idv("INCONSISTENT_DATA", "PORTRAIT_REPLACEMENT"))).toBe("doc_tampered");
+  });
+
+  it("ignores information-level warnings — a note is not a finding", () => {
+    const withLevel = (...ws: [string, string | undefined][]) => ({
+      decision: { liveness_checks: [{ status: "Declined", warnings: ws.map(([risk, log_type]) => ({ risk, log_type })) }] },
+    });
+    // The one real session's note: alone it explains nothing, so the caller's own default applies.
+    expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", "information"]))).toBeNull();
+    // Beside a real finding, the note doesn't turn a blurry photo into a liveness strike.
+    expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", "information"], ["LOW_QUALITY_IMAGE", "warning"]))).toBe("id_unreadable");
+    // Warning / error level, or no level at all, still count.
+    expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", "error"]))).toBe("liveness_failed");
+    expect(extractDiditDeclineReason(withLevel(["LIVENESS_VIDEO_ANOMALY", undefined]))).toBe("liveness_failed");
+  });
+
   // KYC-R26-13: under age is the one `final` decline (it locks at once), so it wins over everything — and its
   // match is narrow, because a false positive would lock an adult out for good.
   it("maps an under-age warning to `underage`, ahead of every other finding", () => {
