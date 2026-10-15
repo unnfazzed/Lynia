@@ -6,7 +6,7 @@ import { adminFetchResult } from "../../../lib/api";
 import type { KycReview } from "../../../lib/adminTypes";
 
 vi.mock("../../../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("../../actions", () => ({ decideKyc: vi.fn(), resetKycAttempts: vi.fn(async () => ({ ok: true })) }));
+vi.mock("../../actions", () => ({ decideKyc: vi.fn(), resetKycAttempts: vi.fn(async () => ({ ok: true })), setSelfieCheck: vi.fn(async () => ({ ok: true })) }));
 vi.mock("../../../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -261,3 +261,49 @@ describe("KYC review: ID-check mismatch", () => {
   });
 });
 
+
+// Owner 2026-10-15: the ID passed, the selfie couldn't be checked on the phone's camera → verified and flagged.
+describe("KYC review: verified with the selfie not checked", () => {
+  const verifiedReview = (over: Partial<KycReview> = {}) =>
+    review({ status: "verified", idOnFile: true, idNumber: "63123456A42", selfieCheck: "unverified", selfieCheckReason: "camera_quality", ...over });
+
+  it("says the ID number was verified and the selfie wasn't, and that they can go online", async () => {
+    await open(verifiedReview());
+    const text = warnbar("ID verified — selfie not checked.") ?? "";
+    expect(text).toContain("The ID check verified 63123456A42");
+    expect(text).toContain("their phone's camera couldn't take a selfie Didit could check");
+    expect(text).toContain("They can go online.");
+    expect(document.body.textContent).toContain("not checked (camera)");
+  });
+
+  it("offers the re-check (a reminder) and Mark checked; a re-check asked for shows its last reason", async () => {
+    await open(verifiedReview({ selfieCheck: "recheck_requested", selfieCheckReason: "face_mismatch" }));
+    expect(screen.getByRole("button", { name: "Remind again…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark selfie checked…" })).toBeTruthy();
+    expect(warnbar("ID verified — selfie not checked.")).toContain("you've asked for a new selfie");
+    expect(warnbar("ID verified — selfie not checked.")).toContain("(last re-check: ");
+  });
+
+  it("asking for a re-check calls the selfie-check action and says it's a reminder, not a block", async () => {
+    const { setSelfieCheck } = await import("../../actions");
+    await open(verifiedReview());
+    fireEvent.click(screen.getByRole("button", { name: "Ask for a selfie re-check…" }));
+    expect(document.body.textContent).toContain("stay verified and can keep taking jobs");
+    fireEvent.click(screen.getByRole("button", { name: "Send the reminder" }));
+    await vi.waitFor(() => expect(setSelfieCheck).toHaveBeenCalledWith("r-1", "request", ""));
+  });
+
+  it("a verified biker whose selfie was checked still gets the re-check action, but no flag or Mark checked", async () => {
+    await open(verifiedReview({ selfieCheck: null, selfieCheckReason: null }));
+    expect(warnbar("ID verified — selfie not checked.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ask for a selfie re-check…" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Mark selfie checked…" })).toBeNull();
+  });
+});
+
+describe("KYC review: a card that couldn't be read three times (owner 2026-10-15)", () => {
+  it("tells the reviewer the biker is waiting on them", async () => {
+    await open(review({ kycHeld: true, kycVendorStatus: "In Review", declineReason: "id_unreadable" }));
+    expect(warnbar("ID card couldn't be read — three tries.")).toContain("This biker is waiting on you");
+  });
+});

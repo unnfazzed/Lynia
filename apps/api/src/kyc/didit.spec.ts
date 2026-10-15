@@ -10,6 +10,7 @@ import {
   diditTimestampFresh,
   isDiditDecisionStatus,
   isDiditDocumentExpired,
+  isSelfieCameraFailure,
   extractDiditDocumentExpiry,
   extractDiditDeclineReason,
   extractDiditDocumentNumber,
@@ -643,5 +644,74 @@ describe("kycIdExpiryOnLapse", () => {
   it("otherwise (unknown, or a later stored day) stamps the day the expiry was applied", () => {
     expect(kycIdExpiryOnLapse(null, event).toISOString()).toBe("2026-10-05T00:00:00.000Z");
     expect(kycIdExpiryOnLapse(new Date("2031-01-01T00:00:00Z"), event).toISOString()).toBe("2026-10-05T00:00:00.000Z");
+  });
+});
+
+// Owner 2026-10-15: the ID passed, the selfie failed only on the phone's camera → verified with the selfie flagged.
+describe("isSelfieCameraFailure", () => {
+  const w = (risk: string, log_type = "warning") => ({ risk, log_type });
+  const session = (over: {
+    doc?: Record<string, unknown>;
+    liveness?: Record<string, unknown>;
+    face?: Record<string, unknown>;
+    ip?: Record<string, unknown>;
+  } = {}) => ({
+    decision: {
+      id_verifications: [{ status: "Approved", document_number: "63-123456-A-42", warnings: [], ...over.doc }],
+      liveness_checks: [{ status: "Declined", warnings: [w("LOW_FACE_QUALITY"), w("LOW_FACE_LUMINANCE")], ...over.liveness }],
+      face_matches: [{ status: "Approved", score: 82, warnings: [], ...over.face }],
+      ip_analyses: [{ status: "Approved", warnings: [], ...over.ip }],
+    },
+  });
+
+  it("a blurry or dark selfie on an approved ID with its number is a camera failure", () => {
+    expect(isSelfieCameraFailure("Declined", 0.82, session())).toBe(true);
+    expect(isSelfieCameraFailure("In Review", 0.82, session({ liveness: { status: "In Review", warnings: [w("LOW_LIVENESS_SCORE")] } }))).toBe(true);
+    // No usable face: the face match couldn't be computed, so there is no score.
+    expect(
+      isSelfieCameraFailure("Declined", null, session({ liveness: { warnings: [w("NO_FACE_DETECTED")] }, face: { status: "Declined", score: undefined, warnings: [w("FACE_MATCH_NOT_COMPUTED")] } })),
+    ).toBe(true);
+  });
+
+  it("the V2 singular shapes read the same", () => {
+    const v2 = {
+      decision: {
+        id_verification: { status: "Approved", document_number: "63-123456-A-42" },
+        liveness: { status: "Declined", warnings: [w("LOW_FACE_QUALITY")] },
+        face_match: { status: "Approved", score: 80 },
+      },
+    };
+    expect(isSelfieCameraFailure("Declined", 0.8, v2)).toBe(true);
+  });
+
+  it("a face that doesn't match the ID, or any spoof sign, still declines", () => {
+    expect(isSelfieCameraFailure("Declined", 0.4, session({ face: { status: "Declined", score: 40, warnings: [w("LOW_FACE_MATCH_SIMILARITY")] } }))).toBe(false);
+    for (const risk of ["POSSIBLE_FACE_SPOOF", "LIVENESS_FACE_ATTACK", "VIRTUAL_CAMERA_DETECTED", "MULTIPLE_FACES_DETECTED", "POSSIBLE_DUPLICATED_FACE"]) {
+      expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w(risk)] } }))).toBe(false);
+    }
+    // A video anomaly that is a finding (not an information note) is a spoof sign too.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LIVENESS_VIDEO_ANOMALY")] } }))).toBe(false);
+    // ...but as an information-level note it is ignored.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w("LIVENESS_VIDEO_ANOMALY", "information")] } }))).toBe(true);
+  });
+
+  it("the ID must have passed, with its number read", () => {
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ doc: { status: "Declined", warnings: [w("ID_DOCUMENT_BLURRY")] } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ doc: { document_number: undefined } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, { decision: { liveness_checks: [{ status: "Declined", warnings: [w("LOW_FACE_QUALITY")] }] } })).toBe(false);
+    // A document finding that is about identity, on an otherwise approved ID, still declines.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ doc: { warnings: [w("MINIMUM_AGE_NOT_MET")] } }))).toBe(false);
+  });
+
+  it("anything else that failed, or an unexplained selfie failure, falls back to today's decision", () => {
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ ip: { status: "Declined" } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [] } }))).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("SOMETHING_NEW")] } }))).toBe(false);
+    // Nothing on the selfie failed: not this path.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { status: "Approved", warnings: [] } }))).toBe(false);
+    // Only a decline or a review is ever turned into a verify.
+    expect(isSelfieCameraFailure("Approved", 0.82, session())).toBe(false);
+    expect(isSelfieCameraFailure("In Progress", 0.82, session())).toBe(false);
+    expect(isSelfieCameraFailure("Declined", 0.82, null)).toBe(false);
   });
 });

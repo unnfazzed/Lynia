@@ -123,6 +123,12 @@ export interface Me {
      */
     kycHeld?: boolean;
     /**
+     * Owner 2026-10-15 (ledger D-110): `recheck_requested` when ops asked this verified biker for a new selfie
+     * check — Bike & documents shows the reminder with a Redo. Never a gate: going online ignores it.
+     * `unverified` (verified without a checked selfie, nothing asked) and null/absent both show nothing.
+     */
+    selfieCheck?: "unverified" | "recheck_requested" | null;
+    /**
      * First Run v2 F6 (ledger D-82 §4): the day the rider's ID expired, "YYYY-MM-DD", while `kycStatus` is
      * `expired` (null otherwise). Absent on an older server — F6 then drops the date.
      */

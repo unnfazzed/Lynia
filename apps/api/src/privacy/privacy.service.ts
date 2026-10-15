@@ -51,6 +51,7 @@ const ERASURE_PROFILE_SELECT = {
       kycAttempts: true,
       photoUrl: true,
       kycRef: true,
+      selfieRecheckRef: true,
     },
   },
 } as const;
@@ -281,6 +282,12 @@ export class PrivacyService {
         kycVendorStatus: null,
         kycVendorStatusAt: null,
         kycDeclineReason: null,
+        // Owner 2026-10-15: the selfie flag, and the re-check session (deleted at the vendor post-commit, below).
+        selfieCheck: null,
+        selfieCheckReason: null,
+        selfieCheckAt: null,
+        selfieRecheckRef: null,
+        selfieRecheckUrl: null,
         suspendReason: null,
         currentLat: null,
         currentLng: null,
@@ -495,8 +502,9 @@ export class PrivacyService {
     // Didit is down. A failure is logged at ERROR with the session id — the only record of it once kycRef is
     // nulled — for ops to delete from the Didit console (docs/SECURITY.md, KYC data retention). Scope: the
     // CURRENT session; sessions a retry replaced are not tracked on the row and age out on Didit's retention.
-    const kycRef = profile.rider?.kycRef;
-    if (isRider && kycRef && this.kycVendor?.deleteSession) {
+    // Owner 2026-10-15: a selfie re-check is its own vendor session, holding a selfie and a document image too.
+    for (const kycRef of [profile.rider?.kycRef, profile.rider?.selfieRecheckRef]) {
+      if (!(isRider && kycRef && this.kycVendor?.deleteSession)) continue;
       const deleted = await this.kycVendor.deleteSession(kycRef).catch(() => false);
       if (!deleted) {
         this.logger.error(`Erasure of ${profileId}: couldn't delete KYC vendor session ${kycRef} — delete it manually at the vendor (KYC-R26-05)`);

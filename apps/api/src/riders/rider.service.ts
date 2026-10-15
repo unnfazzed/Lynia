@@ -29,12 +29,14 @@ import {
   classifyStoredDiditStatus,
   DIDIT_APPROVED_STATUS,
   DIDIT_DEAD_STATUSES_NORMALISED,
+  DIDIT_IN_REVIEW_STATUS,
   isDiditDocumentExpired,
   kycIdExpiryOnLapse,
+  SELFIE_CAMERA_QUALITY,
 } from "../kyc/didit";
 import { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import { KYC_PUSH_COPY, type KycPushVariant } from "../kyc/kyc-push-copy";
-import { MetricsService } from "../observability/metrics.service";
+import { type KycMintPath, MetricsService } from "../observability/metrics.service";
 import { auditData } from "../admin/admin.shared";
 import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -79,6 +81,20 @@ const KYC_ID_EXPIRY_ACTOR = "system:kyc-id-expiry";
 
 /** The audit actor of every vendor (Didit webhook) KYC decision, approve or decline. */
 const KYC_WEBHOOK_ACTOR = "system:kyc-webhook";
+
+/**
+ * Owner 2026-10-15 (option 2): after this many earlier `id_unreadable` vendor declines, the next one is held for
+ * a person instead of declined — the third time the card can't be read, a fourth try won't read it either.
+ */
+export const KYC_UNREADABLE_DECLINES_BEFORE_REVIEW = 2;
+
+/**
+ * `riders.selfie_check` (migration 0104, owner 2026-10-15). null = the selfie was checked as normal.
+ *  - `unverified`: the ID passed and the biker is verified, but the selfie couldn't be checked on their camera.
+ *  - `recheck_requested`: ops asked for a new selfie check. A reminder only — the biker keeps riding.
+ */
+export const SELFIE_CHECK_UNVERIFIED = "unverified";
+export const SELFIE_CHECK_RECHECK_REQUESTED = "recheck_requested";
 
 /**
  * KYC-R26-13: a `fixable` vendor decline (KYC_DECLINE_CLASS — a blurry photo, a face the camera didn't match, an
@@ -732,13 +748,15 @@ export class RiderService {
    * The row carries the path only — never the session ref's token. Best-effort: the session is already paid
    * for, so a failed write is logged, never surfaced to the rider.
    */
-  private async recordKycSessionMinted(profileId: string, path: "become" | "retry"): Promise<void> {
+  private async recordKycSessionMinted(profileId: string, path: KycMintPath): Promise<void> {
     this.metrics?.incKycSessionMinted(path);
     try {
       await this.prisma.auditLog.create({ data: auditData(profileId, "rider.kyc_session_minted", profileId, path, null) });
     } catch (err) {
       this.logger.warn(`Couldn't record the KYC session minted for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // A selfie re-check is a verified biker's, not an onboarding step: it is counted and billed, not on the funnel.
+    if (path === "recheck") return;
     // Admin console v2 §3: the biker funnel's "Didit started" step (one per paid session). Best-effort, as above.
     await domainEvents.riderStep(this.prisma, profileId, "didit_started", { data: { path } });
   }
@@ -1021,6 +1039,158 @@ export class RiderService {
     const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { kycRef: true, kycStatus: true } });
     if (rider?.kycStatus === "pending") this.pendingStates?.invalidate(rider.kycRef);
     return { ok: true };
+  }
+
+  /**
+   * Owner 2026-10-15: ops ask a VERIFIED biker for a new selfie check (`request`) — typically one verified with
+   * `selfie_check = unverified` because their camera couldn't take a usable selfie — or mark the selfie checked
+   * after looking at it themselves (`clear`). A request is a reminder only: the biker keeps going online and
+   * taking jobs whatever they do with it; ops can still suspend through the usual route. The write and its audit
+   * row commit together; a request pushes the reminder after the commit (best-effort, like every KYC push).
+   */
+  async adminSetSelfieCheck(
+    profileId: string,
+    action: "request" | "clear",
+    actor = "admin",
+    note?: string | null,
+  ): Promise<{ profileId: string; selfieCheck: string | null }> {
+    const selfieCheck = await this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findUnique({ where: { profileId }, select: { kycStatus: true } });
+      if (!rider) throw new NotFoundException("Not a biker");
+      if (rider.kycStatus !== "verified") {
+        throw new ConflictException({ reason: "not_verified", message: "Only a verified biker's selfie can be re-checked. Decide their ID check first." });
+      }
+      const data =
+        action === "request"
+          ? { selfieCheck: SELFIE_CHECK_RECHECK_REQUESTED, selfieCheckAt: new Date() }
+          : { selfieCheck: null, selfieCheckReason: null, selfieCheckAt: null, selfieRecheckRef: null, selfieRecheckUrl: null };
+      // CAS on the verified state read above, so a KYC decision landing mid-request isn't papered over.
+      const res = await tx.rider.updateMany({ where: { profileId, kycStatus: "verified" }, data });
+      if (res.count === 0) throw new ConflictException("This biker's ID check just changed — reload and try again.");
+      await tx.auditLog.create({
+        data: auditData(actor, action === "request" ? "rider.selfie_recheck_request" : "rider.selfie_check_clear", profileId, null, note ?? null),
+      });
+      return data.selfieCheck;
+    });
+    if (action === "request") void this.notifyKycDecision(profileId, "selfie_recheck");
+    return { profileId, selfieCheck };
+  }
+
+  /**
+   * Owner 2026-10-15: the biker starts (or reopens) their selfie re-check. It is a fresh Didit session of the same
+   * workflow (ID + selfie), held on the row apart from `kycRef` so its verdict can never touch the biker's
+   * verification — the webhook routes it to applySelfieRecheck instead. A session already open is handed back for
+   * free; a new one is paid, so it is bounded like every other mint (assertMayMint) and claimed before the vendor
+   * call, so a double tap buys one session.
+   */
+  async startSelfieRecheck(profileId: string): Promise<{ verificationUrl: string }> {
+    if (this.env.KYC_MODE !== "auto") {
+      throw new ConflictException({ reason: "selfie_recheck_unavailable", message: "The selfie check isn't available right now. Message us on WhatsApp." });
+    }
+    const rider = await this.prisma.rider.findUnique({
+      where: { profileId },
+      select: { kycStatus: true, selfieCheck: true, selfieRecheckRef: true, selfieRecheckUrl: true },
+    });
+    if (!rider) throw new NotFoundException("Not a biker");
+    if (rider.kycStatus !== "verified" || !rider.selfieCheck) {
+      throw new ConflictException({ reason: "no_selfie_recheck", message: "There's no selfie check to redo." });
+    }
+    const claimAt = mintClaimAt(rider.selfieRecheckRef);
+    if (rider.selfieRecheckRef && claimAt === null && rider.selfieRecheckUrl) return { verificationUrl: rider.selfieRecheckUrl };
+    // Another tap is buying it right now (a fresh claim marker) — the same answer retryKyc gives.
+    if (claimAt !== null && Date.now() - claimAt < KYC_MINT_CLAIM_TTL_MS) throw kycInProgress();
+    await this.assertMayMint(profileId);
+    const claim = `${KYC_MINT_CLAIM_PREFIX}${Date.now()}:${randomUUID()}`;
+    const claimed = await this.prisma.rider.updateMany({
+      where: { profileId, kycStatus: "verified", selfieRecheckRef: rider.selfieRecheckRef },
+      data: { selfieRecheckRef: claim, selfieRecheckUrl: null },
+    });
+    if (claimed.count !== 1) throw kycInProgress();
+    const release = () =>
+      this.prisma.rider.updateMany({ where: { profileId, selfieRecheckRef: claim }, data: { selfieRecheckRef: null } }).catch(() => undefined);
+    let submission: Awaited<ReturnType<KycVendor["submit"]>>;
+    try {
+      submission = await this.vendor.submit(profileId);
+    } catch (err) {
+      this.logger.error(`Selfie re-check start failed for ${profileId}: ${err instanceof Error ? err.message : String(err)}`);
+      await release();
+      throw new ServiceUnavailableException("Couldn't start the selfie check. Please try again.");
+    }
+    await this.recordKycSessionMinted(profileId, "recheck");
+    if (!submission.url) {
+      await release();
+      throw new ServiceUnavailableException("Couldn't start the selfie check. Please try again.");
+    }
+    await this.prisma.rider.updateMany({
+      where: { profileId, selfieRecheckRef: claim },
+      data: { selfieRecheckRef: submission.ref, selfieRecheckUrl: submission.url },
+    });
+    return { verificationUrl: submission.url };
+  }
+
+  /** The biker whose selfie re-check this vendor session is, or null (owner 2026-10-15). */
+  async selfieRecheckOwner(ref: string): Promise<string | null> {
+    if (!ref || ref.startsWith(KYC_MINT_CLAIM_PREFIX)) return null;
+    const rider = await this.prisma.rider.findFirst({ where: { selfieRecheckRef: ref }, select: { profileId: true } });
+    return rider?.profileId ?? null;
+  }
+
+  /**
+   * Owner 2026-10-15: the verdict on a selfie re-check. It never changes the biker's verification — a re-check is
+   * a reminder ops sent, not a gate:
+   *  - passed: the flag clears (the selfie is now checked), audited `rider.selfie_recheck_pass`;
+   *  - failed: the flag stays, with the reason ops see, audited `rider.selfie_recheck_fail`; the biker may try
+   *    again (the next tap buys a new session) and keeps riding;
+   *  - dead (abandoned / expired session): only the session is let go, so the next tap mints rather than reopening
+   *    a page that can't be finished.
+   * A pass also has to be THIS biker's ID: when the account has a national ID (typed or adopted from their check),
+   * the re-check's document number must be it — otherwise a borrowed card and its owner's face would "pass".
+   * Applied once: the session is cleared with its verdict, so a retried delivery finds no rider.
+   */
+  async applySelfieRecheck(
+    ref: string,
+    verdict: { kind: "passed" } | { kind: "failed"; reason: string } | { kind: "dead" },
+    verifiedDocNumber?: string | null,
+  ): Promise<{ updated: number; passed?: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      const rider = await tx.rider.findFirst({
+        where: { selfieRecheckRef: ref },
+        select: { profileId: true, verifiedIdHash: true, profile: { select: { idNumberHash: true } } },
+      });
+      if (!rider) return { updated: 0 };
+      if (verdict.kind === "dead") {
+        const res = await tx.rider.updateMany({ where: { selfieRecheckRef: ref }, data: { selfieRecheckRef: null, selfieRecheckUrl: null } });
+        return { updated: res.count };
+      }
+      let outcome = verdict;
+      if (outcome.kind === "passed") {
+        const known = [rider.profile?.idNumberHash, rider.verifiedIdHash].filter((h): h is string => !!h);
+        if (known.length > 0) {
+          if (!verifiedDocNumber) outcome = { kind: "failed", reason: KycDeclineReason.ID_UNREADABLE };
+          else if (!known.includes(this.pii.hashId(verifiedDocNumber))) outcome = { kind: "failed", reason: KycDeclineReason.ID_MISMATCH };
+        }
+      }
+      const passed = outcome.kind === "passed";
+      const res = await tx.rider.updateMany({
+        where: { selfieRecheckRef: ref },
+        data: passed
+          ? { selfieCheck: null, selfieCheckReason: null, selfieCheckAt: null, selfieRecheckRef: null, selfieRecheckUrl: null }
+          : { selfieCheckReason: outcome.kind === "failed" ? outcome.reason : null, selfieRecheckRef: null, selfieRecheckUrl: null },
+      });
+      if (res.count > 0) {
+        await tx.auditLog.create({
+          data: auditData(
+            KYC_WEBHOOK_ACTOR,
+            passed ? "rider.selfie_recheck_pass" : "rider.selfie_recheck_fail",
+            rider.profileId,
+            outcome.kind === "failed" ? outcome.reason : null,
+            null,
+          ),
+        });
+        this.logger.log(`Selfie re-check ${ref} for biker ${rider.profileId}: ${passed ? "passed — flag cleared" : `didn't pass (${outcome.kind === "failed" ? outcome.reason : ""})`}`);
+      }
+      return { updated: res.count, passed };
+    });
   }
 
   /**
@@ -1406,6 +1576,9 @@ export class RiderService {
     // First Run v2 F6 (D-82 §4): the verified document's expiry date (extractDiditDocumentExpiry), when the
     // decision payload carries one. Stored on a `verified` outcome; an `expired` one stamps the lapse day.
     documentExpiresOn?: Date | null,
+    // Owner 2026-10-15: the vendor declined only because the selfie couldn't be checked on this phone's camera,
+    // while the ID itself passed (isSelfieCameraFailure). Arrives as `verified`; the verify carries the flag.
+    opts: { selfieUnverified?: boolean } = {},
   ): Promise<{ updated: number; skipped?: "repeat" | "admin_decided" }> {
     // KYC-R26-08: a verify whose document had ALREADY expired on the day it was decided is a decline, with the
     // canonical `id_expired` reason (KYC_DECLINE_REASON_LABELS: "ID document expired"). Didit's workflow is
@@ -1517,7 +1690,11 @@ export class RiderService {
               ? "verified"
               : current.kycStatus === "failed"
                 ? "failed"
-                : null
+                : // An unreadable card held for a person (owner 2026-10-15) resolved a Declined: a retried
+                  // delivery of it is the same repeat, not a fourth unreadable decline.
+                  current.kycVendorStatus === DIDIT_IN_REVIEW_STATUS
+                  ? "failed"
+                  : null
             : current.kycStatus;
       if (current && resolvedOutcome === status) {
         this.logger.log(`KYC ${kycRef}: repeat delivery of the ${status} this check already resolved to — no-op (KYC-R26-01)`);
@@ -1654,6 +1831,24 @@ export class RiderService {
         holdForReview = false;
         this.logger.warn(`KYC ${kycRef}: approved by the vendor, declined ${outReason} by the one-ID-one-account checks (KYC-R26-12)`);
       }
+      // Owner 2026-10-15: a verify whose selfie couldn't be checked on the phone's camera carries the flag ops see.
+      const selfieUnverified = outcome === "verified" && opts.selfieUnverified === true;
+      // Owner 2026-10-15 (option 2): the card couldn't be read for the third time. Another retry on the same
+      // camera won't read it either, so the check goes to a person instead of declining again: the biker waits on
+      // the "under review" wall (pending, held — the stored In Review) and ops decide from the queue. Counted from
+      // the webhook's own earlier `id_unreadable` declines of this biker, which the KYC-R26-13 daily cap reads too.
+      const unreadableHold =
+        outcome === "failed" &&
+        outReason === KycDeclineReason.ID_UNREADABLE &&
+        !!current &&
+        current.kycStatus === "pending" &&
+        (await tx.auditLog.count({
+          where: { actor: KYC_WEBHOOK_ACTOR, action: "rider.kyc_decline", target: current.profileId, reasonCode: KycDeclineReason.ID_UNREADABLE },
+        })) >=
+          KYC_UNREADABLE_DECLINES_BEFORE_REVIEW;
+      if (unreadableHold) {
+        this.logger.warn(`KYC ${kycRef}: the ID card couldn't be read again — held for a person instead of declined (owner 2026-10-15)`);
+      }
       const res = await tx.rider.updateMany({
         where: { kycRef, OR: [{ kycResolvedAt: null }, { kycResolvedAt: { lt: eventAt } }] },
         data: {
@@ -1661,7 +1856,8 @@ export class RiderService {
           // rider remains in the manual-review queue (admin.getKycReview) instead of going online on an
           // identity that already collides with another account. kycResolvedAt still advances (below) so
           // the same webhook delivery can't be reprocessed.
-          ...(holdForReview ? {} : { kycStatus: outcome, idVerified: outcome === "verified" }),
+          // An unreadable card held for a person stays `pending` the same way (owner 2026-10-15).
+          ...(holdForReview || unreadableHold ? {} : { kycStatus: outcome, idVerified: outcome === "verified" }),
           kycResolvedAt: eventAt,
           // KYC-R26-02: the vendor resolved this check (a hold too: it is the vendor's verdict we hold).
           kycResolvedBy: KYC_RESOLVED_BY_VENDOR,
@@ -1669,9 +1865,20 @@ export class RiderService {
           // used to read it as "unfinished" — the rider was told to finish a check they had finished, and
           // a retry bought a fresh paid session. Record what the vendor said (it approved; WE hold), which
           // /auth/me reads as held → the "under review" wall. A decided check needs no vendor status.
+          // An unreadable card held for a person records Didit's In Review, which /auth/me and the console read as
+          // held (classifyStoredDiditStatus) — the "under review" wall, and retryKyc refuses a fresh paid check.
           ...(holdForReview || refusedVerify
             ? { kycVendorStatus: DIDIT_APPROVED_STATUS, kycVendorStatusAt: eventAt }
-            : { kycVendorStatus: null, kycVendorStatusAt: null }),
+            : unreadableHold
+              ? { kycVendorStatus: DIDIT_IN_REVIEW_STATUS, kycVendorStatusAt: eventAt }
+              : { kycVendorStatus: null, kycVendorStatusAt: null }),
+          // Owner 2026-10-15: the selfie flag rides every verify — set when the selfie couldn't be checked on the
+          // phone's camera, cleared by a verify whose selfie passed (a re-check's leftovers go with it).
+          ...(outcome === "verified"
+            ? selfieUnverified
+              ? { selfieCheck: SELFIE_CHECK_UNVERIFIED, selfieCheckReason: SELFIE_CAMERA_QUALITY, selfieCheckAt: eventAt, selfieRecheckRef: null, selfieRecheckUrl: null }
+              : { selfieCheck: null, selfieCheckReason: null, selfieCheckAt: null, selfieRecheckRef: null, selfieRecheckUrl: null }
+            : {}),
           // The session token dies with the decision it belonged to. Every outcome that reaches here is
           // terminal for THAT session — Didit will not reopen an Approved/Declined/Expired one — so
           // keeping the credential would leave a verified rider carrying a live secret for no reason,
@@ -1747,7 +1954,14 @@ export class RiderService {
       let resolvedProfileId: string | null = null;
       // Admin console v2 §3: the rider this decision landed on, for its `kyc.attempt` event below.
       let attemptProfileId: string | null = null;
-      if (res.count > 0 && holdForReview) {
+      if (res.count > 0 && unreadableHold && current) {
+        // Not a `rider.kyc_decline`: nothing was declined, and that row is what the next count reads. No push —
+        // the biker is in the app, on the wall that says a person is checking.
+        attemptProfileId = current.profileId;
+        await tx.auditLog.create({
+          data: auditData(KYC_WEBHOOK_ACTOR, "rider.kyc_review_required", current.profileId, "id_unreadable_repeated", null),
+        });
+      } else if (res.count > 0 && holdForReview) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         attemptProfileId = rider?.profileId ?? null;
         if (rider) {
@@ -1767,7 +1981,7 @@ export class RiderService {
         }
         // No notifyProfileId: the rider isn't told anything changed — they're still `pending`, same as
         // before this webhook arrived, until a human resolves the flag via adminSetKyc.
-      } else if (res.count > 0 && (outcome === "verified" || outcome === "failed")) {
+      } else if (res.count > 0 && (outcome === "verified" || outcome === "failed") && !unreadableHold) {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         if (rider) {
           // KB-FEED-SYNTH: the AUTOMATED vendor path must ALSO write an AuditLog row (only the manual
@@ -1779,7 +1993,13 @@ export class RiderService {
           // D-75: an approval with no number to dedupe on is flagged here rather than held (see idMissing).
           // KYC-R26-14: a verify that replaced the account's national ID says so (no number, no hash — PII stays out).
           // Owner 2026-10-12: a verify whose ID matched only an erased tombstone says so (`verified_id_returning`).
-          const verifyFlags = [idReplaced ? "verified_id_replaced" : null, returningUser ? "verified_id_returning" : null, idMissing ? "verified_id_missing" : null]
+          const verifyFlags = [
+            idReplaced ? "verified_id_replaced" : null,
+            returningUser ? "verified_id_returning" : null,
+            idMissing ? "verified_id_missing" : null,
+            // Owner 2026-10-15: ops can find every biker verified without a checked selfie.
+            selfieUnverified ? "selfie_unverified" : null,
+          ]
             .filter(Boolean)
             .join("+");
           const auditReason = outReason ?? (outcome === "verified" && verifyFlags ? verifyFlags : null);
@@ -1793,7 +2013,7 @@ export class RiderService {
       // Class-B eviction: a lapse (failed/expired) that actually applied needs the profileId post-commit
       // so we can pull the (now non-verified) rider out of the live-supply planes. `failed` already has it
       // (resolvedProfileId); `expired` never fetched it (it takes no verified/failed branch), so fetch here.
-      let demotedId: string | null = outcome === "failed" ? resolvedProfileId : null;
+      let demotedId: string | null = outcome === "failed" && !unreadableHold ? resolvedProfileId : null;
       if (res.count > 0 && outcome === "expired") {
         const rider = await tx.rider.findFirst({ where: { kycRef }, select: { profileId: true } });
         demotedId = rider?.profileId ?? null;
@@ -1809,7 +2029,7 @@ export class RiderService {
           subjectId: attemptProfileId,
           data: {
             vendorStatus: vendorOutcome,
-            decision: holdForReview ? "held_for_review" : outcome,
+            decision: holdForReview || unreadableHold ? "held_for_review" : outcome,
             reason: outReason ?? null,
             resolvedBy: "vendor",
           },

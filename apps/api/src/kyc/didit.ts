@@ -97,6 +97,9 @@ export type DiditSessionClass = "in_flight" | "unfinished" | "held" | "dead";
 /** Didit's status literal for an approval — what a held-for-review approval leaves on the rider row. */
 export const DIDIT_APPROVED_STATUS = "Approved";
 
+/** Didit's status literal for a check sent to review — what an unreadable card held for a person leaves on the row. */
+export const DIDIT_IN_REVIEW_STATUS = "In Review";
+
 function normDiditStatus(status: string): string {
   return status.trim().toLowerCase().replace(/[\s_-]+/g, " ");
 }
@@ -225,42 +228,11 @@ export function decideDiditKyc(status: string, score: number | null, payload?: u
  * serious match wins. FAIL-OPEN: no warnings, or none recognised → null (the caller's own default applies).
  */
 export function extractDiditDeclineReason(payload: unknown): string | null {
-  const risks: string[] = [];
-  const walk = (v: unknown, depth: number): void => {
-    if (depth > 6 || v === null || typeof v !== "object") return;
-    if (Array.isArray(v)) {
-      for (const item of v) walk(item, depth + 1);
-      return;
-    }
-    for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
-      if (key === "warnings" && Array.isArray(value)) {
-        for (const w of value) {
-          // Owner 2026-10-15 ("remove pain points"): an information-level note is not a finding. The one real
-          // session so far carried LIVENESS_VIDEO_ANOMALY at that level — read as a finding, a decline on the
-          // same session would have cost an honest biker a liveness strike. A warning with no level still counts.
-          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>)) continue;
-          const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
-          if (typeof risk === "string") risks.push(risk.toUpperCase());
-        }
-      } else {
-        walk(value, depth + 1);
-      }
-    }
-  };
-  walk(payload, 0);
+  const risks = warningRisks(payload);
   if (risks.length === 0) return null;
   const has = (re: RegExp) => risks.some((r) => re.test(r));
-  // KYC-R26-13: under age is checked FIRST. It is the one `final` reason (KYC_DECLINE_CLASS: it locks at once),
-  // and no other finding on the same session changes that a retry can't pass. Because it is final, the match
-  // is deliberately narrow: `AGE` only as a whole `_`-delimited word next to an under / minimum / below /
-  // restriction signal (MINIMUM_AGE, MINIMUM_AGE_NOT_MET, AGE_BELOW_MINIMUM, AGE_RESTRICTION, UNDER_AGE,
-  // UNDERAGE), so the image / page codes that merely contain the letters (LOW_QUALITY_IMAGE, IMAGE_TOO_DARK,
-  // PAGE_MISSING) never read as a rider's age — and an age the vendor merely couldn't read (AGE_NOT_DETECTED,
-  // COULD_NOT_ESTIMATE_AGE) is not a finding that the rider is under age, so it falls through to the rest.
-  const underage = (r: string) =>
-    /UNDER_?AGE|(^|_)(MINIMUM_AGE|AGE_(BELOW|UNDER|RESTRICT|LIMIT|MINIMUM|NOT_MET))|BELOW_(MINIMUM_)?AGE(_|$)/.test(r) &&
-    !/NOT_DETECTED|COULD_NOT|UNABLE|NOT_READ|UNKNOWN/.test(r);
-  if (risks.some(underage)) return KycDeclineReason.UNDERAGE;
+  // KYC-R26-13: under age is checked FIRST — see isUnderageRisk.
+  if (risks.some(isUnderageRisk)) return KycDeclineReason.UNDERAGE;
   if (has(/DUPLICAT|BLOCKLIST|FRAUD/)) return KycDeclineReason.DUPLICATE;
   // Only direct evidence of a forged document is a tampering strike. A machine-readable zone, a cross-field check
   // or a validation that fails is, on a worn card or a soft photo, far more often a misread than a forgery (owner
@@ -273,6 +245,124 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
     return KycDeclineReason.ID_UNREADABLE;
   }
   return null;
+}
+
+/**
+ * Every finding (`warnings[].risk`, upper-cased) anywhere under `v`, however deep Didit nests its features.
+ * Owner 2026-10-15 ("remove pain points"): an information-level note is not a finding. The one real session so
+ * far carried LIVENESS_VIDEO_ANOMALY at that level — read as a finding, a decline on the same session would have
+ * cost an honest biker a liveness strike. A warning with no level still counts.
+ */
+function warningRisks(v: unknown): string[] {
+  const risks: string[] = [];
+  const walk = (node: unknown, depth: number): void => {
+    if (depth > 6 || node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key === "warnings" && Array.isArray(value)) {
+        for (const w of value) {
+          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>)) continue;
+          const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
+          if (typeof risk === "string") risks.push(risk.toUpperCase());
+        }
+      } else {
+        walk(value, depth + 1);
+      }
+    }
+  };
+  walk(v, 0);
+  return risks;
+}
+
+/**
+ * KYC-R26-13: an under-age finding. It is the one `final` reason (KYC_DECLINE_CLASS: it locks at once), so the
+ * match is deliberately narrow: `AGE` only as a whole `_`-delimited word next to an under / minimum / below /
+ * restriction signal (MINIMUM_AGE, MINIMUM_AGE_NOT_MET, AGE_BELOW_MINIMUM, AGE_RESTRICTION, UNDER_AGE, UNDERAGE),
+ * so the image / page codes that merely contain the letters (LOW_QUALITY_IMAGE, IMAGE_TOO_DARK, PAGE_MISSING)
+ * never read as a rider's age — and an age the vendor merely couldn't read (AGE_NOT_DETECTED,
+ * COULD_NOT_ESTIMATE_AGE) is not a finding that the rider is under age.
+ */
+function isUnderageRisk(r: string): boolean {
+  return (
+    /UNDER_?AGE|(^|_)(MINIMUM_AGE|AGE_(BELOW|UNDER|RESTRICT|LIMIT|MINIMUM|NOT_MET))|BELOW_(MINIMUM_)?AGE(_|$)/.test(r) &&
+    !/NOT_DETECTED|COULD_NOT|UNABLE|NOT_READ|UNKNOWN/.test(r)
+  );
+}
+
+/** The `selfie_check` reason when the selfie couldn't be checked because of the phone's camera (owner 2026-10-15). */
+export const SELFIE_CAMERA_QUALITY = "camera_quality";
+
+/**
+ * A finding that is evidence about WHO is in front of the camera, or about the document — never the camera's
+ * quality. Any one of these, anywhere in the decision, means the selfie failure is not "just the camera".
+ */
+const IDENTITY_RISK =
+  /SPOOF|ATTACK|INJECT|VIRTUAL_CAMERA|SCREEN_(REPLAY|CAPTURE)|DEEPFAKE|MASK|REPLAY|MULTIPLE_FACES|VIDEO_ANOMALY|DUPLICAT|BLOCKLIST|FRAUD|TAMPER|ALTER|PRINTED|PORTRAIT_REPLACE|LOW_FACE_MATCH|FACE_MISMATCH|SIMILARITY|NAME_MISMATCH|EXPIRED|EXPIRATION/;
+
+/** A selfie finding that a phone's camera produces: blur, light, distance, no usable face, an unsure read. */
+const CAMERA_QUALITY_RISK =
+  /QUALITY|BLUR|LUMINANCE|LIGHT|DARK|BRIGHT|NO_FACE|FACE_NOT_(DETECTED|FOUND)|NOT_DETECTED|NOT_COMPUTED|NOT_PERFORMED|COULD_NOT|LOW_LIVENESS_SCORE|UNCERTAIN|OCCLU|TOO_(FAR|CLOSE)|CENTER/;
+
+/** Didit's per-feature results under the decision, V3 plural arrays first, then the V2 singular object. */
+function diditFeatureEntries(decision: Record<string, unknown>, v3: string, v2: string): Record<string, unknown>[] {
+  const isObj = (e: unknown): e is Record<string, unknown> => !!e && typeof e === "object" && !Array.isArray(e);
+  const plural = Array.isArray(decision[v3]) ? (decision[v3] as unknown[]).filter(isObj) : [];
+  return plural.length > 0 ? plural : isObj(decision[v2]) ? [decision[v2] as Record<string, unknown>] : [];
+}
+
+const DOC_FEATURES: [string, string] = ["id_verifications", "id_verification"];
+const SELFIE_FEATURES: [string, string][] = [
+  ["liveness_checks", "liveness"],
+  ["face_matches", "face_match"],
+];
+
+/**
+ * Owner 2026-10-15: a check whose ID document passed but whose SELFIE failed only because of the phone's camera
+ * — blur, light, distance, no usable face, Didit unsure — verifies the biker with the selfie flagged for ops,
+ * instead of declining them. Bikers on low-end phones were otherwise stuck in a loop the camera can't get them
+ * out of. A selfie that doesn't match the ID, or any sign of a spoof, still declines: those are what the selfie
+ * is for.
+ *
+ * True only when ALL of these hold (anything unrecognised reads false, so the decision falls back to today's):
+ *  - Didit declined the session, or sent it to review;
+ *  - the face match didn't measure a mismatch (no score, or a score at or above KYC_THRESHOLDS.needsReview);
+ *  - every ID-document result is Approved, and the decision carries the document number (the ID is verified);
+ *  - every other non-selfie result (IP analysis, AML…) that reports a status is Approved;
+ *  - at least one selfie result (liveness, face match) is not Approved, and EVERY selfie finding is a camera
+ *    one — a failed selfie with no finding at all is unexplained, and is not waved through;
+ *  - no identity finding anywhere (spoof, duplicate, tampering, a face mismatch, an expired card, under age).
+ */
+export function isSelfieCameraFailure(status: string, score: number | null, payload: unknown): boolean {
+  if (!(mapDiditStatus(status) === "failed" || isDiditInReview(status))) return false;
+  if (score !== null && score < KYC_THRESHOLDS.needsReview) return false;
+  if (!payload || typeof payload !== "object") return false;
+  const decision = ((payload as Record<string, unknown>).decision ?? {}) as Record<string, unknown>;
+  const approved = (e: Record<string, unknown>) => typeof e.status === "string" && normDiditStatus(e.status) === "approved";
+
+  const docs = diditFeatureEntries(decision, ...DOC_FEATURES);
+  if (docs.length === 0 || !docs.every(approved)) return false;
+  if (!extractDiditDocumentNumber(payload)) return false;
+
+  const selfie = SELFIE_FEATURES.flatMap(([v3, v2]) => diditFeatureEntries(decision, v3, v2));
+  // No selfie result at all, or every one approved: nothing on the selfie failed, so this isn't that case.
+  if (selfie.every(approved)) return false;
+
+  const known = new Set([...DOC_FEATURES, ...SELFIE_FEATURES.flat()]);
+  for (const [key, value] of Object.entries(decision)) {
+    if (known.has(key)) continue;
+    const entries = Array.isArray(value) ? value : [value];
+    for (const e of entries) {
+      if (e && typeof e === "object" && typeof (e as Record<string, unknown>).status === "string" && !approved(e as Record<string, unknown>)) return false;
+    }
+  }
+
+  const all = warningRisks(payload);
+  if (all.some((r) => isUnderageRisk(r) || IDENTITY_RISK.test(r))) return false;
+  const selfieRisks = warningRisks(selfie);
+  return selfieRisks.length > 0 && selfieRisks.every((r) => CAMERA_QUALITY_RISK.test(r));
 }
 
 /** A Didit warning marked information-level (`log_type`, or a `level` / `severity` alias): a note, not a finding. */

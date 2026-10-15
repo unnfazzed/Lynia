@@ -3846,12 +3846,14 @@ describe("RiderService — KYC-R26 decision guards", () => {
         create: async ({ data }: { data: Record<string, unknown> }) => (audit.push(data), {}),
         // KYC-R26-13: retryKyc's daily cap — every row here is "today"; filters on actor/action/target/reason.
         // The paid-mint ceiling counts by action + target only (no actor, no OR).
-        count: async ({ where }: { where: { actor?: string; action: string; target: string; OR?: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
+        // Owner 2026-10-15: the unreadable-card hold counts one exact reasonCode.
+        count: async ({ where }: { where: { actor?: string; action: string; target: string; reasonCode?: string; OR?: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
           audit.filter(
             (a) =>
               (where.actor === undefined || a.actor === where.actor) &&
               a.action === where.action &&
               a.target === where.target &&
+              (where.reasonCode === undefined || a.reasonCode === where.reasonCode) &&
               (!where.OR || where.OR.some((c) => (c.reasonCode === null ? a.reasonCode == null : c.reasonCode.in.includes(a.reasonCode as string)))),
           ).length,
       },
@@ -4041,9 +4043,10 @@ describe("RiderService — KYC-R26 decision guards", () => {
     it("three fixable declines in a day: the biker keeps retrying until the cap, then 429 kyc_daily_limit — never locked", async () => {
       const { prisma, row, audit } = memPrisma();
       const { s, submit } = autoSvc(prisma);
+      // Not `id_unreadable`: since owner 2026-10-15 a third unreadable card goes to a person instead (tested below).
       for (let i = 0; i < 3; i++) {
         await s.retryKyc("p1");
-        await declineFresh(s, row, "id_unreadable", new Date(Date.now() + i * 1000));
+        await declineFresh(s, row, "face_mismatch", new Date(Date.now() + i * 1000));
       }
       expect(submit).toHaveBeenCalledTimes(3);
       expect(row.kycAttempts).toBe(0);
@@ -4094,6 +4097,153 @@ describe("RiderService — KYC-R26 decision guards", () => {
       const { s } = withSpies(prisma);
       await s.adminSetKyc("p1", "failed", "id_unreadable", "admin:ops");
       expect(row.kycAttempts).toBe(1);
+    });
+  });
+
+  describe("owner 2026-10-15: a camera-only selfie failure, and a card that can't be read", () => {
+    /** retryKyc's rotation between two checks: a fresh session ref on a pending, unresolved row. */
+    const freshCheck = (row: Record<string, unknown>, ref: string) => Object.assign(row, { kycStatus: "pending", kycRef: ref, kycResolvedAt: null, kycResolvedBy: null });
+
+    it("a verify with the selfie flag verifies the biker and flags the selfie for ops (audited, pushed as verified)", async () => {
+      const { prisma, row, audit } = memPrisma({ isOnline: false });
+      const { s, notifyProfiles } = withSpies(prisma);
+      const at = new Date("2026-10-15T10:00:00Z");
+      expect(await s.applyKycResult("sess_1", "verified", at, null, null, null, { selfieUnverified: true })).toEqual({ updated: 1 });
+      expect(row).toMatchObject({ kycStatus: "verified", idVerified: true, selfieCheck: "unverified", selfieCheckReason: "camera_quality", selfieCheckAt: at });
+      expect(audit.find((a) => a.action === "rider.kyc_approve")?.reasonCode).toContain("selfie_unverified");
+      await new Promise((r) => setTimeout(r, 0));
+      expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "You're verified" }));
+    });
+
+    it("a verify whose selfie passed clears an old flag and a re-check's leftovers", async () => {
+      const { prisma, row } = memPrisma({ selfieCheck: "recheck_requested", selfieCheckReason: "camera_quality", selfieRecheckRef: "rc_1", selfieRecheckUrl: "https://x" });
+      const { s } = withSpies(prisma);
+      await s.applyKycResult("sess_1", "verified", new Date("2026-10-15T10:00:00Z"));
+      expect(row).toMatchObject({ selfieCheck: null, selfieCheckReason: null, selfieRecheckRef: null, selfieRecheckUrl: null });
+    });
+
+    it("the selfie flag never rides a decline (an expired card is still declined)", async () => {
+      const { prisma, row } = memPrisma();
+      const { s } = withSpies(prisma);
+      const at = new Date("2026-10-15T10:00:00Z");
+      await s.applyKycResult("sess_1", "verified", at, null, null, new Date("2026-01-01T00:00:00Z"), { selfieUnverified: true });
+      expect(row).toMatchObject({ kycStatus: "failed", kycDeclineReason: "id_expired" });
+      expect(row.selfieCheck).toBeUndefined();
+    });
+
+    it("the third unreadable card goes to a person: pending + held, no decline row, no push; the first two decline as before", async () => {
+      const { prisma, row, audit } = memPrisma({ isOnline: false });
+      const { s, notifyProfiles } = withSpies(prisma);
+      await s.applyKycResult("sess_1", "failed", new Date("2026-10-15T10:00:00Z"), "id_unreadable");
+      expect(row).toMatchObject({ kycStatus: "failed", kycDeclineReason: "id_unreadable", kycAttempts: 0 });
+      freshCheck(row, "sess_2");
+      await s.applyKycResult("sess_2", "failed", new Date("2026-10-15T10:10:00Z"), "id_unreadable");
+      expect(row.kycStatus).toBe("failed");
+      freshCheck(row, "sess_3");
+      expect(await s.applyKycResult("sess_3", "failed", new Date("2026-10-15T10:20:00Z"), "id_unreadable")).toEqual({ updated: 1 });
+      // Held for a person: still pending, the stored In Review is what /auth/me and the console read as held.
+      expect(row).toMatchObject({ kycStatus: "pending", kycVendorStatus: "In Review", kycAttempts: 0, kycSessionToken: null, kycSessionUrl: null });
+      expect(audit.filter((a) => a.action === "rider.kyc_decline")).toHaveLength(2);
+      expect(audit.at(-1)).toMatchObject({ action: "rider.kyc_review_required", reasonCode: "id_unreadable_repeated" });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(notifyProfiles).toHaveBeenCalledTimes(2); // the two declines, not the hold
+    });
+
+    it("a retried delivery of the held decline is a repeat — no second review row", async () => {
+      const { prisma, row, audit } = memPrisma();
+      const { s } = withSpies(prisma);
+      for (const [i, ref] of ["sess_1", "sess_2", "sess_3"].entries()) {
+        freshCheck(row, ref);
+        await s.applyKycResult(ref, "failed", new Date(Date.UTC(2026, 9, 15, 10, i * 10)), "id_unreadable");
+      }
+      expect(await s.applyKycResult("sess_3", "failed", new Date("2026-10-15T11:00:00Z"), "id_unreadable")).toEqual({ updated: 0, skipped: "repeat" });
+      expect(audit.filter((a) => a.action === "rider.kyc_review_required")).toHaveLength(1);
+    });
+
+    describe("the selfie re-check (a reminder, never a gate)", () => {
+      const verified = (extra: Record<string, unknown> = {}) =>
+        memPrisma({ kycStatus: "verified", idVerified: true, selfieCheck: "unverified", selfieCheckReason: "camera_quality", selfieRecheckRef: null, selfieRecheckUrl: null, ...extra });
+      const recheckSvc = (prisma: Record<string, unknown>, submit = vi.fn(async () => ({ ref: "rc_1", status: "pending" as const, url: "https://verify.didit.me/rc_1" }))) => ({
+        s: new RiderService(prisma as unknown as PrismaService, { KYC_MODE: "auto", KYC_PROVIDER: "didit" } as Env, { submit } as KycVendor, pii, trackingStub, gatewayStub, notificationsStub),
+        submit,
+      });
+
+      it("ops ask for a re-check: flagged, audited with the operator, the reminder pushed", async () => {
+        const { prisma, row, audit } = verified();
+        const { s, notifyProfiles } = withSpies(prisma);
+        expect(await s.adminSetSelfieCheck("p1", "request", "admin:ops", "Blurry selfie")).toEqual({ profileId: "p1", selfieCheck: "recheck_requested" });
+        expect(row).toMatchObject({ kycStatus: "verified", isOnline: true, selfieCheck: "recheck_requested" });
+        expect(audit.at(-1)).toMatchObject({ actor: "admin:ops", action: "rider.selfie_recheck_request", target: "p1", note: "Blurry selfie" });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "Please redo your selfie check", data: { kind: "account", kyc: "selfie_recheck" } }));
+      });
+
+      it("ops can mark the selfie checked; neither action applies to a biker who isn't verified", async () => {
+        const { prisma, row, audit } = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_1", selfieRecheckUrl: "https://x" });
+        const { s } = withSpies(prisma);
+        await s.adminSetSelfieCheck("p1", "clear", "admin:ops");
+        expect(row).toMatchObject({ selfieCheck: null, selfieCheckReason: null, selfieRecheckRef: null, selfieRecheckUrl: null });
+        expect(audit.at(-1)).toMatchObject({ action: "rider.selfie_check_clear" });
+        const pending = memPrisma();
+        await expect(withSpies(pending.prisma).s.adminSetSelfieCheck("p1", "request", "admin:ops")).rejects.toMatchObject({ status: 409 });
+      });
+
+      it("the biker starts it once (paid, counted), and a second tap reopens the same session for free", async () => {
+        const { prisma, row, audit } = verified({ selfieCheck: "recheck_requested" });
+        const { s, submit } = recheckSvc(prisma);
+        expect(await s.startSelfieRecheck("p1")).toEqual({ verificationUrl: "https://verify.didit.me/rc_1" });
+        expect(row).toMatchObject({ selfieRecheckRef: "rc_1", selfieRecheckUrl: "https://verify.didit.me/rc_1", kycRef: "sess_1" });
+        expect(audit.filter((a) => a.action === "rider.kyc_session_minted").map((a) => a.reasonCode)).toEqual(["recheck"]);
+        expect(await s.startSelfieRecheck("p1")).toEqual({ verificationUrl: "https://verify.didit.me/rc_1" });
+        expect(submit).toHaveBeenCalledTimes(1);
+      });
+
+      it("a vendor failure hands the claim back; nothing to redo is a 409", async () => {
+        const { prisma, row } = verified();
+        const { s } = recheckSvc(prisma, vi.fn(async () => { throw new Error("503"); }));
+        await expect(s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 503 });
+        expect(row.selfieRecheckRef).toBeNull();
+        const clean = verified({ selfieCheck: null });
+        await expect(recheckSvc(clean.prisma).s.startSelfieRecheck("p1")).rejects.toMatchObject({ status: 409 });
+      });
+
+      it("a pass on this biker's own ID clears the flag; another ID's document doesn't pass", async () => {
+        const doc = "63-123456-A-42";
+        const ok = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_1", selfieRecheckUrl: "u", verifiedIdHash: pii.hashId(doc) });
+        const sOk = withSpies(ok.prisma).s;
+        expect(await sOk.selfieRecheckOwner("rc_1")).toBe("p1");
+        expect(await sOk.applySelfieRecheck("rc_1", { kind: "passed" }, doc)).toEqual({ updated: 1, passed: true });
+        expect(ok.row).toMatchObject({ kycStatus: "verified", selfieCheck: null, selfieCheckReason: null, selfieRecheckRef: null, selfieRecheckUrl: null });
+        expect(ok.audit.at(-1)).toMatchObject({ actor: "system:kyc-webhook", action: "rider.selfie_recheck_pass" });
+        // A retried delivery finds no session.
+        expect(await sOk.applySelfieRecheck("rc_1", { kind: "passed" }, doc)).toEqual({ updated: 0 });
+
+        const other = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_2", selfieRecheckUrl: "u", verifiedIdHash: pii.hashId(doc) });
+        expect(await withSpies(other.prisma).s.applySelfieRecheck("rc_2", { kind: "passed" }, "99-999999-Z-99")).toEqual({ updated: 1, passed: false });
+        expect(other.row).toMatchObject({ kycStatus: "verified", selfieCheck: "recheck_requested", selfieCheckReason: "id_mismatch", selfieRecheckRef: null });
+      });
+
+      it("a failed re-check keeps the biker verified and online, with the reason ops see; a dead session is only let go", async () => {
+        const failed = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_1", selfieRecheckUrl: "u" });
+        await withSpies(failed.prisma).s.applySelfieRecheck("rc_1", { kind: "failed", reason: "face_mismatch" });
+        expect(failed.row).toMatchObject({ kycStatus: "verified", isOnline: true, selfieCheck: "recheck_requested", selfieCheckReason: "face_mismatch", selfieRecheckRef: null });
+        expect(failed.audit.at(-1)).toMatchObject({ action: "rider.selfie_recheck_fail", reasonCode: "face_mismatch" });
+
+        const dead = verified({ selfieCheck: "recheck_requested", selfieRecheckRef: "rc_1", selfieRecheckUrl: "u" });
+        await withSpies(dead.prisma).s.applySelfieRecheck("rc_1", { kind: "dead" });
+        expect(dead.row).toMatchObject({ selfieCheck: "recheck_requested", selfieCheckReason: "camera_quality", selfieRecheckRef: null, selfieRecheckUrl: null });
+        expect(dead.audit).toHaveLength(0);
+      });
+    });
+
+    it("other declines don't count toward the hold, and a strike still declines", async () => {
+      const { prisma, row } = memPrisma();
+      const { s } = withSpies(prisma);
+      for (const [i, reason] of ["face_mismatch", "other", "id_unreadable"].entries()) {
+        freshCheck(row, `sess_${i}`);
+        await s.applyKycResult(`sess_${i}`, "failed", new Date(Date.UTC(2026, 9, 15, 10, i * 10)), reason);
+        expect(row.kycStatus).toBe("failed");
+      }
     });
   });
 

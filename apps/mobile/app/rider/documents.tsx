@@ -6,7 +6,10 @@ import { BackHandler, Image, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
-import { updateRiderProfile } from "../../src/api/riders";
+import { startSelfieRecheck, updateRiderProfile } from "../../src/api/riders";
+import { KycCheckHost } from "../../src/kyc/KycCheckHost";
+import { primeKycCamera, runKycVerification } from "../../src/kyc/verify";
+import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { initials } from "../../src/logic/avatar";
 import {
   bikeDocsProgress,
@@ -40,8 +43,9 @@ import {
   PinnedFooter,
   SplitTitle,
 } from "../../src/ui/firstrun";
-import { BD, RP } from "../../src/ui/firstrun/copy";
+import { BD, KY, RP } from "../../src/ui/firstrun/copy";
 import { RIDER_COPY as R } from "../../src/ui/rider/copy";
+import { SR } from "../../src/ui/rider/selfie-recheck-copy";
 
 /**
  * E1's in-row "+ Add" pill height. The handoff drew it 36, under the tap-target floor; the owner had the
@@ -250,6 +254,29 @@ export default function DocumentsScreen(): React.ReactElement {
     follow(startPhotoUpload(qc, shot));
   };
 
+  /**
+   * D-110 (owner 2026-10-15): the selfie re-check ops asked for. Opens in the same in-app ID-check sheet as the
+   * first check; the verdict arrives by webhook, so a finished launch only refreshes `me`. One launch at a time.
+   */
+  const recheckBusy = useRef(false);
+  const redoSelfie = (): void => {
+    if (recheckBusy.current) return;
+    recheckBusy.current = true;
+    const camera = primeKycCamera();
+    void (async () => {
+      try {
+        const { verificationUrl } = await startSelfieRecheck();
+        const launch = await runKycVerification({ verificationUrl }, { camera });
+        if (launch.outcome === "failed") setError(`${KY.cantA} ${KY.cantB}`);
+        void qc.invalidateQueries({ queryKey: ["me"] });
+      } catch (e) {
+        setError(e instanceof ApiError && e.status === 429 ? KYC_RETRY_TRY_LATER : `${KY.cantA} ${KY.cantB}`);
+      } finally {
+        recheckBusy.current = false;
+      }
+    })();
+  };
+
   const openPlate = (): void => {
     setPlateDraft(rider?.bikeReg ?? "");
     setPlateError(null);
@@ -314,6 +341,8 @@ export default function DocumentsScreen(): React.ReactElement {
   const plateChecking = !!plate && rider?.plateStatus === "checking";
   const plateOk = bikeVerified(rider);
   const idOk = rider?.kycStatus === "verified";
+  // D-110: a reminder only — never a gate on going online.
+  const selfieRecheck = idOk && rider?.selfieCheck === "recheck_requested";
   const hasPhoto = rider?.hasPhoto === true;
   const progress = bikeDocsProgress(rider);
   const allSet = !upload && progress.done === progress.total;
@@ -356,8 +385,13 @@ export default function DocumentsScreen(): React.ReactElement {
 
   const rows = (
     <ListCard testID="documents-rows">
-      {/* The ok tone (and "Verified") only once the ID check passed — an unverified rider's ID row is neutral. */}
-      <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
+      {/* The ok tone (and "Verified") only once the ID check passed — an unverified rider's ID row is neutral.
+          D-110: while ops have asked for a new selfie, the verified row carries the reminder and its Redo instead. */}
+      {selfieRecheck ? (
+        <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={SR.rowSub} value={SR.redo} onPress={redoSelfie} accessibilityLabel={`${BD.id}, ${SR.rowSub}, ${SR.redo}`} />
+      ) : (
+        <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
+      )}
       {photoRow}
       {plateRow}
     </ListCard>
@@ -442,6 +476,9 @@ export default function DocumentsScreen(): React.ReactElement {
 
       {/* E2b — the capture guide. */}
       <CaptureGuide visible={stage.kind === "guide"} onClose={() => setStage({ kind: "list" })} onShoot={() => pick("camera")} />
+
+      {/* D-110: presents the in-app ID-check sheet for the selfie re-check (src/kyc). */}
+      <KycCheckHost />
     </>
   );
 }

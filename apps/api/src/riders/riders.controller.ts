@@ -107,6 +107,16 @@ export class RidersController {
   }
 
   /**
+   * Owner 2026-10-15: the verified biker starts (or reopens) the selfie re-check ops asked for. A session already
+   * open comes back for free; a new one is paid and bounded in the service like every other mint.
+   */
+  @Throttle({ limit: KYC_ROUTE_REQUEST_CAP, windowSec: 3600, keyPrefix: "selfie-recheck" })
+  @Post("kyc/selfie-recheck")
+  selfieRecheck(@CurrentUser() id: string) {
+    return this.riders.startSelfieRecheck(id);
+  }
+
+  /**
    * R-4: the app finished an ID-check launch the rider says they completed. Changes nothing; it only
    * drops the cached pending state so the next /auth/me reads the vendor afresh. Cheap, but each call can
    * cost one vendor read, so it is throttled like a generous poll.

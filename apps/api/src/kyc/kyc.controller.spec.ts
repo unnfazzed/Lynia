@@ -89,6 +89,59 @@ describe("KycController.callback", () => {
     expect(withoutDoc.docNumber()).toBeNull();
   });
 
+  // Owner 2026-10-15: a Declined whose ID passed and whose selfie failed only on the camera is applied as a verify
+  // with the selfie flagged; a face that doesn't match is still a decline.
+  it("applies a camera-only selfie failure as a verify with the selfie flagged", async () => {
+    const seen: unknown[][] = [];
+    const riders = {
+      applyKycResult: async (...args: unknown[]) => (seen.push(args), { updated: 1 }),
+      kycSessionOwner: async () => "p_owner",
+    } as unknown as RiderService;
+    const decision = (face: Record<string, unknown>) => ({
+      id_verifications: [{ status: "Approved", document_number: "63-123456-A-42" }],
+      liveness_checks: [{ status: "Declined", warnings: [{ risk: "LOW_FACE_QUALITY", log_type: "warning" }] }],
+      face_matches: [face],
+    });
+    await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
+      req(JSON.stringify({ session_id: "s_cam", status: "Declined", decision: decision({ status: "Approved", score: 80 }) })),
+    );
+    expect(seen[0]).toEqual(["s_cam", "verified", expect.any(Date), null, "63-123456-A-42", null, { selfieUnverified: true }]);
+
+    await ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(
+      req(JSON.stringify({ session_id: "s_face", status: "Declined", decision: decision({ status: "Declined", score: 30, warnings: [{ risk: "LOW_FACE_MATCH_SIMILARITY" }] }) })),
+    );
+    expect(seen[1]?.slice(0, 2)).toEqual(["s_face", "failed"]);
+    expect(seen[1]?.[3]).toBe("face_mismatch");
+    expect(seen[1]?.[6]).toEqual({ selfieUnverified: false });
+  });
+
+  // Owner 2026-10-15: a selfie re-check has its own session; its verdict goes to applySelfieRecheck and never to
+  // applyKycResult, so it can't change the biker's verification.
+  it("routes a selfie re-check session's verdict to applySelfieRecheck, never to applyKycResult", async () => {
+    const applied: unknown[][] = [];
+    const recheck: unknown[][] = [];
+    const riders = {
+      applyKycResult: async (...args: unknown[]) => (applied.push(args), { updated: 1 }),
+      kycSessionOwner: async () => null,
+      selfieRecheckOwner: async (ref: string) => (ref.startsWith("rc_") ? "p_owner" : null),
+      applySelfieRecheck: async (...args: unknown[]) => (recheck.push(args), { updated: 1 }),
+    } as unknown as RiderService;
+    const send = (body: Record<string, unknown>) => ctl(riders, { DIDIT_WEBHOOK_SECRET: undefined }).callback(req(JSON.stringify(body)));
+    const doc = { id_verifications: [{ status: "Approved", document_number: "63-123456-A-42" }] };
+    await send({ session_id: "rc_1", status: "Approved", decision: { ...doc, face_matches: [{ status: "Approved", score: 90 }] } });
+    await send({ session_id: "rc_2", status: "Declined", decision: { ...doc, face_matches: [{ status: "Declined", score: 20, warnings: [{ risk: "LOW_FACE_MATCH_SIMILARITY" }] }] } });
+    await send({ session_id: "rc_3", status: "Abandoned" });
+    await send({ session_id: "rc_4", status: "In Progress" });
+    expect(recheck).toEqual([
+      ["rc_1", { kind: "passed" }, "63-123456-A-42"],
+      ["rc_2", { kind: "failed", reason: "face_mismatch" }, "63-123456-A-42"],
+      ["rc_3", { kind: "dead" }],
+    ]);
+    expect(applied).toEqual([]);
+    // vendor_data naming someone else is not applied.
+    expect(await send({ session_id: "rc_5", status: "Approved", vendor_data: "p_other" })).toEqual({ ignored: true, reason: "vendor_data_mismatch" });
+  });
+
   it("maps Didit's \"Kyc Expired\" to the terminal `expired` state (1·b2)", async () => {
     const { riders, calls } = fakeRiders();
     const raw = JSON.stringify({ session_id: "s_exp", status: "Kyc Expired" });

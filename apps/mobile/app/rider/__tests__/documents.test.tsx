@@ -18,7 +18,11 @@ jest.mock("../../../src/api/auth", () => ({
   getMe: async () => ({ profileId: "p1", role: "rider", firstName: "Tendai", lastName: "Moyo", rider: mockRider }),
 }));
 const mockUpdateRider = jest.fn();
-jest.mock("../../../src/api/riders", () => ({ updateRiderProfile: (b: unknown) => mockUpdateRider(b) }));
+const mockStartRecheck = jest.fn();
+jest.mock("../../../src/api/riders", () => ({ updateRiderProfile: (b: unknown) => mockUpdateRider(b), startSelfieRecheck: () => mockStartRecheck() }));
+// D-110: the selfie re-check opens through the same launcher as the first ID check.
+const mockRunKyc = jest.fn();
+jest.mock("../../../src/kyc/verify", () => ({ primeKycCamera: async () => true, runKycVerification: (c: unknown, o: unknown) => mockRunKyc(c, o) }));
 const mockPick = jest.fn();
 const mockAllowed = jest.fn(async (_from: string) => false);
 const mockSavePhoto = jest.fn();
@@ -368,5 +372,51 @@ describe("E5 · all set", () => {
     const s = text(tree);
     expect(s).toContain("Checking");
     expect(s.match(/"Verified"/g)?.length).toBe(1);
+  });
+});
+
+// D-110 (owner 2026-10-15): ops asked a verified biker for a new selfie — a reminder with a Redo, never a gate.
+describe("Bike & documents — the selfie re-check reminder (D-110)", () => {
+  it("shows the reminder and Redo on the National ID row only while a re-check is asked for", async () => {
+    mockRider = { ...mockRider, selfieCheck: "recheck_requested" };
+    const tree = render();
+    await loaded(tree);
+    expect(text(tree)).toContain("Please redo your selfie check");
+    expect(text(tree)).toContain("Redo");
+    expect(byId(tree, "row-id")).toBeTruthy();
+
+    mockRider = { ...mockRider, selfieCheck: "unverified" };
+    const quiet = render();
+    await loaded(quiet);
+    expect(text(quiet)).not.toContain("Please redo your selfie check");
+    expect(byId(quiet, "row-id")).toBeUndefined();
+  });
+
+  it("Redo starts the re-check and opens it in the ID-check sheet", async () => {
+    mockRider = { ...mockRider, selfieCheck: "recheck_requested" };
+    mockStartRecheck.mockResolvedValue({ verificationUrl: "https://verify.didit.me/rc_1" });
+    mockRunKyc.mockResolvedValue({ outcome: "completed", sessionUnusable: false });
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "row-id");
+    expect(mockStartRecheck).toHaveBeenCalledTimes(1);
+    expect(mockRunKyc).toHaveBeenCalledWith({ verificationUrl: "https://verify.didit.me/rc_1" }, expect.objectContaining({ camera: expect.any(Promise) }));
+  });
+
+  it("a check that couldn't open says so (the F7 words)", async () => {
+    const show = jest.fn();
+    const ui = jest.requireActual("../../../src/ui/Toast") as typeof import("../../../src/ui/Toast");
+    const spy = jest.spyOn(ui, "useActionError").mockReturnValue((m?: string | null) => void (m && show(m)));
+    try {
+      mockRider = { ...mockRider, selfieCheck: "recheck_requested" };
+      mockStartRecheck.mockRejectedValue(new Error("503"));
+      const tree = render();
+      await loaded(tree);
+      await press(tree, "row-id");
+      expect(mockRunKyc).not.toHaveBeenCalled();
+      expect(show).toHaveBeenLastCalledWith("Couldn’t open the ID check");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

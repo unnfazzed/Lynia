@@ -9,10 +9,13 @@
  *  - `expired` F6 (`KY.expA` + `KY.expB`): the ID lapsed (the daily sweep, Didit's Kyc Expired, an ops expire).
  *              The body is `KY.expBody`'s second sentence: its first names the day, which the F6 screen shows.
  *  - `reset`   F1 unfinished (`KY.unfA`, `KY.unfBody`): ops reopened the check, so the rider owes the next tap.
+ *  - `selfie_recheck`  ops asked a verified biker for a new selfie check (owner 2026-10-15). Not drawn by any
+ *              handoff — ledger D-110. A reminder: it says the biker can keep riding, and the tap opens Bike &
+ *              documents, where the National ID row carries the Redo action.
  */
 import { bikerWording } from "@lynia/shared";
 
-export type KycPushVariant = "verified" | "failed" | "locked" | "expired" | "reset";
+export type KycPushVariant = "verified" | "failed" | "locked" | "expired" | "reset" | "selfie_recheck";
 
 export const KYC_PUSH_COPY: Record<KycPushVariant, { title: string; body: string }> = {
   verified: { title: "You're verified", body: "You're verified — go online to start taking deliveries." },
@@ -20,4 +23,5 @@ export const KYC_PUSH_COPY: Record<KycPushVariant, { title: string; body: string
   locked: { title: bikerWording("Let’s finish this together"), body: bikerWording("Both tries are used. Our team will check your ID with you on WhatsApp.") },
   expired: { title: bikerWording("Your ID has expired"), body: bikerWording("Re-verify to keep riding.") },
   reset: { title: bikerWording("Almost there,"), body: bikerWording("Finish your ID check. About 2 minutes.") },
+  selfie_recheck: { title: "Please redo your selfie check", body: "It takes about 2 minutes. You can keep taking jobs." },
 };

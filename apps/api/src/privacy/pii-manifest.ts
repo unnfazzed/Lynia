@@ -106,6 +106,12 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   kyc_id_expires_on: { column: "kyc_id_expires_on", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: the ID document's expiry day (D-82 F6) — an attribute of the person's ID card, nulled on erase." },
   kyc_vendor_status: { column: "kyc_vendor_status", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: the vendor's last status for the person's ID check — nulled on erase." },
   kyc_vendor_status_at: { column: "kyc_vendor_status_at", where: "riders", tables: ["riders"], disposition: "null", note: "KYC-R26-05: when the vendor reported it — nulled on erase." },
+  // Owner 2026-10-15 (migration 0104): the selfie flag and the selfie re-check's own vendor session.
+  selfie_check: { column: "selfie_check", where: "riders", tables: ["riders"], disposition: "null", note: "Whether the person's selfie was checked — nulled on erase." },
+  selfie_check_reason: { column: "selfie_check_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Why the selfie wasn't checked, or why a re-check didn't pass — nulled on erase." },
+  selfie_check_at: { column: "selfie_check_at", where: "riders", tables: ["riders"], disposition: "null", note: "Activity timestamp tied to the person — nulled on erase." },
+  selfie_recheck_ref: { column: "selfie_recheck_ref", where: "riders", tables: ["riders"], disposition: "null", note: "The re-check's vendor session id — the session is deleted at the vendor and the id nulled on erase." },
+  selfie_recheck_url: { column: "selfie_recheck_url", where: "riders", tables: ["riders"], disposition: "null", note: "The hosted-check URL for that session (a credential) — nulled on erase." },
   suspend_reason: { column: "suspend_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   current_lat: { column: "current_lat", where: "riders", tables: ["riders"], disposition: "null", note: "Readable last-position latitude nulled on erase." },
   current_lng: { column: "current_lng", where: "riders", tables: ["riders"], disposition: "null", note: "Readable last-position longitude nulled on erase." },

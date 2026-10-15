@@ -4,6 +4,7 @@ import type { KycReview } from "../../../lib/adminTypes";
 import { KeyValue } from "../../../components/KeyValue";
 import { Pill } from "../../../components/StatusPill";
 import { KycDecision } from "../../../components/KycDecision";
+import { SelfieCheckActions } from "../../../components/SelfieCheckActions";
 import { diditProgressLine, diditSessionUrl, diditUnfinished } from "../../../lib/didit";
 import { kycDeclineLabel } from "../../../lib/reasons";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../../components/states";
@@ -117,6 +118,10 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
   // they never finished it — the approval then needs an explicit, noted acknowledgement.
   const progress = diditProgressLine(r.kycHeld, r.kycVendorStatus);
   const unfinished = !decided && diditUnfinished(r.kycHeld, r.kycVendorStatus);
+  // Owner 2026-10-15: verified on the ID, with a selfie the phone's camera couldn't make checkable.
+  const selfieCheck = r.status === "verified" ? (r.selfieCheck ?? null) : null;
+  // Owner 2026-10-15 (option 2): the card couldn't be read a third time, so the check came to a person.
+  const unreadableHold = !decided && r.kycHeld === true && r.declineReason === "id_unreadable";
 
   return (
     <main className="content">
@@ -144,6 +149,34 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             <b>Resubmission — attempt 2.</b>{" "}
             {r.declineReason ? `Previously declined: ${kycDeclineLabel(r.declineReason)}. ` : ""}
             One resubmit left — a second decline locks the application and the biker must contact support.
+          </span>
+        </div>
+      ) : null}
+
+      {selfieCheck ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>ID verified — selfie not checked.</b> The ID check verified{" "}
+            <span className="mono">{r.verifiedIdNumber ?? r.idNumber ?? "this biker's ID"}</span>, but{" "}
+            {selfieCheck === "recheck_requested"
+              ? "you've asked for a new selfie and they haven't passed one yet"
+              : "their phone's camera couldn't take a selfie Didit could check"}
+            {r.selfieCheckReason && r.selfieCheckReason !== "camera_quality" ? (
+              <> (last re-check: {kycDeclineLabel(r.selfieCheckReason)})</>
+            ) : null}
+            . They can go online. Compare the selfie with the ID photo in Didit, then mark it checked or ask for a
+            re-check below.
+          </span>
+        </div>
+      ) : null}
+
+      {unreadableHold ? (
+        <div className="warnbar">
+          <IconAlert />
+          <span className="t">
+            <b>ID card couldn&apos;t be read — three tries.</b> This biker is waiting on you, not on another retry. Check
+            the card and the selfie in Didit, then approve (say how you checked the ID in the note) or decline.
           </span>
         </div>
       ) : null}
@@ -297,10 +330,22 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
               </div>
             ) : null}
             <CheckRow label="Overall verdict" value={verdict.value} kind={verdict.kind} pill={verdict.pill} />
+            {selfieCheck ? (
+              <>
+                <CheckRow label="ID document" value={r.verifiedIdNumber ?? r.idNumber ?? "verified"} kind="good" pill="pass" />
+                <CheckRow
+                  label="Selfie"
+                  value={selfieCheck === "recheck_requested" ? "re-check asked for" : "not checked (camera)"}
+                  kind=""
+                  pill={selfieCheck === "recheck_requested" ? "reminded" : "not checked"}
+                />
+              </>
+            ) : null}
             <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 10 }}>
               Decisions are automatic: a face match of {KYC_THRESHOLDS.autoApprove} or more passes, below{" "}
-              {KYC_THRESHOLDS.needsReview} is declined, and a check Didit sends to review is declined too — nothing waits
-              for a human. Lynia doesn&apos;t keep the face-match, document or liveness results — confirm the ID number
+              {KYC_THRESHOLDS.needsReview} is declined, and a check Didit sends to review is declined too. Two exceptions:
+              an ID that passed with a selfie the phone&apos;s camera couldn&apos;t make checkable is verified and flagged
+              here, and a card that couldn&apos;t be read three times comes here for a person. Lynia doesn&apos;t keep the face-match, document or liveness results — confirm the ID number
               and check them in the biker&apos;s Didit session before overriding a decision.
               {r.kycRef ? (
                 <>
@@ -346,9 +391,21 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             {decided ? (
               <div style={{ fontSize: 13 }}>
                 {r.status === "verified" ? (
-                  <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>
-                    ✓ Verified — this biker can go online.
-                  </span>
+                  <>
+                    <span style={{ color: tokens.color.accentText, fontWeight: 600 }}>
+                      ✓ Verified — this biker can go online.
+                    </span>
+                    {selfieCheck ? (
+                      <div style={{ marginTop: 8, color: tokens.color.muted }}>
+                        {selfieCheck === "recheck_requested"
+                          ? "Selfie re-check asked for — they've been reminded."
+                          : "Verified on the ID; the selfie wasn't checked."}
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: 14 }}>
+                      <SelfieCheckActions profileId={r.id} name={r.name} connected={connected} selfieCheck={selfieCheck} />
+                    </div>
+                  </>
                 ) : r.status === "expired" ? (
                   <span>
                     <span style={{ color: tokens.color.danger, fontWeight: 600 }}>Expired.</span>{" "}

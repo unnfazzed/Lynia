@@ -187,13 +187,16 @@ export function pushDestination(data: unknown, isRider: boolean): string | null 
 
 function pushRoute(data: unknown, isRider: boolean): string | null {
   if (typeof data !== "object" || data === null) return null;
-  const { orderId, status, kind, to, orderType } = data as {
+  const { orderId, status, kind, to, orderType, kyc } = data as {
     orderId?: unknown;
     status?: unknown;
     kind?: unknown;
     to?: unknown;
     orderType?: unknown;
+    kyc?: unknown;
   };
+  // D-110 (owner 2026-10-15): ops asked for a new selfie — the Redo lives on Bike & documents' National ID row.
+  if (kind === "account" && kyc === "selfie_recheck") return "/rider/documents";
   // Per-order recipient relationship when the backend stamped it; otherwise the global account role.
   const toRider = to === "rider" ? true : to === "customer" ? false : isRider;
   // P0-2 / D-59: every customer order (food or parcel) opens the one order screen /order/:id; a food

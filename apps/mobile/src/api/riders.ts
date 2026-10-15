@@ -48,6 +48,15 @@ export function retryKyc(force = false): Promise<Pick<BecomeResult, "kycStatus" 
 }
 
 /**
+ * Owner 2026-10-15 (D-110): start — or reopen, for free — the selfie re-check ops asked for. The link opens in
+ * the same in-app ID-check sheet as the first check (`runKycVerification`); the verdict comes back through the
+ * webhook and clears `rider.selfieCheck` on a pass.
+ */
+export function startSelfieRecheck(): Promise<{ verificationUrl: string }> {
+  return apiFetch("/riders/kyc/selfie-recheck", { method: "POST", body: {} });
+}
+
+/**
  * R-4: tell the server a launch of the ID check just completed, so it drops its cached pending state and
  * the next `/auth/me` reads the vendor afresh. Changes nothing server-side; best-effort and never throws
  * (an older server answers 404, which is fine — the board's own completed hint covers the gap).
