@@ -402,9 +402,33 @@ describe("OffersService.makeOffer", () => {
       rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
       offer: { create },
     });
-    const res = await service.makeOffer({ ...offerInput, type: "counter", offeredFare: 4.75 }, "rider-1");
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "counter", offeredFare: 4.75 }) }));
-    expect(res).toMatchObject({ type: "counter", offeredFare: "4.75" });
+    const res = await service.makeOffer({ ...offerInput, type: "counter", offeredFare: 4.5 }, "rider-1");
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: "counter", offeredFare: 4.5 }) }));
+    expect(res).toMatchObject({ type: "counter", offeredFare: "4.50" });
+  });
+
+  // Every fare is a whole number of 50c (owner 2026-10-15): a counter is snapped; an accept of an ask from
+  // before that rule is left alone, or it would no longer match the ask.
+  it("snaps a counter to the nearest 50c, and leaves an accept of a pre-rule ask as it is", async () => {
+    const create = vi.fn(async (args: { data: { type: string; offeredFare: number } }) => ({
+      id: "o1",
+      type: args.data.type,
+      offeredFare: { toString: () => args.data.offeredFare.toFixed(2) },
+      etaMinutes: 12,
+      status: "pending",
+    }));
+    const deps = {
+      order: {
+        findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", customerId: "cust-1", proposedFare: 3.42 }),
+        findFirst: async () => null,
+      },
+      rider: { findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null }) },
+      offer: { create },
+    };
+    const counter = await svc(deps).service.makeOffer({ ...offerInput, type: "counter", offeredFare: 4.6 }, "rider-1");
+    expect(counter).toMatchObject({ type: "counter", offeredFare: "4.50" });
+    const accept = await svc(deps).service.makeOffer({ ...offerInput, type: "accept", offeredFare: 3.42 }, "rider-2");
+    expect(accept).toMatchObject({ type: "accept", offeredFare: "3.42" });
   });
 
   // C4: a rider owing a merchant a collect-and-return debt (or mid-handshake) can't bid on a parcel

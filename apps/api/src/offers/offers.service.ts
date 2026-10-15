@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { ACTIVE_RIDE_STATUSES, estimatePickupEtaMinutes, type MakeOfferRequest, offerWindowEndsAt } from "@lynia/shared";
+import { ACTIVE_RIDE_STATUSES, estimatePickupEtaMinutes, type MakeOfferRequest, offerWindowEndsAt, roundFare } from "@lynia/shared";
 import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
@@ -41,8 +41,11 @@ export class OffersService {
    * exception (owner 2026-10-12, cold start): once the customer RAISES the price (`fareRaisedAt`), a rider
    * whose offer predates the raise — still pending, or withdrawn — may answer the new price. Their row is
    * replaced in place, so the unique (order, rider) index still means one live offer per rider.
+   * A counter is snapped to the nearest 50c (every fare is a whole number of 50c, owner 2026-10-15); an
+   * accept is left as sent, since it must equal an ask that can predate that rule.
    */
-  async makeOffer(input: MakeOfferRequest, riderId: string) {
+  async makeOffer(raw: MakeOfferRequest, riderId: string) {
+    const input = raw.type === "counter" ? { ...raw, offeredFare: roundFare(raw.offeredFare) } : raw;
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },

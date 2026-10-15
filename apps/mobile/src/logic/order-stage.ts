@@ -1,4 +1,4 @@
-import { haversineKm, OFFER_WINDOW_MS } from "@lynia/shared";
+import { FARE_UNIT_USD, haversineKm, OFFER_WINDOW_MS, roundFare } from "@lynia/shared";
 
 /**
  * The After Send order screen (ledger D-53) is ONE screen whose title, map mode, sheet content and CTA
@@ -218,9 +218,10 @@ export function phoneMasked(stage: OrderStage): boolean {
   return stage === "delivered" || stage === "completed" || stage === "cancelled" || stage === "retryRiderCancelled";
 }
 
-/** The suggested retry price: the last price + $0.50 (README "Retry"). */
+/** The suggested retry / raise price: the last price + $0.50 (README "Retry"), on the 50c grid — an ask
+ *  from before the 50c rule lands on the nearest 50c. */
 export function suggestedRetryPrice(lastPrice: number): number {
-  return Math.round((lastPrice + 0.5) * 100) / 100;
+  return roundFare(lastPrice + FARE_UNIT_USD);
 }
 
 /** Whole minutes since an ISO time (for "Last seen 3 min ago"), floored at 1. */

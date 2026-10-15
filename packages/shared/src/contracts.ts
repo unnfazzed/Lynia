@@ -4,6 +4,12 @@
  */
 import { z } from "zod";
 import { normalizePhone } from "./phone";
+import { roundFare } from "./money";
+
+/** A fare a customer, business or admin names: money bounds + 2dp (NUMERIC(10,2)), then snapped to the
+ *  nearest 50c (owner 2026-10-15: every fare is a whole number of 50c). Snapped, not refused, so an app
+ *  build from before the rule still books — what's stored and echoed back is always on the grid. */
+export const FareUsd = z.number().positive().max(100_000).multipleOf(0.01).transform(roundFare);
 
 /** Offer window length (CONCEPT §9). Wire-relevant: the customer's auction countdown renders from
  *  it (order.expiresAt = createdAt + OFFER_WINDOW_MS), and the API schedules expiry off the same
@@ -89,7 +95,7 @@ export const CreateOrderRequest = z
     note: z.string().max(280).optional(),
     itemPhotoUrl: z.string().url().optional(),
     declaredValue: z.number().nonnegative().max(150), // pilot cap (CONCEPT §3.5)
-    proposedFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
+    proposedFare: FareUsd, // sane cap + 2dp, snapped to 50c
     // Pre-broadcast liability disclaimer consent (A1-8). The version the customer accepted; the
     // server stamps the acceptance time on the order. Optional for back-compat with old clients.
     disclaimerVersion: z.string().min(1).max(40).optional(),
@@ -115,7 +121,9 @@ export type CreateOrderRequest = z.infer<typeof CreateOrderRequest>;
 export const MakeOfferRequest = z.object({
   orderId: z.string().uuid(),
   type: z.enum(["accept", "counter"]),
-  offeredFare: z.number().positive().max(100_000).multipleOf(0.01), // sane cap + 2dp (money is NUMERIC(10,2))
+  // Sane cap + 2dp. Not FareUsd: an accept must equal the ask, which can predate the 50c rule; the
+  // service snaps a counter to 50c (offers.service).
+  offeredFare: z.number().positive().max(100_000).multipleOf(0.01),
   etaMinutes: z.number().int().positive().max(180),
 });
 export type MakeOfferRequest = z.infer<typeof MakeOfferRequest>;
@@ -266,14 +274,14 @@ export type RateSenderRequest = z.infer<typeof RateSenderRequest>;
  *  money bounds as CreateOrderRequest.proposedFare; the server also requires it to be strictly higher
  *  than the current fare. The offer window is NOT reset — the countdown keeps running. */
 export const RaisePriceRequest = z.object({
-  proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+  proposedFare: FareUsd,
 });
 export type RaisePriceRequest = z.infer<typeof RaisePriceRequest>;
 
 /** One-tap resend of a finished (expired / cancelled / undelivered) parcel order at a new fare
  *  (POST /orders/:orderId/resend). Re-uses an already-open re-broadcast clone when one exists. */
 export const ResendOrderRequest = z.object({
-  proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+  proposedFare: FareUsd,
 });
 export type ResendOrderRequest = z.infer<typeof ResendOrderRequest>;
 
@@ -2225,7 +2233,7 @@ export const CreateMerchantBookingRequest = z
     /** What it's worth — Send's declared value, the liability record. Send's pilot cap applies. */
     declaredValue: z.number().nonnegative().max(150),
     /** The fare the business offers, prefilled from `quoteFare` and editable (Send's model). */
-    proposedFare: z.number().positive().max(100_000).multipleOf(0.01),
+    proposedFare: FareUsd,
     note: z.string().trim().max(280).optional(),
     /** The Send liability disclaimer version the booker accepted on the form. */
     disclaimerVersion: z.string().min(1).max(40),
@@ -2240,7 +2248,7 @@ export type CreateMerchantBookingRequest = z.infer<typeof CreateMerchantBookingR
 /** `POST /merchant/bookings/:id/try-again` — re-broadcast an expired booking's details, optionally for more. */
 export const RetryMerchantBookingRequest = z
   .object({
-    proposedFare: z.number().positive().max(100_000).multipleOf(0.01).optional(),
+    proposedFare: FareUsd.optional(),
     idempotencyKey: z.string().uuid(),
   })
   .strict();

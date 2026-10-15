@@ -25,7 +25,7 @@ jest.mock("expo-secure-store", () => ({
 }));
 jest.mock("../../../../src/api/offers", () => ({ makeOffer: (...a: unknown[]) => mockMakeOffer(...a) }));
 
-import MakeOfferScreen, { isWellAbove } from "../[jobId]";
+import MakeOfferScreen, { isWellAbove, offerCents } from "../[jobId]";
 import { ApiError } from "../../../../src/api/client";
 import { ToastProvider } from "../../../../src/ui/Toast";
 import { SENT_OFFERS_KEY, SKIPPED_JOBS_KEY } from "../../../../src/query/use-sent-offers";
@@ -135,6 +135,15 @@ describe("Make an offer (Biker v2 O1)", () => {
     expect(mockMakeOffer).not.toHaveBeenCalled();
     expect([...(qc.getQueryData<Set<string>>(SKIPPED_JOBS_KEY) ?? [])]).toEqual(["order-1"]);
     expect(mockBack).toHaveBeenCalled();
+  });
+});
+
+describe("offerCents (every fare is 50c, owner 2026-10-15)", () => {
+  it("snaps a counter to the nearest 50c and keeps the customer's own ask as an accept", () => {
+    expect(offerCents(342, 300)).toBe(350);
+    expect(offerCents(320, 300)).toBe(300);
+    expect(offerCents(10, 300)).toBe(50);
+    expect(offerCents(342, 342)).toBe(342);
   });
 });
 

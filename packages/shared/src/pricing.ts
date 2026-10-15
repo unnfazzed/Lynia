@@ -6,7 +6,7 @@
  * Pilot numbers are USD for Harare-corridor motorbike-courier runs; tune at the pricing T0 spike.
  */
 import type { LatLng } from "./contracts";
-import { roundToCents } from "./money";
+import { roundFare, roundToCents } from "./money";
 
 export const FARE = {
   /** Flag-fall: pickup + handling, independent of distance. */
@@ -33,13 +33,13 @@ export function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * FARE.earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Suggested fare (USD, 2dp) for a trip of the given distance — floored at FARE.minUsd. */
+/** Suggested fare (USD) for a trip of the given distance — to the nearest 50c, floored at FARE.minUsd. */
 export function suggestFare(distanceKm: number): number {
   const km = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
-  return round2(Math.max(FARE.minUsd, FARE.baseUsd + FARE.perKmUsd * km));
+  return Math.max(FARE.minUsd, roundFare(FARE.baseUsd + FARE.perKmUsd * km));
 }
 
-/** Distance (km) + suggested fare for a pickup→dropoff pair, both rounded to 2dp. */
+/** Distance (km, 2dp) + suggested fare (50c) for a pickup→dropoff pair. */
 export function quoteFare(pickup: LatLng, dropoff: LatLng): { distanceKm: number; suggestedFare: number } {
   const distanceKm = round2(haversineKm(pickup, dropoff));
   return { distanceKm, suggestedFare: suggestFare(distanceKm) };
