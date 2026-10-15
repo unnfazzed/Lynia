@@ -89,7 +89,7 @@ static.
 pnpm install --frozen-lockfile && pnpm --filter @lynia/shared build    # shared resolves to dist/
 redis-server --daemonize yes
 # PostGIS, option (a): sudo dockerd >/tmp/dockerd.log 2>&1 & sleep 5 && docker compose up -d postgres
-# PostGIS, option (b): sudo apt-get install -y postgresql-16-postgis-3 && sudo pg_ctlcluster 16 main start
+# PostGIS, option (b): sudo apt-get update && sudo apt-get install -y postgresql-16-postgis-3 && sudo pg_ctlcluster 16 main start
 #                       then create the role and database lynia/lynia (CREATEDB) and CREATE EXTENSION postgis
 export NODE_ENV=development
 export DATABASE_URL='postgresql://lynia:lynia@localhost:5432/lynia?schema=public'
@@ -109,8 +109,10 @@ ADMIN_JWT=$(cd apps/api && node -e 'console.log(require("jsonwebtoken").sign({ro
 ### Facts the harness depends on
 
 - **The API does not load `.env`.** Export the variables.
-- **Sockets:** `socket.io-client` lives only in `apps/mobile`, so run socket scripts with
-  `NODE_PATH=apps/mobile/node_modules`.
+- **Sockets:** `socket.io-client` lives only in `apps/mobile`. The harness scripts are ESM, which ignores
+  `NODE_PATH`, so symlink `harness/node_modules` → `apps/mobile/node_modules` (JQ-R2-02; the 2026-10-15
+  `up.sh` does this, and the link is gitignored).
+- **psql:** libpq rejects Prisma's `?schema=public`, so call psql with `${DATABASE_URL%%\?*}` (JQ-R4-01/02).
 - **OTP:** with `OTP_CHANNEL=console` in development, `POST /auth/otp/request` returns `devCode` for
   **any** `+263` phone (`auth.service.ts:482-485`). `OTP_TEST_PHONES` only matters in production.
 - **Seeded accounts:**

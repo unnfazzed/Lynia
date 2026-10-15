@@ -115,3 +115,30 @@ JQ-R4-01/02: `up.sh` runs `psql "$DATABASE_URL"`, and the `?schema=public` suffi
 admin JWT has an empty subject, and the "already seeded?" guard can wipe the seed. JQ-R2-02: `NODE_PATH` does not
 work for ESM; symlink `harness/node_modules` instead. The plan's §3 also needs `apt-get update` before installing
 PostGIS. None of these is fixed here: the harness is a report artefact.
+
+## Follow-up plan (2026-10-15, after the run)
+
+Every finding now has a destination. **PR A** (this follow-up) fixes the code that needs no copy or UI change:
+
+| id | outcome |
+|---|---|
+| JQ-R6-01 | Raise price re-reads the order on error; a raise that landed is a success, not a sticky toast. |
+| JQ-R6-02 / JQ-R5-01 | Cancel re-reads on error; a cancelled or ended order closes the panel with no "still active" toast. |
+| JQ-R3-04 | The switch waits for the job read (asks the server if unsettled) and retries going offline once. |
+| JQ-R6-03 | Bid 409s carry a machine `reason`; the app matches it (message kept as a fallback for old APIs). |
+| JQ-R4-05 | A country code typed digit by digit is stripped like a pasted one. |
+| JQ-R4-03 | The API rejects an implausible Send contact phone (the form's `normalizePhone` gate). |
+| JQ-R3-05 | Stale `use-topup.ts` comment corrected. |
+| JQ-R4-01/02, JQ-R2-02 | `up.sh`: psql gets the URL without `?schema=`, a psql error never reads as "unseeded", the ESM `node_modules` symlink is made (and gitignored). Plan §3 gains `apt-get update`. |
+
+**Closed:** JQ-R2-04 (the 429 is the delivery-code brute-force throttle), JQ-R7-05 (a confirmed delete signs out, so
+the session ends there), JQ-R7-07 (the 20 s re-read runs only while the wallet read fails), and the notes JQ-R1-03/04,
+JQ-R2-03, JQ-R4-06, JQ-R7-03/08/09.
+
+**Next:** PR B, the headless background-GPS fallback (JQ-R2-01). PR C, the owner's decisions of 2026-10-15: hedged
+late-top-up copy + a push on a late credit (JQ-R3-02), and a "Top up" action on the low-balance bid refusal
+(JQ-R3-03), each with its `DESIGN-DEVIATIONS.md` entry.
+
+**Still the owner's:** a `closed`-profile build (ships JQ-R1-01, JQ-R7-01 and everything above), re-linking the Play
+service account, a `/client-metrics` connector, a fare floor / distance cap (JQ-R4-04), a message for
+`device_signup_cap` (JQ-R1-02), and the Sentry check on `compose-map-not-loaded` (JQ-R7-02) on 2026-10-16.

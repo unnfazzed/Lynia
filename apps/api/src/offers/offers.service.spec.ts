@@ -66,6 +66,8 @@ describe("OffersService.makeOffer", () => {
   it("409s when the order is not open for offers", async () => {
     const { service, gateway } = svc({ order: { findUnique: async () => ({ status: "assigned" }) } });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not open for offers/i);
+    // JQ-R6-03: the app branches on the machine reason, not the message.
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toMatchObject({ response: { reason: "order_not_open" } });
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
@@ -119,6 +121,7 @@ describe("OffersService.makeOffer", () => {
       offer: { create: async () => { throw dup; } },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/already responded/i);
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toMatchObject({ response: { reason: "offer_already_responded" } });
     expect(gateway.emitOffersChanged).not.toHaveBeenCalled();
   });
 
@@ -169,6 +172,7 @@ describe("OffersService.makeOffer", () => {
       offer: { create },
     });
     await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/offer window has closed/i);
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toMatchObject({ response: { reason: "offer_window_closed" } });
     expect(create).not.toHaveBeenCalled();
     expect(riderLookup).not.toHaveBeenCalled(); // refused before any gating work
     expect(metrics.incOffersMade).toHaveBeenCalledWith("conflict");

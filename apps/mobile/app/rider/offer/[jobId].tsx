@@ -104,13 +104,15 @@ export default function MakeOfferScreen(): React.ReactElement {
     },
     onError: (e, cents) => {
       const msg = e instanceof ApiError ? e.message : "";
+      const code = e instanceof ApiError ? e.code : null;
       // A retry after a timeout can land on an offer the server already took — that's a success.
-      if (msg === "You already responded to this order (one round only)") {
+      // JQ-R6-03: match the machine reason; the message is the fallback for an API from before it.
+      if (code === "offer_already_responded" || msg === "You already responded to this order (one round only)") {
         setOffers((prev) => [buildSentOfferEntry(order!, (cents / 100).toFixed(2), eta), ...prev.filter((p) => p.order.id !== order!.id)]);
         router.back();
         return;
       }
-      if (msg === "This order is not open for offers" || msg.startsWith("The offer window has closed")) {
+      if (code === "order_not_open" || code === "offer_window_closed" || msg === "This order is not open for offers" || msg.startsWith("The offer window has closed")) {
         setError(R.taken);
         router.back();
         return;

@@ -9,6 +9,16 @@ describe("zw-mobile (Calm Mint v2 C2)", () => {
     expect(zwNationalDigits("7724511809999")).toBe("772451180");
   });
 
+  it("JQ-R4-05: drops a country code typed digit by digit, as the field re-reads each keystroke", () => {
+    let field = "";
+    for (const key of "263772451180") field = formatZwNational(zwNationalDigits(field + key));
+    expect(zwNationalDigits(field)).toBe("772451180");
+    expect(zwMobileProblem(zwNationalDigits(field))).toBeNull();
+    expect(zwNationalDigits("2630772451180")).toBe("772451180");
+    // A bare "263" mid-typing is kept until the next digit says what it is.
+    expect(zwNationalDigits("263")).toBe("263");
+  });
+
   it("groups as typed: 77 245 1180", () => {
     expect(formatZwNational("77")).toBe("77");
     expect(formatZwNational("772")).toBe("77 2");
