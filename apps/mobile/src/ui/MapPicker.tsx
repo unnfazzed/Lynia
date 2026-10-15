@@ -12,6 +12,7 @@ import MapView, {
 } from "react-native-maps";
 import { landmarkFromAddress } from "../logic/geocode";
 import { Button, Label } from "./index";
+import { LOCATION_OFF_MSG } from "../permissions/location";
 
 export interface PickedPoint {
   lat: number;
@@ -104,7 +105,7 @@ export function MapPicker(props: {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         // C8: don't fail silently — point the user at the map / Settings.
-        setLocateMsg("Location is off — tap the map to drop your pin, or turn on location in Settings.");
+        setLocateMsg(LOCATION_OFF_MSG);
         return;
       }
       // C9: bound the fix so "Locating…" can't hang; a timeout falls through to the catch below.

@@ -83,6 +83,13 @@ describe("mapPlaceDetails (place id → resolved point)", () => {
     });
   });
 
+  it("does not repeat a typed street address that Google abbreviates in the formatted address", () => {
+    const body = { formattedAddress: "22 Bingley Dr, Harare, Zimbabwe", location: { latitude: -17.8, longitude: 31.05 } };
+    expect(mapPlaceDetails(body, "id", "22 Bingley Drive")!.landmark).toBe("22 Bingley Dr, Harare, Zimbabwe");
+    const road = { formattedAddress: "5 Lomagundi Rd., Harare", location: { latitude: -17.79, longitude: 30.99 } };
+    expect(mapPlaceDetails(road, "id", "5 Lomagundi Road")!.landmark).toBe("5 Lomagundi Rd., Harare");
+  });
+
   it("prefers a displayName in the body over the threaded name", () => {
     const body = {
       displayName: { text: "Reception" },

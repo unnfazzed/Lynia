@@ -72,6 +72,7 @@ import {
   WhenAsap,
   WhenScheduled,
 } from "../../src/ui/orderflow/review";
+import { LOCATION_OFF_MSG } from "../../src/permissions/location";
 
 /**
  * Review & place — Order flow v2.1 R1, R3a/b, R4, R6a/b, R7a–c, R9a/b (packages/design/handoff/order-flow-v2,
@@ -386,7 +387,7 @@ export default function FoodReviewScreen(): React.ReactElement {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        setToast({ text: "Location is off — tap the map to drop your pin, or turn it on in Settings.", retry: false });
+        setToast({ text: LOCATION_OFF_MSG, retry: false });
         return;
       }
       const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);

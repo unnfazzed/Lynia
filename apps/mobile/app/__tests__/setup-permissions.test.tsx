@@ -10,6 +10,7 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 type P = Record<string, unknown>;
 let mockLocGet: P;
 let mockLocReq: P;
+let mockLocHang: Promise<void> | null = null;
 let mockGps = true;
 let mockNotifGet: P;
 let mockNotifReq: P;
@@ -31,6 +32,7 @@ jest.mock("expo-router", () => ({
 jest.mock("expo-location", () => ({
   getForegroundPermissionsAsync: async () => mockLocGet,
   requestForegroundPermissionsAsync: async () => {
+    if (mockLocHang) await mockLocHang;
     mockLocGet = mockLocReq;
     return mockLocReq;
   },
@@ -58,6 +60,7 @@ jest.mock("../../src/telemetry/events", () => ({
   track: (...a: unknown[]) => mockTrack(...a),
 }));
 
+import { Linking } from "react-native";
 import { CUST_NOTIF_ASKS_SLOT, SIGNUP_PERMS_KEY } from "../../src/permissions/store";
 import SetupPermissionsScreen from "../setup-permissions";
 
@@ -72,6 +75,7 @@ beforeEach(() => {
   mockLocGet = UNDET;
   mockLocReq = GRANTED;
   mockGps = true;
+  mockLocHang = null;
   mockNotifGet = UNDET;
   mockNotifReq = GRANTED;
   mockWeb = false;
@@ -150,6 +154,34 @@ it("allowed with the phone's location off: Google's switch dialog, then on", asy
   await press("signup-cta");
   expect(mockEnableGps).toHaveBeenCalled();
   expect(step()).toBe("signup-notifications");
+});
+
+it("declining Google's switch dialog moves on without opening the phone's Settings", async () => {
+  mockGps = false;
+  mockEnableGps.mockImplementationOnce(async () => undefined);
+  const openSettings = jest.spyOn(Linking, "openSettings").mockResolvedValue(undefined);
+  const sendIntent = jest.spyOn(Linking, "sendIntent").mockResolvedValue(undefined);
+  await mount();
+  await press("signup-cta");
+  expect(mockEnableGps).toHaveBeenCalled();
+  expect(openSettings).not.toHaveBeenCalled();
+  expect(sendIntent).not.toHaveBeenCalled();
+  expect(step()).toBe("signup-notifications");
+  openSettings.mockRestore();
+  sendIntent.mockRestore();
+});
+
+it("a prompt answered after Not now doesn't move the user a second time", async () => {
+  mockWeb = true;
+  let answer!: () => void;
+  mockLocHang = new Promise<void>((r) => (answer = r));
+  await mount();
+  await press("signup-cta");
+  await press("signup-not-now");
+  expect(mockReplace).toHaveBeenCalledTimes(1);
+  await act(async () => answer());
+  await settle();
+  expect(mockReplace).toHaveBeenCalledTimes(1);
 });
 
 it("location already allowed: opens on updates", async () => {

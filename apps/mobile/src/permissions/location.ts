@@ -8,6 +8,13 @@ import { AppState, Linking, Platform } from "react-native";
  * deliver-to) doesn't load expo-notifications. Every read is best-effort and never throws.
  */
 
+/** The "location refused" note on the map screens. A browser has no app setting to point at, so the web
+ *  build names the browser instead. */
+export const LOCATION_OFF_MSG =
+  Platform.OS === "web"
+    ? "Location is blocked — allow it in your browser settings, or tap the map."
+    : "Location is off — tap the map to drop your pin, or turn it on in Settings.";
+
 export type LocState = "undetermined" | "granted" | "coarse" | "denied" | "blocked";
 
 export type PermLike = { status?: string; granted?: boolean; canAskAgain?: boolean; android?: { accuracy?: string } | object | null } | null | undefined;

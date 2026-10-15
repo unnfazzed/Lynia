@@ -121,13 +121,18 @@ status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
   || err "/about: HTTP $status (want 404 with the site's 404 page)"
 
 # A missing asset must not be cached: an edge that 404s a just-deployed file would otherwise keep
-# serving that 404 for a year (2026-10-15). A fresh name each run, so no earlier probe is cached.
-missing="assets/smoke-missing-$(date +%s)-$RANDOM.svg"
-h=$(curl -sS -D - -o /dev/null "$ORIGIN/$missing")
-status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
-cache=$(header "$h" cache-control)
-maxage=$(printf '%s' "$cache" | grep -oiE 'max-age=[0-9]+' | cut -d= -f2 || true)
-if [ "$status" = 404 ] && [[ "$cache" != *immutable* ]] && [ "${maxage:-0}" -le 300 ]; then
+# serving that 404 for a year (2026-10-15). A fresh name each try, so no earlier probe is cached.
+# Polled: right after `wrangler deploy` this edge can still serve the previous version for a minute
+# or two (the very lag that caused 2026-10-15), and that version's headers are not this commit's.
+missing_ok() {
+  missing="assets/smoke-missing-$(date +%s)-$RANDOM.svg"
+  h=$(curl -sS -D - -o /dev/null "$ORIGIN/$missing")
+  status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
+  cache=$(header "$h" cache-control)
+  maxage=$(printf '%s' "$cache" | grep -oiE 'max-age=[0-9]+' | cut -d= -f2 || true)
+  [ "$status" = 404 ] && [[ "$cache" != *immutable* ]] && [ "${maxage:-0}" -le 300 ]
+}
+if poll 180 missing_ok; then
   ok "a missing /assets/ path is a 404 that is not cached ('$cache')"
 else
   err "/$missing: HTTP $status, cache-control '$cache' (want 404 with no immutable and max-age <= 300). A _headers rule with a wildcard under /assets/ sets Cache-Control (docs/WEBSITE.md § Hosting)."

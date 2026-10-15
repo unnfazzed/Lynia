@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { tokens } from "@lynia/shared";
+import { COMMISSION, tokens } from "@lynia/shared";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { REASONS } from "../lib/reasons";
 import { IconWifiOff } from "../components/icons";
@@ -49,7 +49,7 @@ export interface SeedCreditCardProps {
 
 export function SeedCreditCard({ eligibleCount, rosterCapped }: SeedCreditCardProps) {
   const [campaign, setCampaign] = useState("");
-  const [amount, setAmount] = useState("5.00");
+  const [amount, setAmount] = useState(COMMISSION.graceCredit.toFixed(2));
 
   const name = campaign.trim();
   const amt = Number.parseFloat(amount);

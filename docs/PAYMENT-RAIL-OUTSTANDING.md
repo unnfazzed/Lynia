@@ -34,7 +34,7 @@ of the wallet API:
 
 | Step | What actually happens |
 |---|---|
-| Provider / amount / phone | `POST /wallet/topups` with a per-attempt `idempotencyKey` (a retry returns the same pending intent). Throttled at 10/hour per rider. Amount bounds are `COMMISSION.minTopUp` / `maxTopUp` ($5 / $50). |
+| Provider / amount / phone | `POST /wallet/topups` with a per-attempt `idempotencyKey` (a retry returns the same pending intent). Throttled at 10/hour per rider. Amount bounds are `COMMISSION.minTopUp` / `maxTopUp` ($3 / $50). |
 | Wait | polls `GET /wallet/topups/:id` while `pending`, until the server's `expiresAt` (90 s, `TOPUP_WINDOW_MS`) |
 | Outcome | a success shows **only** on a server-reported `succeeded`; `declined` and `expired` are labelled as such |
 | App killed mid-wait | a durable marker is reconciled on the next Money-tab open |
