@@ -72,7 +72,7 @@ EAS-managed and the app is enrolled in Play App Signing. `versionCode` is EAS-ma
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the testers |
 | `preview` | `preview` | `internal` | pipeline check; no testers there |
-| `production` (the default) | `production` | `production`, 10% staged | ⚠️ Play granted production access 2026-10-14; usable once the service account has *Release to production* |
+| `production` (the default) | `production` | `production`, 10% staged | ⚠️ the app is public (vc 47 promoted in Play Console, 2026-10-14); this profile is usable once the service account has *Release to production* |
 
 So pass `profile: closed` explicitly. A default dispatch builds, then fails at submission and wastes one
 of the month's EAS builds.
@@ -90,7 +90,12 @@ Play Console, because Play refuses a versionCode it already has.
 **Before dispatching**, run `pnpm install --frozen-lockfile` locally if the lockfile moved. The release
 job installs strictly so both sides compute the same runtime version.
 
-**Production, next.** The closed test is done and Play granted production access on 2026-10-14. Grant the
+**Production — live since 2026-10-14.** Play granted production access on 2026-10-14 and v0.52.0 (vc 47,
+EAS build `e0e8c7f8`) was promoted from `Closed testing` to production in Play Console the same day; the
+listing <https://play.google.com/store/apps/details?id=zw.co.lynia> is public. That binary was built with
+the `closed` profile, so **production installs take OTAs from channel `preview`**: an OTA there now
+reaches the public. Until the pipeline is armed, ship a public build as `profile: closed` and promote it
+in Play Console. To arm it: grant the
 Play service account the *Release to production* permission, set `EAS_TAG_RELEASES_ENABLED=true`, and a
 `v*` tag (or `profile: production`) submits to production at 10% (`releaseStatus: inProgress`). Advance
 or halt in Play Console while crash-free users and ANRs hold (Play vitals and Sentry).

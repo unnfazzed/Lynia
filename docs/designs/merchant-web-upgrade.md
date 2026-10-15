@@ -73,9 +73,9 @@ The item catalogue is the second layer. It earns nothing until the customer app'
 
 ## Constraints
 
-- **Web is the only merchant surface today.** Play production access isn't granted, and the merchant web is
-  a website. **Riders are not web users, though.** They take jobs in the rider app, which is on Play Closed
-  testing, so rider supply is a dependency (see Dependencies).
+- **Web is the only merchant surface today.** The merchant web is a website. **Riders are not web users,
+  though.** They take jobs in the rider app (public on Google Play since 2026-10-14; this line said
+  "Closed testing" when written), so rider supply is a dependency (see Dependencies).
 - **Login is by WhatsApp code only.** Bird Verify sends it, and the Azure release refuses any non-WhatsApp
   `OTP_CHANNEL`.
 - **Pixel parity.**

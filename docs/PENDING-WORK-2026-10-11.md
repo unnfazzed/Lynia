@@ -57,8 +57,10 @@ design export) · Code (Claude can do it now, no decision needed).
 - Still needed before the public listing (`docs/PLAY-STORE-SUBMISSION.md` §8):
   1. ✅ Keep the closed test running with enough testers for Google's **~14-day** clock.
   2. ✅ Apply for **production access** in Play Console when the clock completes — **granted 2026-10-14**.
-  3. Grant the service account production-track permission, then arm the `production` EAS profile.
-- Until step 3 is done, never dispatch `mobile-release.yml` with `profile: production`. Use `closed`.
+  3. ✅ **Public on Google Play since 2026-10-14** — v0.52.0 (vc 47) promoted from Closed testing in Play
+     Console: <https://play.google.com/store/apps/details?id=zw.co.lynia>.
+  4. Grant the service account production-track permission, then arm the `production` EAS profile.
+- Until step 4 is done, never dispatch `mobile-release.yml` with `profile: production`. Use `closed`.
 
 ---
 
@@ -208,7 +210,7 @@ Every item is JS-only, so each can ship as an OTA update. Code paths are in `app
 - [ ] 1.1 Tick a pharmacist on every pharmacy
 - [ ] 1.2 Run `thumbs:backfill -- --apply`
 - [x] 1.4 Approve D-94 copy
-- [ ] 1.5 ~~Closed test + production access~~ (granted 2026-10-14); SA production permission + first production release
+- [ ] 1.5 ~~Closed test + production access + first production release~~ (live 2026-10-14); SA production permission
 - [ ] 2.1 C18: choose (a) or (b)
 - [ ] 2.2 P26: yes / no / later
 - [ ] 2.3 P32: defer (recommended) or do

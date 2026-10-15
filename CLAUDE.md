@@ -311,7 +311,7 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
 | `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
-| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ Play granted production access 2026-10-14, but the SA still holds testing-track permissions only — fails at submission until it is granted *Release to production* |
+| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ the app is public (0.52.0 promoted to production in Play Console, 2026-10-14), but the SA still holds testing-track permissions only — this profile fails at submission until it is granted *Release to production* |
 
 A default dispatch therefore builds fine and then fails at submission, burning one of a limited
 monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
@@ -350,11 +350,15 @@ release job uses a *strict* frozen install (deliberately diverging from CI's
 `--frozen-lockfile=false`) so both sides compute the same fingerprint runtimeVersion. Drift there
 killed build `5906d2f0`.
 
-**Current phase:** closed testing done; **Play granted production access on 2026-10-14**, but nothing
-has been released to the production track yet, so `play.google.com/store/apps/details?id=zw.co.lynia`
-still returns 404. Public release now needs only §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md` (SA
-*Release to production* permission, Sentry live, a staged production rollout). Do not describe anything
-as being "on Google Play" until a production release is live and the listing URL resolves.
+**Current phase: LIVE on Google Play.** Play granted production access on 2026-10-14 and the app is
+public the same day: <https://play.google.com/store/apps/details?id=zw.co.lynia> resolves (listing
+"LyniaGo: Food, Parcels by Bike", **v0.52.0**, "Updated on Oct 14, 2026", verified 2026-10-15). The
+production binary is **versionCode 47** (EAS build `e0e8c7f8`, commit `dbcb21f`), the `closed`-profile
+build promoted from *Closed testing* in Play Console — so **production phones are on OTA channel
+`preview`**, and every OTA published to `preview` now reaches the public as well as the testers. What
+is still open from §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md`: the SA *Release to production*
+permission (until then `profile: production` fails at submission; new public builds go
+`profile: closed` → promote in Play Console), `EAS_TAG_RELEASES_ENABLED`, and Sentry live.
 
 The running ledger of every build/submission attempt and its failure class is
 `docs/PLAY-STORE-SUBMISSION.md`; OTA-lane constraints are `REL-01`/`REL-02` in `docs/KNOWN_BUGS.md`

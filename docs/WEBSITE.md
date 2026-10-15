@@ -41,7 +41,7 @@ byte-identical to the handoff, except for:
 
 | # | Item | Decision (owner, 2026-09-28) | Status |
 |---|---|---|---|
-| 1 | Play Store link | Keep `href="#app"` as designed while the listing is closed-testing only (the public listing 404s). | Open: when the app is public, add one `LAUNCH_EDITS` entry per button (the three "Download the app", "Send a parcel" and "Become a rider") pointing at `https://play.google.com/store/apps/details?id=zw.co.lynia` with `target="_blank" rel="noopener"`. "How it works" stays `#riders`. |
+| 1 | Play Store link | Keep `href="#app"` as designed while the listing is closed-testing only (the public listing 404s). | Open, **now unblocked** — the listing is public since 2026-10-14: add one `LAUNCH_EDITS` entry per button (the three "Download the app", "Send a parcel" and "Become a rider") pointing at `https://play.google.com/store/apps/details?id=zw.co.lynia` with `target="_blank" rel="noopener"`. "How it works" stays `#riders`. |
 | 2 | OG share image | Built to the README spec (green, mark + wordmark, "Stay home. We'll bring it."). | Done: `assets/og-image.png` |
 | 3 | About us | Launched without it; then **removed from the footer** (owner, 2026-09-30, `LAUNCH_EDITS` `about-removed`). `/about` still serves the 404 page like any unknown path. | Done. |
 | 4 | Terms / Privacy | Privacy → `https://api.lyniago.com/legal/privacy`; Terms → `https://api.lyniago.com/legal/terms` (owner, 2026-09-30, D-49). | Done. |

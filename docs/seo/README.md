@@ -52,7 +52,7 @@ handoff export, is out of bounds.
 | Phase | Status (2026-09-28) | Gate |
 |---|---|---|
 | 0: Foundations | Not started | None |
-| 1: Launch | Blocked | Four gates:<br>• The Play listing is public ([`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md); closed test plus production access).<br>• The backend is back up (Azure migration, [`../plans/2026-09-24-gcp-to-azure-migration.md`](../plans/2026-09-24-gcp-to-azure-migration.md)).<br>• The service area and pricing are final: both are pilot values in `packages/shared/src/policy.ts` and `pricing.ts`.<br>• A prohibited-items notice exists (design backlog A1-2) |
+| 1: Launch | Blocked | Four gates:<br>• ✅ The Play listing is public (live 2026-10-14, [`../PLAY-STORE-SUBMISSION.md`](../PLAY-STORE-SUBMISSION.md)).<br>• The backend is back up (Azure migration, [`../plans/2026-09-24-gcp-to-azure-migration.md`](../plans/2026-09-24-gcp-to-azure-migration.md)).<br>• The service area and pricing are final: both are pilot values in `packages/shared/src/policy.ts` and `pricing.ts`.<br>• A prohibited-items notice exists (design backlog A1-2) |
 | 2: Content | Blocked | Design-team time; decisions 3 and 6 |
 | 3: Moat | Blocked | Real order volume; the food marketplace beyond its CBD pilot |
 | AI engine | Can start manually now | Decision 7 for the automated routine |
