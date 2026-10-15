@@ -135,12 +135,12 @@ Every finding now has a destination. **PR A** (this follow-up) fixes the code th
 the session ends there), JQ-R7-07 (the 20 s re-read runs only while the wallet read fails), and the notes JQ-R1-03/04,
 JQ-R2-03, JQ-R4-06, JQ-R7-03/08/09.
 
-**PR A landed as #1196.** **PR B** fixes JQ-R2-01 in code: when the OS kills the app mid-job, the background task
+**PR A landed as #1196.** **PR B (#1198)** fixes JQ-R2-01 in code: when the OS kills the app mid-job, the background task
 runs headless and now posts its fix to `POST /orders/:id/location` (the socket event's REST sibling) for the job it
 remembered, instead of dropping it; a job that ended meanwhile gets a 403 and the service stops. It still needs one
-real budget-phone check (swipe the app away mid-job, watch the customer's map). **Next:** PR C, the owner's decisions of 2026-10-15: hedged
-late-top-up copy + a push on a late credit (JQ-R3-02), and a "Top up" action on the low-balance bid refusal
-(JQ-R3-03), each with its `DESIGN-DEVIATIONS.md` entry.
+real budget-phone check (swipe the app away mid-job, watch the customer's map). **PR C** lands the owner's
+decisions of 2026-10-15 under ledger D-107: a timed-out top-up no longer says "Nothing was taken" and a late
+credit pushes "Top-up added" (JQ-R3-02), and the low-balance bid refusal offers Top up (JQ-R3-03).
 
 **Still the owner's:** a `closed`-profile build (ships JQ-R1-01, JQ-R7-01 and everything above), re-linking the Play
 service account, a `/client-metrics` connector, a fare floor / distance cap (JQ-R4-04), a message for

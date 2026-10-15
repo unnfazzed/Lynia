@@ -142,7 +142,7 @@ export function TopUpFlow({
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
         <Header step={null} onBack={onExit} />
-        <CentreState icon={ok ? "circle-check" : "circle-alert"} tone={ok ? "ok" : "danger"} title={ok ? R.okT : R.failT} body={ok ? RF.okB(topup?.amount ?? amount, walletFresh ? balance : null) : RF.failB(name)} />
+        <CentreState icon={ok ? "circle-check" : "circle-alert"} tone={ok ? "ok" : "danger"} title={ok ? R.okT : R.failT} body={ok ? RF.okB(topup?.amount ?? amount, walletFresh ? balance : null) : status === "expired" ? RF.failLateB(name) : RF.failB(name)} />
         <CtaBar>
           {ok ? (
             <>

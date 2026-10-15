@@ -11,9 +11,10 @@ import type { OpenOrder } from "../../../../src/api/orders";
 import type { SentOffer } from "../../../../src/logic/rider-bid-draft";
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 const mockMakeOffer = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: mockBack, push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ back: mockBack, push: mockPush, replace: jest.fn() }),
   useLocalSearchParams: () => ({ jobId: "order-1", toKm: "1.2" }),
   usePathname: () => "/rider/offer/order-1",
 }));
@@ -166,6 +167,21 @@ describe("biker audit — the offer screen", () => {
     await flush();
     expect(text()).toContain("Go online to make offers");
     expect(text()).not.toContain("Couldn't send your offer. Check your data.");
+    expect(tree.root.findAll((n) => n.props.action === "Try again").length).toBe(0);
+  });
+
+  it("JQ-R3-03: a bid refused for the commission balance keeps the server's words and offers Top up", async () => {
+    const msg = "Your wallet balance doesn't cover this job's commission — top up to take it";
+    mockMakeOffer.mockRejectedValue(new ApiError(403, msg, "commission_low_balance"));
+    mockPush.mockClear();
+    render();
+    press("Send offer · $3.00");
+    await flush();
+    expect(text()).toContain(msg);
+    const topUp = tree.root.findAll((n) => n.props.action === "Top up" && typeof n.props.onAction === "function");
+    expect(topUp.length).toBeGreaterThan(0);
+    act(() => topUp[0]!.props.onAction());
+    expect(mockPush).toHaveBeenCalledWith("/wallet/top-up");
     expect(tree.root.findAll((n) => n.props.action === "Try again").length).toBe(0);
   });
 

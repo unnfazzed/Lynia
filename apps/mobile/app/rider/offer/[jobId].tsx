@@ -9,6 +9,7 @@ import { ApiError } from "../../../src/api/client";
 import { makeOffer } from "../../../src/api/offers";
 import type { OpenOrder } from "../../../src/api/orders";
 import { fareBand } from "../../../src/api/rider-v2";
+import { onlineGateReason } from "../../../src/logic/gates";
 import { buildSentOfferEntry } from "../../../src/logic/rider-bid-draft";
 import { useSentOffers, useSkippedJobs } from "../../../src/query/use-sent-offers";
 import { AppScreen, haptic, Icon, Tappable, useActionError } from "../../../src/ui";
@@ -57,6 +58,9 @@ export default function MakeOfferScreen(): React.ReactElement {
   const [fareText, setFareText] = useState((Math.max(MIN_CENTS, askingCents) / 100).toFixed(2));
   const [eta, setEta] = useState<number>(10);
   const [failed, setFailed] = useState(false);
+  // JQ-R3-03 (owner 2026-10-15, ledger D-107): a bid refused for the commission balance keeps the server's
+  // words and gets a way out — Top up — instead of a dead-end toast (the board's G14 wall can't trigger here).
+  const [lowBalance, setLowBalance] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
   const name = order?.customerFirstName || R.theSender;
   const band = fareBand(asking || 3);
@@ -120,6 +124,10 @@ export default function MakeOfferScreen(): React.ReactElement {
       // PJ-M1: a refusal (standing, ID check, offline, a food order still settling, a blocked pair) is not
       // a data problem and "Try again" can't fix it — say what the server said, with no retry.
       if (e instanceof ApiError && e.status === 403) {
+        if (onlineGateReason(e) === "commission_low_balance") {
+          setLowBalance(msg || R.gTopJobB);
+          return;
+        }
         setError(msg || R.sendFail);
         return;
       }
@@ -257,6 +265,11 @@ export default function MakeOfferScreen(): React.ReactElement {
         <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, marginTop: 8 }}>{R.etaHint}</Text>
         <Notice icon="circle-alert" text={RF.oneOffer(name)} style={{ marginTop: 14 }} />
       </ScrollView>
+      {lowBalance && !sending ? (
+        <View style={{ position: "absolute", left: 12, right: 12, bottom: 146 + insets.bottom }}>
+          <RToast text={lowBalance} action={R.topUp} actionIcon="plus" onAction={() => router.push("/wallet/top-up")} />
+        </View>
+      ) : null}
       {failed && !sending ? (
         <View style={{ position: "absolute", left: 12, right: 12, bottom: 146 + insets.bottom }}>
           <RToast
@@ -265,6 +278,7 @@ export default function MakeOfferScreen(): React.ReactElement {
             actionIcon="refresh-cw"
             onAction={() => {
               setFailed(false);
+              setLowBalance(null);
               offerM.mutate(fareToSend());
             }}
           />
@@ -276,6 +290,7 @@ export default function MakeOfferScreen(): React.ReactElement {
           loading={sending}
           onPress={() => {
             setFailed(false);
+            setLowBalance(null);
             offerM.mutate(fareToSend());
           }}
         />

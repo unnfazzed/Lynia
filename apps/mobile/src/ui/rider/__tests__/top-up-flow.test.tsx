@@ -197,6 +197,9 @@ describe("TopUpFlow — the server decides the outcome", () => {
     expect(t).toContain("Top-up didn't go through");
     expect(t).not.toContain("Top-up done");
     expect(mockClearPendingTopup).toHaveBeenCalled();
+    // JQ-R3-02: a late approval is still credited, so a timeout must not say "Nothing was taken".
+    expect(t).toContain("If you still approve it");
+    expect(t).not.toContain("Nothing was taken");
   });
 
   it("renders the decline on a server-reported declined", async () => {
@@ -209,6 +212,7 @@ describe("TopUpFlow — the server decides the outcome", () => {
     const t = texts(tree);
     expect(t).toContain("Top-up didn't go through");
     expect(t).not.toContain("Top-up done");
+    expect(t).toContain("Nothing was taken");
   });
 
   it("surfaces a create failure instead of pretending an intent exists", async () => {

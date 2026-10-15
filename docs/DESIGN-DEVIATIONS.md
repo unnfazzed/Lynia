@@ -5498,3 +5498,22 @@ One literal: inputs use 16px text on a phone so iOS doesn't zoom on focus.
 The amber SLA pill (`.kpill.warn`, PR 4) reuses `--highlight-wash`, `--highlight-border` and `--highlight-ink`, which the
 admin face had kept for the "recommended" marker; this entry extends them to "waiting too long". No new colours.
 
+
+## D-107 · Biker top-ups: a timed-out prompt, a late credit, and Top up from a refused bid — APPROVED (owner, 2026-10-15)
+
+**Why:** Journey QA 2026-10-15 (`docs/reports/journey-qa-2026-10-15/`). **JQ-R3-02:** the server credits a top-up
+the biker approves up to an hour after its 90 s window (`TOPUP_LATE_PAYMENT_WINDOW_MS`), but T6 said "Nothing was
+taken from your EcoCash" and the late credit landed silently, so a biker who believed it could pay twice.
+**JQ-R3-03:** since #1154 the server never refuses going online for balance, so G14's wall can't show; a bid refused
+for `commission_low_balance` was a toast with no way to Top up. No handoff draws either case. The owner chose
+(2026-10-15) hedged copy plus a push for the first, and the refusal toast with a Top up action for the second.
+
+| Element | Drawn (Rider v2) | Shipped |
+|---|---|---|
+| T6 body, prompt **timed out** (`expired`) | "The prompt timed out or was declined. Nothing was taken from your {provider}." (`RF.failB`) | **"The prompt timed out. If you still approve it on {provider}, we'll add it to your balance and let you know. Check before you try again."** (`RF.failLateB`). A **declined** prompt keeps the drawn sentence. |
+| Money notice for a recovered top-up that **timed out** | "Your {amount} top-up didn't go through. Nothing was taken." (`RF.pendingFail`) | **"Your {amount} top-up timed out. If you approve it late, we'll add it and let you know."** (`RF.pendingLate`). Declined keeps the drawn line. |
+| Push when a late approval is credited | not drawn | Title **"Top-up added"**, body **"Your late approval went through: ${amount} is on your balance. No need to pay again."** (`TOPUP_LATE_CREDIT_PUSH`, `wallet.service.ts`), `kind: account`. Only for a credit that lands after the intent expired; an on-time credit needs none. |
+| Bid refused for the commission balance (offer screen) | toast with the server's message, no action | The same `RToast` the screen already draws for "Try again", with the server's message (fallback `R.gTopJobB`) and the action **"Top up"** (`R.topUp`, icon `plus`) → `/wallet/top-up`. No new copy. |
+
+Guards: `top-up-flow.test.tsx` (a timeout never says "Nothing was taken"), `money-balance.test.tsx`,
+`wallet-topup-faults.spec.ts` "JQ-R3-02", `offer.test.tsx` "JQ-R3-03".

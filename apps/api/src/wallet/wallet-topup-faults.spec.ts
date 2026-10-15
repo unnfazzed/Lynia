@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
+import type { NotificationsService } from "../notifications/notifications.service";
 import type { MetricsService } from "../observability/metrics.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import { WalletService } from "./wallet.service";
@@ -29,7 +30,7 @@ type TopUp = {
   initiatedAt?: Date;
 };
 
-function harness(topUp: TopUp, startBalance = 0, metrics?: MetricsService) {
+function harness(topUp: TopUp, startBalance = 0, metrics?: MetricsService, notifications?: NotificationsService) {
   // Seed the opening balance as a prior credit row so the balance == sum(ledger) invariant holds from
   // the start (a real account's balance is always reconstructable from its ledger).
   const seed: Row[] = startBalance === 0 ? [] : [{ riderId: topUp.riderId, amount: startBalance, balanceAfter: startBalance, type: "topup" }];
@@ -77,7 +78,7 @@ function harness(topUp: TopUp, startBalance = 0, metrics?: MetricsService) {
     },
   } as unknown as PrismaService;
 
-  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10 } as unknown as Env, prisma, undefined, metrics);
+  const svc = new WalletService({ COMMISSION_SHADOW_RATE_PCT: 10 } as unknown as Env, prisma, notifications, metrics);
   return { svc, state, setFailLedgerCreate: (v: boolean) => { failLedgerCreate = v; } };
 }
 
@@ -171,5 +172,33 @@ describe("top-up confirmation faults (creditFromTopup — the rail seam)", () =>
     setFailLedgerCreate(true);
     await expect(svc.creditFromTopup("t7")).rejects.toThrow(/process died mid-credit/);
     expect(metrics.recordTopupConfirmLag).not.toHaveBeenCalled();
+  });
+});
+
+describe("JQ-R3-02: a late approval tells the biker it landed", () => {
+  const late = (status: TopUp["status"]) => {
+    const notifyProfiles = vi.fn(async () => new Set<string>());
+    const h = harness({ id: "t1", riderId: "r1", amount: 5, status }, 0, undefined, { notifyProfiles } as unknown as NotificationsService);
+    return { ...h, notifyProfiles };
+  };
+
+  it("crediting an EXPIRED intent (the app already said it timed out) pushes 'Top-up added'", async () => {
+    const { svc, state, notifyProfiles } = late("expired");
+    await expect(svc.creditFromTopup("t1")).resolves.toEqual({ balance: 5 });
+    expect(notifyProfiles).toHaveBeenCalledWith(["r1"], expect.objectContaining({ title: "Top-up added", body: expect.stringContaining("$5.00") }));
+    assertInvariants(state);
+  });
+
+  it("an on-time credit (still pending, the app is watching) sends no push", async () => {
+    const { svc, notifyProfiles } = late("pending");
+    await svc.creditFromTopup("t1");
+    expect(notifyProfiles).not.toHaveBeenCalled();
+  });
+
+  it("a duplicate confirmation of a late credit pushes once", async () => {
+    const { svc, notifyProfiles } = late("expired");
+    await svc.creditFromTopup("t1");
+    await expect(svc.creditFromTopup("t1")).resolves.toBeNull();
+    expect(notifyProfiles).toHaveBeenCalledTimes(1);
   });
 });
