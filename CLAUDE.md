@@ -311,12 +311,12 @@ release-please's bot tags never fire workflows anyway. Merging to `main` reaches
 |---|---|---|---|
 | `closed` | `preview` | `Closed testing` | ✅ the lane that reaches the enrolled testers |
 | `preview` | `preview` | `internal` | ✅ pipeline smoke lane — no testers are on `internal` |
-| `production` (workflow default) | `production` | `production`, 10% staged rollout | ⚠️ the app is public (0.52.0 promoted to production in Play Console, 2026-10-14), but the SA still holds testing-track permissions only — this profile fails at submission until it is granted *Release to production* |
+| `production` (workflow default) | `production` | `production`, 10% staged rollout | ✅ armed: the SA now has *Release to production* (owner-reported 2026-10-15; proven only once a `profile: production` submission reaches FINISHED). The first one moves public phones to OTA channel `production` |
 
-A default dispatch therefore builds fine and then fails at submission, burning one of a limited
-monthly EAS build allowance. Pass `profile: closed` (testers) or `profile: preview` (pipeline
-check) explicitly until the production train is armed (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3:
-SA production permission, then `profile: production` or `EAS_TAG_RELEASES_ENABLED=true`; Sentry is live).
+A default dispatch now goes **straight to the public** (10% staged rollout), so dispatch
+`profile: production` only for a deliberate public release, and pass `profile: closed` (testers) or
+`profile: preview` (pipeline check) explicitly otherwise. The tag train (`EAS_TAG_RELEASES_ENABLED`)
+is still off (`docs/PLAY-STORE-SUBMISSION.md` §8 step 3).
 
 **⚠️ The app has TWO closed-testing tracks and the testers are not on the default one.** Play's
 built-in closed track is **Alpha** (API id `alpha`); the founder created a second one named
@@ -356,9 +356,18 @@ public the same day: <https://play.google.com/store/apps/details?id=zw.co.lynia>
 production binary is **versionCode 47** (EAS build `e0e8c7f8`, commit `dbcb21f`), the `closed`-profile
 build promoted from *Closed testing* in Play Console — so **production phones are on OTA channel
 `preview`**, and every OTA published to `preview` now reaches the public as well as the testers. What
-is still open from §8 step 3 of `docs/PLAY-STORE-SUBMISSION.md`: the SA *Release to production*
-permission (until then `profile: production` fails at submission; new public builds go
-`profile: closed` → promote in Play Console) and `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below).
+The Play service account now has **Release to production** (owner, 2026-10-15), so a public build
+can go out as `profile: production` instead of `closed` + console promotion. Not yet proven: no
+`profile: production` submission has run, so verify the first one's submission reaches FINISHED on
+track `production` (`eas-build-status.yml`). **That first production build moves public phones from
+OTA channel `preview` to `production`**; from then on, public OTAs go to `production` and tester OTAs
+to `preview`, and a phone still on vc 47 keeps listening on `preview` until it updates. The Console screenshot
+(2026-10-15) shows *Release apps to testing tracks* unticked beside it, so if a `closed`/`preview`
+submission ERRORs on permissions, that box is the first suspect. Still open from
+§8 step 3: `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below). Separately, Expo's
+`playstore_crashes` still fails with `invalid_grant: account not found` (re-checked 2026-10-15 after
+the permission change), so the key Expo holds for reading Play vitals is not the working one; use
+Play Console or Sentry for crashes until it is re-uploaded.
 
 **Field signals — Sentry and PostHog are connected to Claude** (owner, 2026-10-15; claude.ai
 connectors, first wired 2026-10-14). Read crashes and analytics through them; do not ask the owner for
