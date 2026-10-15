@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.53.0](https://github.com/unnfazzed/Lynia/compare/v0.52.0...v0.53.0) (2026-10-15)
+
+
+### Features
+
+* **wallet:** biker top-ups through Paynow — EcoCash live, 2.5% fee, InnBucks/O'mari "Coming soon" ([#1173](https://github.com/unnfazzed/Lynia/issues/1173)) ([6cef4a1](https://github.com/unnfazzed/Lynia/commit/6cef4a1195a403e3d036445bcaafbbfd1545a2ea))
+
+
+### Bug Fixes
+
+* **admin:** console v2 §2 — bugs, honest short copy, Harare times, links ([#1184](https://github.com/unnfazzed/Lynia/issues/1184)) ([ff05f6c](https://github.com/unnfazzed/Lynia/commit/ff05f6cc367254aff5772e87fc731d3a90690470))
+* **journey-qa:** JQ follow-up A — reconcile lost customer writes, bid reason codes, switch, phone, harness ([#1196](https://github.com/unnfazzed/Lynia/issues/1196)) ([55e7b7b](https://github.com/unnfazzed/Lynia/commit/55e7b7b66acbaa14b026ea83342f511a8e93e2b4))
+* **mobile:** let R8 optimize the release build ([#1201](https://github.com/unnfazzed/Lynia/issues/1201)) ([e0cab6c](https://github.com/unnfazzed/Lynia/commit/e0cab6c63b4cda60e2bfc2b028b622be3c08a120))
+* **mobile:** one-tap location switch-on and auto-refresh once location is on ([#1202](https://github.com/unnfazzed/Lynia/issues/1202)) ([665aaf7](https://github.com/unnfazzed/Lynia/commit/665aaf7907e48e82dc5c162838795e9cf47ae7a4))
+* **mobile:** pick up location and notification grants made after mount ([#1199](https://github.com/unnfazzed/Lynia/issues/1199)) ([8044267](https://github.com/unnfazzed/Lynia/commit/8044267bd82f49632c2b0a34e1e1f730a21c3c4a))
+* **rider:** JQ-R2-01 — keep streaming GPS after the OS kills the app mid-job ([#1198](https://github.com/unnfazzed/Lynia/issues/1198)) ([3ac6791](https://github.com/unnfazzed/Lynia/commit/3ac679157a5e1af41336e27d1fbe308cd69ce1b7))
+* **rider:** JQ-R3-02/03 — honest timed-out top-ups, a late-credit push, Top up from a refused bid ([#1200](https://github.com/unnfazzed/Lynia/issues/1200)) ([aa88f6b](https://github.com/unnfazzed/Lynia/commit/aa88f6beb2537c8b9b3f6ce290f71eef997292fd))
+* **rider:** Money tab states the per-job commission rule, not a $0.00 floor (D-104) ([#1172](https://github.com/unnfazzed/Lynia/issues/1172)) ([ce94e2f](https://github.com/unnfazzed/Lynia/commit/ce94e2ff16137fbb92c2aacc31a77f6de22cf3e8))
+* **rider:** top-up wall says the job's commission, not a $0.00 floor (D-102) ([#1169](https://github.com/unnfazzed/Lynia/issues/1169)) ([acd9c79](https://github.com/unnfazzed/Lynia/commit/acd9c794651f497f84b47c6d87a5c27d3342b31f))
+
 ## [0.52.0](https://github.com/unnfazzed/Lynia/compare/v0.51.0...v0.52.0) (2026-10-12)
 
 
