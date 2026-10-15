@@ -1,5 +1,7 @@
-// lyniago.com — the marketing site (docs/WEBSITE.md). An ASSETS-ONLY Worker: no script, so every
-// request is a free, unmetered static-asset request served from Cloudflare's edge. `site/` is the
+// lyniago.com — the marketing site (docs/WEBSITE.md). A static-asset Worker: every request is a free,
+// unmetered static-asset request served from Cloudflare's edge, except /download, the one path that
+// runs worker.js (the smart download link: Play on Android, the web app on iPhone, the QR section on
+// desktop; `run_worker_first`). Even unknown paths never reach the script. `site/` is the
 // approved design handoff (packages/design/handoff/lyniago-website/site) plus the launch edits that
 // scripts/check-website.mjs allows; it is deployed as-is, there is no build step.
 //
@@ -7,9 +9,12 @@
 // (www-redirect/) because a static-asset Worker cannot redirect by hostname.
 {
   "name": "lyniago-website",
+  "main": "./worker.js",
   "compatibility_date": "2026-09-01",
   "assets": {
     "directory": "./site",
+    "binding": "ASSETS",
+    "run_worker_first": ["/download", "/download/"],
     // Unknown paths (including /about until its copy exists) get site/404.html with a real 404 status.
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash"

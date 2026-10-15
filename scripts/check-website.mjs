@@ -87,6 +87,110 @@ export const LAUNCH_EDITS = [
     from: ".biz-ill{width:100%;max-width:540px;",
     to: ".biz-ill{width:100%;height:auto;max-width:540px;",
   },
+  // README TODO #1, resolved once the Play listing went public (2026-10-14). Each app button goes to the smart
+  // link /download (apps/website/worker.js) rather than straight to Play, so iPhone visitors reach the web app.
+  // On a desktop the button opens the QR popup instead (`data-download`, the download-qr-* edits below; handoff
+  // download-qr-install-tip-2026-10 §1). Same tab: the README's target="_blank" would open a second copy of this
+  // page. "Become a biker" goes straight to Play: the biker app is Android-only.
+  {
+    id: "download-header",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone) and open the QR popup on desktop (D-42)",
+    from: '<a class="btn b-g" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-g" href="/download" data-download><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "download-hero-send",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone) and open the QR popup on desktop (D-42)",
+    from: '<a class="btn b-yel" href="#app"><i data-i="play"></i>Send a parcel</a>',
+    to: '<a class="btn b-yel" href="/download" data-download><i data-i="play"></i>Send a parcel</a>',
+  },
+  {
+    id: "download-steps",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone) and open the QR popup on desktop (D-42)",
+    from: '<a class="btn b-ink" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-ink" href="/download" data-download><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "download-app-section",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: the app buttons go to /download (Play on Android, web app on iPhone) and open the QR popup on desktop (D-42)",
+    from: '<a class="btn b-yel" href="#app"><i data-i="play"></i>Download the app</a>',
+    to: '<a class="btn b-yel" href="/download" data-download><i data-i="play"></i>Download the app</a>',
+  },
+  {
+    id: "become-biker",
+    todo: "README TODO #1 (Play Store link)",
+    decision: "owner 2026-10-15: Become a biker goes to the Play listing; the biker app is Android-only (D-42)",
+    from: '<a class="btn b-vio" href="#app">Become a biker</a>',
+    to: '<a class="btn b-vio" href="https://play.google.com/store/apps/details?id=zw.co.lynia&amp;referrer=utm_source%3Dlyniago.com%26utm_medium%3Dwebsite%26utm_campaign%3Dbiker">Become a biker</a>',
+  },  // The desktop QR popup (handoff download-qr-install-tip-2026-10 §1, owner 2026-10-15). On a desktop
+  // ((min-width: 900px) and (hover: hover) and (pointer: fine)) a click on any data-download button opens it
+  // instead of following /download; phones and tablets follow the link. Nothing else on the page changes.
+  {
+    id: "download-qr-css",
+    todo: "not a README TODO: handoff download-qr-install-tip-2026-10 §1 (popup CSS)",
+    decision: "owner 2026-10-15: desktop app buttons open a QR popup for lyniago.com/download (D-42)",
+    from: "</style>",
+    to: String.raw`/* Download QR popup (handoff download-qr-install-tip-2026-10 §1; launch edit download-qr-css) */
+.qrm{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px}
+.qrm[hidden]{display:none}
+.qrm-scrim{position:absolute;inset:0;background:rgba(20,24,27,.55)}
+.qrm-box{position:relative;width:440px;max-width:calc(100vw - 48px);background:#fff;border-radius:32px;overflow:hidden;padding:0 32px 28px;display:flex;flex-direction:column;align-items:center;text-align:center;box-shadow:0 40px 80px rgba(20,24,27,.35)}
+.qrm-band{position:absolute;left:0;right:0;top:0;height:170px;background:var(--g);overflow:hidden}
+.qrm-blob{position:absolute;border-radius:50%}
+.qrm-b1{width:120px;height:120px;left:-30px;top:-40px;background:var(--coral)}
+.qrm-b2{width:160px;height:160px;right:-50px;top:30px;background:var(--yel)}
+.qrm-b3{width:36px;height:36px;right:120px;top:18px;background:var(--pink)}
+.qrm-x{position:absolute;top:14px;right:14px;z-index:3;width:44px;height:44px;border:0;border-radius:999px;background:#fff;color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.qrm-x svg{width:24px;height:24px}
+.qrm-card{position:relative;z-index:2;margin-top:36px;background:#fff;border-radius:28px;padding:16px;transform:rotate(-3deg);box-shadow:0 24px 48px rgba(6,59,34,.3)}
+.qrm-card img{display:block;width:236px;height:236px}
+.qrm-sticker{position:absolute;top:-22px;right:-30px;height:46px;padding:0 20px;border-radius:999px;background:var(--yel);color:#3D3100;font:700 17px/1 Inter,system-ui,sans-serif;display:flex;align-items:center;white-space:nowrap;transform:rotate(9deg);box-shadow:0 10px 20px rgba(6,59,34,.25)}
+.qrm-box h2{position:relative;margin:24px 0 0;font-size:26px;line-height:1.15;letter-spacing:-.025em;color:var(--ink)}
+.qrm-box p{position:relative;margin:6px 0 0;font-size:16px;line-height:1.45;color:var(--mut)}
+html.qrm-lock{overflow:hidden}
+@media (prefers-reduced-motion:no-preference){
+.qrm .qrm-scrim{opacity:0;transition:opacity .16s}
+.qrm .qrm-box{opacity:0;transform:scale(.96);transition:opacity .2s cubic-bezier(.2,.8,.2,1),transform .2s cubic-bezier(.2,.8,.2,1)}
+.qrm.on .qrm-scrim,.qrm.on .qrm-box{opacity:1}
+.qrm.on .qrm-box{transform:none}
+}
+</style>`,
+  },
+  {
+    id: "download-qr-popup",
+    todo: "not a README TODO: handoff download-qr-install-tip-2026-10 §1 (popup markup and script)",
+    decision: "owner 2026-10-15: desktop app buttons open a QR popup for lyniago.com/download (D-42)",
+    from: "</body></html>",
+    to: String.raw`<div class="qrm" id="qrm" hidden>
+<div class="qrm-scrim" data-qr-close></div>
+<div class="qrm-box" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+<div class="qrm-band" aria-hidden="true"><span class="qrm-blob qrm-b1"></span><span class="qrm-blob qrm-b2"></span><span class="qrm-blob qrm-b3"></span></div>
+<button type="button" class="qrm-x" aria-label="Close" data-qr-close><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+<div class="qrm-card"><span class="qrm-sticker">Point. Scan. Go.</span><img src="assets/download-qr-2026-10.svg" width="236" height="236" alt="QR code to download LyniaGo"></div>
+<h2 id="qr-title">Scan to get LyniaGo</h2>
+<p>Point your phone’s camera at the code.</p>
+</div>
+</div>
+<script>
+(function(){
+var m=document.getElementById('qrm');if(!m)return;
+var x=m.querySelector('.qrm-x'),root=document.documentElement,opener=null;
+var desk=window.matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)');
+function open(b){opener=b;m.hidden=false;root.classList.add('qrm-lock');x.focus();requestAnimationFrame(function(){requestAnimationFrame(function(){m.classList.add('on');});});}
+function close(){m.classList.remove('on');m.hidden=true;root.classList.remove('qrm-lock');if(opener)opener.focus();opener=null;}
+document.querySelectorAll('a[data-download]').forEach(function(b){b.addEventListener('click',function(e){
+if(!desk.matches||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();open(b);});});
+m.addEventListener('click',function(e){if(e.target.closest('[data-qr-close]'))close();});
+document.addEventListener('keydown',function(e){if(m.hidden)return;
+if(e.key==='Escape'){e.preventDefault();close();}else if(e.key==='Tab'){e.preventDefault();x.focus();}});
+})();
+</script>
+</body></html>`,
+  },
 ];
 
 /**
@@ -111,6 +215,7 @@ const EXTRA_FILES = new Set([
   "sitemap.xml",
   "assets/og-image.png", // README TODO #2, built to its spec (apps/website/og-image/)
   "email/lyniago-signature-logo-tile.png", // owner 2026-10-12: email-signature logo, hotlinked by mail clients
+  "assets/download-qr-2026-10.svg", // the desktop QR popup's code, verbatim from handoff download-qr-install-tip-2026-10
 ]);
 
 /**
@@ -118,6 +223,9 @@ const EXTRA_FILES = new Set([
  * us link was removed (owner, 2026-09-30); kept so a future placeholder link has a sanctioned home.
  */
 const INTENTIONAL_404 = new Set([]);
+
+/** Paths the site Worker (apps/website/worker.js) answers itself, with no file behind them. */
+const WORKER_ROUTES = new Set(["/download"]);
 
 /**
  * Every <script> element: group 1 = attributes, group 2 = text. Case-insensitive, and lenient about
@@ -332,7 +440,7 @@ export function checkWebsite({ root = REPO_ROOT, write = false, baseRef = "" } =
           fail(`${page}: "${ref}" is a same-page anchor on a page without that id.`);
           continue;
         }
-        if (INTENTIONAL_404.has(path)) continue;
+        if (INTENTIONAL_404.has(path) || WORKER_ROUTES.has(path)) continue;
         const target = path.startsWith("/") ? path.slice(1) : posix.normalize(posix.join(posix.dirname(page), path));
         if (!files.has(target === "" ? "index.html" : target)) fail(`${page}: "${ref}" does not resolve to a file in the site.`);
       }

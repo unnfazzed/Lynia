@@ -218,6 +218,30 @@ footer{padding:56px 0 36px}
 /* hero collage: no phone frames, rounded screen corners only (2026-10) */
 .phones .ph{background:none;padding:0;height:auto;aspect-ratio:1/2;border-radius:0;box-shadow:0 30px 50px -18px rgba(0,0,0,.45)}
 .phones .ph img{height:auto;aspect-ratio:1/2;border-radius:0;background:none}
+/* Download QR popup (handoff download-qr-install-tip-2026-10 §1; launch edit download-qr-css) */
+.qrm{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px}
+.qrm[hidden]{display:none}
+.qrm-scrim{position:absolute;inset:0;background:rgba(20,24,27,.55)}
+.qrm-box{position:relative;width:440px;max-width:calc(100vw - 48px);background:#fff;border-radius:32px;overflow:hidden;padding:0 32px 28px;display:flex;flex-direction:column;align-items:center;text-align:center;box-shadow:0 40px 80px rgba(20,24,27,.35)}
+.qrm-band{position:absolute;left:0;right:0;top:0;height:170px;background:var(--g);overflow:hidden}
+.qrm-blob{position:absolute;border-radius:50%}
+.qrm-b1{width:120px;height:120px;left:-30px;top:-40px;background:var(--coral)}
+.qrm-b2{width:160px;height:160px;right:-50px;top:30px;background:var(--yel)}
+.qrm-b3{width:36px;height:36px;right:120px;top:18px;background:var(--pink)}
+.qrm-x{position:absolute;top:14px;right:14px;z-index:3;width:44px;height:44px;border:0;border-radius:999px;background:#fff;color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.qrm-x svg{width:24px;height:24px}
+.qrm-card{position:relative;z-index:2;margin-top:36px;background:#fff;border-radius:28px;padding:16px;transform:rotate(-3deg);box-shadow:0 24px 48px rgba(6,59,34,.3)}
+.qrm-card img{display:block;width:236px;height:236px}
+.qrm-sticker{position:absolute;top:-22px;right:-30px;height:46px;padding:0 20px;border-radius:999px;background:var(--yel);color:#3D3100;font:700 17px/1 Inter,system-ui,sans-serif;display:flex;align-items:center;white-space:nowrap;transform:rotate(9deg);box-shadow:0 10px 20px rgba(6,59,34,.25)}
+.qrm-box h2{position:relative;margin:24px 0 0;font-size:26px;line-height:1.15;letter-spacing:-.025em;color:var(--ink)}
+.qrm-box p{position:relative;margin:6px 0 0;font-size:16px;line-height:1.45;color:var(--mut)}
+html.qrm-lock{overflow:hidden}
+@media (prefers-reduced-motion:no-preference){
+.qrm .qrm-scrim{opacity:0;transition:opacity .16s}
+.qrm .qrm-box{opacity:0;transform:scale(.96);transition:opacity .2s cubic-bezier(.2,.8,.2,1),transform .2s cubic-bezier(.2,.8,.2,1)}
+.qrm.on .qrm-scrim,.qrm.on .qrm-box{opacity:1}
+.qrm.on .qrm-box{transform:none}
+}
 /* 404: derived from index.html by scripts/check-website.mjs --write */
 body{min-height:100vh;display:flex;flex-direction:column}.nf{flex:1 0 auto}
 .nf{padding:104px 0 120px}.nf h1{font-size:clamp(36px,4.6vw,60px);margin-bottom:32px}
@@ -227,7 +251,7 @@ body{min-height:100vh;display:flex;flex-direction:column}.nf{flex:1 0 auto}
 <header class="nav"><div class="wrap">
 <a class="logo" href="/"><img src="/assets/brand/lyniago-mark.svg" alt="">LyniaGo</a>
 <nav class="links"><a href="/#send">Send a parcel</a><a href="/#business">For businesses</a><a href="/#riders">Become a biker</a></nav>
-<a class="btn b-g" href="/#app"><i data-i="play"></i>Download the app</a>
+<a class="btn b-g" href="/download" data-download><i data-i="play"></i>Download the app</a>
 </div></header>
 
 <main class="nf"><div class="wrap">

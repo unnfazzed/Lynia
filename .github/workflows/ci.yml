@@ -191,7 +191,7 @@ jobs:
           fi
           node scripts/check-website.mjs
       - name: Guard tests
-        run: node --test scripts/check-website.test.mjs
+        run: node --test scripts/check-website.test.mjs apps/website/worker.test.mjs
       - name: Cloudflare Worker configs build (dry run, the deploy's pinned wrangler)
         env:
           WRANGLER_SEND_METRICS: "false"

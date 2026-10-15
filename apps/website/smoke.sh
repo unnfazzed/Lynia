@@ -9,6 +9,7 @@
 #     (nothing on the edge rewrote it)
 #  3. every asset the home page references loads, with the right type and the immutable cache header
 #  4. an unknown path (/about, no longer linked) serves the 404 page with a 404 status; www and plain http redirect to https://lyniago.com
+#  5. /download (the app buttons) sends Android to Play, iPhone to the web app and desktop to /#app, uncached
 set -euo pipefail
 
 ORIGIN="${1:-https://lyniago.com}"
@@ -123,6 +124,25 @@ if [ "$ORIGIN" = "https://lyniago.com" ]; then
   poll 120 http_ok && ok "http redirects to https" \
     || err "http://lyniago.com/ is served over plain HTTP (HTTP ${code:-none}). Turn on Cloudflare → lyniago.com → SSL/TLS → Edge Certificates → Always Use HTTPS (docs/WEBSITE.md)."
 fi
+
+# 5. The smart download link (apps/website/worker.js).
+download_to() { # UA WANT LABEL
+  h=$(curl -sS -D - -o /dev/null -A "$1" "$ORIGIN/download")
+  status=$(printf '%s' "$h" | head -1 | awk '{print $2}')
+  loc=$(header "$h" location)
+  cache=$(header "$h" cache-control)
+  if [ "$status" = 302 ] && [[ "$loc" == "$2"* ]] && [[ "$cache" == *no-store* ]]; then
+    ok "/download sends $3 to $loc"
+  else
+    err "/download for $3: HTTP $status, location '$loc', cache-control '$cache' (want 302 to $2…, no-store)"
+  fi
+}
+download_to 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36' \
+  'https://play.google.com/store/apps/details?id=zw.co.lynia&' Android
+download_to 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' \
+  'https://app.lyniago.com/?install=1' iPhone
+download_to 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36' \
+  "$ORIGIN/#app" desktop
 
 [ "$fails" -eq 0 ] || { echo "smoke: $fails problem(s)"; exit 1; }
 echo "smoke: $ORIGIN is serving the site correctly."
