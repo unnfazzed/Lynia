@@ -1788,8 +1788,9 @@ Once §7.1 and §7.2 are closed:
    opening the release train. Also grant the Play service account the **Release to production**
    permission (deferred at §7.2 setup) — ✅ **granted 2026-10-15** (owner; not yet exercised by a
    submission). Then: tag `v<version>` on `main` → `mobile-release.yml`
-   builds and submits to the production track with `releaseStatus: inProgress` and `rollout: 0.1`
-   (10%). Advance or halt in Play Console → Releases as crash-free rate holds. Sentry must be live
+   builds and submits to the production track with `releaseStatus: completed`: a full rollout to
+   100% of users (owner, 2026-10-15; it was `inProgress` at `rollout: 0.1` until then). Halt it in
+   Play Console → Releases on a crash spike. Sentry must be live
    before this step so a bad rollout is visible (LR20).
 4. **JS-only hotfixes** go out via Actions → *Mobile OTA Update* (no review). Anything touching the
    native layer shifts the `fingerprint` runtime version and **must** go through a store release.

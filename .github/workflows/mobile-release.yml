@@ -1,9 +1,10 @@
 name: Mobile Release (Play)
 
 # Production Android release via EAS Build + Submit (docs/LAUNCH-DEPLOYMENT-STRATEGY.md §1b).
-# Builds a signed .aab on EAS servers and (by default) auto-submits it to Google Play as a
-# STAGED rollout (production track, releaseStatus=inProgress, starts at the rollout fraction in
-# apps/mobile/eas.json — advance/halt in Play Console as crash-free metrics hold).
+# Builds a signed .aab on EAS servers and (by default) auto-submits it to Google Play's production
+# track as a FULL rollout to 100% of users (releaseStatus=completed in apps/mobile/eas.json; owner
+# decision 2026-10-15 — the user base is still small, so staging buys little). To hold back a risky
+# release, halt it in Play Console → Releases right after the submission lands.
 #
 # DORMANT UNTIL EAS IS PROVISIONED — gated on the repo variable EAS_RELEASE_ENABLED == 'true'.
 # Arming (founder, one-time; see docs/AZURE-OWNER-RUNBOOK.md §9):

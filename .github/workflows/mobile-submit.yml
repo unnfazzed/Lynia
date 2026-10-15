@@ -30,7 +30,7 @@ on:
         # The submit profile decides the track — apps/mobile/eas.json `submit.<profile>.android`:
         #   closed     -> `Closed testing` (the custom closed track that has the enrolled testers)
         #   preview    -> `internal`
-        #   production -> `production`, staged at 10% (needs Play production access — not granted)
+        #   production -> `production`, full rollout to 100% (releaseStatus=completed)
         description: "EAS submit profile (decides the Play track)"
         type: choice
         options: [closed, preview, production]

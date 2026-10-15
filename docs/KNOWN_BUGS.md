@@ -873,6 +873,19 @@ Owner report: on good Wi-Fi the boot splash said "Slow network" and the rider bo
 - **NET-FF-3** — the rider board read its socket's handshake (and the go-online call in flight) as "Reconnecting…" from the first frame. It now waits 8 s of a link that stays down (`useSettled`), or for go-online to actually fail.
 - **NET-FF-4** — a timed-out request said "The network is slow". It now says "This is taking longer than usual — please try again."
 
+## R8 optimization broke native option decoding 2026-10-15 (MOB-R8-01) — FIXED
+
+- **MOB-R8-01** — 0.53.0 (vc 48, EAS build `ad40bbf3`, first `profile: production` release) shipped PR #1201,
+  which pointed R8 at `proguard-android-optimize.txt`. Minutes after the release reached Play, Sentry
+  `LYNIA-MOBILE-7` fired on `zw.co.lynia@0.53.0+48` only: `SplashScreen.setOptions({ fade: false, duration: 0 })`
+  (`app/_layout.tsx`) was rejected, `cannot be cast to type expo.modules.splashscreen.SplashScreenOptions`,
+  caused by a `NullPointerException`. `bootStep` caught it, so the app still started, but every Expo module that
+  takes an options object (location, notifications, image picker, …) decodes it the same reflective way, so the
+  whole native lane was exposed. **Fix:** #1201 reverted in full; R8 is back on `proguard-android.txt`
+  (`-dontoptimize`, shrink + obfuscate only), the configuration vc ≤ 47 ran on with no such error. Guard:
+  `apps/mobile/__tests__/r8-no-optimize.test.ts`. Needs a store build (vc 49): an OTA cannot change the native
+  build. See `docs/APP-SIZE.md`.
+
 ## Permission grants not picked up 2026-10-15 (PERM-G) — FIXED
 
 Owner report: allowed location in the biker permission flow, opened the board, and the header said "Set your location".

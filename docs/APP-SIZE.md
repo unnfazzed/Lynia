@@ -69,13 +69,14 @@ Two levers are applied in this program (in `apps/mobile`, via the sibling change
    shrinks the **binary**, not the OTA JS bundle. Because Expo CNG regenerates `android/`, this MUST
    live in config, never a hand-edit of `build.gradle`.
 
-   **Optimization (2026-10-15).** Minify alone never optimized: the SDK 54 template passes R8 AGP's
-   `proguard-android.txt`, which says `-dontoptimize`. Play vitals flagged release 47 (0.52.0) with
-   "Optimization isn't enabled". `plugins/with-r8-optimize.js` swaps it for
-   `proguard-android-optimize.txt` (no inlining/class merging/dead-branch folding before). Optimization
-   can strip code reached only by reflection, so the release-build smoke test below applies to it too.
-   Play's third item on that card, "Android Gradle plugin 9.0+", can't be done in config: React Native
-   0.81 pins AGP 8.11.0, and it moves only with an Expo SDK upgrade.
+   ⚠️ **R8 optimization is OFF — keep it off (2026-10-15, `MOB-R8-01`).** R8 runs with AGP's
+   `proguard-android.txt`, which says `-dontoptimize`: shrink and obfuscate only. Play's "Optimization
+   isn't enabled" card is expected and ignored. 0.53.0 (vc 48) switched to
+   `proguard-android-optimize.txt` (PR #1201), and the public build then threw at launch:
+   `ExpoSplashScreen.setOptions` could not decode its options (`NullPointerException`, Sentry
+   `LYNIA-MOBILE-7`). Expo modules decode options objects into `Record` classes by reflection, which
+   is exactly what the optimizer can break, and location, notifications and the image picker all go
+   through the same path. Reverted for vc 49. `__tests__/r8-no-optimize.test.ts` fails if it comes back.
 
    ⚠️ **Resource shrinking (`android.enableShrinkResourcesInReleaseBuilds`) is OFF as of 2026-08-04
    — it shipped a build that could not start.** The smoke test this section used to merely
