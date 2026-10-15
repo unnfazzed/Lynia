@@ -35,6 +35,7 @@ import {
   resolveKycRetryFeedback,
 } from "../../../src/logic/gates";
 import { refreshHomeLocation, useHomeLocation } from "../../../src/logic/home-location";
+import { openLocationSettings, readGps, switchOnLocation, useLocationReadyWatch } from "../../../src/permissions/location";
 import { useKeepScreenOn } from "../../../src/logic/use-keep-screen-on";
 import { replaceClearingStack } from "../../../src/logic/nav";
 import { switchToCustomer } from "../../../src/logic/switch-to-customer";
@@ -134,6 +135,8 @@ export default function RiderHome(): React.ReactElement {
   // Only a BLOCKED permission (can't ask again) walls past R3.
   const [locAskable, setLocAskable] = useState(false);
   const [locHint, setLocHint] = useState(false);
+  // The phone's location switch is off (permission granted): "Open location settings" turns it on in one tap.
+  const [gpsOff, setGpsOff] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,6 +166,7 @@ export default function RiderHome(): React.ReactElement {
       return;
     }
     setLocDenied(false);
+    void readGps().then((on) => setGpsOff(!on));
     // The header's street label lives in the shared store, which only detects on mount — a grant made after
     // the board mounted (P1, the phone's settings) must reach it too, or the header stays blank.
     refreshHomeLocation();
@@ -811,6 +815,18 @@ export default function RiderHome(): React.ReactElement {
   // R-9: keyed on DATA, not on the query status: a failed re-read keeps the last good `me` (TanStack keeps
   // data on error), so a pending, declined or locked rider stays behind their wall through a 5xx.
   const gate: GateId | null = meQ.data == null ? null : resolveGate({ kyc: kycGate, server: serverGate, locDenied: locDenied && !(holdForWelcome && locAskable) });
+  // Location granted or switched on by any route — P1, the phone's settings, the one-tap dialog, the
+  // quick-settings shade (which never backgrounds the app) — re-reads at once, so the board never sits on
+  // "Can't find your location" or a blank header after location is on.
+  useLocationReadyWatch(locDenied || gpsOff || locHint || gate === "gps", () => void requestLocation());
+  // G8's primary: the switch off → Google's one-tap dialog (the Location screen where it doesn't exist);
+  // the switch on but no fix → the Location screen, as before.
+  const turnOnLocation = useCallback((): void => {
+    if (!gpsOff) return openLocationSettings();
+    void switchOnLocation().then((on) => {
+      if (on) void requestLocation();
+    });
+  }, [gpsOff, requestLocation]);
   // G10 "Clears at" (BD-M3): the cooldown's end from /auth/me (absent on an older server). The facts tick
   // each minute, and the wall lifts by itself when the timer ends.
   const coolUntil = rider?.cooldownUntil ? new Date(rider.cooldownUntil) : null;
@@ -910,7 +926,7 @@ export default function RiderHome(): React.ReactElement {
               tone="danger"
               title={R.gGpsT}
               body={R.gGpsB}
-              primary={{ label: R.openLoc, icon: "settings", onPress: () => void Linking.openSettings() }}
+              primary={{ label: R.openLoc, icon: "settings", onPress: turnOnLocation }}
               ghost={{ label: R.gpsOn, icon: "check", onPress: () => void requestLocation() }}
             />
           );

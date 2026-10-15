@@ -1,6 +1,6 @@
 import * as Location from "expo-location";
 import { useEffect, useRef } from "react";
-import { AppState, Linking } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 
 /**
  * Location permission + the phone's location switch, as First Run v2 reads them (handoff `first-run-v2`
@@ -61,7 +61,60 @@ export async function turnOnGps(): Promise<boolean> {
 }
 
 export function openPhoneSettings(): void {
-  void Linking.openSettings().catch(() => undefined);
+  void Promise.resolve(Linking.openSettings()).catch(() => undefined);
+}
+
+/** The phone's Location screen — the one with the on/off switch — not the app's info page, which has no
+ *  location switch. Falls back to the app's settings where the intent isn't available. */
+export function openLocationSettings(): void {
+  if (Platform.OS !== "android") return openPhoneSettings();
+  void Promise.resolve(Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS")).catch(openPhoneSettings);
+}
+
+/**
+ * "Turn on" for the phone's location switch with as few taps as the phone allows. Phones with Google Play
+ * services (nearly every Android sold here) show Google's one-tap "Turn on device location" dialog in the
+ * app. Where that dialog doesn't exist (Huawei without Google, iOS), the rider is taken straight to the
+ * Location screen. Resolves to whether the switch is on now.
+ */
+export async function switchOnLocation(): Promise<boolean> {
+  if (await readGps()) return true;
+  if (await turnOnGps()) return true;
+  openLocationSettings();
+  return false;
+}
+
+/** How often a screen waiting on location re-reads it. Both reads are local and cheap (no GPS fix). */
+export const LOCATION_WATCH_MS = 3_000;
+
+/**
+ * While `active`, re-read the permission and the location switch every few seconds, and call `onReady`
+ * the moment they turn usable (granted, or approximate, with the switch on). This catches what an
+ * AppState listener can't: the switch flipped from the quick-settings shade, which never takes the app
+ * out of the foreground. It fires on the change only, never repeatedly while location stays ready.
+ */
+export function useLocationReadyWatch(active: boolean, onReady: () => void, ms: number = LOCATION_WATCH_MS): void {
+  const ref = useRef(onReady);
+  ref.current = onReady;
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    let wasReady: boolean | null = null;
+    const tick = (): void => {
+      void readLocation().then(({ loc, gps }) => {
+        if (!alive) return;
+        const ready = (loc === "granted" || loc === "coarse") && gps;
+        if (ready && wasReady === false) ref.current();
+        wasReady = ready;
+      });
+    };
+    tick();
+    const timer = setInterval(tick, ms);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [active, ms]);
 }
 
 /** Runs `onActive` each time the app comes back to the foreground (the "re-read on return" rule). */

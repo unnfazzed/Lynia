@@ -888,6 +888,15 @@ Owner report: allowed location in the biker permission flow, opened the board, a
   budget was spent, bound no push token until the next cold start, so job and order pushes never arrived.
   `usePushRegistration` now re-checks the permission on every foreground and registers once it is granted. A new
   in-flight guard stops two registrations running at once.
+- **PERM-G-4** — the biker board's "Can't find your location" wall sent the biker to the app's info page, which has no
+  location switch. With the switch off, "Open location settings" now shows Google's one-tap "Turn on device location"
+  dialog (`switchOnLocation`, `src/permissions/location.ts`). Where the dialog doesn't exist or is declined (Huawei
+  without Google, iOS), it opens the phone's Location screen. The customer PC6 sheet and the biker P7 screen use the same
+  fallback (before, a missing dialog did nothing).
+- **PERM-G-5** — a location switch flipped from the quick-settings shade doesn't take the app out of the foreground, so
+  the AppState re-read never saw it. `useLocationReadyWatch` re-reads the permission and the switch every 3 s while the
+  board wall, PC6 or P7 is up, and moves on by itself. The shared location store polls the switch the same way after a
+  detection found it off, so Home and the biker header fill in with no tap.
 - Still open: if the reverse geocoder returns nothing (common on a weak link), "Use my location" still finds no address.
   The customer gets the address search, and the biker header keeps the prompt until the next foreground.
 
