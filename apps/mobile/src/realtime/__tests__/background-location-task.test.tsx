@@ -4,6 +4,8 @@ import * as task from "../background-location-task";
 
 // Pure mocks (no jest-expo native shims needed): the module under test only touches these calls.
 jest.mock("expo-task-manager", () => ({ defineTask: jest.fn() }));
+const mockSendHeadless = jest.fn(async (_fix: unknown, _stop: unknown) => "sent");
+jest.mock("../headless-fix", () => ({ sendHeadlessFix: (fix: unknown, stop: unknown) => mockSendHeadless(fix, stop) }));
 jest.mock("expo-location", () => ({
   Accuracy: { Balanced: 3 },
   startLocationUpdatesAsync: jest.fn(),
@@ -74,6 +76,30 @@ describe("headless fix forwarding bridge", () => {
     task.handleBackgroundLocations(body([]));
 
     expect(fixes).toEqual([]);
+  });
+});
+
+describe("JQ-R2-01: a headless restart (the OS killed the app mid-job)", () => {
+  it("posts the freshest fix over REST when this runtime never opened a stream", () => {
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fresh = require("../background-location-task") as typeof task;
+      mockSendHeadless.mockClear();
+      fresh.handleBackgroundLocations(body([[-17.83, 31.05], [-17.85, 31.07]]));
+      expect(mockSendHeadless).toHaveBeenCalledWith({ lat: -17.85, lng: 31.07 }, fresh.stopRiderBackgroundUpdates);
+    });
+  });
+
+  it("never posts from the app's own runtime once it has opened a stream (the forwarder is the authority)", () => {
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fresh = require("../background-location-task") as typeof task;
+      fresh.setBackgroundFixForwarder(() => undefined);
+      fresh.setBackgroundFixForwarder(null);
+      mockSendHeadless.mockClear();
+      fresh.handleBackgroundLocations(body([[-17.83, 31.05]]));
+      expect(mockSendHeadless).not.toHaveBeenCalled();
+    });
   });
 });
 

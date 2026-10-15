@@ -12,6 +12,7 @@ import {
   startRiderBackgroundUpdates,
   stopRiderBackgroundUpdates,
 } from "./background-location-task";
+import { rememberActiveJob } from "./headless-fix";
 import { type Fix, PendingFix } from "./location-buffer";
 import { acquireSocket, releaseSocket } from "./socket";
 import { socketIdentity } from "./socket-identity";
@@ -109,6 +110,8 @@ export function useRiderLocationStream(orderId: string | null): {
       // note the process stays alive under the Android foreground service, so this closure (and the
       // socket in it) survives backgrounding.
       setBackgroundFixForwarder(({ lat, lng }) => send({ orderId, lat, lng }));
+      // JQ-R2-01: remembered for a headless restart of the task after the OS kills the app mid-job.
+      void rememberActiveJob(orderId);
       void startRiderBackgroundUpdates();
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, distanceInterval: 25, timeInterval: 10_000 },
@@ -131,6 +134,7 @@ export function useRiderLocationStream(orderId: string | null): {
       // updates (internally guarded by hasStartedLocationUpdatesAsync and safe against a concurrent
       // restart for a new job; see background-location-task.ts).
       setBackgroundFixForwarder(null);
+      void rememberActiveJob(null);
       void stopRiderBackgroundUpdates();
       if (socket) {
         socket.off("connect", onConnect);

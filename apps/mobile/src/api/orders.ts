@@ -310,6 +310,11 @@ export function revealDeliveryCode(orderId: string): Promise<{ deliveryCode: str
 }
 
 /** Raise the price of an open order in place (+ $0.50): the offer window keeps running, riders are re-pinged. */
+/** JQ-R2-01: the headless background task's fix (the `rider:location` socket event's REST sibling). */
+export function postRiderFix(orderId: string, fix: { lat: number; lng: number }): Promise<{ ok: true }> {
+  return apiFetch(`/orders/${orderId}/location`, { method: "POST", body: { lat: fix.lat, lng: fix.lng } });
+}
+
 export function raiseOrderPrice(orderId: string, proposedFare: number): Promise<{ orderId: string; proposedFare: string }> {
   return apiFetch(`/orders/${orderId}/price`, { method: "POST", body: { proposedFare } });
 }
