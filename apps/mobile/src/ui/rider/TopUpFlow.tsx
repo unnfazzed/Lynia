@@ -29,7 +29,7 @@ import { CentreState, Progress, RStepBar } from "./kit";
  * as "Coming soon" and can't be chosen.
  */
 const STEPS = [R.tsProvider, R.tsAmount, R.tsPhone, R.tsApprove] as const;
-// The drawn chips. MA-M1: a chip below the server's minimum is hidden (the drawn $2 sits under the $5
+// The drawn chips. MA-M1: a chip below the server's minimum is hidden (the drawn $2 sits under the $3
 // minimum — an upstream kit defect, docs/DESIGN-DEVIATIONS.md).
 const QUICK = [2, 5, 10, 20];
 

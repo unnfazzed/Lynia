@@ -5001,6 +5001,8 @@ is **$5**. Tapping the drawn $2 chip could only ever produce "Enter at least $5.
 - **App:** the low-balance wall's "Top up at least" (Rider v2 J-gate `gTopK2`) shows
   `max(minTopUp, floor − balance)`, so it never asks for an amount the top-up screen refuses.
 - **Upstream:** the kit should draw chips at or above the minimum. Reported upstream; the kit is not edited here.
+- **2026-10-15 (owner):** the minimum top-up is now **$3** (`COMMISSION.minTopUp`, with `graceCredit`). The $2 chip
+  is still below it and stays hidden; the row is unchanged ($5 · $10 · $20).
 
 ## D-85 · Rider audit 2026-10-07, parcel job: two undrawn controls — PENDING OWNER REVIEW
 
