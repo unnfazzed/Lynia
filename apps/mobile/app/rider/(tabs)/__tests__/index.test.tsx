@@ -2279,6 +2279,28 @@ describe("biker board — biker audit fixes (Board & Jobs)", () => {
     expect(treeText(activeTree)).not.toContain("Couldn't check for an active job");
   }, 15000);
 
+  // Owner 2026-10-15: right after sign-in the board showed J1's food line over an empty sheet, then flipped to
+  // J4. Until the first open-jobs read lands the sheet holds no list chrome; then it is J4 straight away.
+  it("first open after sign-in: no food line before the first jobs read lands, then the J4 empty state", async () => {
+    mockFoodOn = true;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    let land: (v: never[]) => void = () => undefined;
+    mockGetOpenOrders.mockImplementation(() => new Promise<never[]>((r) => (land = r)));
+    mockGetFoodOffers.mockImplementation(async () => []);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockGetOpenOrders).toHaveBeenCalled();
+    expect(treeText(activeTree)).not.toContain("Food jobs ring full screen.");
+    expect(treeText(activeTree)).not.toContain("No jobs nearby");
+    expect(treeText(activeTree)).not.toContain("Couldn't load nearby jobs.");
+    await act(async () => land([]));
+    await settle();
+    expect(treeText(activeTree)).toContain("No jobs nearby");
+    expect(treeText(activeTree)).not.toContain("Food jobs ring full screen.");
+  });
+
   it("BD-H4: a failed open-jobs read draws two skeleton cards and really tries again in 10 s with the socket up", async () => {
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
