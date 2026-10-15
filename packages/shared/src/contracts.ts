@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import { normalizePhone } from "./phone";
-import { roundFare } from "./pricing";
+import { roundFare } from "./money";
 
 /** A fare a customer, business or admin names: money bounds + 2dp (NUMERIC(10,2)), then snapped to the
  *  nearest 50c (owner 2026-10-15: every fare is a whole number of 50c). Snapped, not refused, so an app

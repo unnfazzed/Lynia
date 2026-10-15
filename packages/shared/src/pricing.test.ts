@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { FARE, FARE_UNIT_USD, haversineKm, isFareUnit, roundFare, stepFare, suggestFare, quoteFare } from "./pricing";
+import { FARE_UNIT_USD, isFareUnit, roundFare, stepFare } from "./money";
+import { FARE, haversineKm, suggestFare, quoteFare } from "./pricing";
 import type { LatLng } from "./contracts";
 
 /**
