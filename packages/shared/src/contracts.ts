@@ -3,6 +3,7 @@
  * Expo / Next clients. Validation lives here so the wire shape can't drift between ends.
  */
 import { z } from "zod";
+import { normalizePhone } from "./phone";
 
 /** Offer window length (CONCEPT §9). Wire-relevant: the customer's auction countdown renders from
  *  it (order.expiresAt = createdAt + OFFER_WINDOW_MS), and the API schedules expiry off the same
@@ -53,7 +54,9 @@ export type LatLng = z.infer<typeof LatLng>;
 export const Waypoint = z.object({
   point: LatLng,
   landmark: z.string().min(1).max(160),
-  contactPhone: z.string().min(6).max(20),
+  // JQ-R4-03: the same plausibility gate the Send form applies (`phoneOk`), so a non-app client can't hand
+  // the biker an uncallable number.
+  contactPhone: z.string().min(6).max(20).refine((v) => normalizePhone(v) !== null, { message: "Enter a valid phone number" }),
 });
 export type Waypoint = z.infer<typeof Waypoint>;
 

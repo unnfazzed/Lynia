@@ -13,8 +13,11 @@ import { REFUSAL_MESSAGE } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { domainEvents } from "../common/domain-events";
 
-const WINDOW_CLOSED = "The offer window has closed. This order isn't taking new offers.";
-const ONE_ROUND = "You already responded to this order (one round only)";
+// JQ-R6-03: each 409 carries a machine `reason` — the rider app reconciles a lost bid answer on it, not
+// on the English message (which is copy and can change).
+const WINDOW_CLOSED = { reason: "offer_window_closed", message: "The offer window has closed. This order isn't taking new offers." };
+const ONE_ROUND = { reason: "offer_already_responded", message: "You already responded to this order (one round only)" };
+const NOT_OPEN = { reason: "order_not_open", message: "This order is not open for offers" };
 const ON_A_JOB = "Finish your current job before making another offer";
 
 /** True once the order's offer window (offerWindowEndsAt, else createdAt + OFFER_WINDOW_MS) has run out. */
@@ -47,7 +50,7 @@ export class OffersService {
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
-      throw new ConflictException("This order is not open for offers");
+      throw new ConflictException(NOT_OPEN);
     }
     // After-send v2 choose grace: once the window ends (offerWindowEndsAt, the snapshot's expiresAt) the
     // customer may still pick from the offers already on screen for OFFER_CHOOSE_GRACE_MS,
@@ -60,7 +63,7 @@ export class OffersService {
     // A-2 (status-keyed-query-audit): an Express bid is a parcel-only mechanism — a merchant order's
     // rider is C3's dispatch decision, never an offer a rider posts themselves.
     if (order.orderType !== "parcel") {
-      throw new ConflictException("This order is not open for offers");
+      throw new ConflictException(NOT_OPEN);
     }
     // No self-bidding: order-create carries no role gate, so a rider-role profile can post its own
     // order and then bid on it as the rider — self-selecting, self-delivering (it holds the OTP), and
@@ -176,7 +179,7 @@ export class OffersService {
         // concurrent write, but orderType is immutable post-create, so this is belt-and-braces
         // consistency with the guard above, not a new race window.
         if (locked.length === 0 || locked[0].status !== "open_for_offers" || locked[0].order_type !== "parcel") {
-          throw new ConflictException("This order is not open for offers");
+          throw new ConflictException(NOT_OPEN);
         }
         // The window can end between the pre-check and the lock; the expiry job counts on no new bid
         // landing after it (an order with no pending offer at the window end expires right away).

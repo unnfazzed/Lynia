@@ -50,7 +50,7 @@ export default function RiderAccountTabScreen(): React.ReactElement {
     // C5 keeps the rider online so the job they're carrying keeps its pings; C4 takes them offline,
     // which is what stops new jobs and food offers reaching them while they're on the customer side.
     // R-5: the side the rider picks is the side the next cold start opens on (saved by the helper).
-    void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
+    void switchToCustomer(activeQ.isSuccess ? activeJob != null : null).then((ok) => (ok ? undefined : fail(R.offFail)));
     setConfirm(false);
     // Cleared, not a bare replace: the rider tabs left underneath made Back jump sides.
     replaceClearingStack(router, "/home");

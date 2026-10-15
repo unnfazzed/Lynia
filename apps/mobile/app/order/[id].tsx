@@ -45,6 +45,7 @@ import {
   selectParcelGlance,
   selectRiderTelemetry,
 } from "../../src/logic/order-tracking";
+import { cancelMoot, raiseLanded } from "../../src/logic/order-write-reconcile";
 import { loadRiderIdentity, type RiderIdentity, saveRiderIdentity } from "../../src/logic/rider-identity";
 import { clearLastActiveOrder, saveLastActiveOrder } from "../../src/net/last-active-store";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
@@ -546,6 +547,9 @@ function ParcelOrderScreen(): React.ReactElement {
       setNewCodeFailed(true);
     },
   });
+  // A fresh read of the order into the cache (null when it can't be read), for the write reconciles below.
+  const rereadOrder = (): Promise<OrderSnapshot | null> =>
+    qc.fetchQuery({ queryKey: orderKey(orderId), queryFn: () => getOrder(orderId), staleTime: 0 }).catch(() => null);
   // "+ $0.50" (and state 13's "Raise to $X"): the new price shows only once the server confirms (2.5);
   // a failure leaves the price as it was and offers "Try again" (2.6).
   const raiseM = useMutation({
@@ -557,7 +561,19 @@ function ParcelOrderScreen(): React.ReactElement {
       setPriceNote(true);
       AccessibilityInfo.announceForAccessibility(orderText.raised(to));
     },
-    onError: (_e, to) => showToast({ text: A.raiseFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => raiseM.mutate(to), ttl: 0 }),
+    onError: async (_e, to) => {
+      // JQ-R6-01: a raise whose answer was lost may have landed — re-read before saying it didn't (a Try
+      // again would only 400 "must be higher").
+      const from = Number(qc.getQueryData<OrderSnapshot>(orderKey(orderId))?.proposedFare ?? 0);
+      const fresh = await rereadOrder();
+      if (raiseLanded(fresh, to)) {
+        setPrevPrice((p) => p ?? from);
+        setPriceNote(true);
+        AccessibilityInfo.announceForAccessibility(orderText.raised(to));
+        return;
+      }
+      showToast({ text: A.raiseFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => raiseM.mutate(to), ttl: 0 });
+    },
     onSettled: () => void qc.invalidateQueries({ queryKey: orderKey(orderId) }),
   });
   useEffect(() => {
@@ -654,7 +670,18 @@ function ParcelOrderScreen(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: orderKey(orderId) });
       void qc.invalidateQueries({ queryKey: ["history"] });
     },
-    onError: (_e, reason) => showToast({ text: A.cancelFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => cancelM.mutate(reason), ttl: 0 }),
+    onError: async (_e, reason) => {
+      // JQ-R6-02 / JQ-R5-01: the cancel may have landed with its answer lost, or the order ended meanwhile —
+      // then "still active" is false and Try again can only 409. Re-read first (the rider side: UX15-08).
+      const fresh = await rereadOrder();
+      if (cancelMoot(fresh)) {
+        setPanel(null);
+        setCancelReason(null);
+        void qc.invalidateQueries({ queryKey: ["history"] });
+        return;
+      }
+      showToast({ text: A.cancelFail, action: A.tryAgain, actionIcon: "refresh-cw", onAction: () => cancelM.mutate(reason), ttl: 0 });
+    },
   });
   const notifyM = useMutation({
     mutationFn: () => {

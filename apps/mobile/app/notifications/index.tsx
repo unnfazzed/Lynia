@@ -327,7 +327,7 @@ function SwitchToCustomer({ visible, onClose }: { visible: boolean; onClose: () 
   const fail = useActionError();
   const goCustomer = (): void => {
     // MA-H3: the same switch as the Account toggle — the side is saved and a failed go-offline is said.
-    void switchToCustomer(!!activeJob).then((ok) => (ok ? undefined : fail(R.offFail)));
+    void switchToCustomer(activeQ.isSuccess ? activeJob != null : null).then((ok) => (ok ? undefined : fail(R.offFail)));
     onClose();
     replaceClearingStack(router, "/home");
   };

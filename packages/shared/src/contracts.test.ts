@@ -112,6 +112,14 @@ describe("CreateOrderRequest item text — whitespace-only is not a description"
     const r = CreateOrderRequest.parse({ ...base, itemDescription: "  Documents  " });
     expect(r.itemDescription).toBe("Documents");
   });
+
+  it("JQ-R4-03: rejects a junk contact phone the Send form would never send", () => {
+    const junk = { ...base, itemDescription: "Docs", dropoff: { ...base.dropoff, contactPhone: "abcdefg" } };
+    expect(CreateOrderRequest.safeParse(junk).success).toBe(false);
+    for (const ok of ["+263771234567", "0771234567", "077 123 4567", "+447911123456"]) {
+      expect(CreateOrderRequest.safeParse({ ...base, itemDescription: "Docs", dropoff: { ...base.dropoff, contactPhone: ok } }).success).toBe(true);
+    }
+  });
 });
 
 describe("SubscribeOrderEvent — the subscribe:order payload is runtime-validated", () => {

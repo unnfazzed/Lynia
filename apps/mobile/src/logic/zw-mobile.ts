@@ -9,11 +9,13 @@ const MOBILE_PREFIXES = ["71", "73", "77", "78"] as const;
 /**
  * What the customer typed → the national digits, at most 9. A leading trunk "0" ("0772451180") and a
  * pasted country code ("+263 77…", "263 77…") are both dropped, so every way people write their own
- * number lands on the same nine digits.
+ * number lands on the same nine digits, typed or pasted.
  */
 export function zwNationalDigits(input: string): string {
   let d = input.replace(/\D/g, "");
-  if (d.startsWith("263") && d.length > 9) d = d.slice(3);
+  // JQ-R4-05: a national mobile number starts 7 (or a trunk 0), never 2 — so "2637…"/"2630…" is the country
+  // code whether it was pasted or typed digit by digit (it used to strip only past 9 digits, i.e. a paste).
+  if (/^263[07]/.test(d) || (d.startsWith("263") && d.length > 9)) d = d.slice(3);
   if (d.startsWith("0")) d = d.slice(1);
   return d.slice(0, 9);
 }

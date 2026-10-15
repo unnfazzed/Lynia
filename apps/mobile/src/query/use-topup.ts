@@ -12,14 +12,11 @@ import { walletKey, walletLedgerKey } from "./use-wallet";
  * stays a view over props and hook state — the `mobile-ui-no-api` boundary (`.dependency-cruiser.cjs`)
  * says the design-system layer never fetches, and this is the seam that keeps it true.
  *
- * ── WHAT MAKES THIS SAFE WHILE THE RAIL IS MISSING ──────────────────────────────────────────────
- * `WalletService.creditFromTopup` — the only path that can confirm an intent and move a balance — has
- * no caller, because no payment-rail client exists. So nothing pushes a prompt to the rider's phone
- * and nothing confirms: every real attempt runs its 90-second window down and comes back `expired`.
- *
- * That is survivable ONLY because the outcome here is read, never invented. `status` is whatever the
- * server reports; the view renders a success on `succeeded` alone. When a rail lands and calls
- * `creditFromTopup`, this starts working with no change to either file.
+ * ── THE OUTCOME IS READ, NEVER INVENTED ─────────────────────────────────────────────────────────
+ * Only the server's payment rail confirms an intent and moves a balance (`WalletService.creditFromTopup`,
+ * called by the Paynow rail when `PAYMENT_RAIL=paynow`). With `PAYMENT_RAIL=stub` nothing pushes a
+ * prompt or confirms, and every attempt runs its 90-second window down to `expired`. Either way
+ * `status` is whatever the server reports, and the view renders a success on `succeeded` alone.
  */
 export interface TopUpStart {
   amount: number;
