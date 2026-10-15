@@ -1,6 +1,7 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { RP } from "../ui/firstrun/copy";
+import { sendHeadlessFix } from "./headless-fix";
 
 /**
  * Background GPS continuation for the rider's active-job stream (use-rider-location.ts).
@@ -22,7 +23,9 @@ import { RP } from "../ui/firstrun/copy";
  * The task callback runs headless: no React context, no hook closure, so it can't reach the socket or
  * the PendingFix buffer directly. The hook bridges that gap by registering a forwarder here while
  * (and only while) a job is active; a fix arriving with no forwarder registered is dropped on the
- * floor, which is exactly right — no active job means nothing may be streamed.
+ * floor, which is exactly right — no active job means nothing may be streamed. The one exception is a
+ * runtime that never registered one: the OS killed the app mid-job and restarted the task headless
+ * (JQ-R2-01), and the fix goes over REST for the remembered job instead (headless-fix.ts).
  */
 
 export const RIDER_LOCATION_TASK = "lynia-rider-location";
@@ -30,6 +33,8 @@ export const RIDER_LOCATION_TASK = "lynia-rider-location";
 type BackgroundFixForwarder = (coords: { lat: number; lng: number }) => void;
 
 let forwarder: BackgroundFixForwarder | null = null;
+/** True once this JS runtime has opened an active-job stream — it is the app, not a headless restart. */
+let runtimeOwnsStream = false;
 
 /**
  * The headless-task → hook bridge. The hook registers a closure (carrying the orderId, socket and
@@ -38,6 +43,7 @@ let forwarder: BackgroundFixForwarder | null = null;
  * unregistering, even a straggler task invocation racing the async native stop goes nowhere.
  */
 export function setBackgroundFixForwarder(fn: BackgroundFixForwarder | null): void {
+  if (fn) runtimeOwnsStream = true;
   forwarder = fn;
 }
 
@@ -48,16 +54,25 @@ export function setBackgroundFixForwarder(fn: BackgroundFixForwarder | null): vo
 export function handleBackgroundLocations(
   body: TaskManager.TaskManagerTaskBody<{ locations?: Location.LocationObject[] }>,
 ): void {
-  // An errored invocation carries no usable fix; no forwarder means no active job, so dropping is
-  // the correct (and privacy-required) behaviour — never buffer fixes outside the active-job window.
-  if (body.error || !forwarder) return;
+  if (body.error) return;
+  // In the app's own runtime, no forwarder means no active job, so dropping is the correct (and
+  // privacy-required) behaviour — never buffer fixes outside the active-job window.
+  if (!forwarder && runtimeOwnsStream) return;
   const locations = body.data?.locations ?? [];
   // The OS may batch several fixes per wake-up. The customer's map only wants where the rider is
   // NOW (the same reasoning as PendingFix coalescing), so forward only the freshest fix in the
   // batch and drop the breadcrumb trail.
   const freshest = locations[locations.length - 1];
   if (!freshest) return;
-  forwarder({ lat: freshest.coords.latitude, lng: freshest.coords.longitude });
+  const fix = { lat: freshest.coords.latitude, lng: freshest.coords.longitude };
+  if (forwarder) {
+    forwarder(fix);
+    return;
+  }
+  // JQ-R2-01: a fresh runtime that never opened a stream — the OS killed the app mid-job and restarted
+  // the task headless under the surviving foreground service. Post over REST for the remembered job
+  // (headless-fix.ts); it stops the service itself when there is no job or the job has ended.
+  void sendHeadlessFix(fix, stopRiderBackgroundUpdates);
 }
 
 TaskManager.defineTask<{ locations?: Location.LocationObject[] }>(RIDER_LOCATION_TASK, async (body) =>

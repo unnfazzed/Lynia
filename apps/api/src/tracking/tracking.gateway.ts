@@ -432,14 +432,24 @@ export class TrackingGateway
     const parsed = RiderLocationEvent.safeParse(body);
     if (!parsed.success) return { error: "invalid" };
     const { orderId, lat, lng } = parsed.data;
-    if (!(await this.tracking.isAssignedRider(user.sub, orderId))) return { error: "forbidden" };
+    return (await this.ingestRiderFix(user.sub, orderId, lat, lng)) ? { ok: true } : { error: "forbidden" };
+  }
+
+  /**
+   * One rider fix for one order — the socket `rider:location` handler and its REST sibling
+   * (`POST /orders/:orderId/location`, JQ-R2-01: the headless background task of an app the OS killed
+   * has no socket) both land here. False when the caller isn't the order's assigned rider (nothing is
+   * emitted or persisted). Coordinates are already range-validated by the caller's schema.
+   */
+  async ingestRiderFix(riderId: string, orderId: string, lat: number, lng: number): Promise<boolean> {
+    if (!(await this.tracking.isAssignedRider(riderId, orderId))) return false;
 
     // Emit-before-persist (P1-1a): the customer's live position must not be gated on the DB write.
     // Best-effort PUSH — a null server or emit failure never blocks the (still-persisted) fix. The
     // emit is coalesced to ≤1/sec per room server-side (E3), so the persist below still runs on every
     // fix while the room is shielded from a flood.
     this.coalescePositionEmit(orderRoom(orderId), {
-      riderId: user.sub,
+      riderId,
       lat,
       lng,
       at: new Date().toISOString(),
@@ -447,9 +457,9 @@ export class TrackingGateway
     // DS20-02: mirror the REST heartbeat caller (rider.service.heartbeat) — a persistence failure is
     // best-effort and must not reject the socket handler unhandled (the live position already went out).
     try {
-      await this.tracking.recordFix(user.sub, lat, lng);
+      await this.tracking.recordFix(riderId, lat, lng);
     } catch (err) {
-      this.logger.warn(`recordFix on rider:location failed for ${user.sub}: ${(err as Error).message}`);
+      this.logger.warn(`recordFix on rider:location failed for ${riderId}: ${(err as Error).message}`);
     }
     // Merchant v2 (D-77): "at your counter" and "arrives 07:38" come from these pings. Best-effort: a
     // failure never touches the fix above, and a merchant's queue only refetches when something changed.
@@ -459,7 +469,7 @@ export class TrackingGateway
     } catch (err) {
       this.logger.warn(`observeRiderLeg failed for order ${orderId}: ${(err as Error).message}`);
     }
-    return { ok: true };
+    return true;
   }
 
   /**
