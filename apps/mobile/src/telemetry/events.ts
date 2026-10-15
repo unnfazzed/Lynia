@@ -69,10 +69,14 @@ export const EVENTS = {
   kycCameraDenied: "kyc_camera_denied",
   /** The in-app sheet's WebView failed: `kind` error | http_error (`status` for http). */
   kycWebError: "kyc_web_error",
-  /** A rider-permission screen shown: `screen` P1…P16, `flow` (from R3) or a single step. */
+  /** A rider-permission screen shown: `screen` P1…P16, `flow` (from R3), "signup" (after sign-up, D-109) or a single step. */
   permScreen: "rider_perm_screen",
   /** A rider-permission step answered: `screen` P1…P16, `answer` (granted / coarse / denied / blocked / not_now …). */
   permAnswer: "rider_perm_answer",
+  /** A customer after-sign-up permission screen shown (D-109): `screen` location | notifications. */
+  signupPermScreen: "customer_signup_perm_screen",
+  /** A customer after-sign-up permission step answered: `screen`, `answer` (granted / coarse / denied / blocked / not_now). */
+  signupPermAnswer: "customer_signup_perm_answer",
   /** Go-online: `ok`, and the refusal `reason` code when the server said no. */
   goOnline: "rider_go_online",
   /** The first time this account went online on this phone: `ms_since_signup`. */

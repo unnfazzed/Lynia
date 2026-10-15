@@ -13,6 +13,7 @@ import { bootDestination } from "../src/logic/boot-route";
 import { replaceClearingStack } from "../src/logic/nav";
 import { RESEND_COOLDOWN_S, formatCountdown, otpErrorMessage, otpFailure } from "../src/logic/otp";
 import { parseSignInIntent, riderEntry, signedInDestination, startRoleFor } from "../src/logic/sign-in-route";
+import { afterSignIn } from "../src/logic/signup-permissions";
 import { useReachability } from "../src/net/use-reachability";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
@@ -230,7 +231,8 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
       if (!chosen) void saveRolePreference(startRoleFor(null, intent, res.role));
       // An account with no rider record (the server's role is not "rider") goes straight to R1, not
       // through a board that would only replace itself with R1.
-      replaceClearingStack(router, riderEntry(signedInDestination(chosen, intent, res.role), res.role === "rider"));
+      // The permission screens come first, once per install (D-109).
+      replaceClearingStack(router, (await afterSignIn(riderEntry(signedInDestination(chosen, intent, res.role), res.role === "rider"))) as never);
     } catch (e) {
       const failure = otpFailure(e instanceof ApiError ? e : null);
       if (failure === "expired" || failure === "locked") {

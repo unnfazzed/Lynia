@@ -59,7 +59,7 @@ jest.mock("../../src/telemetry/events", () => ({
 }));
 
 import { finishRiderPermFlow, startRiderPermFlow } from "../../src/logic/rider-perm-flow";
-import { RIDER_PERM_FLOW_KEY } from "../../src/permissions/store";
+import { RIDER_PERM_FLOW_KEY, SIGNUP_PERMS_KEY } from "../../src/permissions/store";
 import RiderPermissionsScreen from "../permissions";
 
 const UNDET = { status: "undetermined", granted: false, canAskAgain: true };
@@ -281,6 +281,55 @@ describe("single steps (board P14, Settings P15/P16)", () => {
     mockParams = { next: "/rider" };
     await mount();
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+});
+
+describe("right after sign-up (?from=signup, D-109)", () => {
+  it("P1 → Allow → P3 → P9 → Turn on → on to R1, with no P13; it counts as the rider flow", async () => {
+    mockParams = { from: "signup", next: "/rider/become" };
+    await mount();
+    expect(screen()).toBe("P1");
+    expect(mockStore[SIGNUP_PERMS_KEY]).toBe("1");
+    expect(mockStore[RIDER_PERM_FLOW_KEY]).toBe("1");
+    await press("p-cta");
+    expect(screen()).toBe("P3");
+    await press("p-cta");
+    expect(screen()).toBe("P9");
+    await press("p-cta");
+    expect(mockKick).toHaveBeenCalled();
+    expect(text()).not.toContain("Go online");
+    expect(mockReplace).toHaveBeenCalledWith("/rider/become");
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith("rider_perm_screen", { screen: "P1", flow: "signup" });
+  });
+
+  it("every Not now moves on, then to the board", async () => {
+    mockParams = { from: "signup", next: "/rider" };
+    await mount();
+    await press("p-link");
+    expect(screen()).toBe("P9");
+    await press("p-link");
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("a `next` that isn't the rider side or Home falls back to the board", async () => {
+    mockParams = { from: "signup", next: "https://evil.example" };
+    mockLocGet = GRANTED;
+    mockNotifGet = GRANTED;
+    await mount();
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("R3's Go online after it goes straight online: the flow already ran", async () => {
+    mockParams = { from: "signup", next: "/rider" };
+    await mount();
+    await press("p-link");
+    await press("p-link");
+    const goOnline = jest.fn();
+    const push = jest.fn();
+    await startRiderPermFlow({ push }, goOnline);
+    expect(goOnline).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
   });
 });
 
