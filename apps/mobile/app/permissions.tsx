@@ -18,6 +18,7 @@ import {
   useOnAppActive,
 } from "../src/permissions/state";
 import { markRiderPermFlowDone } from "../src/permissions/store";
+import { refreshHomeLocation } from "../src/logic/home-location";
 import { requestPushRegistration } from "../src/push/push-kick";
 import { EVENTS, track } from "../src/telemetry/events";
 import { TrustVerifiedArt } from "../src/ui/art/TrustVerifiedArt";
@@ -126,6 +127,8 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   /** P2's answer (and every re-read of location) → the next screen; precise + GPS = P3 with the P8 toast. */
   const onLocation = (loc: Parameters<typeof afterLocationAnswer>[0], gps: boolean, from: RiderPermScreen): void => {
     answer(gps || loc !== "granted" ? loc : "granted_gps_off", from);
+    // Granted (even approximate, or with GPS still off): the board below already mounted without it.
+    if (loc === "granted" || loc === "coarse") refreshHomeLocation();
     const to = afterLocationAnswer(loc, gps);
     if (to === "granted") {
       toast.show(RP.grantedToast, "success");

@@ -66,6 +66,7 @@ export function usePushRegistration(session: Session | null): void {
     let rotatedTo: string | null = null;
     let cancelled = false;
     let attempts = 0;
+    let inFlight = false;
     let reachUnsub: (() => void) | null = null;
     let appStateSub: NativeEventSubscription | null = null;
 
@@ -92,8 +93,12 @@ export function usePushRegistration(session: Session | null): void {
     };
 
     const attempt = (): void => {
-      if (cancelled || registered) return;
+      // One registration at a time: the kick, the retry triggers and the grant watcher below can all fire
+      // on the same foreground, and two concurrent POSTs would bind (and later leak) the token twice.
+      if (cancelled || registered || inFlight) return;
+      inFlight = true;
       void registerForPushNotificationsAsync().then((result) => {
+        inFlight = false;
         if (cancelled) {
           // Identity changed before registration finished — undo it so we don't leave a stray token.
           if (result.registered) void unregisterForPushNotificationsAsync(result.token);
@@ -128,6 +133,20 @@ export function usePushRegistration(session: Session | null): void {
 
     const bootTimer = setTimeout(attempt, BOOT_REGISTER_DELAY_MS);
 
+    // A grant made OUTSIDE the app's own explainers — the phone's settings after a "Don't allow" (the
+    // terminal, never-retried case above), or after the retry budget was spent on foregrounds before any
+    // grant — used to bind no token until the next cold start, so job and order pushes silently never
+    // arrived. Every foreground re-checks the permission (a cheap local read) and registers once granted.
+    const grantSub = AppState.addEventListener("change", (s) => {
+      if (s !== "active" || cancelled || registered || inFlight) return;
+      void Promise.resolve()
+        .then(() => Notifications.getPermissionsAsync())
+        .then((p) => {
+          if (p.granted) attempt();
+        })
+        .catch(() => undefined);
+    });
+
     // The primed permissions explainer (app/permissions.tsx) fires this the moment the user grants
     // notifications, so a just-granted permission binds a token right away rather than waiting for the
     // next foreground — registration is check-don't-request, so it needs an explicit re-attempt.
@@ -159,6 +178,7 @@ export function usePushRegistration(session: Session | null): void {
       cancelled = true;
       clearTimeout(bootTimer);
       stopRetryTriggers();
+      grantSub.remove();
       kickUnsub();
       rotationSub.remove();
       // On sign-out the logout request already named this token (bound-token.ts) and the API unbound it;
