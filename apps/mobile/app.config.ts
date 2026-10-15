@@ -285,6 +285,10 @@ const config: ExpoConfig = {
     // ran out in expo-updates' KSP task on SDK 54, and the failed daemon hung the build instead of
     // exiting (docs/KNOWN_BUGS.md SDK54-07). See plugins/with-gradle-memory.js.
     "./plugins/with-gradle-memory",
+    // Point R8 at proguard-android-optimize.txt: the template's proguard-android.txt says
+    // `-dontoptimize`, so minify alone never optimizes (Play vitals, release 47). See
+    // plugins/with-r8-optimize.js. Native: store build only, cold-start smoke on a handset first.
+    "./plugins/with-r8-optimize",
     // PostHog analytics needs NO config plugin — the SDK autolinks and src/telemetry/analytics.tsx
     // key-gates it. Deliberately NOT adding "posthog-react-native/expo" (the plugin the connect
     // command suggests): it exists only for error-tracking source-map upload and injects a gradle
