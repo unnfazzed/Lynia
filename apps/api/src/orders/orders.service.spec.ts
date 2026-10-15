@@ -1,4 +1,4 @@
-import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, OFFER_WINDOW_POLICY, quoteFare } from "@lynia/shared";
+import { BoardNewOrderEvent, COMPLETED_ORDER_STATUSES, type CreateOrderRequest, CUSTOMER_ACTIVE_STATUSES, OFFER_CHOOSE_GRACE_MS, OFFER_WINDOW_MS, OFFER_WINDOW_POLICY, isFareUnit, quoteFare } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 import type { StorageAdapter } from "../adapters/storage/storage.interface";
@@ -70,7 +70,8 @@ describe("OrdersService.create", () => {
     // suggested fare is the system's distance-based anchor, independent of the customer's proposal
     expect(created!.suggestedFare).toBe(quote.suggestedFare);
     expect(created!.distanceKm).toBe(quote.distanceKm);
-    expect(created!.suggestedFare).not.toBe(created!.proposedFare);
+    // The anchor is on the 50c grid like every fare (owner 2026-10-15).
+    expect(isFareUnit(created!.suggestedFare as number)).toBe(true);
   });
 
   it("refuses the reserved cash-on-delivery line from a customer — only a shop booking account may send it", async () => {

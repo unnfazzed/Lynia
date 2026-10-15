@@ -1,4 +1,5 @@
 import type { CreateMerchantBookingRequest, LatLng } from "@lynia/shared";
+import { FARE_UNIT_USD, roundFare, stepFare as stepSharedFare } from "@lynia/shared";
 import { DECLARED_VALUE_CAP, SEND_DISCLAIMER_VERSION, VALUE_CAP_MESSAGE } from "./booking";
 import { insideServiceArea } from "./geo";
 import { LOCAL_DIGITS, toE164 } from "./phone-input";
@@ -9,7 +10,7 @@ import { LOCAL_DIGITS, toE164 } from "./phone-input";
  * `POST /merchant/bookings` body.
  */
 
-export const FARE_STEP = 0.5;
+export const FARE_STEP = FARE_UNIT_USD;
 export const FARE_MIN = 1.5;
 
 export interface BookLine {
@@ -41,11 +42,12 @@ export function addLine(lines: readonly BookLine[], line: BookLine): BookLine[] 
 
 /** The fare the stepper starts on: Send's suggestion, to the nearest step, never under the minimum. */
 export function startFare(suggested: number): number {
-  return Math.max(FARE_MIN, Math.round(suggested / FARE_STEP) * FARE_STEP);
+  return Math.max(FARE_MIN, roundFare(suggested));
 }
 
+/** − / + $0.50 on the shared 50c grid; a booking from before the 50c rule snaps onto it on the first tap. */
 export function stepFare(fare: number, direction: -1 | 1): number {
-  return Math.max(FARE_MIN, Math.round((fare + direction * FARE_STEP) * 100) / 100);
+  return stepSharedFare(fare, direction, FARE_MIN);
 }
 
 /** "Riders usually get $6–7" (Merchant v2 S4): the whole dollars either side of Send's suggestion. */

@@ -142,8 +142,8 @@ describe("stage helpers", () => {
     expect(phoneMasked("toDropoff")).toBe(false);
   });
 
-  it("suggested retry price is last + $0.50", () => {
-    expect(suggestedRetryPrice(3.36)).toBe(3.86);
+  it("suggested retry price is last + $0.50, on the 50c grid", () => {
+    expect(suggestedRetryPrice(3.36)).toBe(4); // 3.86 → nearest 50c
     expect(suggestedRetryPrice(4)).toBe(4.5);
   });
 });

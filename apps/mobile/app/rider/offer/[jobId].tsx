@@ -1,4 +1,4 @@
-import { haversineKm } from "@lynia/shared";
+import { haversineKm, roundFare, stepFare, toCents } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,8 +20,13 @@ import { type BoardJob, RRoute, RToast } from "../../../src/ui/rider/board";
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 
 const ETAS = [5, 10, 15, 20] as const;
-const STEP_CENTS = 50;
 const MIN_CENTS = 50;
+
+/** A counter is a whole number of 50c (owner 2026-10-15); the customer's own ask stays as it is, even
+ *  one from before that rule, so leaving the fare alone is still an accept. */
+export function offerCents(cents: number, askingCents: number): number {
+  return cents === askingCents ? cents : Math.max(MIN_CENTS, toCents(roundFare(cents / 100)));
+}
 
 /** "A fare well above the band" — the warn notice (O2). Still sendable. */
 export function isWellAbove(fareCents: number, hiDollars: number): boolean {
@@ -32,7 +37,7 @@ export function isWellAbove(fareCents: number, hiDollars: number): boolean {
  * Make an offer (Rider v2 O1–O4, ledger D-54) — a pushed screen with the Send v2 price step: the route
  * strip, "Rudo is asking $3.00", a 56/700 tap-to-type fare with − / + $0.50 and the usual-band bar, four
  * ETA chips (10 preselected), the one-offer notice, then "Send offer · $3.20" + "Skip this job".
- * The fare is held in integer cents, minimum $0.50. On success the offer joins "Your offers" on the board.
+ * The fare is held in integer cents, minimum $0.50; − / + move on the 50c grid and a typed counter snaps to it. On success the offer joins "Your offers" on the board.
  */
 export default function MakeOfferScreen(): React.ReactElement {
   const router = useRouter();
@@ -93,7 +98,7 @@ export default function MakeOfferScreen(): React.ReactElement {
   // button bar doesn't fire), and the field snaps to it.
   const fareToSend = (): number => {
     const typed = Math.round(Number(fareText) * 100);
-    const c = Math.max(MIN_CENTS, Number.isFinite(typed) ? typed : fareCents);
+    const c = offerCents(Math.max(MIN_CENTS, Number.isFinite(typed) ? typed : fareCents), askingCents);
     setCents(c);
     return c;
   };
@@ -193,7 +198,7 @@ export default function MakeOfferScreen(): React.ReactElement {
                   const n = Math.round(Number(clean) * 100);
                   if (Number.isFinite(n)) setFareCents(Math.max(MIN_CENTS, n));
                 }}
-                onBlur={() => setCents(fareCents)}
+                onBlur={() => setCents(offerCents(fareCents, askingCents))}
                 keyboardType="decimal-pad"
                 maxLength={6}
                 caretHidden
@@ -209,10 +214,10 @@ export default function MakeOfferScreen(): React.ReactElement {
         </View>
         <View style={{ flexDirection: "row", gap: 10, marginTop: 12, marginBottom: 16 }}>
           <View style={{ flex: 1 }}>
-            <CtaButton ghost label={R.minus} onPress={() => setCents(fareCents - STEP_CENTS)} disabled={fareCents <= MIN_CENTS} />
+            <CtaButton ghost label={R.minus} onPress={() => setCents(toCents(stepFare(fareCents / 100, -1)))} disabled={fareCents <= MIN_CENTS} />
           </View>
           <View style={{ flex: 1 }}>
-            <CtaButton ghost label={R.plus} onPress={() => setCents(fareCents + STEP_CENTS)} />
+            <CtaButton ghost label={R.plus} onPress={() => setCents(toCents(stepFare(fareCents / 100, 1)))} />
           </View>
         </View>
         <View style={{ height: 8, backgroundColor: tokens.color.line, borderRadius: 4, marginHorizontal: 6, marginBottom: 10 }}>

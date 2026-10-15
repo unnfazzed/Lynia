@@ -2,6 +2,7 @@ import { Body, Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe,
 import {
   EditMerchantOrderItemsRequest,
   KycStatus,
+  isFareUnit,
   MERCHANT_APPLICATION_STATUSES,
   OrderStatus,
   OrderType,
@@ -108,9 +109,10 @@ const PlateVerify = z.object({
 });
 // Positive money value for a manual fare correction. Constrained to whole cents (matches the
 // CreateOrderRequest / MakeOfferRequest contracts) so a sub-cent value can't silently round on the way
-// into NUMERIC(10,2) and diverge from the value echoed back to the admin.
+// into NUMERIC(10,2) and diverge from the value echoed back to the admin. And on the 50c grid (every
+// fare is a whole number of 50c, owner 2026-10-15) — refused rather than snapped, so ops sees the rule.
 const FareAdjust = z.object({
-  agreedFare: z.number().positive().max(100000).multipleOf(0.01),
+  agreedFare: z.number().positive().max(100000).multipleOf(0.01).refine(isFareUnit, "Fares are in 50c steps, e.g. $3.50"),
   reason: z.string().min(1).max(160),
   note: z.string().max(2000).nullish(),
 });

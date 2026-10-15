@@ -1070,7 +1070,7 @@ function ParcelOrderScreen(): React.ReactElement {
     ask,
   }));
   const bestId = ranked.find((r) => r.recommended)?.offer.id ?? ranked[0]?.offer.id ?? null;
-  const nextPrice = Math.round((ask + 0.5) * 100) / 100;
+  const nextPrice = suggestedRetryPrice(ask);
 
   // ── actions ──
   const raise = (): void => {

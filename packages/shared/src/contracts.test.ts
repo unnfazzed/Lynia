@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  FareUsd,
+  RaisePriceRequest,
+  ResendOrderRequest,
   BecomeMerchantRequest,
   ConfirmMerchantPickupRequest,
   CreateOrderRequest,
@@ -145,5 +148,19 @@ describe("MerchantCancelOrderRequest — MJ-M2 (C8): the auto-accept ring's reas
     for (const reason of ["ran_out", "kitchen_problem"] as const) expect(MerchantCancelOrderRequest.safeParse({ reason }).success).toBe(true);
     expect(MerchantCancelOrderRequest.safeParse({}).success).toBe(true);
     expect(MerchantCancelOrderRequest.safeParse({ reason: "no_rider" }).success).toBe(false);
+  });
+});
+
+describe("FareUsd — every named fare is a whole number of 50c (owner 2026-10-15)", () => {
+  it("snaps a fare to the nearest 50c instead of refusing it, so an older app still books", () => {
+    expect(RaisePriceRequest.parse({ proposedFare: 3.42 }).proposedFare).toBe(3.5);
+    expect(ResendOrderRequest.parse({ proposedFare: 3.24 }).proposedFare).toBe(3);
+    expect(FareUsd.parse(4)).toBe(4);
+    expect(FareUsd.parse(0.1)).toBe(0.5);
+  });
+
+  it("still refuses a non-positive or sub-cent fare", () => {
+    expect(FareUsd.safeParse(0).success).toBe(false);
+    expect(FareUsd.safeParse(3.425).success).toBe(false);
   });
 });

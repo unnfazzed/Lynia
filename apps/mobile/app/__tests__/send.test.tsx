@@ -753,14 +753,15 @@ describe("send.tsx — step 4 · Review and send", () => {
     expect(has(t, "Documents envelope × 1")).toBe(true);
     expect(has(t, "Blue gate. Ask for Rita.")).toBe(true);
     expect(has(t, "077 245 1180") || has(t, "0772451180")).toBe(true);
-    expect(has(t, "$3.36")).toBe(true);
+    // Typed $3.36, asked to the nearest 50c.
+    expect(has(t, "$3.50")).toBe(true);
     expect(has(t, "Send to bikers")).toBe(true);
     press(t, "Edit the price");
     expect(input(t, "Your price in US dollars")).toBeTruthy();
   });
 
   it("broadcasts straight to the auction — no disclaimer, address names as labels, declared value 0", async () => {
-    mockCreateOrder.mockResolvedValue({ id: "o-1", status: "open_for_offers", proposedFare: 3.36, expiresAt: new Date().toISOString(), ridersNearby: 2 });
+    mockCreateOrder.mockResolvedValue({ id: "o-1", status: "open_for_offers", proposedFare: 3.5, expiresAt: new Date().toISOString(), ridersNearby: 2 });
     const t = await atReview();
     press(t, "Send to bikers");
     await settle();
@@ -773,7 +774,7 @@ describe("send.tsx — step 4 · Review and send", () => {
     expect(body.items).toEqual([{ description: "Documents envelope", quantity: 1 }]);
     expect(body.note).toBe("Blue gate. Ask for Rita.");
     expect(body.declaredValue).toBe(0);
-    expect(body.proposedFare).toBe(3.36);
+    expect(body.proposedFare).toBe(3.5); // typed 3.36 → the nearest 50c
     expect(body.disclaimerVersion).toBeUndefined();
     expect(typeof body.idempotencyKey).toBe("string");
     expect(mockReplace).toHaveBeenCalledWith("/order/o-1");

@@ -1,4 +1,5 @@
-import { normalizePhone, quoteFare } from "@lynia/shared";
+import { FARE_UNIT_USD, normalizePhone, quoteFare, roundFare, stepFare } from "@lynia/shared";
+import { parseNum } from "../util";
 import type { ItemRow } from "./order-draft";
 import { isAccountOnHold, isWithinServiceCorridor } from "./gates";
 
@@ -138,13 +139,17 @@ export function firstIncompleteStep(s: {
   return 4;
 }
 
-/** − / + on the price: $0.50 steps, never below $0.50, always two decimals. */
-export const PRICE_STEP = 0.5;
+/** − / + on the price: to the next 50c, never below $0.50, always two decimals. */
+export const PRICE_STEP = FARE_UNIT_USD;
 export const PRICE_FLOOR = 0.5;
 export function stepPrice(price: number | null, dir: 1 | -1): number {
-  const base = price != null && Number.isFinite(price) ? price : 0;
-  const next = Math.round((base + dir * PRICE_STEP) * 100) / 100;
-  return Math.max(PRICE_FLOOR, next);
+  return stepFare(price != null && Number.isFinite(price) ? price : 0, dir, PRICE_FLOOR);
+}
+
+/** The price the customer is asking: what they typed, to the nearest 50c (every fare is, owner 2026-10-15). */
+export function priceFromText(text: string): number | null {
+  const n = parseNum(text);
+  return n != null && Number.isFinite(n) && n > 0 ? roundFare(n) : n;
 }
 
 /** Typed price text → at most two decimals (the decimal pad allows anything). */

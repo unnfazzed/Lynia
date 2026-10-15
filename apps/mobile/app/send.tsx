@@ -25,6 +25,7 @@ import {
   kmLabel,
   money,
   phoneOk,
+  priceFromText,
   priceOk,
   sanitizePriceText,
   type SendStep,
@@ -382,7 +383,8 @@ export default function SendScreen(): React.ReactElement {
   const quote = pickup && drop ? quoteFare({ lat: pickup.lat, lng: pickup.lng }, { lat: drop.lat, lng: drop.lng }) : null;
   const band = quote ? fareBand(quote.suggestedFare) : null;
   const km = quote ? kmLabel(quote.distanceKm) : null;
-  const price = parseNum(priceText);
+  // Typed freely, asked to the nearest 50c: the review, the band and the request all read this.
+  const price = priceFromText(priceText);
   const below = band != null && isBelowBand(price, band);
   const farAbove = band != null && isFarAboveBand(price, band);
 
@@ -750,7 +752,17 @@ export default function SendScreen(): React.ReactElement {
           ) : null}
           <View style={{ paddingBottom: insets.bottom, backgroundColor: tokens.color.bg }}>
             {step === 2 ? <SendCtaBar label={SEND_COPY.next} disabled={!step2Ok} hint={step2Hint} onPress={() => goTo(3)} /> : null}
-            {step === 3 ? <SendCtaBar label={SEND_COPY.review} disabled={!step3Ok} onPress={() => goTo(4)} /> : null}
+            {step === 3 ? (
+              <SendCtaBar
+                label={SEND_COPY.review}
+                disabled={!step3Ok}
+                onPress={() => {
+                  // Coming back to the price shows the 50c the review asks for, not the typed cents.
+                  if (price != null) setPriceText(price.toFixed(2));
+                  goTo(4);
+                }}
+              />
+            ) : null}
             {step === 4 ? (
               <SendCtaBar
                 label={busy ? SEND_COPY.sending : SEND_COPY.send}

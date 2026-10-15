@@ -14,6 +14,7 @@ import {
   sendRefusal,
   type Stop,
   STOP_NAME_MAX,
+  priceFromText,
   stepPrice,
   stopName,
   trackPos,
@@ -49,8 +50,13 @@ describe("send-steps (ledger D-52)", () => {
     expect(firstIncompleteStep({ ...base, drop: OUT })).toBe(1);
   });
 
-  it("price steps by $0.50 with a $0.50 floor, and typed text keeps two decimals", () => {
-    expect(stepPrice(3.36, 1)).toBe(3.86);
+  it("price steps on the 50c grid with a $0.50 floor, and typed text keeps two decimals", () => {
+    expect(stepPrice(3.36, 1)).toBe(3.5);
+    expect(stepPrice(3.36, -1)).toBe(3);
+    expect(stepPrice(3.5, 1)).toBe(4);
+    expect(priceFromText("3.36")).toBe(3.5);
+    expect(priceFromText("3.2")).toBe(3);
+    expect(priceFromText("")).toBe(null);
     expect(stepPrice(0.6, -1)).toBe(0.5);
     expect(stepPrice(null, 1)).toBe(0.5);
     expect(sanitizePriceText("3,456")).toBe("3.45");
