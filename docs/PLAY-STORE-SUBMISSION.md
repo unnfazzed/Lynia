@@ -21,11 +21,10 @@
 >   `profile: closed` / `preview` submission will ERROR on permissions. Ticking both removes the
 >   doubt; otherwise read the next closed submission's status before assuming testers got it.
 > - **Still open from §8 step 3:** set `EAS_TAG_RELEASES_ENABLED` (the tag train).
-> - **Expo's Play-vitals credential is still broken:** `playstore_crashes` returns `invalid_grant:
->   account not found` (re-checked 2026-10-15, after the permission change). Cause: the Expo account
->   holds a second, dead key, `id-play-publisher@lynia-500911` (suspended project). Delete it in Expo,
->   enable the *Google Play Developer Reporting API* in `lyniago-app`, and give `play-upload@` *View app
->   information and download bulk reports* in Play Console.
+> - **Expo can read Play vitals (fixed 2026-10-15).** `playstore_crashes` had returned `invalid_grant:
+>   account not found` because the Expo account also held the dead `id-play-publisher@lynia-500911` key
+>   (suspended project). The owner removed it and gave `play-upload@lyniago-app` *View app information
+>   and download bulk reports*. The call now returns "No crash or ANR issues found" (checked 2026-10-15).
 > - **Sentry is live** and readable from Claude through the Sentry connector (org `lyniago`, project
 >   `lynia-mobile`); release builds vc 39–44 have reported events (checked 2026-10-15). PostHog (EU
 >   project `219333`) is connected the same way. The public binary reports `environment: preview`;

@@ -275,12 +275,10 @@ except as noted.
 
 - **Expo Observe is empty.** `observe_versions` and `observe_event_names` return nothing, because the app
   ships no EAS Observe SDK. Skip all `observe_*` tools.
-- **Play crashes are broken right now.** `playstore_crashes` (package `zw.co.lynia`) fails with
-  `Google token exchange failed 400: invalid_grant: account not found`. Expo's Google service-account
-  credential is invalid. **Re-checked 2026-10-15 ~08:55 UTC after the owner updated the Play service
-  account in Expo: still the same `invalid_grant: account not found`.** (`playstore_reviews` returns
-  "No reviews found" without an auth error, so it does not prove the credential works.) Try it **once**. If it still fails, record it as **NEEDS OWNER** ("re-link the
-  Google Play service account in Expo") and move on.
+- **Play crashes work (fixed 2026-10-15).** `playstore_crashes` (package `zw.co.lynia`) had failed with
+  `invalid_grant: account not found`: the Expo account held a dead key from the suspended `lynia-500911`
+  project. That key is removed and `play-upload@lyniago-app` has the reports permission. Pull it every
+  run; "No crash or ANR issues found" is a real empty result.
 - **Sentry and PostHog are readable through their own claude.ai connectors** (connected 2026-10-14
   ~10:30 UTC). The Expo connector itself has no tools for them.
   - **Sentry works and has real data.**

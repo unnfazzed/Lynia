@@ -364,14 +364,7 @@ OTA channel `preview` to `production`**; from then on, public OTAs go to `produc
 to `preview`, and a phone still on vc 47 keeps listening on `preview` until it updates. The Console screenshot
 (2026-10-15) shows *Release apps to testing tracks* unticked beside it, so if a `closed`/`preview`
 submission ERRORs on permissions, that box is the first suspect. Still open from
-§8 step 3: `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below). Separately, Expo's
-`playstore_crashes` still fails with `invalid_grant: account not found` (re-checked 2026-10-15 after
-the permission change). Cause found the same day: the Expo account `lyniago` holds two Google service
-account keys, the dead `id-play-publisher@lynia-500911` (suspended GCP project, added 2026-08-03) and
-the working `play-upload@lyniago-app` (key `8ec1c154`, the app's submit key). The fix is to delete the
-dead one in Expo, enable the *Google Play Developer Reporting API* in GCP project `lyniago-app`, and
-give `play-upload@` *View app information and download bulk reports* in Play Console. Until then use
-Play Console or Sentry for crashes.
+§8 step 3: `EAS_TAG_RELEASES_ENABLED`. Sentry is live (below).
 
 **Field signals — Sentry and PostHog are connected to Claude** (owner, 2026-10-15; claude.ai
 connectors, first wired 2026-10-14). Read crashes and analytics through them; do not ask the owner for
@@ -383,6 +376,12 @@ dashboards or exports.
   "Sentry receiving crashes from a release build" gate is met. **The public binary reports
   `environment: preview`**, not `production`, because it is the `closed`-profile build; filter by
   release (`+47`), not by environment, to see public users.
+- **Play vitals (crashes/ANRs) and reviews:** Expo's `playstore_crashes` / `playstore_reviews` for
+  package `zw.co.lynia` work since 2026-10-15. They had failed with `invalid_grant: account not found`
+  because the Expo account also held a dead key, `id-play-publisher@lynia-500911` (suspended GCP
+  project). The owner removed it and gave `play-upload@lyniago-app` *View app information and download
+  bulk reports*; that key (`8ec1c154`) is now the account's only Google service account key. An empty
+  result ("No crash or ANR issues found") is a real answer, not an auth failure.
 - **PostHog:** EU org, project `219333` (`https://eu.posthog.com/project/219333/`), via the PostHog
   `exec` tool (`execute-sql` on `events`, e.g. by `$screen_name`).
 - After a release or OTA, check both for new issues on that release before calling it healthy. Halt a
