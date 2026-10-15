@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { classifyLocation, type LocState } from "../permissions/location";
+import { classifyLocation, type LocState, useOnAppActive } from "../permissions/location";
 import { withTimeout } from "../util";
 
 /**
@@ -43,6 +43,11 @@ const DEVICE_READ_TIMEOUT_MS = 5_000;
 
 /** How stale a cached platform fix may be and still be worth painting while the live one lands. */
 const LAST_KNOWN_MAX_AGE_MS = 120_000;
+
+/** The detect-only face's last resort when the live fix fails indoors: an older platform fix still names
+ *  the rider's area for the header (it only labels — the board's own fix drives jobs). Never used on the
+ *  customer face, whose point becomes a delivery drop. */
+const STALE_FIX_MAX_AGE_MS = 30 * 60_000;
 
 /** One header line at 12.5px on a 320px phone, beside a chevron — longer than this cannot help. */
 const ADDRESS_MAX = 48;
@@ -202,9 +207,9 @@ async function readGrant(): Promise<LocState> {
 
 const usable = (loc: LocState): boolean => loc === "granted" || loc === "coarse";
 
-async function cachedPoint(): Promise<{ lat: number; lng: number } | null> {
+async function cachedPoint(maxAge: number = LAST_KNOWN_MAX_AGE_MS): Promise<{ lat: number; lng: number } | null> {
   try {
-    const last = await withTimeout(Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS }), DEVICE_READ_TIMEOUT_MS);
+    const last = await withTimeout(Location.getLastKnownPositionAsync({ maxAge }), DEVICE_READ_TIMEOUT_MS);
     return last ? { lat: last.coords.latitude, lng: last.coords.longitude } : null;
   } catch {
     return null;
@@ -304,13 +309,15 @@ interface Store {
   detectedAt: number | null;
   /** The detection chain in flight, which a mounting screen joins instead of starting its own. */
   run: Promise<void> | null;
+  /** A refresh asked for while `run` was in flight (a grant landed mid-chain): run once more after it. */
+  rerun: boolean;
   listeners: Set<() => void>;
 }
 
 const INITIAL_SNAPSHOT: Snapshot = { place: null, source: "none", locating: true, denied: false };
 
 function newStore(): Store {
-  return { snap: INITIAL_SNAPSHOT, manual: false, gen: 0, pickSeq: 0, detectedAt: null, run: null, listeners: new Set() };
+  return { snap: INITIAL_SNAPSHOT, manual: false, gen: 0, pickSeq: 0, detectedAt: null, run: null, rerun: false, listeners: new Set() };
 }
 
 const stores: Record<Face, Store> = { customer: newStore(), detect: newStore() };
@@ -332,14 +339,21 @@ export function resetHomeLocationCache(): void {
     store.manual = false;
     store.detectedAt = null;
     store.run = null;
+    store.rerun = false;
     publish(store, INITIAL_SNAPSHOT);
   }
 }
 
-/** Start a detection for `face` unless one is running, a manual pick stands, or the last answer is fresh. */
-function ensureDetection(face: Face): void {
+/** Start a detection for `face` unless one is running, a manual pick stands, or the last answer is fresh.
+ *  `queue` (a refresh after a grant) runs once more after an in-flight chain, which may have read the
+ *  permission before the grant landed. */
+function ensureDetection(face: Face, queue = false): void {
   const store = stores[face];
-  if (store.run || store.manual) return;
+  if (store.manual) return;
+  if (store.run) {
+    if (queue) store.rerun = true;
+    return;
+  }
   if (store.detectedAt !== null && Date.now() - store.detectedAt < DETECT_TTL_MS) return;
   // Every step of the chain is time-bounded, so `run` always settles; `finally` (not `then`) clears it
   // even if a step throws, so a broken chain can never leave later mounts joined to nothing.
@@ -348,8 +362,23 @@ function ensureDetection(face: Face): void {
   });
   store.run = run;
   void run.finally(() => {
-    if (store.run === run) store.run = null;
+    if (store.run !== run) return;
+    store.run = null;
+    if (store.rerun) {
+      store.rerun = false;
+      ensureDetection(face);
+    }
   });
+}
+
+/**
+ * Re-detect on every face that has no fresh GPS answer — call it the moment location is granted (the rider
+ * permission flow, the board's re-read on focus/resume). Without it a screen mounted BEFORE the grant (the
+ * rider board under P1, Home under the phone's settings) kept its "no permission" answer until it was
+ * remounted, so a rider who had just allowed location still read "Set your location".
+ */
+export function refreshHomeLocation(): void {
+  for (const face of Object.keys(stores) as Face[]) ensureDetection(face, true);
 }
 
 /**
@@ -405,7 +434,12 @@ async function detect(face: Face, store: Store): Promise<void> {
     });
   }
 
-  const live = await liveFix;
+  let live = await liveFix;
+  if (!current()) return;
+  // Indoors / a cold GPS: the rider's header settles for an older fix rather than staying blank. No
+  // `detectedAt`, so the next resume or refresh still tries for a live one.
+  const stale = !isUsablePoint(live) && face === "detect" && !isUsablePoint(cached);
+  if (stale) live = await cachedPoint(STALE_FIX_MAX_AGE_MS);
   if (!current()) return;
   if (!isUsablePoint(live)) {
     publish(store, { locating: false });
@@ -416,7 +450,7 @@ async function detect(face: Face, store: Store): Promise<void> {
   if (resolved.label) {
     liveLanded = true;
     const next = { ...resolved, ...live };
-    store.detectedAt = Date.now();
+    if (!stale) store.detectedAt = Date.now();
     publish(store, { place: next, source: "gps", locating: false });
     // Detect-only never writes: the slot holds the customer's deliver-to, and persisting a
     // rider's GPS fix over it would silently discard a manual pick they made on the other face.
@@ -472,6 +506,9 @@ export function useHomeLocation({ detectOnly = false }: HomeLocationOptions = {}
   useEffect(() => {
     ensureDetection(face);
   }, [face]);
+  // Back from the phone's settings (location granted or switched on there), or after a fix that failed
+  // indoors: try again. A fresh answer or a manual pick makes this a no-op.
+  useOnAppActive(() => ensureDetection(face));
 
   const useCurrentLocation = useCallback(async (): Promise<HomePlace | null> => {
     // Clears the manual override and supersedes any detection (or suburb lookup) in flight.

@@ -34,7 +34,7 @@ import {
   resolveKycGate,
   resolveKycRetryFeedback,
 } from "../../../src/logic/gates";
-import { useHomeLocation } from "../../../src/logic/home-location";
+import { refreshHomeLocation, useHomeLocation } from "../../../src/logic/home-location";
 import { useKeepScreenOn } from "../../../src/logic/use-keep-screen-on";
 import { replaceClearingStack } from "../../../src/logic/nav";
 import { switchToCustomer } from "../../../src/logic/switch-to-customer";
@@ -163,6 +163,9 @@ export default function RiderHome(): React.ReactElement {
       return;
     }
     setLocDenied(false);
+    // The header's street label lives in the shared store, which only detects on mount — a grant made after
+    // the board mounted (P1, the phone's settings) must reach it too, or the header stays blank.
+    refreshHomeLocation();
     // Go online on a RECENT cached position at once (≤ 2 min, accurate enough — last-known-fix.ts) instead of
     // waiting up to LOCATE_TIMEOUT_MS for a fresh fix; the fresh fix below refines it when it lands.
     let seeded = false;

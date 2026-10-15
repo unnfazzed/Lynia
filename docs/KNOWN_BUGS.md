@@ -873,6 +873,24 @@ Owner report: on good Wi-Fi the boot splash said "Slow network" and the rider bo
 - **NET-FF-3** — the rider board read its socket's handshake (and the go-online call in flight) as "Reconnecting…" from the first frame. It now waits 8 s of a link that stays down (`useSettled`), or for go-online to actually fail.
 - **NET-FF-4** — a timed-out request said "The network is slow". It now says "This is taking longer than usual — please try again."
 
+## Permission grants not picked up 2026-10-15 (PERM-G) — FIXED
+
+Owner report: allowed location in the biker permission flow, opened the board, and the header said "Set your location".
+
+- **PERM-G-1** — the shared location store (`apps/mobile/src/logic/home-location.ts`) detected only on mount. The biker
+  board mounts under P1 with no permission, the store answered "no grant", and nothing asked it again until the board was
+  remounted. Same on customer Home after a grant in the phone's settings. `refreshHomeLocation()` now re-detects (queued
+  behind a chain already in flight); P1–P7 (`app/permissions.tsx`) and the board's location re-read call it.
+- **PERM-G-2** — a fix that failed indoors (cold GPS, no 2-minute cached fix) was never retried. Every `useHomeLocation`
+  now re-detects on app foreground unless it has a fresh answer or a manual pick. The biker header (detect-only face)
+  also falls back to a fix up to 30 min old. The customer face never does, because its point becomes a delivery drop.
+- **PERM-G-3** — notifications granted in the phone's settings after a "Don't allow" (terminal), or after the retry
+  budget was spent, bound no push token until the next cold start, so job and order pushes never arrived.
+  `usePushRegistration` now re-checks the permission on every foreground and registers once it is granted. A new
+  in-flight guard stops two registrations running at once.
+- Still open: if the reverse geocoder returns nothing (common on a weak link), "Use my location" still finds no address.
+  The customer gets the address search, and the biker header keeps the prompt until the next foreground.
+
 ## Journey QA 2026-10-15 (JQ)
 
 One-off 24-hour journey QA (`docs/routines/journey-qa-24h.md`; reports and `00-SUMMARY.md` in
