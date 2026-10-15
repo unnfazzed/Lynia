@@ -7,13 +7,24 @@
 > **"LyniaGo: Food, Parcels by Bike"**, version **0.52.0**, "Updated on Oct 14, 2026", 10+ downloads.
 > The production binary is **v0.52.0 / versionCode 47** — EAS build `e0e8c7f8` (commit `dbcb21f`,
 > profile `closed`, FINISHED 2026-10-12), promoted from **`Closed testing`** to production in Play
-> Console (the service account cannot release to production yet, and Play accepts a versionCode once,
-> so promotion is the only way vc 47 got there). Consequences:
+> Console (the service account could not release to production then, and Play accepts a versionCode
+> once, so promotion is the only way vc 47 got there). Consequences:
 > - **Production installs listen on OTA channel `preview`** (the `closed` profile's channel), runtime
 >   of vc 47. An OTA published to `preview` now reaches the public, not only the testers — treat the
 >   *Mobile OTA Update* lane as a production lane.
-> - **Still open from §8 step 3:** grant the service account *Release to production* (until then a
->   `profile: production` dispatch fails at submission) and set `EAS_TAG_RELEASES_ENABLED`.
+> - **The service account has *Release to production*** (owner, 2026-10-15). `profile: production`
+>   is now the public lane; it is proven once its first submission reaches FINISHED on track
+>   `production`. That first build moves public phones from OTA channel `preview` to `production`.
+> - **Watch the testing lane.** The owner's Play Console screenshot (2026-10-15) shows *Release to
+>   production, exclude devices, and use Play App Signing* **ticked** and *Release apps to testing
+>   tracks* **unticked**. If the production permission does not cover testing tracks, the next
+>   `profile: closed` / `preview` submission will ERROR on permissions. Ticking both removes the
+>   doubt; otherwise read the next closed submission's status before assuming testers got it.
+> - **Still open from §8 step 3:** set `EAS_TAG_RELEASES_ENABLED` (the tag train).
+> - **Expo can read Play vitals (fixed 2026-10-15).** `playstore_crashes` had returned `invalid_grant:
+>   account not found` because the Expo account also held the dead `id-play-publisher@lynia-500911` key
+>   (suspended project). The owner removed it and gave `play-upload@lyniago-app` *View app information
+>   and download bulk reports*. The call now returns "No crash or ANR issues found" (checked 2026-10-15).
 > - **Sentry is live** and readable from Claude through the Sentry connector (org `lyniago`, project
 >   `lynia-mobile`); release builds vc 39–44 have reported events (checked 2026-10-15). PostHog (EU
 >   project `219333`) is connected the same way. The public binary reports `environment: preview`;
@@ -1775,7 +1786,8 @@ Once §7.1 and §7.2 are closed:
    tag trigger is separately gated (2026-08-03) so that release-please's near-daily `v*` tags can
    never burn EAS build quota on premature production submits; arming it is the deliberate act of
    opening the release train. Also grant the Play service account the **Release to production**
-   permission (deferred at §7.2 setup). Then: tag `v<version>` on `main` → `mobile-release.yml`
+   permission (deferred at §7.2 setup) — ✅ **granted 2026-10-15** (owner; not yet exercised by a
+   submission). Then: tag `v<version>` on `main` → `mobile-release.yml`
    builds and submits to the production track with `releaseStatus: inProgress` and `rollout: 0.1`
    (10%). Advance or halt in Play Console → Releases as crash-free rate holds. Sentry must be live
    before this step so a bad rollout is visible (LR20).
@@ -2105,4 +2117,5 @@ recorded 2026-10-05 from the EAS build record and the status run below.
       **production access granted** — before any production rollout (granted 2026-10-14)
 - [x] First production release live — v0.52.0 / vc 47 promoted from `Closed testing` in Play Console,
       listing public 2026-10-14 (<https://play.google.com/store/apps/details?id=zw.co.lynia>)
-- [ ] Play service account granted **Release to production** (§7.2 deferral, §8 step 3)
+- [x] Play service account granted **Release to production** (§7.2 deferral, §8 step 3) — owner,
+      2026-10-15; confirm on the first `profile: production` submission
