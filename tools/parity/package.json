@@ -13,7 +13,7 @@
   },
   "//deps": "playwright-core + esbuild are OPTIONAL here: the loaders in lib/ first try the container's global install (this is a Claude-run lane), then a local one. Run `npm i` in this dir only if you are on a machine without the global toolchain.",
   "dependencies": {
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.1",
     "playwright-core": "^1.49.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
