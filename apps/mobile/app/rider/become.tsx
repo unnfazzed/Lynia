@@ -10,7 +10,7 @@ import { useOptionalAuth } from "../../src/auth/auth-context";
 import { saveRolePreference } from "../../src/auth/session";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
 import { recordKycLaunch } from "../../src/kyc/launch-hint";
-import { primeKycCamera, runKycVerification } from "../../src/kyc/verify";
+import { endKycCheckHold, primeKycLaunch, runKycVerification } from "../../src/kyc/verify";
 import { withRiderStub } from "../../src/logic/become-state";
 import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { clearKycDraft, kycDraftHasContent, loadKycDraft, saveKycDraft } from "../../src/logic/kyc-draft";
@@ -207,9 +207,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
     try {
       // C5's own save — the name only (PATCH /auth/me). There is no ID to send: D-75.
       if (withName) await updateProfile({ firstName: firstName.trim(), lastName: lastName.trim() });
-      // The camera the in-app ID-check sheet needs is settled WHILE the session is minted, not after it —
-      // the rider used to wait on the network and only then on the permission dialog.
-      const camera = primeKycCamera();
+      // Everything the in-app ID-check sheet needs starts WHILE the session is minted, not after it: the
+      // camera ask, the sheet itself (on "Opening your ID check…") and the hidden prewarm of the check's page.
+      const camera = primeKycLaunch();
       const res = await becomeRider({});
       // The rider is registered — the draft has served its purpose.
       dropDraft();
@@ -240,7 +240,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
         recordKycLaunch("failed", Date.now(), me?.profileId ?? undefined);
       }
       // However it went, the board shows the right page from here: F8 while it is sent, R2 while the
-      // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-82).
+      // automated check runs, R3 once verified, F3 after a cancel, F1 in manual mode (D-82). Nothing more
+      // opens, so the stand-in sheet (manual review, no session) goes before the board does.
+      endKycCheckHold();
       await handOver(!stub);
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already
@@ -248,14 +250,18 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // re-reads the real (already-registered) state.
       if (e instanceof ApiError && e.code === "already_rider") {
         dropDraft();
+        endKycCheckHold();
         await handOver();
         return;
       }
+      endKycCheckHold();
       // Our words, never the server's: a rate limit, an ID already on another account (PD's drawn
       // one-ID-one-account line, as F5dup words it), or the plain failure. No rider record exists after
       // any of these (the server registers only once the vendor answered), so there is no F page yet.
       setError(becomeErrorMessage(e));
     } finally {
+      // Backstop: whatever path got here, the stand-in sheet never outlives the attempt.
+      endKycCheckHold();
       submitInFlightRef.current = false;
       setBusy(false);
     }

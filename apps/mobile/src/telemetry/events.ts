@@ -69,6 +69,8 @@ export const EVENTS = {
   kycCameraDenied: "kyc_camera_denied",
   /** The in-app sheet's WebView failed: `kind` error | http_error (`status` for http). */
   kycWebError: "kyc_web_error",
+  /** The ID check appeared in the in-app sheet: `ms` from the sheet opening, `prewarmed`, `webview` (System WebView major). */
+  kycSheetShown: "kyc_sheet_shown",
   /** A rider-permission screen shown: `screen` P1…P16, `flow` (from R3), "signup" (after sign-up, D-109) or a single step. */
   permScreen: "rider_perm_screen",
   /** A rider-permission step answered: `screen` P1…P16, `answer` (granted / coarse / denied / blocked / not_now …). */

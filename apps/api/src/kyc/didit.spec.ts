@@ -449,6 +449,50 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
     expect(extractDiditDeclineReason(idv("INCONSISTENT_DATA", "PORTRAIT_REPLACEMENT"))).toBe("doc_tampered");
   });
 
+  // 2026-10-16: a real card photographed through the in-app web camera scored under Didit's "screen capture of
+  // document" decline threshold, with the selfie at 100 and the face match at 90.5. It was stored as a liveness
+  // strike and shown F4b "Your face didn't match"; the same card passed four minutes later.
+  describe("SCREEN_CAPTURE is about the card or the selfie depending on where Didit raised it", () => {
+    const decision = (doc: string[], liveness: string[] = [], extra: Record<string, unknown> = {}) => ({
+      decision: {
+        id_verifications: [{ status: "Declined", warnings: doc.map((risk) => ({ risk })) }],
+        liveness_checks: [{ status: liveness.length ? "Declined" : "Approved", score: 100, warnings: liveness.map((risk) => ({ risk })) }],
+        face_matches: [{ status: "Approved", score: 90.5 }],
+        ...extra,
+      },
+    });
+
+    it("on the ID document → unreadable (a card retake, no strike)", () => {
+      expect(extractDiditDeclineReason(decision(["SCREEN_CAPTURE_DETECTED"]))).toBe("id_unreadable");
+      expect(decideDiditKyc("Declined", 0.905, decision(["SCREEN_CAPTURE_DETECTED"]))).toEqual({ status: "failed", reason: "id_unreadable" });
+    });
+
+    it("on the selfie → still a liveness finding", () => {
+      expect(extractDiditDeclineReason(decision([], ["SCREEN_CAPTURE_DETECTED"]))).toBe("liveness_failed");
+    });
+
+    it("on both → liveness wins (the card copy can't hide the selfie's)", () => {
+      expect(extractDiditDeclineReason(decision(["SCREEN_CAPTURE_DETECTED"], ["SCREEN_CAPTURE_DETECTED"]))).toBe("liveness_failed");
+    });
+
+    it("outside every feature (unattributable) → liveness, as before", () => {
+      expect(extractDiditDeclineReason({ decision: { warnings: [{ risk: "SCREEN_CAPTURE_DETECTED" }] } })).toBe("liveness_failed");
+    });
+
+    it("a card screen-capture beside a real selfie finding is still a liveness strike", () => {
+      expect(extractDiditDeclineReason(decision(["SCREEN_CAPTURE_DETECTED"], ["LIVENESS_FACE_ATTACK"]))).toBe("liveness_failed");
+    });
+
+    it("never softens forgery evidence on the card: a screen REPLAY is still tampering", () => {
+      expect(extractDiditDeclineReason(decision(["SCREEN_CAPTURE_DETECTED", "SCREEN_REPLAY_DETECTED"]))).toBe("doc_tampered");
+    });
+
+    it("an information-level card note is still ignored", () => {
+      const noted = { decision: { id_verifications: [{ status: "Declined", warnings: [{ risk: "SCREEN_CAPTURE_DETECTED", log_type: "information" }] }] } };
+      expect(extractDiditDeclineReason(noted)).toBeNull();
+    });
+  });
+
   it("ignores information-level warnings — a note is not a finding", () => {
     const withLevel = (...ws: [string, string | undefined][]) => ({
       decision: { liveness_checks: [{ status: "Declined", warnings: ws.map(([risk, log_type]) => ({ risk, log_type })) }] },

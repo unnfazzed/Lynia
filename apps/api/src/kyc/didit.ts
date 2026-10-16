@@ -238,13 +238,33 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   // or a validation that fails is, on a worn card or a soft photo, far more often a misread than a forgery (owner
   // 2026-10-15) — those fall to "unreadable" below: declined all the same, retried with a better photo, no strike.
   if (has(/TAMPER|ALTER|PRINTED|SCREEN_REPLAY|PORTRAIT_REPLACE/)) return KycDeclineReason.DOC_TAMPERED;
-  if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|SCREEN_CAPTURE|VIDEO_ANOMALY|MULTIPLE_FACES/)) return KycDeclineReason.LIVENESS_FAILED;
+  // SCREEN_CAPTURE is only a liveness strike when it is about the SELFIE. Raised on the ID document it is Didit's
+  // "screen capture of document" score, which a real card photographed through the in-app web camera trips (glare,
+  // moiré): the 2026-10-16 biker failed it with a selfie scoring 100 and a face match of 90.5, then passed with the
+  // same card four minutes later. That is a retake of the card photo (F4a), not "your face didn't match" (F4b), and
+  // not a strike. Unattributable (outside every feature) stays a liveness finding, as before.
+  const documentRisks = warningRisks(documentEntries(payload));
+  const screenCaptureOffDocument = countOf(risks, /SCREEN_CAPTURE/) > countOf(documentRisks, /SCREEN_CAPTURE/);
+  if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|VIDEO_ANOMALY|MULTIPLE_FACES/) || screenCaptureOffDocument) return KycDeclineReason.LIVENESS_FAILED;
   if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
   if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
-  if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT|MRZ|INCONSISTENT|INVALID_VALIDATION/)) {
+  if (has(/BLUR|QUALITY|DARK|BRIGHT|UNREADABLE|NOT_DETECTED|NOT_READ|OCCLU|PORTRAIT|MRZ|INCONSISTENT|INVALID_VALIDATION|SCREEN_CAPTURE/)) {
     return KycDeclineReason.ID_UNREADABLE;
   }
   return null;
+}
+
+/** How many of `risks` match `re` — a count, so a code raised on both the card and the selfie isn't read as card-only. */
+function countOf(risks: string[], re: RegExp): number {
+  return risks.filter((r) => re.test(r)).length;
+}
+
+/** The ID-document results under a decision payload (empty when it has none, or isn't a decision). */
+function documentEntries(payload: unknown): Record<string, unknown>[] {
+  if (!payload || typeof payload !== "object") return [];
+  const decision = (payload as Record<string, unknown>).decision;
+  if (!decision || typeof decision !== "object" || Array.isArray(decision)) return [];
+  return diditFeatureEntries(decision as Record<string, unknown>, ...DOC_FEATURES);
 }
 
 /**

@@ -14,7 +14,26 @@ import React from "react";
 import { Alert, Linking } from "react-native";
 import renderer, { act, type ReactTestRenderer } from "react-test-renderer";
 
-import { canPresentKycCheck, KycCheckHost, presentKycCheck, resetKycCheckHostForTests } from "../KycCheckHost";
+import {
+  canPresentKycCheck,
+  endKycCheckHold,
+  holdKycCheck,
+  KYC_KEEP_AWAKE_TAG,
+  KYC_PREWARM_TTL_MS,
+  KYC_PREWARM_URL,
+  KycCheckHost,
+  kycWebViewMajor,
+  presentKycCheck,
+  prewarmKycCheck,
+  resetKycCheckHostForTests,
+} from "../KycCheckHost";
+
+const mockActivate = jest.fn(async (_tag: string) => undefined);
+const mockDeactivate = jest.fn(async (_tag: string) => undefined);
+jest.mock("expo-keep-awake", () => ({
+  activateKeepAwakeAsync: (tag: string) => mockActivate(tag),
+  deactivateKeepAwake: (tag: string) => mockDeactivate(tag),
+}));
 
 const mockTrack = jest.fn();
 jest.mock("../../telemetry/events", () => ({
@@ -286,5 +305,149 @@ describe("KycCheckSheet outcomes", () => {
     });
     await expect(second.pending).resolves.toBe("failed");
     expect(mockTrack).toHaveBeenCalledWith("kyc_web_error", { kind: "error" });
+  });
+});
+
+// 2026-10-16: the first live checks after manual mode ended were slow to open. The tap now holds the sheet
+// open and prewarms the vendor's page while the session is minted (verify.ts primeKycLaunch).
+describe("faster opening", () => {
+  function mountHost(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<KycCheckHost />);
+    });
+    trees.push(tree);
+    return tree;
+  }
+  const webViews = (tree: ReactTestRenderer) => tree.root.findAllByType(MockWebView);
+  const prewarm = (tree: ReactTestRenderer) => webViews(tree).find((w) => w.props.testID === "kyc-prewarm");
+
+  it("the hold opens the sheet on 'Opening your ID check…' with no WebView yet; the check takes it over", async () => {
+    const tree = mountHost();
+    act(() => holdKycCheck());
+    expect(JSON.stringify(tree.toJSON())).toContain("Opening your ID check");
+    expect(webViews(tree)).toHaveLength(0);
+    let pending!: Promise<string>;
+    act(() => {
+      pending = presentKycCheck({ url: URL })!;
+    });
+    expect(webViews(tree)).toHaveLength(1);
+    expect(webViews(tree)[0]!.props.source).toEqual({ uri: URL });
+    act(() => {
+      webViews(tree)[0]!.props.onShouldStartLoadWithRequest({ url: "lynia://kyc-done" });
+    });
+    await expect(pending).resolves.toBe("completed");
+  });
+
+  it("ending the hold closes the stand-in (an error, nothing to open)", () => {
+    const tree = mountHost();
+    act(() => holdKycCheck());
+    act(() => endKycCheckHold());
+    expect(tree.toJSON()).toBeNull();
+  });
+
+  it("leaving the stand-in cancels the check that follows — it never opens over the rider", async () => {
+    const tree = mountHost();
+    act(() => holdKycCheck());
+    (Alert.alert as unknown as jest.Mock).mockImplementationOnce((_t: string, _m: string, buttons: { text: string; onPress?: () => void }[]) => {
+      buttons.find((b) => b.text === "Leave")?.onPress?.();
+    });
+    const close = tree.root.findAll((n) => n.props.accessibilityLabel === "Close" && typeof n.props.onPress === "function")[0]!;
+    act(() => close.props.onPress());
+    expect(tree.toJSON()).toBeNull();
+    let pending!: Promise<string> | null;
+    act(() => {
+      pending = presentKycCheck({ url: URL });
+    });
+    await expect(pending).resolves.toBe("cancelled");
+    expect(webViews(tree)).toHaveLength(0);
+    // …and the next attempt presents normally.
+    act(() => {
+      pending = presentKycCheck({ url: URL });
+    });
+    expect(webViews(tree)).toHaveLength(1);
+  });
+
+  it("the hold is a no-op with no host (the browser lane has nothing to stand in for)", () => {
+    expect(() => holdKycCheck()).not.toThrow();
+    expect(() => prewarmKycCheck()).not.toThrow();
+  });
+
+  it("prewarms the vendor's origin in a hidden, untouchable WebView that refuses to leave the vendor", () => {
+    const tree = mountHost();
+    act(() => prewarmKycCheck());
+    const w = prewarm(tree)!;
+    expect(w.props.source).toEqual({ uri: KYC_PREWARM_URL });
+    expect(w.props.onShouldStartLoadWithRequest({ url: "https://verify.didit.me/_next/static/x.js" })).toBe(true);
+    expect(w.props.onShouldStartLoadWithRequest({ url: "https://evil.example/" })).toBe(false);
+    expect(w.props.onShouldStartLoadWithRequest({ url: "lynia://done" })).toBe(false);
+  });
+
+  it("reads the System WebView's major version from the prewarm (the number only)", () => {
+    const tree = mountHost();
+    act(() => prewarmKycCheck());
+    act(() => prewarm(tree)!.props.onMessage({ nativeEvent: { data: "wv:118" } }));
+    expect(kycWebViewMajor()).toBe(118);
+    act(() => prewarm(tree)!.props.onMessage({ nativeEvent: { data: "something else" } }));
+    expect(kycWebViewMajor()).toBe(118);
+  });
+
+  it("the prewarm gives way to the real check, and unmounts itself when its tap went nowhere", () => {
+    jest.useFakeTimers();
+    try {
+      const tree = mountHost();
+      act(() => prewarmKycCheck());
+      expect(prewarm(tree)).toBeDefined();
+      act(() => {
+        presentKycCheck({ url: URL });
+      });
+      expect(prewarm(tree)).toBeUndefined();
+      expect(webViews(tree)).toHaveLength(1);
+
+      const other = mountHost();
+      act(() => prewarmKycCheck());
+      expect(prewarm(other)).toBeDefined();
+      act(() => {
+        jest.advanceTimersByTime(KYC_PREWARM_TTL_MS + 1);
+      });
+      expect(prewarm(other)).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("shows the check at 90% loaded (not the load event), and reports how long it took, once", () => {
+    mockTrack.mockClear();
+    const tree = mountHost();
+    act(() => prewarmKycCheck());
+    act(() => {
+      presentKycCheck({ url: URL });
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("Opening your ID check");
+    act(() => webViews(tree)[0]!.props.onLoadProgress({ nativeEvent: { progress: 0.5 } }));
+    expect(JSON.stringify(tree.toJSON())).toContain("Opening your ID check");
+    act(() => webViews(tree)[0]!.props.onLoadProgress({ nativeEvent: { progress: 0.92 } }));
+    expect(JSON.stringify(tree.toJSON())).not.toContain("Opening your ID check");
+    act(() => webViews(tree)[0]!.props.onLoadEnd());
+    const shown = mockTrack.mock.calls.filter((c) => c[0] === "kyc_sheet_shown");
+    expect(shown).toHaveLength(1);
+    expect(shown[0]![1]).toMatchObject({ prewarmed: true });
+    expect(typeof (shown[0]![1] as { ms: unknown }).ms).toBe("number");
+  });
+
+  it("keeps the screen on while the sheet is up, and lets it go after", async () => {
+    const tree = mountHost();
+    mockActivate.mockClear();
+    mockDeactivate.mockClear();
+    let pending!: Promise<string>;
+    act(() => {
+      pending = presentKycCheck({ url: URL })!;
+    });
+    expect(mockActivate).toHaveBeenCalledWith(KYC_KEEP_AWAKE_TAG);
+    act(() => {
+      webViews(tree)[0]!.props.onShouldStartLoadWithRequest({ url: "lynia://kyc-done" });
+    });
+    await expect(pending).resolves.toBe("completed");
+    expect(mockDeactivate).toHaveBeenCalledWith(KYC_KEEP_AWAKE_TAG);
   });
 });

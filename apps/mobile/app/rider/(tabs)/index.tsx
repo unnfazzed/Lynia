@@ -19,7 +19,7 @@ import { usePrewarmRoutes, type PrewarmRoute } from "../../../src/boot/prewarm-r
 import { supportWhatsAppUrl } from "../../../src/config";
 import { KycCheckHost } from "../../../src/kyc/KycCheckHost";
 import { clearStoredKycLaunch, loadStoredKycLaunch, peekStoredKycLaunch, rememberKycLaunch, storedKycLaunchLoaded, takeKycLaunch } from "../../../src/kyc/launch-hint";
-import { primeKycCamera, runKycVerification } from "../../../src/kyc/verify";
+import { endKycCheckHold, primeKycLaunch, runKycVerification } from "../../../src/kyc/verify";
 import {
   freshKycLaunch,
   KYC_COMPLETED_HINT_MS,
@@ -562,12 +562,15 @@ export default function RiderHome(): React.ReactElement {
     mutationFn: () => {
       const force = forceFreshSession.current;
       if (force) spentForce.current = true;
-      // The sheet's camera permission is settled while the session is minted, not after (verify.ts).
-      retryCamera.current = primeKycCamera();
+      // The sheet's camera permission, the sheet itself and the prewarm start while the session is minted,
+      // not after (verify.ts primeKycLaunch).
+      retryCamera.current = primeKycLaunch();
       return retryKyc(force);
     },
     onSuccess: async (res) => {
       const feedback = resolveKycRetryFeedback(res);
+      // Nothing to open (manual review, no session): the stand-in sheet goes before any notice is shown.
+      if (!feedback.launch) endKycCheckHold();
       // No session to open in auto mode: the check couldn't open — F7, the page that says so (D-82).
       if (feedback.error) setLaunch({ outcome: "failed", at: Date.now() });
       // Manual review has nothing to open by design: say so calmly (the board shows F1 once `me` agrees).
@@ -598,10 +601,13 @@ export default function RiderHome(): React.ReactElement {
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onMutate: () => setKycLaunch(null),
+    // Backstop: the stand-in sheet never outlives the attempt.
+    onSettled: () => endKycCheckHold(),
     // A rate limit is the one toast, in our words. Anything else — the vendor down (a 5xx), no
     // connection — is the check not opening: F7, whose "Try again" is this mutation again. A terminal
     // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
     onError: (e) => {
+      endKycCheckHold();
       if (e instanceof ApiError && isKycRetryRateLimited(e)) setError(KYC_RETRY_TRY_LATER);
       else setLaunch({ outcome: "failed", at: Date.now() });
       void qc.invalidateQueries({ queryKey: ["me"] });

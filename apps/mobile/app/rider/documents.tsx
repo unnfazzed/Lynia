@@ -8,7 +8,7 @@ import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { startSelfieRecheck, updateRiderProfile } from "../../src/api/riders";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
-import { primeKycCamera, runKycVerification } from "../../src/kyc/verify";
+import { endKycCheckHold, primeKycLaunch, runKycVerification } from "../../src/kyc/verify";
 import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { initials } from "../../src/logic/avatar";
 import {
@@ -262,7 +262,7 @@ export default function DocumentsScreen(): React.ReactElement {
   const redoSelfie = (): void => {
     if (recheckBusy.current) return;
     recheckBusy.current = true;
-    const camera = primeKycCamera();
+    const camera = primeKycLaunch();
     void (async () => {
       try {
         const { verificationUrl } = await startSelfieRecheck();
@@ -270,8 +270,11 @@ export default function DocumentsScreen(): React.ReactElement {
         if (launch.outcome === "failed") setError(`${KY.cantA} ${KY.cantB}`);
         void qc.invalidateQueries({ queryKey: ["me"] });
       } catch (e) {
+        // The stand-in sheet goes first, so the toast isn't drawn under it.
+        endKycCheckHold();
         setError(e instanceof ApiError && e.status === 429 ? KYC_RETRY_TRY_LATER : `${KY.cantA} ${KY.cantB}`);
       } finally {
+        endKycCheckHold();
         recheckBusy.current = false;
       }
     })();
