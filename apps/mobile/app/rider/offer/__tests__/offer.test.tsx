@@ -47,7 +47,8 @@ const ORDER: OpenOrder = {
 let qc: QueryClient;
 let tree: renderer.ReactTestRenderer;
 function render(): void {
-  qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  // gcTime Infinity: no garbage-collection timers, which otherwise keep jest alive for 5 minutes after the run.
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false, gcTime: Infinity } } });
   qc.setQueryData(["openOrders"], [ORDER]);
   qc.setQueryData(SENT_OFFERS_KEY, []);
   act(() => {
@@ -84,6 +85,7 @@ const text = (): string =>
 
 afterEach(() => {
   act(() => tree.unmount());
+  qc.clear();
   jest.clearAllMocks();
 });
 
