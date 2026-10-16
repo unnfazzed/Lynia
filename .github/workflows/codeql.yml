@@ -1,8 +1,14 @@
 name: CodeQL
 
 # Static application security testing (SAST) for the TypeScript/JavaScript codebase. Runs on PRs, on
-# push to main, and weekly so newly-disclosed query packs catch old code. Results surface in the repo's
-# Security → Code scanning tab. See docs/SECURITY.md P1-1.
+# push to main, and weekly so newly-disclosed query packs catch old code. See docs/SECURITY.md P1-1.
+#
+# NO UPLOAD (owner 2026-10-16): the repo went private, and code scanning on a private repo needs GitHub's
+# paid Code Security add-on, so the results can't reach the Security tab ("Code scanning is not enabled
+# for this repository" failed every run). The analysis still runs with `upload: never`;
+# scripts/check-codeql-sarif.mjs reads its SARIF, lists every finding in the job summary and FAILS the job
+# on an error-level one. The SARIF is kept as a run artifact. If Code Security is ever bought, restore the
+# upload (and `security-events: write`) and drop the gate step.
 
 on:
   push:
@@ -20,10 +26,13 @@ jobs:
     name: analyze (javascript-typescript)
     runs-on: ubuntu-latest
     permissions:
-      security-events: write # required to upload CodeQL results
       contents: read
+      # Read-only: the CodeQL action reads its own workflow run for its status reports on a private repo.
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test the findings gate
+        run: node --test scripts/check-codeql-sarif.test.mjs
       - name: Initialize CodeQL
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
@@ -35,3 +44,15 @@ jobs:
         uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          upload: never
+          output: sarif-results
+      - name: Keep the SARIF
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif
+          path: sarif-results
+          if-no-files-found: ignore
+      - name: Fail on an error-level finding
+        run: node scripts/check-codeql-sarif.mjs sarif-results
