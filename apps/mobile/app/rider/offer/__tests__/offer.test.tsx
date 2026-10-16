@@ -47,7 +47,8 @@ const ORDER: OpenOrder = {
 let qc: QueryClient;
 let tree: renderer.ReactTestRenderer;
 function render(): void {
-  qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  // gcTime Infinity: no garbage-collection timers, which otherwise keep jest alive for 5 minutes after the run.
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false, gcTime: Infinity } } });
   qc.setQueryData(["openOrders"], [ORDER]);
   qc.setQueryData(SENT_OFFERS_KEY, []);
   act(() => {
@@ -84,6 +85,7 @@ const text = (): string =>
 
 afterEach(() => {
   act(() => tree.unmount());
+  qc.clear();
   jest.clearAllMocks();
 });
 
@@ -141,7 +143,10 @@ describe("Make an offer (Biker v2 O1)", () => {
 describe("offerCents (every fare is 50c, owner 2026-10-15)", () => {
   it("snaps a counter to the nearest 50c and keeps the customer's own ask as an accept", () => {
     expect(offerCents(342, 300)).toBe(350);
-    expect(offerCents(320, 300)).toBe(300);
+    // A counter never snaps onto the ask (that would send a silent accept): it moves the way the biker typed.
+    expect(offerCents(320, 300)).toBe(350);
+    expect(offerCents(280, 300)).toBe(250);
+    expect(offerCents(60, 50)).toBe(100);
     expect(offerCents(10, 300)).toBe(50);
     expect(offerCents(342, 342)).toBe(342);
   });
@@ -192,6 +197,17 @@ describe("biker audit — the offer screen", () => {
     act(() => topUp[0]!.props.onAction());
     expect(mockPush).toHaveBeenCalledWith("/wallet/top-up");
     expect(tree.root.findAll((n) => n.props.action === "Try again").length).toBe(0);
+  });
+
+  it("a typed $3.20 against a $3.00 ask shows and sends a $3.50 counter, never a silent accept", async () => {
+    mockMakeOffer.mockResolvedValue({});
+    render();
+    const input = tree.root.findAll((n) => n.props.accessibilityLabel === "Your fare" && typeof n.props.onChangeText === "function")[0]!;
+    act(() => input.props.onChangeText("3.20"));
+    expect(tree.root.findAll((n) => n.props.label === "Send offer · $3.20").length).toBe(0);
+    press("Send offer · $3.50");
+    await flush();
+    expect(mockMakeOffer).toHaveBeenCalledWith("order-1", { type: "counter", offeredFare: 3.5, etaMinutes: 10 });
   });
 
   it("PJ-L4: a typed 0.3 is sent as the $0.50 minimum the label shows, not the old fare", async () => {

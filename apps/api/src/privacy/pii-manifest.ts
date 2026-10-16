@@ -110,7 +110,7 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   selfie_check: { column: "selfie_check", where: "riders", tables: ["riders"], disposition: "null", note: "Whether the person's selfie was checked — nulled on erase." },
   selfie_check_reason: { column: "selfie_check_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Why the selfie wasn't checked, or why a re-check didn't pass — nulled on erase." },
   selfie_check_at: { column: "selfie_check_at", where: "riders", tables: ["riders"], disposition: "null", note: "Activity timestamp tied to the person — nulled on erase." },
-  selfie_recheck_ref: { column: "selfie_recheck_ref", where: "riders", tables: ["riders"], disposition: "null", note: "The re-check's vendor session id — the session is deleted at the vendor and the id nulled on erase." },
+  selfie_recheck_ref: { column: "selfie_recheck_ref", where: "riders", tables: ["riders"], disposition: "null", note: "The re-check's vendor session id while one is open — nulled on erase, and an open session is deleted at the vendor. A finished re-check clears the id with its verdict, so (like a session a retry replaced, KYC-R26-05) it ages out on the vendor's retention." },
   selfie_recheck_url: { column: "selfie_recheck_url", where: "riders", tables: ["riders"], disposition: "null", note: "The hosted-check URL for that session (a credential) — nulled on erase." },
   suspend_reason: { column: "suspend_reason", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   current_lat: { column: "current_lat", where: "riders", tables: ["riders"], disposition: "null", note: "Readable last-position latitude nulled on erase." },

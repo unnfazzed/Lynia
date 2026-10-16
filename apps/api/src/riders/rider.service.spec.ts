@@ -3843,13 +3843,24 @@ describe("RiderService — KYC-R26 decision guards", () => {
         },
       },
       auditLog: {
-        create: async ({ data }: { data: Record<string, unknown> }) => (audit.push(data), {}),
+        // Rows are stamped in insertion order, so "since the last clean slate" reads like the real createdAt.
+        create: async ({ data }: { data: Record<string, unknown> }) => (audit.push({ createdAt: new Date(Date.UTC(2026, 0, 1) + audit.length * 1000), ...data }), {}),
+        // The unreadable hold's clean slate: the newest row matching any OR branch (action in / action + NOT actor).
+        findFirst: async ({ where }: { where: { target: string; OR: { action: string | { in: string[] }; NOT?: { actor: string } }[] } }) =>
+          [...audit]
+            .reverse()
+            .find(
+              (a) =>
+                a.target === where.target &&
+                where.OR.some((c) => (typeof c.action === "string" ? a.action === c.action : c.action.in.includes(a.action as string)) && (!c.NOT || a.actor !== c.NOT.actor)),
+            ) ?? null,
         // KYC-R26-13: retryKyc's daily cap — every row here is "today"; filters on actor/action/target/reason.
         // The paid-mint ceiling counts by action + target only (no actor, no OR).
         // Owner 2026-10-15: the unreadable-card hold counts one exact reasonCode.
-        count: async ({ where }: { where: { actor?: string; action: string; target: string; reasonCode?: string; OR?: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
+        count: async ({ where }: { where: { actor?: string; action: string; target: string; reasonCode?: string; createdAt?: { gt?: Date }; OR?: ({ reasonCode: { in: string[] } } | { reasonCode: null })[] } }) =>
           audit.filter(
             (a) =>
+              (where.createdAt?.gt === undefined || (a.createdAt as Date) > where.createdAt.gt) &&
               (where.actor === undefined || a.actor === where.actor) &&
               a.action === where.action &&
               a.target === where.target &&
@@ -4149,6 +4160,33 @@ describe("RiderService — KYC-R26 decision guards", () => {
       expect(notifyProfiles).toHaveBeenCalledTimes(2); // the two declines, not the hold
     });
 
+    it("the unreadable count starts again after a verify or a person's decision", async () => {
+      const { prisma, row, audit } = memPrisma({ isOnline: false });
+      const { s } = withSpies(prisma);
+      const t = (m: number) => new Date(Date.UTC(2026, 9, 15, 10, m));
+      // Two unreadable cards, then verified.
+      freshCheck(row, "sess_1");
+      await s.applyKycResult("sess_1", "failed", t(0), "id_unreadable");
+      freshCheck(row, "sess_2");
+      await s.applyKycResult("sess_2", "failed", t(10), "id_unreadable");
+      freshCheck(row, "sess_3");
+      await s.applyKycResult("sess_3", "verified", t(20));
+      expect(row.kycStatus).toBe("verified");
+      // Months later the ID lapsed and the biker re-verifies: the first unreadable card is a retake, not a hold.
+      freshCheck(row, "sess_4");
+      await s.applyKycResult("sess_4", "failed", t(30), "id_unreadable");
+      expect(row).toMatchObject({ kycStatus: "failed", kycDeclineReason: "id_unreadable" });
+      expect(audit.filter((a) => a.action === "rider.kyc_review_required")).toHaveLength(0);
+      // An ops decline asking for a better photo is a clean slate too.
+      freshCheck(row, "sess_5");
+      await s.applyKycResult("sess_5", "failed", t(40), "id_unreadable");
+      await s.adminSetKyc("p1", "failed", "id_unreadable", "admin:ops");
+      freshCheck(row, "sess_6");
+      await s.applyKycResult("sess_6", "failed", t(50), "id_unreadable");
+      expect(row).toMatchObject({ kycStatus: "failed", kycDeclineReason: "id_unreadable" });
+      expect(audit.filter((a) => a.action === "rider.kyc_review_required")).toHaveLength(0);
+    });
+
     it("a retried delivery of the held decline is a repeat — no second review row", async () => {
       const { prisma, row, audit } = memPrisma();
       const { s } = withSpies(prisma);
@@ -4399,7 +4437,7 @@ describe("RiderService — KYC pushes, audit rows and observability (2026-10-12)
         count: async () => 0,
       },
       profile: { count: async () => 0 },
-      auditLog: { create: async () => ({}) },
+      auditLog: { create: async () => ({}), count: async () => 0, findFirst: async () => null },
     };
     prisma.$transaction = async (fn: (tx: unknown) => unknown) => fn(prisma);
     return { row, prisma };

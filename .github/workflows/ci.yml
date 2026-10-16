@@ -114,7 +114,11 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: https://api.lyniago.com
       - run: pnpm --filter @lynia/api test
-      - run: pnpm --filter @lynia/mobile test
+      # --maxWorkers=2: since the repo went private (2026-10-16) the runner has 2 vCPUs, where jest's default
+      # (cores - 1 = 1) runs every file in ONE process. Then a test that leaks a timer keeps jest alive after the
+      # run ("Jest did not exit one second after the test run") and the job hangs until cancelled (#1220, twice).
+      # Two workers keep the old behaviour: a worker that won't exit is force-exited once the run is done.
+      - run: pnpm --filter @lynia/mobile test --maxWorkers=2
       # Admin typecheck/lint/build already run above via `turbo run …`; its tests do not (turbo run
       # test has no admin task wired and the two lines above are per-filter). Gate the console-auth /
       # IAP-JWT fail-closed specs explicitly — they are the security boundary for the deployed console.

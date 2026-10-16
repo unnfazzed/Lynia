@@ -211,7 +211,18 @@ export async function runKycVerification(creds: KycLaunchCredentials, opts: KycL
     addBreadcrumb("kyc.sheet_unavailable");
   }
 
-  // Lane 2 — the in-app browser tab. The sheet's stand-in (if one is up) gives way to it first.
+  // Lane 2 — the in-app browser tab. A rider who already closed the stand-in left: nothing opens over them.
+  let left = false;
+  try {
+    left = sheetHost()?.takeKycCheckHoldCancelled() === true;
+  } catch {
+    // No host module: nothing was held.
+  }
+  if (left) {
+    noteLaunch("none", "cancelled", timings());
+    return { outcome: "cancelled", sessionUnusable: false };
+  }
+  // The sheet's stand-in (if one is up) gives way to the tab first.
   endKycCheckHold();
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires

@@ -243,8 +243,11 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   // moiré): the 2026-10-16 biker failed it with a selfie scoring 100 and a face match of 90.5, then passed with the
   // same card four minutes later. That is a retake of the card photo (F4a), not "your face didn't match" (F4b), and
   // not a strike. Unattributable (outside every feature) stays a liveness finding, as before.
+  // Both counts read the decision only: the poll and sweep (kyc-reconcile applyRead) hand over Didit's flat
+  // decision body with that same body ALSO under `decision`, so a whole-payload count saw the card's finding
+  // twice, called one of them the selfie's, and struck the biker the webhook would have let retake.
   const documentRisks = warningRisks(documentEntries(payload));
-  const screenCaptureOffDocument = countOf(risks, /SCREEN_CAPTURE/) > countOf(documentRisks, /SCREEN_CAPTURE/);
+  const screenCaptureOffDocument = countOf(warningRisks(decisionOnly(payload)), /SCREEN_CAPTURE/) > countOf(documentRisks, /SCREEN_CAPTURE/);
   if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|VIDEO_ANOMALY|MULTIPLE_FACES/) || screenCaptureOffDocument) return KycDeclineReason.LIVENESS_FAILED;
   if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
   if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
@@ -257,6 +260,13 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
 /** How many of `risks` match `re` — a count, so a code raised on both the card and the selfie isn't read as card-only. */
 function countOf(risks: string[], re: RegExp): number {
   return risks.filter((r) => re.test(r)).length;
+}
+
+/** The decision under a payload, alone — or the payload itself when it carries none. */
+function decisionOnly(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const decision = (payload as Record<string, unknown>).decision;
+  return decision && typeof decision === "object" && !Array.isArray(decision) ? { decision } : payload;
 }
 
 /** The ID-document results under a decision payload (empty when it has none, or isn't a decision). */
@@ -272,9 +282,10 @@ function documentEntries(payload: unknown): Record<string, unknown>[] {
  * Owner 2026-10-15 ("remove pain points"): an information-level note is not a finding. The one real session so
  * far carried LIVENESS_VIDEO_ANOMALY at that level — read as a finding, a decline on the same session would have
  * cost an honest biker a liveness strike. A warning with no level still counts, and so does a strike or final
- * code at any level (NEVER_A_NOTE).
+ * code at any level (NEVER_A_NOTE). `notes: true` keeps the information-level ones too — for a gate that VERIFIES,
+ * where a note is still evidence (isSelfieCameraFailure).
  */
-function warningRisks(v: unknown): string[] {
+function warningRisks(v: unknown, opts: { notes?: boolean } = {}): string[] {
   const risks: string[] = [];
   const walk = (node: unknown, depth: number): void => {
     if (depth > 6 || node === null || typeof node !== "object") return;
@@ -289,7 +300,7 @@ function warningRisks(v: unknown): string[] {
           const risk = w && typeof w === "object" ? (w as Record<string, unknown>).risk : w;
           if (typeof risk !== "string") continue;
           const code = risk.toUpperCase();
-          if (w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>) && !NEVER_A_NOTE.test(code)) continue;
+          if (!opts.notes && w && typeof w === "object" && isInformationalWarning(w as Record<string, unknown>) && !NEVER_A_NOTE.test(code)) continue;
           risks.push(code);
         }
       } else {
@@ -324,7 +335,7 @@ export const SELFIE_CAMERA_QUALITY = "camera_quality";
  * quality. Any one of these, anywhere in the decision, means the selfie failure is not "just the camera".
  */
 const IDENTITY_RISK =
-  /SPOOF|ATTACK|INJECT|VIRTUAL_CAMERA|SCREEN_(REPLAY|CAPTURE)|DEEPFAKE|MASK|REPLAY|MULTIPLE_FACES|VIDEO_ANOMALY|DUPLICAT|BLOCKLIST|FRAUD|TAMPER|ALTER|PRINTED|PORTRAIT_REPLACE|LOW_FACE_MATCH|FACE_MISMATCH|SIMILARITY|NAME_MISMATCH|EXPIRED|EXPIRATION/;
+  /SPOOF|ATTACK|INJECT|VIRTUAL_CAMERA|SCREEN_(REPLAY|CAPTURE)|DEEPFAKE|MASK|REPLAY|MULTIPLE_FACES|VIDEO_ANOMALY|LOW_LIVENESS|LIVENESS_SCORE|DUPLICAT|BLOCKLIST|FRAUD|TAMPER|ALTER|PRINTED|PORTRAIT_REPLACE|LOW_FACE_MATCH|FACE_MISMATCH|SIMILARITY|NAME_MISMATCH|EXPIRED|EXPIRATION/;
 
 /**
  * A selfie finding that a phone's camera produces: blur, light, distance, centring — and nothing else. A face that
@@ -361,7 +372,10 @@ const SELFIE_FEATURES: [string, string][] = [LIVENESS_FEATURES, FACE_FEATURES];
  *  - every other non-selfie result (IP analysis, AML…) that reports a status is Approved;
  *  - only liveness failed, and EVERY selfie finding is a camera one (blur, light, distance, centring) — a failed
  *    liveness with no finding at all is unexplained, and is not waved through;
- *  - no identity finding anywhere (spoof, duplicate, tampering, a face mismatch, an expired card, under age).
+ *  - no identity finding anywhere (spoof, duplicate, tampering, a face mismatch, an expired card, under age) —
+ *    at ANY level. Owner 2026-10-16 ("liveness is necessary"): an information-level note costs no strike, but it
+ *    can't turn a decline into a verify; on this path liveness is the only defence against a replay of the card
+ *    holder's own face, which the face match passes.
  */
 export function isSelfieCameraFailure(status: string, score: number | null, payload: unknown): boolean {
   if (!(mapDiditStatus(status) === "failed" || isDiditInReview(status))) return false;
@@ -395,7 +409,7 @@ export function isSelfieCameraFailure(status: string, score: number | null, payl
     }
   }
 
-  const all = warningRisks(payload);
+  const all = warningRisks(payload, { notes: true });
   if (all.some((r) => isUnderageRisk(r) || IDENTITY_RISK.test(r))) return false;
   const selfieRisks = warningRisks(selfie);
   return selfieRisks.length > 0 && selfieRisks.every((r) => CAMERA_QUALITY_RISK.test(r));

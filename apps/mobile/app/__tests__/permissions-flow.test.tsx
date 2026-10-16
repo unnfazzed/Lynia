@@ -290,8 +290,10 @@ describe("right after sign-up (?from=signup, D-109)", () => {
     await mount();
     expect(screen()).toBe("P1");
     expect(mockStore[SIGNUP_PERMS_KEY]).toBe("1");
-    expect(mockStore[RIDER_PERM_FLOW_KEY]).toBe("1");
+    // Not yet: the biker hasn't answered anything (a Back or a kill here keeps R3's full flow).
+    expect(mockStore[RIDER_PERM_FLOW_KEY]).toBeUndefined();
     await press("p-cta");
+    expect(mockStore[RIDER_PERM_FLOW_KEY]).toBe("1");
     expect(screen()).toBe("P3");
     await press("p-cta");
     expect(screen()).toBe("P9");
@@ -318,6 +320,27 @@ describe("right after sign-up (?from=signup, D-109)", () => {
     mockNotifGet = GRANTED;
     await mount();
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+
+  it("leaving P1 unanswered keeps R3's full flow: Go online still asks", async () => {
+    mockParams = { from: "signup", next: "/rider" };
+    await mount();
+    expect(screen()).toBe("P1");
+    const goOnline = jest.fn();
+    const push = jest.fn();
+    await startRiderPermFlow({ push }, goOnline);
+    expect(goOnline).not.toHaveBeenCalled();
+    expect(push).toHaveBeenCalled();
+    finishRiderPermFlow();
+  });
+
+  it("nothing left to ask still counts as the rider flow", async () => {
+    mockParams = { from: "signup", next: "/rider" };
+    mockLocGet = GRANTED;
+    mockNotifGet = GRANTED;
+    await mount();
+    expect(mockReplace).toHaveBeenCalledWith("/rider");
+    expect(mockStore[RIDER_PERM_FLOW_KEY]).toBe("1");
   });
 
   it("R3's Go online after it goes straight online: the flow already ran", async () => {
