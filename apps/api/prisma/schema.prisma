@@ -452,6 +452,8 @@ model Rider {
   topUps             TopUp[]
   merchantDebtLedger MerchantDebtLedger[]
 
+  // #1216: every Didit webhook asks whether its session is a selfie re-check (migration 0105, built concurrently).
+  @@index([selfieRecheckRef])
   @@map("riders")
 }
 

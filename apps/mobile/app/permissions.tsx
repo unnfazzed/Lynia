@@ -74,16 +74,26 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   const [shake, setShake] = useState(0);
   const [mutedChannel, setMutedChannel] = useState<string | undefined>(undefined);
   const leftForBattery = useRef(false);
+  // D-109: the sign-up screens stand in for R3's rider flow — but only once the biker has actually met them.
+  // Marked on the first answer (or on leaving with nothing left to ask), not on mount: a Back or a kill on P1
+  // must not spend the full explainer on a screen the biker never answered.
+  const riderFlowMarked = useRef(false);
+  const markSignupRiderFlow = useCallback((): void => {
+    if (!signup || riderFlowMarked.current) return;
+    riderFlowMarked.current = true;
+    void markRiderPermFlowDone();
+  }, [signup]);
 
   const leave = useCallback((): void => {
     if (signup) {
+      markSignupRiderFlow();
       // Sign-in cleared the stack; this screen is its last stop before the rider side.
       router.replace(signupNext(params.next, "/rider"));
       return;
     }
     if (router.canGoBack()) router.back();
     else router.replace("/rider");
-  }, [router, signup, params.next]);
+  }, [router, signup, params.next, markSignupRiderFlow]);
 
   /** Enter step `i` (skipping any with nothing to ask); past the last one, leave. */
   const enter = useCallback(
@@ -107,8 +117,9 @@ export default function RiderPermissionsScreen(): React.ReactElement {
   useEffect(() => {
     if (legacy) router.replace("/rider");
     else {
-      // After sign-up these screens are the rider flow, once per install (D-109): R3's "Go online" won't ask again.
-      if (signup) void Promise.all([markSignupPermsShown(), markRiderPermFlowDone()]);
+      // After sign-up these screens are asked once per install (D-109). R3's "Go online" stops asking only once the
+      // biker has answered one (markSignupRiderFlow).
+      if (signup) void markSignupPermsShown();
       void enter(0);
     }
     // Entered once per visit.
@@ -117,7 +128,13 @@ export default function RiderPermissionsScreen(): React.ReactElement {
 
   const next = useCallback((): void => void enter(stepIdx + 1), [enter, stepIdx]);
   // Funnel analytics: every P screen is `/permissions` to the screen tracker — name the step and its answer.
-  const answer = useCallback((value: string, at: RiderPermScreen | null = screen): void => track(EVENTS.permAnswer, { screen: at, answer: value, flow: signup ? "signup" : flow }), [screen, flow, signup]);
+  const answer = useCallback(
+    (value: string, at: RiderPermScreen | null = screen): void => {
+      markSignupRiderFlow();
+      track(EVENTS.permAnswer, { screen: at, answer: value, flow: signup ? "signup" : flow });
+    },
+    [screen, flow, signup, markSignupRiderFlow],
+  );
   /** "Not now" / "Continue" past a step without granting it. */
   const skip = useCallback((): void => {
     answer("not_now");

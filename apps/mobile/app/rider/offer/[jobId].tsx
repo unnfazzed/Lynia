@@ -23,9 +23,13 @@ const ETAS = [5, 10, 15, 20] as const;
 const MIN_CENTS = 50;
 
 /** A counter is a whole number of 50c (owner 2026-10-15); the customer's own ask stays as it is, even
- *  one from before that rule, so leaving the fare alone is still an accept. */
+ *  one from before that rule, so leaving the fare alone is still an accept. A counter never snaps ONTO the
+ *  ask: $3.20 against a $3.00 ask is a counter of $3.50, not a silent accept at $3.00. */
 export function offerCents(cents: number, askingCents: number): number {
-  return cents === askingCents ? cents : Math.max(MIN_CENTS, toCents(roundFare(cents / 100)));
+  if (cents === askingCents) return cents;
+  const snapped = Math.max(MIN_CENTS, toCents(roundFare(cents / 100)));
+  if (snapped !== askingCents) return snapped;
+  return Math.max(MIN_CENTS, toCents(stepFare(askingCents / 100, cents > askingCents ? 1 : -1)));
 }
 
 /** "A fare well above the band" — the warn notice (O2). Still sendable. */
@@ -291,7 +295,8 @@ export default function MakeOfferScreen(): React.ReactElement {
       ) : null}
       <CtaBar>
         <CtaButton
-          label={sending ? R.sending : RF.sendOffer(fare)}
+          // The amount that will actually be sent — a typed counter shows its 50c snap before the tap.
+          label={sending ? R.sending : RF.sendOffer(offerCents(fareCents, askingCents) / 100)}
           loading={sending}
           onPress={() => {
             setFailed(false);

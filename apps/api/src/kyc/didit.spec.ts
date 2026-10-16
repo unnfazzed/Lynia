@@ -759,8 +759,26 @@ describe("isSelfieCameraFailure", () => {
     }
     // A video anomaly that is a finding (not an information note) is a spoof sign too.
     expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LIVENESS_VIDEO_ANOMALY")] } }))).toBe(false);
-    // ...but as an information-level note it is ignored.
-    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w("LIVENESS_VIDEO_ANOMALY", "information")] } }))).toBe(true);
+  });
+
+  // Owner 2026-10-16 ("liveness is necessary"): a note costs no strike, but it never turns a decline into a verify.
+  it("a spoof sign at information level still blocks the camera verify", () => {
+    for (const risk of [
+      "LIVENESS_VIDEO_ANOMALY",
+      "POSSIBLE_FACE_SPOOF",
+      "LIVENESS_FACE_ATTACK",
+      "VIRTUAL_CAMERA_DETECTED",
+      "INJECTION_ATTACK",
+      "MULTIPLE_FACES_DETECTED",
+      "SCREEN_CAPTURE_DETECTED",
+      "LOW_LIVENESS_SCORE",
+    ]) {
+      expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w(risk, "information")] } }))).toBe(false);
+    }
+    // A note anywhere else in the decision counts too.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ face: { warnings: [w("POSSIBLE_FACE_SPOOF", "information")] } }))).toBe(false);
+    // An information-level CAMERA note beside a real camera finding is still just the camera.
+    expect(isSelfieCameraFailure("Declined", 0.82, session({ liveness: { warnings: [w("LOW_FACE_QUALITY"), w("FACE_TOO_DARK", "information")] } }))).toBe(true);
   });
 
   it("the ID must have passed, with its number read", () => {

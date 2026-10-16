@@ -1159,6 +1159,34 @@ export class RiderService {
     }
   }
 
+  /**
+   * The webhook's `id_unreadable` declines of this biker since the last clean slate: their latest verify, a
+   * person's decision (an admin approve, decline, expire or reset) or an earlier unreadable hold. What the
+   * unreadable hold counts (owner 2026-10-15, option 2), so old history never costs a biker today's retakes.
+   */
+  private async unreadableDeclinesSinceCleanSlate(tx: Prisma.TransactionClient, profileId: string): Promise<number> {
+    const slate = await tx.auditLog.findFirst({
+      where: {
+        target: profileId,
+        OR: [
+          { action: { in: ["rider.kyc_approve", "rider.kyc_expire", "rider.kyc_reset", "rider.kyc_review_required"] } },
+          { action: "rider.kyc_decline", NOT: { actor: KYC_WEBHOOK_ACTOR } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    return tx.auditLog.count({
+      where: {
+        actor: KYC_WEBHOOK_ACTOR,
+        action: "rider.kyc_decline",
+        target: profileId,
+        reasonCode: KycDeclineReason.ID_UNREADABLE,
+        ...(slate ? { createdAt: { gt: slate.createdAt } } : {}),
+      },
+    });
+  }
+
   /** The biker whose selfie re-check this vendor session is, or null (owner 2026-10-15). */
   async selfieRecheckOwner(ref: string): Promise<string | null> {
     if (!ref || ref.startsWith(KYC_MINT_CLAIM_PREFIX)) return null;
@@ -1867,16 +1895,15 @@ export class RiderService {
       // Owner 2026-10-15 (option 2): the card couldn't be read for the third time. Another retry on the same
       // camera won't read it either, so the check goes to a person instead of declining again: the biker waits on
       // the "under review" wall (pending, held — the stored In Review) and ops decide from the queue. Counted from
-      // the webhook's own earlier `id_unreadable` declines of this biker, which the KYC-R26-13 daily cap reads too.
+      // the webhook's own earlier `id_unreadable` declines of this biker, which the KYC-R26-13 daily cap reads too —
+      // since the last clean slate only: a verify, a person's decision (approve / decline / expire / reset) or an
+      // earlier hold. Unreadable cards months ago, before a verify and a lapsed ID, don't skip today's retakes.
       const unreadableHold =
         outcome === "failed" &&
         outReason === KycDeclineReason.ID_UNREADABLE &&
         !!current &&
         current.kycStatus === "pending" &&
-        (await tx.auditLog.count({
-          where: { actor: KYC_WEBHOOK_ACTOR, action: "rider.kyc_decline", target: current.profileId, reasonCode: KycDeclineReason.ID_UNREADABLE },
-        })) >=
-          KYC_UNREADABLE_DECLINES_BEFORE_REVIEW;
+        (await this.unreadableDeclinesSinceCleanSlate(tx, current.profileId)) >= KYC_UNREADABLE_DECLINES_BEFORE_REVIEW;
       if (unreadableHold) {
         this.logger.warn(`KYC ${kycRef}: the ID card couldn't be read again — held for a person instead of declined (owner 2026-10-15)`);
       }
