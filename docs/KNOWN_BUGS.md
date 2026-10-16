@@ -3296,7 +3296,7 @@ once; the `one_active_ride` index still holds them to one job.
 
 ## Rider onboarding review 2026-10-16 (interactive, owner: "review the latest PR work … rider onboarding")
 
-Reviewed #1211–#1217 against the code, with the decision functions run on Didit-shaped payloads. The open-PR findings (#1219's card screen-capture fix counting the card's finding twice on the poll path; three ID-check sheet races) were fixed on that PR's branch before it merged.
+Reviewed #1211–#1219 against the code, with the decision functions run on Didit-shaped payloads.
 
 | ID | Bug | Where | Severity | Status |
 |---|---|---|---|---|
@@ -3306,4 +3306,6 @@ Reviewed #1211–#1217 against the code, with the decision functions run on Didi
 | OR-1016-04 | **The sign-up permission screens spent R3's rider flow before the biker answered.** `?from=signup` marked `riderPermFlowDone` on mount, so a Back or a kill on P1 meant the full explainer never ran again. | `apps/mobile/app/permissions.tsx` | LOW | **FIXED (2026-10-16)** — marked on the first answer, or on leaving with nothing to ask. `permissions-flow.test.tsx`. |
 | OR-1016-05 | **No index on `riders.selfie_recheck_ref`**, which every Didit webhook and reconcile read now looks up first. | `apps/api/prisma/schema.prisma` | LOW | **FIXED (2026-10-16)** — migration `0105_riders_selfie_recheck_ref_index` (CONCURRENTLY, alone in its file). |
 | OR-1016-06 | The PII manifest said a selfie re-check's vendor session is deleted with the account; a FINISHED re-check clears its id with its verdict, so only an open one is. | `apps/api/src/privacy/pii-manifest.ts` | LOW | **FIXED (2026-10-16, wording)** — finished re-checks age out on Didit's retention, like a session a retry replaced (KYC-R26-05). |
+| OR-1016-08 | **#1219's card screen-capture retake (KYC-R26-15) only worked on the webhook.** The poll and sweep (`kyc-reconcile` `applyRead`) hand over Didit's flat body with the same body under `decision`, so the whole-payload count saw the card's `SCREEN_CAPTURE` twice, called one the selfie's and stored `liveness_failed` (a strike). The poll often lands first and the webhook then reads as a repeat (KYC-R26-01), so the strike stuck. | `apps/api/src/kyc/didit.ts` `extractDiditDeclineReason` | HIGH | **FIXED (2026-10-16)** — both counts read the decision only. `didit.spec.ts`, `kyc-reconcile.service.spec.ts`. |
+| OR-1016-09 | #1219's ID-check sheet: Leave on the stand-in left a check that arrived while the prompt was up on screen; a refused camera after Leave still opened the browser tab; `kyc_sheet_shown` fired for a check that failed to load (`onLoadEnd` after `onError`). | `apps/mobile/src/kyc/KycCheckHost.tsx`, `verify.ts` | LOW | **FIXED (2026-10-16)** — Leave closes a showing check, the browser lane honours a Leave, a done check is never "shown". `check-host.test.tsx`, `verify.test.ts`. |
 | OR-1016-07 | The top-up flow pre-fills $5.00 while the wall says "at least $3.00". | `apps/mobile/src/ui/rider/TopUpFlow.tsx` | LOW | **WONTFIX (by design)** — the rider-v2 mock draws $5.00 ("Suggested: $5.00 …") and #1213 kept the $5 · $10 · $20 row; changing it needs an owner-approved deviation. |
