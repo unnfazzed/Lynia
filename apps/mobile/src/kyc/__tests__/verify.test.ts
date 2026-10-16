@@ -18,8 +18,8 @@
  */
 import { openAuthSessionAsync } from "expo-web-browser";
 
-import { canPresentKycCheck, presentKycCheck } from "../KycCheckHost";
-import { primeKycCamera, runKycVerification } from "../verify";
+import { canPresentKycCheck, endKycCheckHold, holdKycCheck, presentKycCheck, prewarmKycCheck } from "../KycCheckHost";
+import { primeKycLaunch, runKycVerification } from "../verify";
 
 const mockTrack = jest.fn();
 jest.mock("../../telemetry/events", () => ({
@@ -31,6 +31,9 @@ jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
 jest.mock("../KycCheckHost", () => ({
   canPresentKycCheck: jest.fn(() => false),
   presentKycCheck: jest.fn(() => null),
+  prewarmKycCheck: jest.fn(),
+  holdKycCheck: jest.fn(),
+  endKycCheckHold: jest.fn(),
 }));
 jest.mock("expo-image-picker", () => ({
   getCameraPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true })),
@@ -168,12 +171,12 @@ describe("runKycVerification — the browser fallback lane", () => {
   });
 });
 
-describe("the camera ask runs alongside the session call (primeKycCamera)", () => {
+describe("the camera ask runs alongside the session call (primeKycLaunch)", () => {
   it("asks up front when the sheet can present; the launch reuses that answer instead of asking again", async () => {
     mockCanPresent.mockReturnValue(true);
     mockPresent.mockReturnValue(Promise.resolve("completed"));
     ImagePicker.getCameraPermissionsAsync.mockResolvedValue({ granted: false, canAskAgain: true });
-    const camera = primeKycCamera();
+    const camera = primeKycLaunch();
     await expect(camera).resolves.toBe(true);
     expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
     await runKycVerification(CREDS, { camera });
@@ -183,7 +186,7 @@ describe("the camera ask runs alongside the session call (primeKycCamera)", () =
 
   it("asks nothing when there is no sheet to present (the browser lane asks per site)", async () => {
     mockCanPresent.mockReturnValue(false);
-    await expect(primeKycCamera()).resolves.toBe(true);
+    await expect(primeKycLaunch()).resolves.toBe(true);
     expect(ImagePicker.getCameraPermissionsAsync).not.toHaveBeenCalled();
   });
 
@@ -193,6 +196,55 @@ describe("the camera ask runs alongside the session call (primeKycCamera)", () =
     await expect(runKycVerification(CREDS, { camera: Promise.resolve(false) })).resolves.toEqual({ outcome: "completed", sessionUnusable: false });
     expect(mockPresent).not.toHaveBeenCalled();
     expect(mockTrack).toHaveBeenCalledWith("kyc_camera_denied");
-    expect(mockTrack).toHaveBeenCalledWith("kyc_launch", { lane: "browser", outcome: "completed" });
+    expect(mockTrack).toHaveBeenCalledWith("kyc_launch", expect.objectContaining({ lane: "browser", outcome: "completed" }));
+  });
+});
+
+describe("the tap starts the sheet and its prewarm while the session is minted (primeKycLaunch)", () => {
+  const mockHold = holdKycCheck as jest.Mock;
+  const mockWarm = prewarmKycCheck as jest.Mock;
+  const mockEnd = endKycCheckHold as jest.Mock;
+
+  it("holds the sheet open and prewarms the check's page", async () => {
+    mockCanPresent.mockReturnValue(true);
+    await primeKycLaunch(1_000);
+    expect(mockHold).toHaveBeenCalledTimes(1);
+    expect(mockWarm).toHaveBeenCalledWith(1_000);
+  });
+
+  it("drops the stand-in before the browser tab opens (camera refused → browser lane)", async () => {
+    mockCanPresent.mockReturnValue(true);
+    mockOpen.mockResolvedValue({ type: "cancel" } as never);
+    await runKycVerification(CREDS, { camera: Promise.resolve(false) });
+    expect(mockEnd).toHaveBeenCalled();
+    expect(mockEnd.mock.invocationCallOrder[0]).toBeLessThan(mockOpen.mock.invocationCallOrder[0]!);
+  });
+
+  it("drops the stand-in when there is no session URL to open", async () => {
+    await expect(runKycVerification({ sessionToken: "t", verificationUrl: null })).resolves.toEqual({ outcome: "failed", sessionUnusable: false });
+    expect(mockEnd).toHaveBeenCalled();
+  });
+
+  it("reports the launch timings from the tap, once", async () => {
+    mockCanPresent.mockReturnValue(true);
+    mockPresent.mockReturnValue(Promise.resolve("completed"));
+    const camera = primeKycLaunch(Date.now() - 1_500);
+    await runKycVerification(CREDS, { camera });
+    const props = mockTrack.mock.calls.find((c) => c[0] === "kyc_launch")?.[1] as Record<string, unknown>;
+    expect(props).toMatchObject({ lane: "sheet", outcome: "completed" });
+    expect(props.session_ms).toBeGreaterThanOrEqual(1_500);
+    expect(props.total_ms).toBeGreaterThanOrEqual(props.session_ms as number);
+    // The tap is consumed: a later launch with no new tap carries no timings.
+    mockTrack.mockClear();
+    await runKycVerification(CREDS);
+    expect(mockTrack).toHaveBeenCalledWith("kyc_launch", { lane: "sheet", outcome: "completed" });
+  });
+
+  it("never throws when the sheet host can't be driven", async () => {
+    mockCanPresent.mockReturnValue(true);
+    mockHold.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    await expect(primeKycLaunch()).resolves.toBe(true);
   });
 });

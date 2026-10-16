@@ -51,7 +51,8 @@ const mockRunKyc = jest.fn();
 const mockPrimeCamera = jest.fn(async () => true);
 jest.mock("../../../src/kyc/verify", () => ({
   runKycVerification: (...a: unknown[]) => mockRunKyc(...a),
-  primeKycCamera: () => mockPrimeCamera(),
+  primeKycLaunch: () => mockPrimeCamera(),
+  endKycCheckHold: () => undefined,
 }));
 // A marker in place of the sheet host, so a test can see where it is mounted.
 jest.mock("../../../src/kyc/KycCheckHost", () => ({ KycCheckHost: () => require("react").createElement("KycCheckHostMarker") }));

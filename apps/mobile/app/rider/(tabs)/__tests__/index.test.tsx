@@ -87,7 +87,7 @@ jest.mock("expo-location", () => ({
   },
   Accuracy: { Balanced: 3 },
 }));
-jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn(), primeKycCamera: jest.fn(async () => true) }));
+jest.mock("../../../../src/kyc/verify", () => ({ runKycVerification: jest.fn(), primeKycLaunch: jest.fn(async () => true), endKycCheckHold: jest.fn() }));
 // A real (in-memory) keystore: the stored ID-check launch mark and the R3 welcome set are read back.
 let mockStore: Record<string, string> = {};
 jest.mock("expo-secure-store", () => ({

@@ -22,7 +22,7 @@ const mockStartRecheck = jest.fn();
 jest.mock("../../../src/api/riders", () => ({ updateRiderProfile: (b: unknown) => mockUpdateRider(b), startSelfieRecheck: () => mockStartRecheck() }));
 // D-110: the selfie re-check opens through the same launcher as the first ID check.
 const mockRunKyc = jest.fn();
-jest.mock("../../../src/kyc/verify", () => ({ primeKycCamera: async () => true, runKycVerification: (c: unknown, o: unknown) => mockRunKyc(c, o) }));
+jest.mock("../../../src/kyc/verify", () => ({ primeKycLaunch: async () => true, endKycCheckHold: () => undefined, runKycVerification: (c: unknown, o: unknown) => mockRunKyc(c, o) }));
 const mockPick = jest.fn();
 const mockAllowed = jest.fn(async (_from: string) => false);
 const mockSavePhoto = jest.fn();
