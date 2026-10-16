@@ -487,6 +487,18 @@ describe("extractDiditDeclineReason (KYC-R26-12)", () => {
       expect(extractDiditDeclineReason(decision(["SCREEN_CAPTURE_DETECTED", "SCREEN_REPLAY_DETECTED"]))).toBe("doc_tampered");
     });
 
+    // The poll and sweep (kyc-reconcile applyRead) read Didit's flat decision body and hand it over with the
+    // same body under `decision` too: the card's one finding must not count twice and read as the selfie's.
+    it("the reconcile shape (flat body, also under decision) reads the same as the webhook", () => {
+      const features = decision(["SCREEN_CAPTURE_DETECTED"]).decision;
+      const body: Record<string, unknown> = { status: "Declined", ...features };
+      const reconcile = { ...body, decision: body };
+      expect(extractDiditDeclineReason(reconcile)).toBe("id_unreadable");
+      expect(decideDiditKyc("Declined", 0.905, reconcile)).toEqual({ status: "failed", reason: "id_unreadable" });
+      const selfieBody: Record<string, unknown> = { status: "Declined", ...decision([], ["SCREEN_CAPTURE_DETECTED"]).decision };
+      expect(extractDiditDeclineReason({ ...selfieBody, decision: selfieBody })).toBe("liveness_failed");
+    });
+
     it("an information-level card note is still ignored", () => {
       const noted = { decision: { id_verifications: [{ status: "Declined", warnings: [{ risk: "SCREEN_CAPTURE_DETECTED", log_type: "information" }] }] } };
       expect(extractDiditDeclineReason(noted)).toBeNull();

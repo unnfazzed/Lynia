@@ -243,8 +243,11 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
   // moiré): the 2026-10-16 biker failed it with a selfie scoring 100 and a face match of 90.5, then passed with the
   // same card four minutes later. That is a retake of the card photo (F4a), not "your face didn't match" (F4b), and
   // not a strike. Unattributable (outside every feature) stays a liveness finding, as before.
+  // Both counts read the decision only: the poll and sweep (kyc-reconcile applyRead) hand over Didit's flat
+  // decision body with that same body ALSO under `decision`, so a whole-payload count saw the card's finding
+  // twice, called one of them the selfie's, and struck the biker the webhook would have let retake.
   const documentRisks = warningRisks(documentEntries(payload));
-  const screenCaptureOffDocument = countOf(risks, /SCREEN_CAPTURE/) > countOf(documentRisks, /SCREEN_CAPTURE/);
+  const screenCaptureOffDocument = countOf(warningRisks(decisionOnly(payload)), /SCREEN_CAPTURE/) > countOf(documentRisks, /SCREEN_CAPTURE/);
   if (has(/LIVENESS|SPOOF|INJECT|VIRTUAL_CAMERA|VIDEO_ANOMALY|MULTIPLE_FACES/) || screenCaptureOffDocument) return KycDeclineReason.LIVENESS_FAILED;
   if (has(/FACE_MATCH|SIMILARITY|FACE_MISMATCH/)) return KycDeclineReason.FACE_MISMATCH;
   if (has(/EXPIRED|EXPIRATION/)) return KycDeclineReason.ID_EXPIRED;
@@ -257,6 +260,13 @@ export function extractDiditDeclineReason(payload: unknown): string | null {
 /** How many of `risks` match `re` — a count, so a code raised on both the card and the selfie isn't read as card-only. */
 function countOf(risks: string[], re: RegExp): number {
   return risks.filter((r) => re.test(r)).length;
+}
+
+/** The decision under a payload, alone — or the payload itself when it carries none. */
+function decisionOnly(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const decision = (payload as Record<string, unknown>).decision;
+  return decision && typeof decision === "object" && !Array.isArray(decision) ? { decision } : payload;
 }
 
 /** The ID-document results under a decision payload (empty when it has none, or isn't a decision). */

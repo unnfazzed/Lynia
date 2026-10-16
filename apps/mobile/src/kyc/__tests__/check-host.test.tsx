@@ -368,6 +368,31 @@ describe("faster opening", () => {
     expect(webViews(tree)).toHaveLength(1);
   });
 
+  it("Leave closes a check that arrived while the leave prompt was up", async () => {
+    const tree = mountHost();
+    act(() => holdKycCheck());
+    let leave: (() => void) | undefined;
+    (Alert.alert as unknown as jest.Mock).mockImplementationOnce((_t: string, _m: string, buttons: { text: string; onPress?: () => void }[]) => {
+      leave = buttons.find((b) => b.text === "Leave")?.onPress;
+    });
+    const close = tree.root.findAll((n) => n.props.accessibilityLabel === "Close" && typeof n.props.onPress === "function")[0]!;
+    act(() => close.props.onPress());
+    // The session comes back while the prompt is still up: the check takes the stand-in's place.
+    let pending!: Promise<string> | null;
+    act(() => {
+      pending = presentKycCheck({ url: URL });
+    });
+    expect(webViews(tree)).toHaveLength(1);
+    act(() => leave!());
+    await expect(pending).resolves.toBe("cancelled");
+    expect(tree.toJSON()).toBeNull();
+    // Nothing is left marked cancelled: the next attempt presents normally.
+    act(() => {
+      pending = presentKycCheck({ url: URL });
+    });
+    expect(webViews(tree)).toHaveLength(1);
+  });
+
   it("the hold is a no-op with no host (the browser lane has nothing to stand in for)", () => {
     expect(() => holdKycCheck()).not.toThrow();
     expect(() => prewarmKycCheck()).not.toThrow();
@@ -433,6 +458,18 @@ describe("faster opening", () => {
     expect(shown).toHaveLength(1);
     expect(shown[0]![1]).toMatchObject({ prewarmed: true });
     expect(typeof (shown[0]![1] as { ms: unknown }).ms).toBe("number");
+  });
+
+  it("a check that failed to load is never reported shown (onLoadEnd fires after onError)", () => {
+    mockTrack.mockClear();
+    const tree = mountHost();
+    act(() => {
+      presentKycCheck({ url: URL });
+    });
+    const props = webViews(tree)[0]!.props;
+    act(() => props.onError({ nativeEvent: { url: URL } }));
+    act(() => props.onLoadEnd());
+    expect(mockTrack.mock.calls.filter((c) => c[0] === "kyc_sheet_shown")).toHaveLength(0);
   });
 
   it("keeps the screen on while the sheet is up, and lets it go after", async () => {
