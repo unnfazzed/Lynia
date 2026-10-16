@@ -9,11 +9,14 @@
  *
  *   - every finding is listed in the job summary (and the SARIF is kept as a run artifact);
  *   - the job FAILS on any error-level finding (CodeQL's `error` level: its high-precision security
- *     results), the bar the owner chose. Warnings and notes are listed, never blocking.
+ *     results), the bar the owner chose. Warnings and notes are listed, never blocking;
+ *   - a finding the owner reviewed and accepted is listed as `accepted`, never blocking. The list is
+ *     `.github/codeql/accepted-findings.json` — rule + file + the reason it is safe — and stands in for
+ *     "Dismiss" on the Security tab. An entry nothing matches any more is reported, so it can be removed.
  *
  * Usage: node scripts/check-codeql-sarif.mjs <dir-or-file> [...]
  */
-import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /** Every .sarif file under the given paths. */
@@ -47,19 +50,42 @@ export function findings(sarif) {
   return out;
 }
 
+export const ACCEPTED_FILE = ".github/codeql/accepted-findings.json";
+
+/** Whether an accepted-findings entry covers a finding: same rule, same file (any line — lines move). */
+export function isAccepted(finding, accepted) {
+  const file = finding.where.replace(/:[^:]*$/, "");
+  return accepted.some((a) => a.ruleId === finding.ruleId && a.path === file);
+}
+
+/** The reviewed list, or [] when there is none. Each entry needs a rule, a path and a reason. */
+export function readAccepted(path = ACCEPTED_FILE) {
+  if (!existsSync(path)) return [];
+  const list = JSON.parse(readFileSync(path, "utf8"));
+  for (const a of list) {
+    if (!a.ruleId || !a.path || !a.reason) throw new Error(`${path}: every entry needs ruleId, path and reason`);
+  }
+  return list;
+}
+
 function main(argv) {
   const files = sarifFiles(argv.length ? argv : ["sarif-results"]);
   if (files.length === 0) {
     console.error("check-codeql-sarif: no .sarif file found — did the analyze step write one?");
     return 1;
   }
-  const all = files.flatMap((f) => findings(JSON.parse(readFileSync(f, "utf8"))));
+  const accepted = readAccepted();
+  const all = files
+    .flatMap((f) => findings(JSON.parse(readFileSync(f, "utf8"))))
+    .map((f) => (isAccepted(f, accepted) ? { ...f, level: `accepted (${f.level})` } : f));
   const blocking = all.filter((f) => f.level === "error");
+  const unused = accepted.filter((a) => !all.some((f) => f.ruleId === a.ruleId && f.where.startsWith(`${a.path}:`)));
   const lines = [
     `### CodeQL: ${all.length} finding(s), ${blocking.length} blocking (error-level)`,
     "",
     ...(all.length ? ["| Level | Rule | Where | Message |", "|---|---|---|---|"] : ["No findings."]),
-    ...all.map((f) => `| ${f.level} | \`${f.ruleId}\` | \`${f.where}\` | ${f.message.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 200)} |`),
+    ...all.map((f) => `| ${f.level} | \`${f.ruleId}\` | \`${f.where}\` | ${f.message.replace(/\s+/g, " ").replace(/\\/g, "\\\\").replace(/\|/g, "\\|").slice(0, 200)} |`),
+    ...unused.map((a) => `\nAccepted entry no longer matched (remove it from ${ACCEPTED_FILE}): \`${a.ruleId}\` in \`${a.path}\``),
   ];
   console.log(lines.join("\n"));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);

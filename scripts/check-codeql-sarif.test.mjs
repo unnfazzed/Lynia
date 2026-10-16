@@ -1,7 +1,7 @@
 // Tests for scripts/check-codeql-sarif.mjs — run with: node --test scripts/check-codeql-sarif.test.mjs
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -21,12 +21,17 @@ const result = (ruleId, level) => ({
   locations: [{ physicalLocation: { artifactLocation: { uri: "apps/api/src/x.ts" }, region: { startLine: 7 } } }],
 });
 
-function run(log) {
+// Runs the gate from a scratch repo root, so only an accepted list written here applies.
+function run(log, accepted) {
   const dir = mkdtempSync(join(tmpdir(), "codeql-sarif-"));
   temps.push(dir);
   writeFileSync(join(dir, "javascript.sarif"), JSON.stringify(log));
+  if (accepted) {
+    mkdirSync(join(dir, ".github/codeql"), { recursive: true });
+    writeFileSync(join(dir, ".github/codeql/accepted-findings.json"), JSON.stringify(accepted));
+  }
   try {
-    return { code: 0, out: execFileSync("node", [SCRIPT, dir], { encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } }) };
+    return { code: 0, out: execFileSync("node", [SCRIPT, dir], { cwd: dir, encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } }) };
   } catch (e) {
     return { code: e.status, out: String(e.stdout) };
   }
@@ -65,9 +70,33 @@ test("no SARIF file at all fails rather than passing silently", () => {
   temps.push(dir);
   let code = 0;
   try {
-    execFileSync("node", [SCRIPT, dir], { stdio: "pipe" });
+    execFileSync("node", [SCRIPT, dir], { cwd: dir, stdio: "pipe" });
   } catch (e) {
     code = e.status;
   }
   assert.equal(code, 1);
+});
+
+test("an accepted finding (same rule, same file, any line) is listed but never blocks", () => {
+  const accepted = [{ ruleId: "js/sql-injection", path: "apps/api/src/x.ts", reason: "reviewed: not reachable" }];
+  const r = run(sarif([result("js/sql-injection", "error")]), accepted);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /accepted \(error\)/);
+});
+
+test("acceptance is per rule and per file: a new rule in the same file still blocks", () => {
+  const accepted = [{ ruleId: "js/sql-injection", path: "apps/api/src/x.ts", reason: "reviewed" }];
+  assert.equal(run(sarif([result("js/xss", "error")]), accepted).code, 1);
+});
+
+test("an accepted entry nothing matches any more is reported for removal", () => {
+  const accepted = [{ ruleId: "js/gone", path: "apps/api/src/old.ts", reason: "reviewed" }];
+  const r = run(sarif([]), accepted);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /no longer matched.*js\/gone/);
+});
+
+test("an accepted entry without a reason is refused", () => {
+  const r = run(sarif([]), [{ ruleId: "js/x", path: "a.ts" }]);
+  assert.notEqual(r.code, 0);
 });

@@ -7,7 +7,8 @@ name: CodeQL
 # paid Code Security add-on, so the results can't reach the Security tab ("Code scanning is not enabled
 # for this repository" failed every run). The analysis still runs with `upload: never`;
 # scripts/check-codeql-sarif.mjs reads its SARIF, lists every finding in the job summary and FAILS the job
-# on an error-level one. The SARIF is kept as a run artifact. If Code Security is ever bought, restore the
+# on an error-level one, except those the owner reviewed in .github/codeql/accepted-findings.json (rule +
+# file + why it is safe: the stand-in for "Dismiss" on the Security tab). The SARIF is kept as a run artifact. If Code Security is ever bought, restore the
 # upload (and `security-events: write`) and drop the gate step.
 
 on:

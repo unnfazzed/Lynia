@@ -214,7 +214,7 @@ SQLi probe gets a 403 at the edge.
 
 ### P1 — High
 
-**P1-1 · Security scanning in CI + Dependabot.** Done; the dependency policy is in §9. Since the repo went private (2026-10-16) CodeQL runs without uploading to the Security tab (that needs GitHub's paid Code Security add-on): `scripts/check-codeql-sarif.mjs` lists its findings in the job summary and fails the PR on an error-level one; the SARIF is a run artifact.
+**P1-1 · Security scanning in CI + Dependabot.** Done; the dependency policy is in §9. Since the repo went private (2026-10-16) CodeQL runs without uploading to the Security tab (that needs GitHub's paid Code Security add-on): `scripts/check-codeql-sarif.mjs` lists its findings in the job summary and fails the PR on an error-level one, except findings the owner reviewed in `.github/codeql/accepted-findings.json` (rule + file + reason); the SARIF is a run artifact.
 
 **P1-2 · Global rate limiting.** Done. Redis-backed `ThrottleGuard` with tighter limits on refresh,
 order create, offers, select, code entry, top-ups, and issue/report/SOS creation.

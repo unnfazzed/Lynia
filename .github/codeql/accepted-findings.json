@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "js/user-controlled-bypass",
+    "path": "apps/api/src/kyc/kyc.controller.ts",
+    "reason": "The Didit webhook's X-Signature-V2 header only picks which signature format is checked (canonical body vs raw bytes). Both branches are an HMAC-SHA256 of the body with DIDIT_WEBHOOK_SECRET and a constant-time compare (verifyDiditSignatureV2 / verifyDiditSignature in apps/api/src/kyc/didit.ts), so a caller without the secret passes neither. False positive.",
+    "acceptedBy": "owner",
+    "date": "2026-10-16"
+  }
+]
