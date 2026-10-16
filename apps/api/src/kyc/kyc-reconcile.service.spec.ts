@@ -218,6 +218,23 @@ describe("KycReconcileService.reconcileFromPoll — /auth/me's read of a decided
     expect(metrics.incKycReconcileApplied).toHaveBeenCalledWith("poll");
   });
 
+  // 2026-10-16: a card that tripped Didit's "screen capture of document" is a retake, not a strike — on the poll
+  // too. The poll often lands before the webhook, which then reads as a repeat and can't correct it.
+  it("a card-only SCREEN_CAPTURE from the poll is an unreadable card, not a liveness strike", async () => {
+    const { riders, applied } = fakeRiders([]);
+    const svc = new KycReconcileService(riders, vendorWith({}), DIDIT, undefined, metricsFake() as unknown as MetricsService);
+    const body = {
+      status: "Declined",
+      vendor_data: "p1",
+      id_verifications: [{ status: "Declined", warnings: [{ risk: "SCREEN_CAPTURE_DETECTED" }] }],
+      liveness_checks: [{ status: "Approved", score: 100, warnings: [] }],
+      face_matches: [{ status: "Approved", score: 90.5 }],
+    };
+    expect(await svc.reconcileFromPoll("sess_1", "Declined", body)).toBe(true);
+    const [ref, status, , reason] = applied[0]!;
+    expect([ref, status, reason]).toEqual(["sess_1", "failed", "id_unreadable"]);
+  });
+
   it("single-flight per session, then a cooldown: a burst of polls applies once", async () => {
     const { riders, applied } = fakeRiders([]);
     let release!: () => void;

@@ -127,6 +127,16 @@ export function endKycCheckHold(): void {
 }
 
 /**
+ * Whether the rider closed the stand-in before anything opened — and clear it. The browser lane asks before
+ * opening: a rider who left mustn't get the in-app browser tab over them instead (a refused camera, no host).
+ */
+export function takeKycCheckHoldCancelled(): boolean {
+  if (hold !== "cancelled") return false;
+  hold = "none";
+  return true;
+}
+
+/**
  * Present the ID-check sheet over the current screen. Resolves with the rider's outcome, or returns
  * null when no host is mounted (the caller falls back to the browser lane). Never throws.
  */
@@ -262,8 +272,16 @@ export function KycCheckHost(): React.ReactElement | null {
   /** ✕ (or Android back) on the stand-in: the same confirm as the check, then the coming check is cancelled. */
   const leaveHold = (): void => {
     confirmLeave(() => {
-      hold = "cancelled";
       setHolding(false);
+      // The check arrived while the prompt was up and took the stand-in's place: Leave closes it, as the
+      // check's own ✕ would. Read through the ref — this runs long after the render that made it.
+      const showing = activeRef.current;
+      if (showing) {
+        showing.resolve("cancelled");
+        setActive(null);
+        return;
+      }
+      hold = "cancelled";
     });
   };
 
@@ -466,7 +484,8 @@ function KycCheckSheet({
   /** The check is on screen: drop the cover, and report how long it took (once). */
   const reveal = (): void => {
     setLoading(false);
-    if (shownRef.current) return;
+    // The WebView fires onLoadEnd after onError too: a check that failed (or finished) was never "shown".
+    if (shownRef.current || doneRef.current) return;
     shownRef.current = true;
     const prewarmed = prewarmAt > 0 && openedAt.current - prewarmAt < KYC_PREWARM_TTL_MS;
     track(EVENTS.kycSheetShown, { ms: Date.now() - openedAt.current, prewarmed, webview: webViewMajor });

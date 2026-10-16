@@ -34,6 +34,7 @@ jest.mock("../KycCheckHost", () => ({
   prewarmKycCheck: jest.fn(),
   holdKycCheck: jest.fn(),
   endKycCheckHold: jest.fn(),
+  takeKycCheckHoldCancelled: jest.fn(() => false),
 }));
 jest.mock("expo-image-picker", () => ({
   getCameraPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true })),
@@ -218,6 +219,15 @@ describe("the tap starts the sheet and its prewarm while the session is minted (
     await runKycVerification(CREDS, { camera: Promise.resolve(false) });
     expect(mockEnd).toHaveBeenCalled();
     expect(mockEnd.mock.invocationCallOrder[0]).toBeLessThan(mockOpen.mock.invocationCallOrder[0]!);
+  });
+
+  it("a rider who closed the stand-in gets no browser tab either (camera refused after Leave)", async () => {
+    mockCanPresent.mockReturnValue(true);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const host = require("../KycCheckHost") as { takeKycCheckHoldCancelled: jest.Mock };
+    host.takeKycCheckHoldCancelled.mockReturnValueOnce(true);
+    await expect(runKycVerification(CREDS, { camera: Promise.resolve(false) })).resolves.toEqual({ outcome: "cancelled", sessionUnusable: false });
+    expect(mockOpen).not.toHaveBeenCalled();
   });
 
   it("drops the stand-in when there is no session URL to open", async () => {
