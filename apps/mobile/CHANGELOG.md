@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.55.0](https://github.com/unnfazzed/Lynia/compare/v0.54.0...v0.55.0) (2026-10-17)
+
+
+### Features
+
+* **mobile:** cap text at 1.3x font scale; ID-check crumbs, restart + font-scale telemetry ([#1225](https://github.com/unnfazzed/Lynia/issues/1225)) ([4a00cff](https://github.com/unnfazzed/Lynia/commit/4a00cff7c2fa9e838ba6348e484d83b885135c3a))
+
+
+### Bug Fixes
+
+* **mobile:** biker journey fits at 1.3x text — header, job buttons, step labels, photo row, standing tiles ([#1227](https://github.com/unnfazzed/Lynia/issues/1227)) ([2c45c62](https://github.com/unnfazzed/Lynia/commit/2c45c628480775be153426ffe69308312b6f40df))
+* **rider-onboarding:** info-level spoof hole, poll-path screen-capture strike, silent accepts ([#1220](https://github.com/unnfazzed/Lynia/issues/1220)) ([3211e37](https://github.com/unnfazzed/Lynia/commit/3211e37ea3fdfba36ac87a9cfc98437e8135d605))
+* **rider:** let a biker change the star rating they gave the customer ([#1226](https://github.com/unnfazzed/Lynia/issues/1226)) ([71d96cb](https://github.com/unnfazzed/Lynia/commit/71d96cb79ffb13c01ecde2fcc761122122fa9ba2))
+
 ## [0.54.0](https://github.com/unnfazzed/Lynia/compare/v0.53.0...v0.54.0) (2026-10-15)
 
 
