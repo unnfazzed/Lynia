@@ -93,9 +93,9 @@ export function interFamily(weight?: string | number | null): string {
 }
 
 /**
- * Make every `<Text>` / `<TextInput>` render in the weight-correct self-hosted Inter without editing
- * each call site: inject the right `fontFamily` (and drop the now-redundant `fontWeight` so Android
- * doesn't double-synthesise bold) on every render. An explicit `fontFamily` (e.g. a deliberate
+ * Make every `<Text>` / `<TextInput>` render in the weight-correct self-hosted Inter, and cap its font
+ * scale at {@link MAX_FONT_SCALE}, without editing each call site: inject the right `fontFamily` (and
+ * drop the now-redundant `fontWeight` so Android doesn't double-synthesise bold) on every render. An explicit `fontFamily` (e.g. a deliberate
  * per-Text override) is left untouched. Guarded per render so any internals mismatch falls back to
  * the system font instead of crashing.
  *
@@ -136,6 +136,31 @@ export function withInterFont<P>(props: P): P {
   }
 }
 
+/**
+ * The largest system font scale any text grows to (owner 2026-10-17, ledger D-111). Every handoff draws its
+ * screens at font scale 1.0 and 1.3 and nothing larger, while Android's biggest text setting reaches about
+ * 2.0: two bikers' screens overflowed at that size on 0.54.0. Text still follows the phone's setting up to
+ * here, then stops. A tighter cap set on an element (the delivery code's 1.15, the hand-off code's 1.0) or
+ * `allowFontScaling={false}` still wins.
+ */
+export const MAX_FONT_SCALE = 1.3;
+
+/** `props` with {@link MAX_FONT_SCALE} as the default `maxFontSizeMultiplier`; an element's own value wins. */
+export function withFontScaleCap<P>(props: P): P {
+  try {
+    const p = props as { maxFontSizeMultiplier?: number | null } | null | undefined;
+    if (p?.maxFontSizeMultiplier != null) return props;
+    return { ...p, maxFontSizeMultiplier: MAX_FONT_SCALE } as P;
+  } catch {
+    return props; // same contract as withInterFont: never throws mid-render
+  }
+}
+
+/** Everything the patch adds to a Text / TextInput render: the Inter family and the font-scale cap. */
+export function withTextDefaults<P>(props: P): P {
+  return withFontScaleCap(withInterFont(props));
+}
+
 /** A forwardRef-style render function, tagged with the Fast-Refresh re-patch guard markers. */
 type PatchedRenderFn = ((this: unknown, props: unknown, ref: unknown) => unknown) & {
   __lyniaInterPatched?: boolean;
@@ -155,9 +180,9 @@ export function patchRenderable(Comp: Patchable): boolean {
   // Refresh re-evaluation of this module doesn't stack a second wrapper on the cached RN component.
   if (original.__lyniaInterPatched) return true;
   const patchedRender: PatchedRenderFn = function patchedRender(this: unknown, props: unknown, ref: unknown) {
-    // `withInterFont` never throws, so `original` runs exactly once per render — a throw mid-render
+    // `withTextDefaults` never throws, so `original` runs exactly once per render — a throw mid-render
     // would otherwise re-enter it in the same fiber pass and corrupt the hook cursor.
-    return original.call(this, withInterFont(props), ref);
+    return original.call(this, withTextDefaults(props), ref);
   };
   patchedRender.__lyniaInterPatched = true;
   patchedRender.__lyniaOriginal = original;
@@ -174,7 +199,7 @@ type InterComponent = ((props: Record<string, unknown>) => React.ReactElement) &
 
 /**
  * Redefine the `name` accessor on `exports` (react-native's index) to return ONE wrapper that renders
- * the current component with {@link withInterFont} props. The wrapper is created once, so the
+ * the current component with {@link withTextDefaults} props. The wrapper is created once, so the
  * component identity React reconciles against never changes. Statics (TextInput.State) are carried
  * over; `ref` rides through as the ordinary prop React 19 makes it. Exported for tests; returns
  * whether it applied.
@@ -188,7 +213,7 @@ export function patchExport(exports: object | null | undefined, name: string): b
   if (Original.__lyniaInterPatched) return true;
   const descriptor = Object.getOwnPropertyDescriptor(exports, name);
   if (!descriptor?.configurable) return false;
-  const Inter: InterComponent = (props) => React.createElement(Original, withInterFont(props));
+  const Inter: InterComponent = (props) => React.createElement(Original, withTextDefaults(props));
   Object.assign(Inter, Original);
   Inter.displayName = name;
   Inter.__lyniaInterPatched = true;

@@ -103,6 +103,17 @@ describe("mobile Sentry helper (roadmap 1.1 — inert without a DSN)", () => {
     });
   });
 
+  it("sets tags for later events once armed, and does nothing when inert", () => {
+    const inert = load();
+    inert.mod.setTags({ font_scale: "1.5" });
+    expect(inert.sentry.setTags).not.toHaveBeenCalled();
+
+    const { mod, sentry } = load();
+    mod.initSentry({ dsn: "https://key@o1.ingest.sentry.io/2" });
+    mod.setTags({ font_scale: "1.5", screen_width_dp: "360" });
+    expect(sentry.setTags).toHaveBeenCalledWith({ font_scale: "1.5", screen_width_dp: "360" });
+  });
+
   /**
    * MOB-BOOT-04 regression (docs/archive/COLD-START-CRASH-RCA-2026-08-21.md).
    *

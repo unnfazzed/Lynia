@@ -5598,3 +5598,21 @@ Guards: `didit.spec.ts` "isSelfieCameraFailure", `kyc.controller.spec.ts` (camer
 flag; a re-check's verdict never reaches applyKycResult), `rider.service.spec.ts` "owner 2026-10-15" (the flag,
 the third-unreadable hold and its repeat guard, the re-check request / start / verdict), admin
 `riders/[id]/kyc/page.test.tsx`, mobile `documents.test.tsx` (D-110) and `push.test.ts`.
+
+## D-111 · Text grows with the phone's setting up to 1.3×, then stops — APPROVED (owner, 2026-10-17)
+
+**Why:** two new bikers on 0.54.0 (2026-10-17), one with the phone's text size turned up, saw screens overflow.
+Every handoff draws its screens at font scale 1.0 and **1.3** and nothing larger (order-flow-v2 `?fs=1.3`,
+first-run-v2, after-send-v2, orders-v2, browse-v2, merchant-v2, customer-briefs-06-09 "Support OS font scales
+1.0–1.3"), while Android's largest setting reaches about 2×. rider-v2's "text grows like Android sp … only the
+delivery-code digits are capped" set no upper bound. The owner chose (design review of
+`docs/plans/2026-10-17-large-font-and-field-crashes.md`, decision 5A): cap at the drawn ceiling.
+
+| Element | Drawn | Shipped |
+|---|---|---|
+| Every `Text` / `TextInput` in `apps/mobile` | rider-v2: grows like sp, no limit (only the delivery code capped at 1.15) | Grows like sp **up to 1.3×** (`MAX_FONT_SCALE`, `src/ui/fonts.ts`, applied by the existing app-wide Text patch). A tighter cap an element sets (delivery code 1.15, hand-off code 1.0) and `allowFontScaling={false}` still win |
+
+Not covered: `Animated.Text` (nothing uses it; `fonts.test.tsx` fails if something starts to), WebView content
+(the ID check's pages are the vendor's, D-34/D-37). Layouts that read `fontScale` themselves (First Run's
+`LARGE_FONT_SCALE`, the order screen's stacking) still read the system value, so they pick their large-text
+layout at any scale above their threshold. Guard: `src/ui/__tests__/fonts.test.tsx` "font-scale cap (D-111…)".

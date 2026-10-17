@@ -23,8 +23,10 @@ import {
   applyInterToTextComponents,
   fontFamilies,
   interFamily,
+  MAX_FONT_SCALE,
   patchExport,
   patchRenderable,
+  withFontScaleCap,
   withInterFont,
 } from "../fonts";
 
@@ -35,6 +37,12 @@ function hostStyle(element: React.ReactElement): Record<string, any> {
   const tree: renderer.ReactTestRenderer = renderSync(element);
   const host = tree.root.find((n) => typeof n.type === "string");
   return (StyleSheet.flatten(host.props.style as never) ?? {}) as Record<string, any>;
+}
+
+/** Props of the first host node (string type) in the rendered tree. */
+function hostProps(element: React.ReactElement): AnyProps {
+  const tree: renderer.ReactTestRenderer = renderSync(element);
+  return tree.root.find((n) => typeof n.type === "string").props as AnyProps;
 }
 
 /** A style whose flatten throws (getter bomb). */
@@ -131,6 +139,32 @@ describe("real react-native export shape (0.81.x)", () => {
     expect((TextInput as AnyProps).__lyniaInterPatched).toBe(true);
     expect(typeof (TextInput as AnyProps).State?.currentlyFocusedInput).toBe("function");
     expect(hostStyle(<TextInput style={{ fontWeight: "600" }} />).fontFamily).toBe(fontFamilies.semibold);
+  });
+});
+
+describe("font-scale cap (D-111: text follows the phone's setting up to 1.3x)", () => {
+  it("caps at 1.3, the largest scale any handoff draws", () => {
+    expect(MAX_FONT_SCALE).toBe(1.3);
+    expect(withFontScaleCap({}) as AnyProps).toEqual({ maxFontSizeMultiplier: 1.3 });
+  });
+
+  it("leaves an element's own cap alone (the delivery code's 1.15, the hand-off code's 1.0)", () => {
+    const props = { maxFontSizeMultiplier: 1.15 };
+    expect(withFontScaleCap(props)).toBe(props);
+    expect((withFontScaleCap({ maxFontSizeMultiplier: 1 }) as AnyProps).maxFontSizeMultiplier).toBe(1);
+  });
+
+  it("renders every `import { Text } from \"react-native\"` with the cap", () => {
+    expect(hostProps(<Text>Hello</Text>).maxFontSizeMultiplier).toBe(MAX_FONT_SCALE);
+    expect(hostProps(<Text maxFontSizeMultiplier={1.15}>418 290</Text>).maxFontSizeMultiplier).toBe(1.15);
+  });
+
+  it("caps TextInput too", () => {
+    expect(hostProps(<TextInput />).maxFontSizeMultiplier).toBe(MAX_FONT_SCALE);
+  });
+
+  it("keeps allowFontScaling={false} as the element set it", () => {
+    expect(hostProps(<Text allowFontScaling={false}>8</Text>).allowFontScaling).toBe(false);
   });
 });
 

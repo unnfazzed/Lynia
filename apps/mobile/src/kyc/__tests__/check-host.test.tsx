@@ -35,6 +35,12 @@ jest.mock("expo-keep-awake", () => ({
   deactivateKeepAwake: (tag: string) => mockDeactivate(tag),
 }));
 
+const mockCrumb = jest.fn();
+jest.mock("../../telemetry/sentry", () => ({
+  ...jest.requireActual("../../telemetry/sentry"),
+  addBreadcrumb: (...a: unknown[]) => mockCrumb(...a),
+}));
+
 const mockTrack = jest.fn();
 jest.mock("../../telemetry/events", () => ({
   ...jest.requireActual("../../telemetry/events"),
@@ -458,6 +464,39 @@ describe("faster opening", () => {
     expect(shown).toHaveLength(1);
     expect(shown[0]![1]).toMatchObject({ prewarmed: true });
     expect(typeof (shown[0]![1] as { ms: unknown }).ms).toBe("number");
+  });
+
+  it("leaves a breadcrumb trail of every WebView it mounts and drops (LYNIA-MOBILE-8: a crash on the second open)", async () => {
+    mockCrumb.mockClear();
+    const tree = mountHost();
+    act(() => prewarmKycCheck());
+    act(() => holdKycCheck());
+    let first!: Promise<string>;
+    act(() => {
+      first = presentKycCheck({ url: URL })!;
+    });
+    act(() => webViews(tree)[0]!.props.onLoadProgress({ nativeEvent: { progress: 0.95 } }));
+    act(() => {
+      webViews(tree)[0]!.props.onShouldStartLoadWithRequest({ url: "lynia://kyc-done", isTopFrame: true });
+    });
+    await expect(first).resolves.toBe("completed");
+    act(() => {
+      presentKycCheck({ url: URL });
+    });
+    const trail = mockCrumb.mock.calls.filter((c) => String(c[0]).startsWith("kyc.")).map((c) => `${c[0]}:${(c[1] as { phase?: string; outcome?: string }).phase}${(c[1] as { outcome?: string }).outcome ? `=${(c[1] as { outcome?: string }).outcome}` : ""}`);
+    expect(trail).toEqual([
+      "kyc.prewarm:mount",
+      "kyc.hold:mount",
+      "kyc.prewarm:unmount",
+      "kyc.hold:unmount",
+      "kyc.sheet:mount",
+      "kyc.sheet:shown",
+      "kyc.sheet:outcome=completed",
+      "kyc.sheet:unmount",
+      "kyc.sheet:mount",
+    ]);
+    // No URL, no PII: only a name and a phase (and the outcome).
+    for (const [, data] of mockCrumb.mock.calls) expect(JSON.stringify(data)).not.toContain("didit");
   });
 
   it("a check that failed to load is never reported shown (onLoadEnd fires after onError)", () => {

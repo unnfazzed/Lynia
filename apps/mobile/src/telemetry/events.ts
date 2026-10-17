@@ -18,9 +18,13 @@ export type EventProps = Record<string, string | number | boolean | null>;
 
 interface Sink {
   capture: (event: string, properties?: EventProps) => void;
+  /** PostHog's super-properties: attached to every later event, its own `$screen` events included. */
+  register?: (properties: EventProps) => unknown;
 }
 
 let sink: Sink | null = null;
+/** Device facts every event carries (`font_scale`, `screen_width_dp`), set by {@link setDeviceProps}. */
+let deviceProps: EventProps = {};
 const queue: Array<{ event: string; props?: EventProps }> = [];
 /** Events held while the SDK loads (it arms a few frames after the first interaction settles). */
 const MAX_QUEUED = 50;
@@ -34,9 +38,35 @@ export function track(event: string, props?: EventProps): void {
     return;
   }
   try {
-    sink.capture(event, props);
+    sink.capture(event, withDeviceProps(props));
   } catch {
     // Analytics is an accelerant, never a dependency.
+  }
+}
+
+/**
+ * Facts about the phone every event should carry, so a layout or crash problem can be split by them
+ * (2026-10-17: two bikers hit overflowing screens and nothing recorded which one had large text). Kept
+ * to coarse, non-identifying values. Registered as PostHog super-properties too, so `$screen` events
+ * carry them; safe to call before the SDK has loaded.
+ */
+export function setDeviceProps(next: EventProps): void {
+  deviceProps = { ...next };
+  registerDeviceProps();
+}
+
+/** The event's own props win over the device facts; untouched when there are none to add. */
+function withDeviceProps(props?: EventProps): EventProps | undefined {
+  return Object.keys(deviceProps).length === 0 ? props : { ...deviceProps, ...props };
+}
+
+function registerDeviceProps(): void {
+  if (!sink?.register || Object.keys(deviceProps).length === 0) return;
+  try {
+    // posthog-react-native's register returns a promise: a rejection must not surface as unhandled.
+    Promise.resolve(sink.register(deviceProps)).catch(() => undefined);
+  } catch {
+    // Same contract as track: never a dependency.
   }
 }
 
@@ -44,9 +74,10 @@ export function track(event: string, props?: EventProps): void {
 export function setAnalyticsSink(next: Sink | null): void {
   sink = next && typeof next.capture === "function" ? next : null;
   if (!sink) return;
+  registerDeviceProps();
   for (const e of queue.splice(0)) {
     try {
-      sink.capture(e.event, e.props);
+      sink.capture(e.event, withDeviceProps(e.props));
     } catch {
       /* drop */
     }
@@ -57,6 +88,7 @@ export function setAnalyticsSink(next: Sink | null): void {
 export function __resetEvents(): void {
   sink = null;
   queue.length = 0;
+  deviceProps = {};
 }
 
 /** The funnel's event names, in one place so a dashboard and the code can't drift. */
@@ -83,4 +115,6 @@ export const EVENTS = {
   goOnline: "rider_go_online",
   /** The first time this account went online on this phone: `ms_since_signup`. */
   firstOnline: "rider_first_online",
+  /** The app started cold after its last run ended in the foreground (a crash or an OS kill): `last_screen`. */
+  uncleanRestart: "app_unclean_restart",
 } as const;
