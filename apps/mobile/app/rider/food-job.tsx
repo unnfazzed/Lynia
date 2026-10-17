@@ -28,6 +28,7 @@ import { pendingOrQueued } from "../../src/query/client";
 import { usePickupPhoto } from "../../src/query/use-pickup-photo";
 import { uploadFoodDoorProof } from "../../src/logic/delivery-proof";
 import type { UploadImageSource } from "../../src/logic/image-downscale";
+import { createLatestScoreSender } from "../../src/logic/latest-score";
 import { useWalletConfig } from "../../src/query/use-wallet";
 import { handshakeState, codeEligible } from "../../src/logic/food-doorstep";
 import { FOOD_DROPPABLE, foodCashBreakdown, noShowStatus, returnLegNeeded } from "../../src/logic/food-rider-job";
@@ -730,11 +731,24 @@ export default function RiderFoodJob(): React.ReactElement {
   }, [legData]);
 
   // ── Rate the customer (optional, recorded-only — mirrors job.tsx's rate-the-sender) ──────────────
+  // The stars stay tappable — a biker who taps 1★ meaning 4★ just taps 4★ (the server keeps the latest).
   const [customerScore, setCustomerScore] = useState(0);
-  const rateM = useMutation({
-    mutationFn: (score: number) => rateSender(deliveredFood!.orderId, { score }),
-    onError: () => setCustomerScore(0),
-  });
+  // The score the server last took — what a failed change rolls the stars back to.
+  const customerScoreLanded = useRef(0);
+  const rateOrderId = useRef<string | null>(null);
+  rateOrderId.current = deliveredFood?.orderId ?? null;
+  const customerRate = useMemo(
+    () =>
+      createLatestScoreSender((score) => rateSender(rateOrderId.current!, { score }), {
+        landed: (score) => {
+          customerScoreLanded.current = score;
+        },
+        failed: (_e, _score, more) => {
+          if (!more) setCustomerScore(customerScoreLanded.current);
+        },
+      }),
+    [],
+  );
 
   // ── Cancelled-while-active handback (24h reopen window — same activeForRider fallback a
   //    collected-then-cancelled parcel already gets; `collectedAt`/`counterpartyPhone` are generic). ──
@@ -922,9 +936,9 @@ export default function RiderFoodJob(): React.ReactElement {
             <Stars
               value={customerScore}
               onChange={(n) => {
-                if (rateM.isSuccess || rateM.isPending) return;
+                if (n === customerScore) return;
                 setCustomerScore(n);
-                rateM.mutate(n);
+                customerRate.send(n);
               }}
             />
             <Text style={{ fontSize: 12, color: tokens.color.muted }}>{A.optional}</Text>

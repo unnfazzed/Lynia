@@ -32,6 +32,7 @@ const mockDismissTo = jest.fn();
 const mockDismissAll = jest.fn();
 let mockStackRoutes: { name: string }[] | undefined;
 const mockAdvanceStatus = jest.fn(async (..._args: unknown[]) => ({}));
+const mockRateSender = jest.fn<Promise<unknown>, [string, { score: number }]>();
 
 let secureStore: Record<string, string> = {};
 const mockSetItemAsync = jest.fn(async (key: string, value: string) => {
@@ -91,7 +92,7 @@ jest.mock("../../../src/api/orders", () => ({
   cancelOrder: jest.fn(),
   confirmItems: jest.fn(),
   markUndelivered: jest.fn(),
-  rateSender: jest.fn(),
+  rateSender: (...args: [string, { score: number }]) => mockRateSender(...args),
 }));
 // Real hooks touch Socket.IO + expo-location's background task machinery — irrelevant to this
 // screen's delivery-confirm/terminal-marker flow, mirroring how order-screen.test.tsx stubs
@@ -158,6 +159,7 @@ beforeEach(() => {
   mockDismissTo.mockClear();
   mockDismissAll.mockClear();
   mockStackRoutes = undefined;
+  mockRateSender.mockReset();
   mockSetItemAsync.mockClear();
   mockGetItemAsync.mockClear();
   mockDeleteItemAsync.mockClear();
@@ -276,5 +278,61 @@ describe("back to the board does not stack a second board", () => {
     expect(mockDismissTo).not.toHaveBeenCalled();
     expect(mockDismissAll).toHaveBeenCalledTimes(1);
     expect(mockReplace).toHaveBeenCalledWith("/rider");
+  });
+});
+
+// Field report (2026-10-17): a biker tapped 1★ meaning 4★ and could not change it — the first tap sent
+// the rating and locked the stars.
+describe("rate-the-sender on the delivered terminal (A13)", () => {
+  function star(tree: renderer.ReactTestRenderer, n: number): void {
+    const node = tree.root.findAll(
+      (x) => typeof x.props.accessibilityLabel === "string" && x.props.accessibilityLabel.startsWith(`${n} star`) && typeof x.props.onPress === "function",
+    )[0];
+    if (!node) throw new Error(`no ${n}-star button`);
+    act(() => node.props.onPress());
+  }
+  function selected(tree: renderer.ReactTestRenderer): number[] {
+    return tree.root
+      .findAll((x) => typeof x.props.accessibilityLabel === "string" && /^\d stars?,/.test(x.props.accessibilityLabel) && x.props.accessibilityState?.selected === true && typeof x.props.onPress === "function")
+      .map((x) => Number(x.props.accessibilityLabel[0]))
+      .filter((n, i, all) => all.indexOf(n) === i);
+  }
+
+  beforeEach(() => {
+    secureStore = { "lynia.riderJobTerminal": JSON.stringify({ orderId: "order-1", kind: "delivered" }) };
+    mockGetActiveOrder.mockResolvedValue(null);
+  });
+
+  it("lets the biker change 1★ to 4★ after the first rating landed, and sends the change", async () => {
+    mockRateSender.mockResolvedValue({ orderId: "order-1", status: "delivered" });
+    const tree = await render();
+    star(tree, 1);
+    await settle();
+    star(tree, 4);
+    await settle();
+    expect(mockRateSender.mock.calls).toEqual([
+      ["order-1", { score: 1 }],
+      ["order-1", { score: 4 }],
+    ]);
+    expect(selected(tree)).toEqual([4]);
+    // Both landed: nothing is left pending for a relaunch to re-send.
+    expect(secureStore["lynia.pendingSenderRating"]).toBeUndefined();
+  });
+
+  it("holds a change tapped while the first send is in flight and sends it after, so the last tap wins", async () => {
+    let finishFirst!: () => void;
+    mockRateSender
+      .mockImplementationOnce(() => new Promise((r) => { finishFirst = () => r({}); }))
+      .mockResolvedValue({});
+    const tree = await render();
+    star(tree, 1);
+    star(tree, 4);
+    await settle();
+    expect(mockRateSender.mock.calls.map((c) => c[1].score)).toEqual([1]);
+    expect(selected(tree)).toEqual([4]);
+    await act(async () => finishFirst());
+    await settle();
+    expect(mockRateSender.mock.calls.map((c) => c[1].score)).toEqual([1, 4]);
+    expect(selected(tree)).toEqual([4]);
   });
 });

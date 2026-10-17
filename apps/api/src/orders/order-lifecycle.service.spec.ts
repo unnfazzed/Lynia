@@ -1004,12 +1004,22 @@ describe("OrderLifecycleService.rateSender", () => {
     await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/awaiting a rating/i);
   });
 
-  it("409s when the sender was already rated", async () => {
-    const { svc } = build({
+  // Field report 2026-10-17: a biker tapped 1★ meaning 4★ and the repeat 409'd, so it could not be fixed.
+  it("changes the score when the biker rates again, keeping the comment when none is sent", async () => {
+    let updated: { where: unknown; data: Record<string, unknown> } | undefined;
+    let created = false;
+    const { svc, emits } = build({
       order: { findUnique: async () => ({ status: "delivered", riderId: "r1" }) },
-      rating: { findUnique: async () => ({ id: "sr1" }) },
+      rating: {
+        findUnique: async () => ({ id: "sr1" }),
+        update: async (args: { where: unknown; data: Record<string, unknown> }) => { updated = args; return {}; },
+        create: async () => { created = true; return {}; },
+      },
     });
-    await expect(svc.rateSender("o1", "r1", 5)).rejects.toThrow(/already rated/i);
+    expect(await svc.rateSender("o1", "r1", 4)).toEqual({ orderId: "o1", status: "delivered" });
+    expect(updated).toEqual({ where: { id: "sr1" }, data: { score: 4 } });
+    expect(created).toBe(false);
+    expect(emits).toEqual([]);
   });
 
   it("records the rating without changing the order status (delivered)", async () => {
