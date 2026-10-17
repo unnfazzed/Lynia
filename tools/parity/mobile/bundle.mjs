@@ -88,6 +88,7 @@ export function aliasMap() {
     "expo-font": join(SHIMS, "expo-font.js"),
     "expo-status-bar": join(SHIMS, "expo-status-bar.js"),
     "expo-splash-screen": join(SHIMS, "expo-splash-screen.js"),
+    "expo-keep-awake": join(SHIMS, "expo-keep-awake.js"),
     "expo-notifications": join(SHIMS, "expo-notifications.js"),
     "expo-task-manager": join(SHIMS, "expo-task-manager.js"),
     "expo-location": join(SHIMS, "expo-location.js"),
@@ -120,9 +121,50 @@ export function aliasMap() {
 }
 
 /**
+ * The phone's text-size setting, simulated on react-native-web (which always reports 1.0). Mirrors what
+ * React Native does on Android: every Text / TextInput with an explicit fontSize (and lineHeight) is
+ * multiplied by min(system scale, its maxFontSizeMultiplier — the app's D-111 cap of 1.3 when unset),
+ * `allowFontScaling={false}` opts out, and `useWindowDimensions().fontScale` / `PixelRatio.getFontScale()`
+ * report the system value so layouts keyed on it react as on a phone. Wraps the render AFTER
+ * src/ui/fonts.ts has patched it. Approximation: a Text with no fontSize of its own keeps RNW's default.
+ */
+function fontScaleSim(scale) {
+  return `
+    import * as __RN from "react-native";
+    import { MAX_FONT_SCALE as __CAP } from ${JSON.stringify(join(MOBILE_APP, "src/ui/fonts.ts"))};
+    (function simulateFontScale(FS) {
+      const getDims = __RN.Dimensions.get.bind(__RN.Dimensions);
+      __RN.Dimensions.get = (d) => ({ ...getDims(d), fontScale: FS });
+      __RN.PixelRatio.getFontScale = () => FS;
+      const scaled = (props) => {
+        if (!props || props.allowFontScaling === false) return props;
+        const m = props.maxFontSizeMultiplier == null ? __CAP : props.maxFontSizeMultiplier;
+        const k = m === 0 ? FS : Math.min(FS, Math.max(1, m));
+        if (k === 1) return props;
+        const flat = __RN.StyleSheet.flatten(props.style) || {};
+        const add = {};
+        if (typeof flat.fontSize === "number") add.fontSize = flat.fontSize * k;
+        if (typeof flat.lineHeight === "number") add.lineHeight = flat.lineHeight * k;
+        return Object.keys(add).length ? { ...props, style: [props.style, add] } : props;
+      };
+      for (const name of ["Text", "TextInput"]) {
+        const C = __RN[name];
+        if (C && typeof C.render === "function" && !C.render.__paritySim) {
+          const inner = C.render;
+          const outer = function (props, ref) { return inner.call(this, scaled(props), ref); };
+          outer.__paritySim = true;
+          C.render = outer;
+        }
+      }
+    })(${Number(scale)});
+  `;
+}
+
+/**
  * @param {object} o
  * @param {string} o.component absolute path to the screen's default-exported component (.tsx)
  * @param {string} [o.fixture] absolute path to a fixture module ({ wrap?, props? })
+ * @param {number} [o.fontScale] simulate the phone's system font scale (e.g. 1.3); see {@link fontScaleSim}
  * @returns {Promise<string>} the IIFE bundle source
  */
 export async function bundleScreen(o) {
@@ -137,6 +179,7 @@ export async function bundleScreen(o) {
     import * as React from "react";
     import { createRoot } from "react-dom/client";
     import ${JSON.stringify(join(MOBILE_APP, "src/ui/fonts.ts"))}; // UIP-01: same applyInterToTextComponents() patch app/_layout.tsx installs before any screen mounts
+    ${o.fontScale ? fontScaleSim(o.fontScale) : ""}
     ${o.fixture ? `import * as Fixture from ${JSON.stringify(o.fixture)};` : `const Fixture = {};`}
     import Screen from ${JSON.stringify(o.component)};
     function Root() {

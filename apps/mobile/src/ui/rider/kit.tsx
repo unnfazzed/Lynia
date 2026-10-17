@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { ActivityIndicator, Modal, ScrollView, Text, type TextStyle, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Modal, ScrollView, Text, type TextStyle, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -347,7 +347,12 @@ export function Standing({
   oldestClears: Date | null;
 }): React.ReactElement {
   const risk = used >= max - 1 && used > 0;
-  const tile: ViewStyle = { flex: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: tokens.color.surface };
+  // Three tiles across as drawn; at a larger text size (D-111) a third of the card can't hold "Acceptance",
+  // so the tiles wrap (two, then one) instead of splitting the word.
+  const largeText = useWindowDimensions().fontScale > 1;
+  const tile: ViewStyle = largeText
+    ? { flexGrow: 1, flexShrink: 1, flexBasis: 110, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: tokens.color.surface }
+    : { flex: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: tokens.color.surface };
   return (
     <View style={{ borderWidth: 1, borderColor: risk ? tokens.color.danger : tokens.color.line, borderRadius: 16, padding: 14, gap: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -357,7 +362,7 @@ export function Standing({
           <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: risk ? tokens.color.dangerInk : tokens.color.accentText }}>{risk ? R.atRisk : R.good}</Text>
         </View>
       </View>
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: largeText ? "wrap" : "nowrap" }}>
         <View style={tile}>
           <Text style={{ fontSize: 12, color: tokens.color.muted }}>{R.acceptance}</Text>
           <Text style={{ fontSize: 18, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{RF.acceptanceV(acceptance)}</Text>
