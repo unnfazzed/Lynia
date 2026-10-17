@@ -308,6 +308,18 @@ build takes tens of minutes, follow it with a **one-shot** `send_later` check-in
 while the build is still in progress and dropped the moment it is terminal. One-shot self check-ins
 are the mechanism; recurring triggers are not.
 
+**Production only — the owner does not care about testers (owner, 2026-10-16).** *"I don't care about
+testers or closed testing .. I care about production."* Mobile work ships to the public Play users and
+stops there:
+- Publish OTA updates to the `production` channel only (`mobile-ota.yml`, `branch: production`). Do not
+  also publish to `preview`, and a `preview` publish that the preflight refuses is not an open item.
+- Do not propose, dispatch or ask about `closed` / `preview` builds, the *Closed testing* track or tester
+  reach. A store release is `profile: production`.
+- "Is it live?" means: API deployed (`release-azure.yml` runs on every merge to `main`) **and** the OTA
+  published to `production`, or a production store build FINISHED. Then check Sentry + Play vitals.
+- Example: 2026-10-16 19:00 UTC, OTA from `3211e37` (#1211–#1220) published to `production`, Android
+  update group `be2e7685`, runtime `423c003` (matches the vc 48 production build).
+
 **Nothing auto-ships.** Both mobile workflows are `workflow_dispatch`-only. `mobile-release.yml`
 does have a `v*` tag trigger, but it is separately gated behind `EAS_TAG_RELEASES_ENABLED`, and
 release-please's bot tags never fire workflows anyway. Merging to `main` reaches no device.
