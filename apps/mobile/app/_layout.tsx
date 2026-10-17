@@ -24,6 +24,7 @@ import { persistBuster, PERSIST_MAX_AGE_MS, queryPersister, shouldPersistQuery }
 import { useBootstrap } from "../src/query/use-bootstrap";
 import { usePushRegistration } from "../src/push/use-push-registration";
 import { AnalyticsProvider } from "../src/telemetry/analytics";
+import { SessionTelemetry } from "../src/telemetry/session-telemetry";
 import { NavOpenProbe } from "../src/telemetry/nav-timing";
 import { enqueueBoot, start as startRum } from "../src/telemetry/rum";
 import { captureException, initSentry, wrap } from "../src/telemetry/sentry";
@@ -328,6 +329,7 @@ function RootLayout(): React.ReactElement | null {
   return (
     <SafeAreaProvider>
       <FontLoad />
+      <SessionTelemetry />
       {/* AnalyticsProvider is a no-op passthrough until the founder provisions PostHog (see
           src/telemetry/analytics.tsx). Inside SafeAreaProvider (the SDK reads insets) and above
           the navigator so screen autocapture sees every route. */}

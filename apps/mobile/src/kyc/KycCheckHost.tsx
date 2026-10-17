@@ -309,6 +309,18 @@ export function KycCheckHost(): React.ReactElement | null {
   );
 }
 
+/**
+ * Sentry breadcrumbs for the sheet's moving parts (no URLs, no PII). LYNIA-MOBILE-8 (2026-10-17) was a
+ * native GPU-driver abort 15 s after the sheet opened a second time, and the trail stopped at the launch:
+ * whether the prewarm, the stand-in or the check's WebView was alive at that moment was invisible.
+ */
+function useLifecycleCrumb(name: string): void {
+  useEffect(() => {
+    addBreadcrumb(name, { phase: "mount" });
+    return () => addBreadcrumb(name, { phase: "unmount" });
+  }, [name]);
+}
+
 /** Close a camera flow only on purpose — the copy mirrors become.tsx's "pick it up again" line. */
 function confirmLeave(onLeave: () => void): void {
   Alert.alert("Leave the ID check?", "You can pick it up again from your biker board.", [
@@ -391,6 +403,7 @@ function OpeningCover({ overlay }: { overlay?: boolean }): React.ReactElement {
 
 /** The stand-in while the session is minted: the sheet's own header and loading state, no WebView yet. */
 function HoldSheet({ onLeave, backRef }: { onLeave: () => void; backRef: React.MutableRefObject<() => void> }): React.ReactElement {
+  useLifecycleCrumb("kyc.hold");
   backRef.current = onLeave;
   return (
     <>
@@ -412,6 +425,7 @@ const WEBVIEW_VERSION_PROBE =
  * own hosts — any other navigation (a redirect, a link) is refused rather than loaded in the background.
  */
 function KycPrewarm({ WebView }: { WebView: WebViewComponent }): React.ReactElement {
+  useLifecycleCrumb("kyc.prewarm");
   return (
     <View
       pointerEvents="none"
@@ -473,11 +487,13 @@ function KycCheckSheet({
   // Load analytics: when this check started loading, and whether its first reveal was already reported.
   const openedAt = useRef(Date.now());
   const shownRef = useRef(false);
+  useLifecycleCrumb("kyc.sheet");
 
   const done = (outcome: KycCheckOutcome): void => {
     // Exactly one outcome per presentation — a completion redirect and a close tap can race.
     if (doneRef.current) return;
     doneRef.current = true;
+    addBreadcrumb("kyc.sheet", { phase: "outcome", outcome });
     onDone(outcome);
   };
 
@@ -487,6 +503,7 @@ function KycCheckSheet({
     // The WebView fires onLoadEnd after onError too: a check that failed (or finished) was never "shown".
     if (shownRef.current || doneRef.current) return;
     shownRef.current = true;
+    addBreadcrumb("kyc.sheet", { phase: "shown" });
     const prewarmed = prewarmAt > 0 && openedAt.current - prewarmAt < KYC_PREWARM_TTL_MS;
     track(EVENTS.kycSheetShown, { ms: Date.now() - openedAt.current, prewarmed, webview: webViewMajor });
   };

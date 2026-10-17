@@ -172,6 +172,19 @@ export function addBreadcrumb(message: string, data?: Record<string, unknown>): 
 }
 
 /**
+ * Tag every LATER event with these values (indexed and filterable; keep them low-cardinality). Used for
+ * device facts a crash should be split by, such as the font scale. Safe to call unconditionally.
+ */
+export function setTags(tags: Record<string, string>): void {
+  if (!enabled || !sentry) return;
+  try {
+    sentry.setTags(tags);
+  } catch {
+    // Context for later events only: losing it costs nothing.
+  }
+}
+
+/**
  * Deliberately crash the NATIVE layer (LR20 exit test). This is the only way to prove the Android half
  * of the pipeline end to end: a JS throw exercises source maps, but only a native crash exercises the
  * R8 `mapping.txt` upload that `experimental_android.enableAndroidGradlePlugin` turns on — and an
