@@ -939,7 +939,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
    *  rate() this does NOT change the order status or any score; it's an optional flag that protects
    *  other riders (a no-show / cash problem). It writes the OTHER direction of the two-way `ratings`
    *  table (byProfileId = the rider), so the (orderId, byProfileId) composite unique (migration 0015)
-   *  lets it coexist with the customer's rating and makes a repeat a conflict, not a duplicate. */
+   *  lets it coexist with the customer's rating. A repeat CHANGES the score rather than conflicting: a
+   *  biker who taps 1★ meaning 4★ must be able to fix it (field report 2026-10-17), and since nothing
+   *  aggregates these scores there is nothing to re-count. */
   async rateSender(orderId: string, riderId: string, score: number, comment?: string): Promise<LifecycleResult> {
     try {
       const status = await this.prisma.$transaction(async (tx) => {
@@ -954,13 +956,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         if (order.status !== "delivered" && order.status !== "completed")
           throw new ConflictException("Order is not awaiting a rating");
 
-        // One rating per rater — the (orderId, byProfileId) composite unique makes a repeat a conflict.
+        // One rating per rater (the (orderId, byProfileId) composite unique) — a repeat updates it.
         const existing = await tx.rating.findUnique({
           where: { orderId_byProfileId: { orderId, byProfileId: riderId } },
           select: { id: true },
         });
-        if (existing) throw new ConflictException("Order already rated");
-        await tx.rating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
+        if (existing) {
+          // A comment is only replaced when one is sent; the app's star taps send a score alone.
+          await tx.rating.update({ where: { id: existing.id }, data: { score, ...(comment !== undefined ? { comment } : {}) } });
+        } else {
+          await tx.rating.create({ data: { orderId, byProfileId: riderId, score, comment: comment ?? null } });
+        }
         return order.status;
       });
 
