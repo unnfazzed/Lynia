@@ -166,7 +166,10 @@ export function RSteps({ cur, labels = [R.stPickup, R.stCollected, R.stDrop, R.s
             </View>
             <Text
               numberOfLines={2}
-              style={{ textAlign: "center", paddingHorizontal: 3, fontSize: 12, lineHeight: 16, fontWeight: now ? tokens.font.weight.bold : tokens.font.weight.semibold, color: now ? tokens.color.ink : done ? tokens.color.accentText : tokens.color.muted }}
+              // One word per label, a quarter of the screen each: at the full 1.3 (D-111) "Collected" split
+              // mid-word on a 320dp phone. 1.15 keeps every label whole; two-word labels still wrap.
+              maxFontSizeMultiplier={1.15}
+              style={{ textAlign: "center", paddingHorizontal: 1, fontSize: 12, lineHeight: 16, fontWeight: now ? tokens.font.weight.bold : tokens.font.weight.semibold, color: now ? tokens.color.ink : done ? tokens.color.accentText : tokens.color.muted }}
             >
               {label}
             </Text>
@@ -203,6 +206,7 @@ export function StopCard({
   onNavigate?: (() => void) | null;
 }): React.ReactElement {
   const label = `${drop ? R.dropL : R.pickupL}${tag ? ` · ${tag}` : food ? ` · ${R.food}` : ""}`;
+  const largeText = useWindowDimensions().fontScale > 1;
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
@@ -219,10 +223,12 @@ export function StopCard({
       </View>
       {who ? <Text style={{ fontSize: 13, color: tokens.color.muted, marginTop: 4 }}>{who}</Text> : null}
       {onCall || onWhatsApp || (onNavigate && !here) ? (
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          {onCall ? <SmBtn flex={1} label={R.call} icon="phone" onPress={onCall} /> : null}
-          {onWhatsApp ? <SmBtn flex={1} label={R.whatsapp} icon="message-circle" onPress={onWhatsApp} /> : null}
-          {onNavigate && !here ? <SmBtn flex={1} label={R.navigate} icon="navigation" onPress={onNavigate} /> : null}
+        // Equal thirds as drawn; at a larger text size the buttons wrap as whole buttons (After Send 2.32)
+        // rather than clipping "WhatsApp" inside a third of a 320dp phone.
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: largeText ? "wrap" : "nowrap" }}>
+          {onCall ? <SmBtn flex={1} grow={largeText} label={R.call} icon="phone" onPress={onCall} /> : null}
+          {onWhatsApp ? <SmBtn flex={1} grow={largeText} label={R.whatsapp} icon="message-circle" onPress={onWhatsApp} /> : null}
+          {onNavigate && !here ? <SmBtn flex={1} grow={largeText} label={R.navigate} icon="navigation" onPress={onNavigate} /> : null}
         </View>
       ) : null}
     </View>
@@ -273,16 +279,19 @@ export function ItemTick({ label, on, onToggle }: { label: string; on: boolean; 
 
 /** The pickup-photo row: 56 thumb + "Take a pickup photo" / "Photo saved" + Take photo / Retake. */
 export function PhotoRow({ saved, thumb, onTake }: { saved: boolean; thumb?: React.ReactNode; onTake: () => void }): React.ReactElement {
+  // At a larger text size (D-111) the button keeps its full label, so on a 320dp phone it squeezed the
+  // text to a letter per line: the row wraps instead, the button growing to full width under the text.
+  const largeText = useWindowDimensions().fontScale > 1;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: tokens.color.line, borderRadius: 12, padding: 10 }}>
+    <View style={{ flexDirection: "row", flexWrap: largeText ? "wrap" : "nowrap", alignItems: "center", gap: 12, borderWidth: 1, borderColor: tokens.color.line, borderRadius: 12, padding: 10 }}>
       <View style={{ width: 56, height: 56, borderRadius: 8, overflow: "hidden", backgroundColor: tokens.color.surface, alignItems: "center", justifyContent: "center" }}>
         {saved && thumb ? thumb : <Icon name={saved ? "image" : "camera"} size={22} color={tokens.color.muted} />}
       </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
+      <View style={largeText ? { flexGrow: 1, flexShrink: 1, flexBasis: 140, minWidth: 0 } : { flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{saved ? R.photoSaved : R.photoNeed}</Text>
         <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{R.photoNeedB}</Text>
       </View>
-      <SmBtn label={saved ? R.retake : R.takePhoto} icon="camera" kind={saved ? "ghost" : "fill"} onPress={onTake} />
+      <SmBtn grow={largeText} label={saved ? R.retake : R.takePhoto} icon="camera" kind={saved ? "ghost" : "fill"} onPress={onTake} />
     </View>
   );
 }

@@ -5611,8 +5611,14 @@ delivery-code digits are capped" set no upper bound. The owner chose (design rev
 | Element | Drawn | Shipped |
 |---|---|---|
 | Every `Text` / `TextInput` in `apps/mobile` | rider-v2: grows like sp, no limit (only the delivery code capped at 1.15) | Grows like sp **up to 1.3×** (`MAX_FONT_SCALE`, `src/ui/fonts.ts`, applied by the existing app-wide Text patch). A tighter cap an element sets (delivery code 1.15, hand-off code 1.0) and `allowFontScaling={false}` still win |
+| Rider step track labels (Pickup · Collected · Drop-off · Done, `RSteps`) | 12/600, "wrap at fs 1.3" | Capped at **1.15**: a quarter of a 320dp phone can't hold "Collected" at 1.3, and it split mid-word. Two-word labels still wrap |
+| Job screen header (`OrderHeader`, shared with the customer order screen) | the title ellipsises before Back or Help shrink | As drawn, now actually so: both side slots are at least as wide as the wider side's content (they had a zero basis, and "Back" was drawn over a long title) |
+| Call · WhatsApp · Navigate (`StopCard`), the pickup-photo row (`PhotoRow`), the Standing tiles (`Standing`) | equal thirds / one row / three tiles | As drawn at text 1.0; above it they wrap as whole buttons / tiles (After Send 2.32 "chips wrap as whole chips") instead of clipping "WhatsApp", squeezing "Take a pickup photo" to a letter per line, or splitting "Acceptance" |
 
 Not covered: `Animated.Text` (nothing uses it; `fonts.test.tsx` fails if something starts to), WebView content
 (the ID check's pages are the vendor's, D-34/D-37). Layouts that read `fontScale` themselves (First Run's
 `LARGE_FONT_SCALE`, the order screen's stacking) still read the system value, so they pick their large-text
-layout at any scale above their threshold. Guard: `src/ui/__tests__/fonts.test.tsx` "font-scale cap (D-111…)".
+layout at any scale above their threshold. Guards: `src/ui/__tests__/fonts.test.tsx` "font-scale cap (D-111…)",
+`src/ui/rider/__tests__/large-text.test.tsx`; evidence: `tools/parity/shoot-large-font.mjs` (the new biker's journey,
+33 screens and states, at text 1.0 and 1.3 on 360×720 and 1.3 on 320×640, with an automatic check for cut-off,
+split, overlapping and off-screen text), sheet `docs/parity/LARGE-FONT-2026-10-17.png`.

@@ -84,42 +84,116 @@ html,body{margin:0;padding:0;background:#fff;}
 </style></head><body><div id="root"></div><script>${js}</script></body></html>`;
 }
 
-/** In the page: text that is cut off, or anything that runs past the phone's right edge. */
+/**
+ * In the page, what a reader would see as broken at large text:
+ *  - text cut off: a text run's box extends past an ancestor that clips (overflow not visible), unless
+ *    that ancestor scrolls (a chip row, a sheet body) or the run is the design's own ellipsis/line clamp;
+ *  - word split: a single word broken across two lines (a column too narrow for it);
+ *  - overlap: two separate text runs drawn on top of each other (a title colliding with a button);
+ *  - past the edge: a text run beyond the phone's right edge.
+ */
 function findOverflow() {
   const root = document.getElementById("root");
-  const right = root.getBoundingClientRect().right;
+  const rootBox = root.getBoundingClientRect();
   const out = [];
   const seen = new Set();
-  for (const el of root.querySelectorAll("*")) {
-    const cs = getComputedStyle(el);
-    if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    // Scrolling containers are allowed to be wider than the screen (chip rows, carousels).
-    let scroller = el.parentElement;
-    let inScroller = false;
-    while (scroller && scroller !== root) {
-      const sc = getComputedStyle(scroller);
-      if (/(auto|scroll)/.test(sc.overflowX)) inScroller = true;
-      scroller = scroller.parentElement;
+  const add = (kind, text, extra = {}) => {
+    const k = `${kind}|${text}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ kind, text: text.slice(0, 60), ...extra });
+  };
+  const visible = (el) => {
+    for (let e = el; e && e !== root; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return false;
     }
-    const text = (el.innerText || el.value || "").trim().replace(/\s+/g, " ").slice(0, 60);
-    const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
-    // A line-clamped or ellipsised text is the design's own truncation (numberOfLines): allowed.
-    const clamped = cs.textOverflow === "ellipsis" || cs.webkitLineClamp !== "none";
-    if (ownText && !clamped && cs.overflow !== "visible" && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 2)) {
-      const k = `clip|${text}`;
-      if (!seen.has(k)) {
-        seen.add(k);
-        out.push({ kind: "text cut off", text });
-      }
+    return true;
+  };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const runs = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const text = n.textContent.replace(/\s+/g, " ").trim();
+    if (!text || !visible(n.parentElement)) continue;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    const box = range.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) continue;
+    const owner = n.parentElement;
+    const ocs = getComputedStyle(owner);
+    const clampedHere = ocs.textOverflow === "ellipsis" || ocs.webkitLineClamp !== "none";
+    // Past an ancestor that clips?
+    for (let a = owner; a && a !== root.parentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+      if (/(auto|scroll)/.test(cs.overflowX + cs.overflowY)) break; // scrolls: the rest is reachable
+      if (a !== owner && (cs.textOverflow === "ellipsis" || cs.webkitLineClamp !== "none")) break;
+      if (a === owner && clampedHere) break;
+      const ab = a.getBoundingClientRect();
+      const by = Math.max(box.right - ab.right, ab.left - box.left, box.bottom - ab.bottom, ab.top - box.top);
+      if (by > 1.5) add("text cut off", text, { by: Math.round(by) });
+      break;
     }
-    if (!inScroller && ownText && r.right > right + 1) {
-      const k = `edge|${text}`;
-      if (!seen.has(k)) {
-        seen.add(k);
-        out.push({ kind: "past the right edge", text, by: Math.round(r.right - right) });
+    // A word broken across lines?
+    const re = /[^\s\-\u2010\u2011\u2013\u2014/]{4,}/g; // a hyphen, dash or slash is a fair place to break
+    let m;
+    while ((m = re.exec(n.textContent))) {
+      const r = document.createRange();
+      r.setStart(n, m.index);
+      r.setEnd(n, m.index + m[0].length);
+      const lines = new Set([...r.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top)));
+      if (lines.size > 1) add("word split across lines", m[0]);
+    }
+    // The part a reader can actually see: clipped by every ancestor that clips or scrolls.
+    let vis = { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+    for (let a = owner; a && a !== root.parentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+      const ab = a.getBoundingClientRect();
+      vis = { left: Math.max(vis.left, ab.left), right: Math.min(vis.right, ab.right), top: Math.max(vis.top, ab.top), bottom: Math.min(vis.bottom, ab.bottom) };
+    }
+    // Past the phone's edge, judged on what is drawn (an ellipsised run's range is its full length).
+    let drawnRight = box.right;
+    for (let a = owner; a && a !== root; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX !== "visible" && !/(auto|scroll)/.test(cs.overflowX)) drawnRight = Math.min(drawnRight, a.getBoundingClientRect().right);
+      if (/(auto|scroll)/.test(cs.overflowX)) drawnRight = -Infinity; // a sideways scroller: reachable
+    }
+    if (drawnRight > rootBox.right + 1) add("past the right edge", text, { by: Math.round(drawnRight - rootBox.right) });
+    if (vis.right - vis.left > 1 && vis.bottom - vis.top > 1) runs.push({ text, box: vis, owner });
+  }
+  const block = (el) => {
+    let e = el;
+    while (e && e !== root && getComputedStyle(e).display === "inline") e = e.parentElement;
+    return e;
+  };
+  const opaque = (el) => {
+    const bg = getComputedStyle(el).backgroundColor;
+    return bg && bg !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(bg);
+  };
+  for (let i = 0; i < runs.length; i += 1) {
+    for (let j = i + 1; j < runs.length; j += 1) {
+      const a = runs[i];
+      const b = runs[j];
+      if (a.owner.contains(b.owner) || b.owner.contains(a.owner)) continue;
+      // Inline parts of one sentence (nested Text spans) share a paragraph; their wrapped boxes overlap.
+      if (block(a.owner) === block(b.owner)) continue;
+      const l = Math.max(a.box.left, b.box.left);
+      const t = Math.max(a.box.top, b.box.top);
+      const w = Math.min(a.box.right, b.box.right) - l;
+      const h = Math.min(a.box.bottom, b.box.bottom) - t;
+      if (w <= 3 || h <= 3) continue;
+      // One drawn over the other on an opaque surface (a pinned bar over a scrolled body) hides it: fine.
+      const top = document.elementFromPoint(l + w / 2, t + h / 2);
+      let occluded = false;
+      for (let e = top; e && e !== root; e = e.parentElement) {
+        if (e.contains(a.owner) && e.contains(b.owner)) break;
+        if (opaque(e)) {
+          occluded = true;
+          break;
+        }
       }
+      if (!occluded) add("overlaps", `${a.text} / ${b.text}`);
     }
   }
   return out;
@@ -199,6 +273,18 @@ figcaption{font-size:12px;color:#5b6670;margin-top:4px}.ok{color:#127a3d}.bad{co
 .missing{width:320px;height:200px;display:grid;place-items:center;background:#fdecea;color:#b42318;font-size:12px;padding:8px}
 </style></head><body><h1>Large text (D-111): the biker journey at text 1.0 and 1.3, 360×720 and 320×640</h1>${sections.join("")}</body></html>`;
 await writeFile(`${OUT}.html`, html);
+// The PNG is what gets committed (docs/parity/*.png, like every other sheet); the HTML and shots are local.
+{
+  const b = await launch();
+  try {
+    const ctx = await b.newContext(contextDefaults({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 1 }));
+    const page = await ctx.newPage();
+    await page.setContent(html, { waitUntil: "load" });
+    await page.screenshot({ path: `${OUT}.png`, fullPage: true });
+  } finally {
+    await b.close();
+  }
+}
 const failed = results.filter((x) => x.findings.length || x.errors.length);
-console.log(`\nsheet: ${OUT}.html; ${results.length - failed.length}/${results.length} screens fit at 1.3`);
+console.log(`\nsheet: ${OUT}.png (+ .html); ${results.length - failed.length}/${results.length} screens fit at 1.3`);
 process.exitCode = failed.length ? 1 : 0;

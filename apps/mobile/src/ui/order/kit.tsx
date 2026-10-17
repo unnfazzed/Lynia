@@ -44,6 +44,7 @@ export function SmBtn({
   kind = "ghost",
   danger,
   flex,
+  grow,
   onPress,
   disabled,
   loading,
@@ -54,6 +55,8 @@ export function SmBtn({
   kind?: "ghost" | "fill" | "white";
   danger?: boolean;
   flex?: number;
+  /** As wide as its label, growing into spare room: for a row that wraps whole buttons at large text. */
+  grow?: boolean;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
@@ -72,7 +75,7 @@ export function SmBtn({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={{
-        flex,
+        ...(grow ? { flexGrow: 1, flexShrink: 0, flexBasis: "auto" } : { flex }),
         // minHeight, not height: at a large system font scale the label wraps and the button grows (2.32).
         minHeight: tokens.touchTargetMin,
         flexDirection: "row",

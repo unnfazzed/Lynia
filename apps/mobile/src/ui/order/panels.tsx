@@ -1,6 +1,6 @@
 import { SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import React from "react";
+import React, { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
@@ -34,10 +34,17 @@ export function OrderHeader({
   /** Order flow v2.1: the venue-name title is 16/800 (After Send's is 16/700). */
   heavy?: boolean;
 }): React.ReactElement {
+  // Both side slots are at least as wide as the wider side's content, so the title stays centred and a
+  // long title (or large text, D-111) ellipsises instead of running under Back or Help. Flex alone gave
+  // each side a zero basis, and at 320dp × text 1.3 "Back" was drawn over "Heading to pickup".
+  const [sideW, setSideW] = useState(0);
+  const fit = (w: number): void => setSideW((cur) => (w > cur ? Math.ceil(w) : cur));
+  const side = { flexGrow: 1, flexBasis: 0, flexShrink: 0, minWidth: sideW } as const;
   return (
     <View style={{ minHeight: 53, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, backgroundColor: tokens.color.bg, borderBottomWidth: 1, borderBottomColor: tokens.color.line, zIndex: 20 }}>
-      <View style={{ flexGrow: 1, flexBasis: 0, flexShrink: 0, alignItems: "flex-start" }}>
+      <View style={{ ...side, alignItems: "flex-start" }}>
         <Tappable
+          onLayout={(e) => fit(e.nativeEvent.layout.width)}
           tone="icon"
           onPress={onBack}
           accessibilityRole="button"
@@ -53,9 +60,10 @@ export function OrderHeader({
       <Text accessibilityRole="header" numberOfLines={1} style={{ flexShrink: 1, textAlign: "center", fontSize: 16, fontWeight: heavy ? "800" : tokens.font.weight.bold, letterSpacing: heavy ? -0.2 : 0, color: tokens.color.ink }}>
         {title}
       </Text>
-      <View style={{ flexGrow: 1, flexBasis: 0, flexShrink: 0, alignItems: "flex-end" }}>
+      <View style={{ ...side, alignItems: "flex-end" }}>
         {help ? (
           <Tappable
+            onLayout={(e) => fit(e.nativeEvent.layout.width)}
             tone="icon"
             onPress={onHelp}
             accessibilityRole="button"
