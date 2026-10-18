@@ -282,7 +282,7 @@ describe("GET /admin/live/* and /admin/config — HTTP authz", () => {
 
 describe("POST /admin/people/:id/reveal-phone — HTTP authz (owner 2026-10-18)", () => {
   let app: INestApplication;
-  const phoneReveal = { reveal: vi.fn(async () => ({ phone: "+263771234567" })), canReveal: vi.fn(() => true) };
+  const phoneReveal = { reveal: vi.fn(async () => ({ phone: "+263771234567" })) };
 
   beforeAll(async () => {
     app = await buildAuthzApp([AdminController], [

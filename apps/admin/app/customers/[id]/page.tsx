@@ -17,7 +17,6 @@ import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { money } from "../../lib/format";
 import { PhoneReveal } from "../../components/PhoneReveal";
 import { CallButton } from "../../components/CallButton";
-import { canRevealPhones } from "../../actions/phone";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
@@ -32,11 +31,10 @@ export default async function CustomerProfilePage({
   const sp = (await searchParams) ?? {};
   const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
   // Admin console v2 §4 / §8: the customer-side timeline and the audit rows load alongside, best-effort.
-  const [res, timeline, audit, revealAllowed] = await Promise.all([
+  const [res, timeline, audit] = await Promise.all([
     adminFetchResult<CustomerDetail>(`/admin/customers/${id}`),
     fetchTimeline(`/admin/people/${id}/timeline?as=customer`, tlCursor),
     fetchAuditFor(id),
-    canRevealPhones(),
   ]);
   const path = `/customers/${id}`;
 
@@ -131,7 +129,6 @@ export default async function CustomerProfilePage({
                       profileId={c.id}
                       masked={c.phoneMasked}
                       hint="masked — full number shows only during an active order"
-                      allowed={revealAllowed}
                       connected={connected}
                     />
                   ),
@@ -193,7 +190,7 @@ export default async function CustomerProfilePage({
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {/* S·2: the real, blocking hold/lift (mutates Profile.onHold + audit in one tx). The
                   flag/ban controls below remain audit-only placeholders (no backing model yet). */}
-              <CallButton profileId={c.id} phone={c.phoneMasked} label="Call customer" allowed={revealAllowed} connected={connected} />
+              <CallButton profileId={c.id} phone={c.phoneMasked} label="Call customer" connected={connected} />
               <CustomerActions id={c.id} name={c.name} onHold={onHold} connected={connected} />
               {/* X1/R-08: only shown once actually cash-banned — the ban itself has no console "apply"
                   counterpart (see LiftCashBanAction's docstring). */}

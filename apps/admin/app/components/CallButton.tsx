@@ -9,21 +9,19 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 
 /**
  * "Call biker" / "Call customer" (owner 2026-10-18). A number the API already sent in full (a live order) is a
- * plain tel: link. A masked one is fetched in full on tap for an operator allowed to reveal (audited by the API),
- * then dialled; anyone else gets the button disabled rather than a link that dials the bullets.
+ * plain tel: link. A masked one is fetched in full on tap (audited by the API) and then dialled, never a link that
+ * dials the bullets.
  */
 export function CallButton({
   profileId,
   phone,
   label,
-  allowed,
   connected,
 }: {
   profileId: string;
   /** The number as the API sent it: masked (A-03) unless a live order reveals it. */
   phone: string;
   label: string;
-  allowed: boolean;
   connected: boolean;
 }) {
   const [full, setFull] = useState<string | null>(phone && !phone.includes("•") ? phone : null);
@@ -50,8 +48,7 @@ export function CallButton({
       <button
         type="button"
         className="btn ghost"
-        disabled={!allowed || !connected || pending}
-        title={allowed ? undefined : "The number is hidden"}
+        disabled={!connected || pending}
         onClick={() =>
           startTransition(async () => {
             setError(null);

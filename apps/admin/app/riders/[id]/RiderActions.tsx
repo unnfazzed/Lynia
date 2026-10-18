@@ -22,7 +22,6 @@ export function RiderActions({
   onHold,
   suspendSummary,
   phone,
-  revealAllowed,
   connected,
 }: {
   id: string;
@@ -36,8 +35,6 @@ export function RiderActions({
   suspendSummary: string;
   /** The biker's phone as the API sent it (masked unless on a live order). */
   phone: string;
-  /** Whether this operator may fetch the full number (owner 2026-10-18). */
-  revealAllowed: boolean;
   connected: boolean;
 }) {
   // A ban is terminal and can't be undone from the console — offering "Suspend" (or "Lift") here is
@@ -45,7 +42,7 @@ export function RiderActions({
   if (banned) {
     return (
       <>
-        <CallButton profileId={id} phone={phone} label="Call biker" allowed={revealAllowed} connected={connected} />
+        <CallButton profileId={id} phone={phone} label="Call biker" connected={connected} />
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           This account is permanently banned. A ban can&apos;t be reversed from the console.
         </div>
@@ -99,7 +96,7 @@ export function RiderActions({
 
   return (
     <>
-      <CallButton profileId={id} phone={phone} label="Call biker" allowed={revealAllowed} connected={connected} />
+      <CallButton profileId={id} phone={phone} label="Call biker" connected={connected} />
       {onHold ? (
         <ConfirmModal
           action="rider.clear_hold"

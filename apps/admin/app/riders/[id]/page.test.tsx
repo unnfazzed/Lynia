@@ -113,52 +113,25 @@ describe("Biker profile — statement (admin console v2 §6)", () => {
   });
 });
 
-describe("Biker profile — Show number (owner 2026-10-18)", () => {
-  async function showWith(phone: string, allowed: boolean): Promise<void> {
+describe("Biker profile — Show number and Call biker (owner 2026-10-18)", () => {
+  async function showWith(phone: string): Promise<void> {
     vi.mocked(adminFetchResult).mockResolvedValue({ data: detail({ phone }) } as never);
-    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path === "/admin/phone-reveal" ? { allowed } : null)) as never);
+    vi.mocked(adminFetch).mockResolvedValue(null as never);
     render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
   }
 
-  it("offers Show number on a masked phone when the operator may reveal", async () => {
-    await showWith("+263••••••1180", true);
+  it("a masked number offers Show number, and Call biker fetches the real number instead of dialling the bullets", async () => {
+    await showWith("+263••••••1180");
     expect(screen.getByText("+263••••••1180")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show number" })).toBeTruthy();
-  });
-
-  it("offers nothing to an operator who may not", async () => {
-    await showWith("+263••••••1180", false);
-    expect(screen.queryByRole("button", { name: "Show number" })).toBeNull();
-  });
-
-  it("a number already in full (live order) needs no button", async () => {
-    await showWith("+263772451180", true);
-    expect(screen.getByText("0772451180")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Show number" })).toBeNull();
-  });
-});
-
-describe("Biker profile — Call biker (owner 2026-10-18)", () => {
-  async function showWith(phone: string, allowed: boolean): Promise<void> {
-    vi.mocked(adminFetchResult).mockResolvedValue({ data: detail({ phone }) } as never);
-    vi.mocked(adminFetch).mockImplementation((async (path: string) => (path === "/admin/phone-reveal" ? { allowed } : null)) as never);
-    render(await RiderProfilePage({ params: Promise.resolve({ id: "r-1" }), searchParams: Promise.resolve({}) }));
-  }
-
-  it("a masked number becomes a button that fetches the real number, for an operator who may", async () => {
-    await showWith("+263••••••1180", true);
-    const call = screen.getByRole("button", { name: /Call biker/ }) as HTMLButtonElement;
-    expect(call.disabled).toBe(false);
+    expect((screen.getByRole("button", { name: /Call biker/ }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByRole("link", { name: /Call biker/ })).toBeNull();
   });
 
-  it("is disabled for anyone else, never a link that dials the bullets", async () => {
-    await showWith("+263••••••1180", false);
-    expect((screen.getByRole("button", { name: /Call biker/ }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("a number already in full (live order) dials straight away", async () => {
-    await showWith("+263772451180", false);
+  it("a number already in full (live order) needs no Show number and dials straight away", async () => {
+    await showWith("+263772451180");
+    expect(screen.getByText("0772451180")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show number" })).toBeNull();
     expect(screen.getByRole("link", { name: /Call biker/ }).getAttribute("href")).toBe("tel:+263772451180");
   });
 });

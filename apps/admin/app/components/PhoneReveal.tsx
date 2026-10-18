@@ -5,14 +5,13 @@ import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { revealPhone } from "../actions/phone";
 
 /**
- * The Details card's Phone value (owner 2026-10-18). Shows the masked number; for an operator allowed to reveal,
- * a "Show number" button swaps in the full number with a Call link. Each reveal is audited by the API.
+ * The Details card's Phone value (owner 2026-10-18). Shows the masked number and a "Show number" button that swaps in
+ * the full number with a Call link. Each reveal is audited by the API.
  */
 export function PhoneReveal({
   profileId,
   masked,
   hint,
-  allowed,
   connected,
 }: {
   profileId: string;
@@ -20,7 +19,6 @@ export function PhoneReveal({
   masked: string;
   /** The muted note beside the masked number. */
   hint?: string;
-  allowed: boolean;
   connected: boolean;
 }) {
   const [phone, setPhone] = useState<string | null>(null);
@@ -46,8 +44,7 @@ export function PhoneReveal({
           {hint}
         </span>
       ) : null}
-      {allowed ? (
-        <button
+      <button
           type="button"
           className="btn quiet"
           disabled={!connected || pending}
@@ -60,9 +57,8 @@ export function PhoneReveal({
             })
           }
         >
-          {pending ? "Showing…" : "Show number"}
-        </button>
-      ) : null}
+        {pending ? "Showing…" : "Show number"}
+      </button>
       {error ? (
         <span role="alert" style={{ fontSize: 11, color: tokens.color.danger }}>
           {error}
