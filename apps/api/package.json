@@ -20,7 +20,8 @@
     "phones:normalize": "tsx scripts/normalize-phones.ts",
     "encrypt-ids": "tsx scripts/encrypt-national-ids.ts",
     "ids:rehash": "tsx scripts/rehash-national-ids.ts",
-    "thumbs:backfill": "tsx scripts/backfill-photo-thumbnails.ts"
+    "thumbs:backfill": "tsx scripts/backfill-photo-thumbnails.ts",
+    "bikers:reset-to-customer": "tsx scripts/reset-bikers-to-customers.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.3",
