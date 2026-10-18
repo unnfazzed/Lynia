@@ -13,6 +13,7 @@ import { z } from "zod";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AdminActor } from "../common/admin-actor.decorator";
+import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { SettlementsService } from "../settlements/settlements.service";
 import { SosService } from "../sos/sos.service";
@@ -29,6 +30,7 @@ import type { ApplicationAction } from "./merchant-application";
 import { AdminMoneyService, TOPUP_FILTERS, type TopupFilter } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminPeopleService } from "./admin-people.service";
+import { AdminPhoneRevealService } from "./admin-phone-reveal.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
 import { AdminTimelineService } from "./admin-timeline.service";
@@ -172,6 +174,7 @@ export class AdminController {
     private readonly timeline: AdminTimelineService,
     private readonly application: AdminMerchantApplicationService,
     private readonly people: AdminPeopleService,
+    private readonly phoneReveal: AdminPhoneRevealService,
     private readonly live: AdminLiveService,
   ) {}
 
@@ -240,6 +243,19 @@ export class AdminController {
     const view = await this.timeline.personTimeline(profileId, cursor, side);
     if (!view) throw new NotFoundException("Person not found");
     return view;
+  }
+
+  /** Whether the signed-in operator may see full phone numbers (owner 2026-10-18) — shows the "Show number" button. */
+  @Get("phone-reveal")
+  phoneRevealAccess(@AdminActor() actor: string) {
+    return { allowed: this.phoneReveal.canReveal(actor) };
+  }
+
+  /** One person's full phone number, for operators on ADMIN_PHONE_REVEAL_OPERATORS only. Audited; capped at 60 an hour. */
+  @Post("people/:profileId/reveal-phone")
+  @Throttle({ limit: 60, windowSec: 3600, keyPrefix: "admin-phone-reveal" })
+  revealPhone(@Param("profileId", ParseUUIDPipe) profileId: string, @AdminActor() actor: string) {
+    return this.phoneReveal.reveal(actor, profileId);
   }
 
   /** A merchant's timeline: order steps, open/close/busy/hours, stock changes and audit rows. */

@@ -15,6 +15,8 @@ import { OrderLink } from "../../components/links";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { money } from "../../lib/format";
+import { PhoneReveal } from "../../components/PhoneReveal";
+import { canRevealPhones } from "../../actions/phone";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
  *  reports, and flag / clear / ban actions — each reason-coded through <ConfirmModal>. */
@@ -29,10 +31,11 @@ export default async function CustomerProfilePage({
   const sp = (await searchParams) ?? {};
   const tlCursor = typeof sp.tlCursor === "string" ? sp.tlCursor : undefined;
   // Admin console v2 §4 / §8: the customer-side timeline and the audit rows load alongside, best-effort.
-  const [res, timeline, audit] = await Promise.all([
+  const [res, timeline, audit, revealAllowed] = await Promise.all([
     adminFetchResult<CustomerDetail>(`/admin/customers/${id}`),
     fetchTimeline(`/admin/people/${id}/timeline?as=customer`, tlCursor),
     fetchAuditFor(id),
+    canRevealPhones(),
   ]);
   const path = `/customers/${id}`;
 
@@ -123,12 +126,13 @@ export default async function CustomerProfilePage({
                 {
                   label: "Phone",
                   value: (
-                    <span className="mono">
-                      {c.phoneMasked}{" "}
-                      <span className="mut" style={{ fontSize: 11, fontFamily: tokens.font.family }}>
-                        masked — full number shows only during an active order
-                      </span>
-                    </span>
+                    <PhoneReveal
+                      profileId={c.id}
+                      masked={c.phoneMasked}
+                      hint="masked — full number shows only during an active order"
+                      allowed={revealAllowed}
+                      connected={connected}
+                    />
                   ),
                 },
                 { label: "Joined", value: c.joined },

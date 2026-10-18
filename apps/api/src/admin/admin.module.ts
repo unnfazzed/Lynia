@@ -17,6 +17,7 @@ import { AdminMerchantsService } from "./admin-merchants.service";
 import { AdminMoneyService } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
 import { AdminPeopleService } from "./admin-people.service";
+import { AdminPhoneRevealService } from "./admin-phone-reveal.service";
 import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
 import { AdminTimelineService } from "./admin-timeline.service";
@@ -46,6 +47,7 @@ import { AdminService } from "./admin.service";
     AdminTimelineService,
     AdminMoneyService,
     AdminPeopleService,
+    AdminPhoneRevealService,
     AdminLiveService,
   ],
 })

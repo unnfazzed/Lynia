@@ -17,6 +17,8 @@ import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { CreateReferralLinkButton } from "../../referrals/ReferralActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
+import { PhoneReveal } from "../../components/PhoneReveal";
+import { canRevealPhones } from "../../actions/phone";
 
 /** Humanize a commission-ledger entry type for the wallet ledger table. */
 const LEDGER_TYPE_LABEL: Record<WalletLedgerEntry["type"], string> = {
@@ -103,11 +105,12 @@ export default async function RiderProfilePage({
   // LC-D07: `walletCursor` pages further back past the first 20 entries via the "Load older" link below.
   // Admin console v2 §4 / §8: the timeline and the audit rows load alongside it, each best-effort the same way.
   // D-112: the biker's referral link and how their referrals are doing, best-effort the same way.
-  const [wallet, timeline, audit, referral] = await Promise.all([
+  const [wallet, timeline, audit, referral, revealAllowed] = await Promise.all([
     adminFetch<WalletView>(`/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`),
     fetchTimeline(`/admin/people/${id}/timeline?as=rider`, tlCursor),
     fetchAuditFor(id),
     adminFetch<RiderReferralSummary>(`/admin/riders/${id}/referral`),
+    canRevealPhones(),
   ]);
 
   // `commission_freeze` state (design OV-4A). `undefined` today for EVERY rider — no admin read surface
@@ -374,7 +377,15 @@ export default async function RiderProfilePage({
             <div className="block-title">Details</div>
             <KeyValue
               rows={[
-                { label: "Phone", value: <span className="mono">{formatPhoneLocal(r.phone)}</span> },
+                {
+                  label: "Phone",
+                  // A-03: masked unless the biker is on a live order; the owner can reveal it (owner 2026-10-18).
+                  value: r.phone.includes("•") ? (
+                    <PhoneReveal profileId={r.id} masked={r.phone} allowed={revealAllowed} connected={connected} />
+                  ) : (
+                    <span className="mono">{formatPhoneLocal(r.phone)}</span>
+                  ),
+                },
                 {
                   label: "Bike reg",
                   value: (
