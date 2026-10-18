@@ -90,4 +90,5 @@ REALITY: pr-count pass no .gstack/ship-policy.json; default one PR per wave
 
 | ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
 |---|---|---|---|---|---|
+| SIGNUP-ENTRY (owner) | No visible sign-up on merchant web (`apps/merchant/app/login/page.tsx:136`) | "Sign in" | "Get started", one screen | approved | Owner 2026-10-18: "no need or new screens … renname Sign In to Get Started", then "remove subtext", "approved". Shipped as D-113 in PR #1232 |
 | MODE (owner) | 0E rule: ~25 planned files [estimated] > 15 | none | SCOPE REDUCTION | unresolved | |
