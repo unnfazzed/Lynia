@@ -410,11 +410,18 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
       },
     };
     const svc = new AdminService(prisma as unknown as PrismaService, envStub());
-    const before = Date.now();
-    expect((await svc.navCounts()).merchantApplications).toBe(3);
+    // Frozen clock: comparing against a second Date.now() read flaked under full-suite load.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+      expect((await svc.navCounts()).merchantApplications).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
     const w = where as unknown as { applicationStatus: { in: string[] }; pilotEnabled: boolean; createdAt: { lt: Date } };
     expect(w.applicationStatus.in).toEqual(["applied", "reviewing"]);
     expect(w.pilotEnabled).toBe(false);
-    expect(before - w.createdAt.lt.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
+    // Exactly 24h before "now".
+    expect(w.createdAt.lt.toISOString()).toBe("2026-10-17T12:00:00.000Z");
   });
 });
