@@ -966,3 +966,54 @@ export interface AdminConfig {
   gpsRetentionDays: number;
   sla: Array<{ stage: string; label: string; limitMinutes: number; note: string | null }>;
 }
+
+/* ── Biker referrals (D-112): GET /admin/referrals, GET /admin/riders/:id/referral ─────────────────── */
+
+/** joined = became a biker; verified = passed the ID check; riding = verified and finished a job. */
+export type ReferralStage = "joined" | "verified" | "riding";
+export type ReferralFlag = "same_device" | "same_id" | "duplicate_id" | "referrer_not_verified" | "not_active";
+
+export interface AdminReferralRow {
+  id: string;
+  createdAt: string;
+  referrer: { id: string; name: string; code: string };
+  friend: { id: string; name: string; kycStatus: string; verifiedAt: string | null; trips: number; accountStatus: string };
+  stage: ReferralStage;
+  flags: ReferralFlag[];
+  paid: { at: string; amount: string } | null;
+}
+
+export interface AdminReferrerRow {
+  id: string;
+  name: string;
+  code: string;
+  referred: number;
+  verified: number;
+  riding: number;
+  unpaidVerified: number;
+  paidCount: number;
+  paidTotal: string;
+}
+
+export interface AdminReferrals {
+  totals: {
+    referred: number;
+    verified: number;
+    riding: number;
+    unpaidVerified: number;
+    paidCount: number;
+    paidTotal: string;
+    links: number;
+  };
+  referrers: AdminReferrerRow[];
+  rows: AdminReferralRow[];
+  capped: boolean;
+}
+
+export interface RiderReferralSummary {
+  code: string | null;
+  link: string | null;
+  referred: number;
+  verified: number;
+  paidCount: number;
+}

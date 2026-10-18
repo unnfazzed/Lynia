@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ReferralsModule } from "../referrals/referrals.module";
 import { SettlementsModule } from "../settlements/settlements.module";
 import { SosModule } from "../sos/sos.module";
 import { TrackingModule } from "../tracking/tracking.module";
@@ -6,6 +7,7 @@ import { WalletModule } from "../wallet/wallet.module";
 import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminController } from "./admin.controller";
+import { AdminReferralsController } from "./admin-referrals.controller";
 import { AdminCustomersService } from "./admin-customers.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
@@ -26,8 +28,9 @@ import { AdminService } from "./admin.service";
   // and TrackingService, whose last-known positions the live map reads (console v2 §7).
   // SosModule exports SosService — the admin SOS list surface reads recent events (DS13-05).
   // WalletModule exports WalletService — the admin manual-credit path for the commission wallet.
-  imports: [SettlementsModule, TrackingModule, SosModule, WalletModule],
-  controllers: [AdminController],
+  // ReferralsModule exports ReferralsService — the Referrals page and its cash payments (D-112).
+  imports: [SettlementsModule, TrackingModule, SosModule, WalletModule, ReferralsModule],
+  controllers: [AdminController, AdminReferralsController],
   providers: [
     AdminService,
     AdminOrdersService,

@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { NavCounts } from "../lib/adminTypes";
 import { IAP_SIGNOUT_URL } from "../lib/console-auth";
-import { IconAlert, IconBanknote, IconBike, IconHistory, IconIdCard, IconMapPin, IconMenu, IconNavigation, IconPackage, IconPhone, IconSliders, IconStore, IconUser, IconUsers, IconX } from "./icons";
+import { IconAlert, IconBanknote, IconBike, IconHistory, IconIdCard, IconMapPin, IconMenu, IconNavigation, IconPackage, IconPhone, IconSliders, IconStore, IconUser, IconUserPlus, IconUsers, IconX } from "./icons";
 import { SearchBox } from "./SearchBox";
 
 /**
@@ -36,6 +36,8 @@ const NAV: NavEntry[] = [
   { label: "People", href: "/people", icon: <IconUsers />, match: "/people" },
   { label: "Bikers", href: "/riders", icon: <IconBike />, match: "/riders" },
   { label: "KYC review", href: "/riders?kyc=pending", icon: <IconIdCard />, match: "/kyc", badge: "kycPending" },
+  // Biker referrals (D-112): who brought in which new bikers, and the cash paid for them.
+  { label: "Referrals", href: "/referrals", icon: <IconUserPlus />, match: "/referrals" },
   { label: "Customers", href: "/customers", icon: <IconUser />, match: "/customers" },
   // Admin console v2 §5: the badge counts applications waiting on ops past the 24h SLA.
   { label: "Merchants", href: "/merchants", icon: <IconStore />, match: "/merchants", badge: "merchantApplications" },

@@ -1402,6 +1402,37 @@ model MerchantInvite {
   @@map("merchant_invites")
 }
 
+/// Biker referrals (owner 2026-10-18, ledger D-112): a biker's share code for `lyniago.com/r/<code>`, minted
+/// when ops first open the biker's referral link in the console. One per biker, never reused.
+model ReferralCode {
+  // Plain id (no relation), like MerchantInvite: an erased profile is a tombstone, never deleted.
+  riderId   String   @id @map("rider_id") @db.Uuid
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("referral_codes")
+}
+
+/// One per referred biker: who brought them in, through which code. Written by POST /riders/become when the
+/// app sends the code from Play's install referrer. Whether the friend got verified and how many jobs they've
+/// done is read live from their rider row, never copied here. Ops pay the referrer in cash and record it with
+/// paidAt/paidAmount/paidBy (the note goes on the audit row, `referral.paid`). No personal data.
+model Referral {
+  id         String    @id @default(uuid()) @db.Uuid
+  referrerId String    @map("referrer_id") @db.Uuid
+  // Unique: a biker can be referred once, ever, so a friend is paid for at most once.
+  refereeId  String    @unique @map("referee_id") @db.Uuid
+  code       String
+  createdAt  DateTime  @default(now()) @map("created_at")
+  paidAt     DateTime? @map("paid_at")
+  paidAmount Decimal?  @map("paid_amount") @db.Decimal(10, 2)
+  // The admin profile id that recorded the cash payment.
+  paidBy     String?   @map("paid_by")
+
+  @@index([referrerId])
+  @@map("referrals")
+}
+
 /**
  * D1 `menu_closed` / `list_empty` — "Remind me when they open". A customer who finds a kitchen shut
  * can ask to be told when it opens again, instead of the closed state being a dead end.
