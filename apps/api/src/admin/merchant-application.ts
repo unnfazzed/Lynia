@@ -58,7 +58,7 @@ export function allowedActions(status: ApplicationStatus): ApplicationAction[] {
 
 /* ── Checklist ─────────────────────────────────────────────────────────────────────────────────── */
 
-export type ChecklistKey = "location" | "hours" | "owner" | "menu" | "team" | "licence" | "call";
+export type ChecklistKey = "location" | "hours" | "owner" | "menu" | "shopfront" | "team" | "licence" | "call";
 
 export interface ChecklistRow {
   key: ChecklistKey;
@@ -80,6 +80,8 @@ export interface ChecklistInput {
   hours: unknown;
   owner: { name: string; phoneVerified: boolean; termsAccepted: boolean } | null;
   menu: { categories: number; dishes: number; liveDishes: number; withPhoto: number; drafts: number; minPrice: number | null; maxPrice: number | null };
+  /** What customers will see at the top of the listing: the round logo, the cover banner and the "about" text. */
+  shopFront: { logo: boolean; cover: boolean; about: boolean };
   team: { members: number; staff: number; openInvites: number; pharmacists: number };
   licence: { licenceNumber: string | null; pharmacistName: string | null; verifiedAt: Date | null } | null;
   /** The last ops call that reached someone (a `merchant.application` `called` event, outcome reached). */
@@ -152,6 +154,19 @@ export function buildChecklist(input: ChecklistInput): ChecklistRow[] {
             ]
               .filter(Boolean)
               .join(" · "),
+    },
+    {
+      // The owner's ask (2026-10-18): ops sees the logo and the "about" before approving. Shown, not
+      // required: sign-up never asks for them, so an applicant can't be blocked on a field it wasn't shown.
+      key: "shopfront",
+      label: "Shop front",
+      ok: input.shopFront.logo && input.shopFront.about,
+      required: false,
+      detail: [
+        input.shopFront.logo ? "logo" : "no logo",
+        input.shopFront.cover ? "cover" : "no cover",
+        input.shopFront.about ? "about" : "no about",
+      ].join(" · "),
     },
     {
       key: "team",

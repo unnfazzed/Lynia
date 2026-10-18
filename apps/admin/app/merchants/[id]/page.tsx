@@ -10,6 +10,7 @@ import { IconStore } from "../../components/icons";
 import { ApplicationActionButton, LicenceButtons } from "../ApplicationActions";
 import { ApplicationCard, ApplicationStatusPill, MetricsCard } from "../application-ui";
 import { OrderSettingsCard } from "../OrderSettingsCard";
+import { ShopFrontCard } from "../ShopFrontCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
 import { OrderLink, RecordLink } from "../../components/links";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
@@ -128,6 +129,9 @@ export default async function MerchantProfilePage({
 
       {app && app.status !== "live" ? <ApplicationCard app={app} name={m.name} connected={connected} /> : null}
 
+      {/* The owner's ask (2026-10-18): the logo, the "about" and the items, seen before Approve. */}
+      {m.shopFront ? <ShopFrontCard name={m.name} shopFront={m.shopFront} shop={isShop} /> : null}
+
       {!app && !m.pilotEnabled ? (
         <div className="warnbar">
           <IconStore />
@@ -239,7 +243,8 @@ export default async function MerchantProfilePage({
                     ]
                   : []),
                 { label: "Joined", value: m.joined },
-                ...(m.description ? [{ label: "Description", value: m.description }] : []),
+                // The shop front card shows the "about" when the API sends one; older APIs keep it here.
+                ...(m.description && !m.shopFront ? [{ label: "Description", value: m.description }] : []),
               ]}
             />
           </section>

@@ -59,6 +59,9 @@ const APPLICATION_SELECT = {
   shopKind: true,
   location: true,
   hours: true,
+  logoUrl: true,
+  coverPhotoUrl: true,
+  description: true,
   pilotEnabled: true,
   applicationStatus: true,
   applicationStatusAt: true,
@@ -148,6 +151,7 @@ export class AdminMerchantApplicationService {
         status: effectiveApplicationStatus(m),
         location: m.location,
         hours: m.hours,
+        shopFront: { logo: !!m.logoUrl, cover: !!m.coverPhotoUrl, about: !!m.description?.trim() },
         owner: owner ? { name: owner.displayName, phoneVerified: owner.profile?.phoneVerifiedAt != null, termsAccepted: owner.termsAcceptedAt != null } : null,
         menu: {
           categories: categories.find((c) => c.merchantId === m.id)?._count._all ?? 0,

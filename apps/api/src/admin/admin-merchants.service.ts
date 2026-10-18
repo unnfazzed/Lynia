@@ -1,6 +1,8 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { businessBookingAccountPhone, normalizePhone, RESTAURANTS_DEBT, type Waypoint } from "@lynia/shared";
+import { currentThumbKey } from "../adapters/storage/photo-thumbnail";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -34,11 +36,33 @@ const MERCHANT_DIRECTORY_SELECT = {
 const MERCHANT_QUEUE_SELECT = {
   ...MERCHANT_DIRECTORY_SELECT,
   hours: true,
+  logoUrl: true,
+  coverPhotoUrl: true,
+  description: true,
   applicationStatusAt: true,
   applicationReasonCode: true,
   approvedAt: true,
   approvedBy: true,
 } as const;
+
+/** The shop front on the detail page: one hour is plenty for a reviewer's visit. */
+const SHOP_FRONT_PHOTO_TTL_SECONDS = 60 * 60;
+
+/** How many items the detail page previews (the checklist row still counts all of them). */
+const SHOP_FRONT_ITEM_PREVIEW = 12;
+
+const WEEK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
+/** `Merchant.hours` ({ mon: { open, close }, … }) as one row per day, closed days included. */
+export function weeklyHours(hours: unknown): { day: (typeof WEEK_DAYS)[number]; open: string | null; close: string | null }[] {
+  const h = hours && typeof hours === "object" ? (hours as Record<string, unknown>) : {};
+  return WEEK_DAYS.map((day) => {
+    const w = h[day] as { open?: unknown; close?: unknown } | null | undefined;
+    const open = w && typeof w.open === "string" ? w.open : null;
+    const close = w && typeof w.close === "string" ? w.close : null;
+    return { day, open: open && close ? open : null, close: open && close ? close : null };
+  });
+}
 
 /** The application states the queue keeps oldest first (they wait on ops). */
 const OLDEST_FIRST: readonly ApplicationStatus[] = ["applied", "reviewing", "approved"];
@@ -77,7 +101,15 @@ export class AdminMerchantsService {
     // import wiring is needed to inject this (mirrors admin-customers.service.ts).
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly applicationService?: AdminMerchantApplicationService,
+    // Signs the shop front's photos for the detail page; absent in unit harnesses (photos read as null).
+    @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
   ) {}
+
+  /** A short-lived signed read URL for a stored photo key, or null (no photo, no storage, or signing failed). */
+  private async signPhoto(key: string | null | undefined): Promise<string | null> {
+    if (!key || !this.storage) return null;
+    return this.storage.createReadUrl(key, SHOP_FRONT_PHOTO_TTL_SECONDS).catch(() => null);
+  }
 
   /** The application state machine (injected in the app; built on demand in unit tests). */
   private get application(): AdminMerchantApplicationService {
@@ -157,7 +189,19 @@ export class AdminMerchantsService {
   async getMerchantDetail(id: string, debtCursor?: string) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id },
-      select: { ...MERCHANT_DIRECTORY_SELECT, description: true, priceLevel: true, autoAccept: true, showPhoneToCustomers: true, freeDelivery: true },
+      select: {
+        ...MERCHANT_DIRECTORY_SELECT,
+        description: true,
+        priceLevel: true,
+        autoAccept: true,
+        showPhoneToCustomers: true,
+        freeDelivery: true,
+        // The shop front ops reviews before approving (owner, 2026-10-18).
+        logoUrl: true,
+        logoThumbKey: true,
+        coverPhotoUrl: true,
+        hours: true,
+      },
     });
     if (!merchant) return null;
 
@@ -193,6 +237,7 @@ export class AdminMerchantsService {
       // customer hold, on its own page) pauses every booking the business makes. Null before its first.
       this.prisma.profile.findUnique({ where: { phone: businessBookingAccountPhone(id) }, select: { id: true, onHold: true } }),
     ]);
+    const shopFront = await this.shopFront(merchant);
 
     const debtLedgerHasMore = ledgerRows.length > DEBT_LEDGER_PAGE_SIZE;
     const ledger = debtLedgerHasMore ? ledgerRows.slice(0, DEBT_LEDGER_PAGE_SIZE) : ledgerRows;
@@ -215,6 +260,7 @@ export class AdminMerchantsService {
       contactPhone: location?.contactPhone ?? null,
       pin: location?.point ?? null,
       bookingAccount: bookingAccount ? { id: bookingAccount.id, onHold: bookingAccount.onHold } : null,
+      shopFront,
       trail: recentOrders.map((o) => ({
         id: o.id,
         route: routeOf(o.pickup, o.dropoff),
@@ -234,6 +280,56 @@ export class AdminMerchantsService {
         at: l.createdAt.toISOString(),
       })),
       debtLedgerNextCursor: debtLedgerHasMore ? ledger[ledger.length - 1]!.id : null,
+    };
+  }
+
+  /**
+   * What customers will see, for the reviewer: the logo and cover (signed), the "about", the week's hours
+   * and the first items as listed (category order, then item order), drafts included and marked.
+   */
+  private async shopFront(m: {
+    id: string;
+    logoUrl: string | null;
+    logoThumbKey: string | null;
+    coverPhotoUrl: string | null;
+    description: string | null;
+    cuisineTags: string[];
+    priceLevel: number | null;
+    hours: Prisma.JsonValue;
+  }) {
+    const [items, itemCount] = await Promise.all([
+      this.prisma.merchantDish.findMany({
+        where: { merchantId: m.id },
+        orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "asc" }],
+        take: SHOP_FRONT_ITEM_PREVIEW,
+        select: { id: true, name: true, priceUsd: true, photoUrl: true, photoThumbKey: true, isDraft: true, category: { select: { name: true } } },
+      }),
+      this.prisma.merchantDish.count({ where: { merchantId: m.id } }),
+    ]);
+    const [logoUrl, coverPhotoUrl, photos] = await Promise.all([
+      this.signPhoto(currentThumbKey(m.logoUrl, m.logoThumbKey) ?? m.logoUrl),
+      this.signPhoto(m.coverPhotoUrl),
+      Promise.all(items.map((d) => this.signPhoto(currentThumbKey(d.photoUrl, d.photoThumbKey) ?? d.photoUrl))),
+    ]);
+    return {
+      logoUrl,
+      coverPhotoUrl,
+      hasLogo: !!m.logoUrl,
+      hasCover: !!m.coverPhotoUrl,
+      about: m.description?.trim() || null,
+      tags: m.cuisineTags,
+      priceLevel: m.priceLevel,
+      hours: weeklyHours(m.hours),
+      itemCount,
+      items: items.map((d, i) => ({
+        id: d.id,
+        name: d.name,
+        category: d.category.name,
+        priceUsd: d.priceUsd.toString(),
+        photoUrl: photos[i] ?? null,
+        hasPhoto: !!d.photoUrl,
+        draft: d.isDraft,
+      })),
     };
   }
 

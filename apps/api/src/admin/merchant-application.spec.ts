@@ -24,6 +24,7 @@ function readyInput(over: Partial<ChecklistInput> = {}): ChecklistInput {
     hours: { mon: { open: "08:00", close: "20:00" }, tue: { open: "08:00", close: "20:00" } },
     owner: { name: "Tendai Moyo", phoneVerified: true, termsAccepted: true },
     menu: { categories: 2, dishes: 10, liveDishes: 8, withPhoto: 8, drafts: 2, minPrice: 1.5, maxPrice: 12 },
+    shopFront: { logo: true, cover: true, about: true },
     team: { members: 2, staff: 1, openInvites: 1, pharmacists: 0 },
     licence: null,
     lastCallAt: new Date("2026-10-13T08:00:00Z"),
@@ -75,7 +76,7 @@ describe("merchant application — state (admin console v2 §5)", () => {
 describe("merchant application — checklist, computed from data", () => {
   it("a ready restaurant passes every required row; team is shown but never required", () => {
     const rows = buildChecklist(readyInput());
-    expect(rows.map((r) => r.key)).toEqual(["location", "hours", "owner", "menu", "team", "call"]);
+    expect(rows.map((r) => r.key)).toEqual(["location", "hours", "owner", "menu", "shopfront", "team", "call"]);
     expect(rows.every((r) => r.ok)).toBe(true);
     expect(rows.find((r) => r.key === "team")?.required).toBe(false);
     expect(checklistPasses(rows)).toBe(true);
@@ -83,6 +84,20 @@ describe("merchant application — checklist, computed from data", () => {
     expect(rows.find((r) => r.key === "menu")?.detail).toBe("2 categories · 10 dishes · 80% with photos · 2 drafts · $1.50–$12.00");
     expect(rows.find((r) => r.key === "owner")?.detail).toBe("Tendai Moyo · phone verified · terms accepted");
     expect(rows.find((r) => r.key === "team")?.detail).toBe("1 staff · 1 open invite");
+  });
+
+  it("the shop front shows the logo, cover and about to the reviewer, and never blocks Approve", () => {
+    const ready = buildChecklist(readyInput()).find((r) => r.key === "shopfront")!;
+    expect(ready).toMatchObject({ label: "Shop front", ok: true, required: false, detail: "logo · cover · about" });
+
+    const bare = buildChecklist(readyInput({ shopFront: { logo: false, cover: false, about: false } }));
+    expect(bare.find((r) => r.key === "shopfront")).toMatchObject({ ok: false, detail: "no logo · no cover · no about" });
+    expect(checklistPasses(bare)).toBe(true);
+    expect(checklistScore(bare)).toEqual({ passed: 5, total: 5 });
+
+    // A cover is nice to have; a logo and an about make the row pass.
+    const noCover = buildChecklist(readyInput({ shopFront: { logo: true, cover: false, about: true } }));
+    expect(noCover.find((r) => r.key === "shopfront")).toMatchObject({ ok: true, detail: "logo · no cover · about" });
   });
 
   it("each missing piece fails its own row", () => {

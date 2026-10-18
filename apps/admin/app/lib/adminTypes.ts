@@ -448,6 +448,23 @@ export interface MerchantDebtLedgerRow {
   at: string;
 }
 
+/** What customers will see, for the reviewer (owner, 2026-10-18). Photo URLs are signed for an hour; null
+ *  when there is no photo or it couldn't be signed (`has*` says which). */
+export interface MerchantShopFront {
+  logoUrl: string | null;
+  coverPhotoUrl: string | null;
+  hasLogo: boolean;
+  hasCover: boolean;
+  about: string | null;
+  tags: string[];
+  priceLevel: number | null;
+  /** Mon–Sun; a closed day has no times. */
+  hours: { day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"; open: string | null; close: string | null }[];
+  itemCount: number;
+  /** The first items as listed, drafts included. */
+  items: { id: string; name: string; category: string; priceUsd: string; photoUrl: string | null; hasPhoto: boolean; draft: boolean }[];
+}
+
 export interface MerchantDetail extends Merchant {
   description: string | null;
   priceLevel: number | null;
@@ -470,6 +487,8 @@ export interface MerchantDetail extends Merchant {
   showPhoneToCustomers?: boolean;
   /** D-71: the business pays the delivery fee on new cash orders (customers pay $0 delivery). */
   freeDelivery?: boolean;
+  /** Absent on an API from before the shop-front review. */
+  shopFront?: MerchantShopFront;
 }
 
 /* ── Orders to confirm (auto-accept: GET /admin/kitchen-confirmations) ── */

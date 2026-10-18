@@ -5,6 +5,9 @@ import { AdminMerchantsService } from "./admin-merchants.service";
 /** Decimal-like stub — Prisma returns Decimal objects whose `.toString()` we serialize. */
 const dec = (s: string) => ({ toString: () => s });
 
+/** The shop front's item preview, for detail fixtures that aren't about it. */
+const NO_DISHES = { findMany: async () => [], count: async () => 0 };
+
 describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
   const merchant = {
     id: "m1",
@@ -75,6 +78,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
           },
         ],
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: {
         findMany: async () => [
           { id: "l1", orderId: "o2", riderId: "r1", rider: { profile: { firstName: "Tendai", lastName: "M" } }, type: "opened", amount: dec("8.00"), note: null, actor: "system", createdAt: new Date("2026-07-29T00:00:00Z") },
@@ -108,6 +112,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
         aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
         findMany: async () => [],
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: { findMany: async () => [] },
     });
     const on = (await new AdminMerchantsService(
@@ -134,6 +139,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
         aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
         findMany: async () => [],
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: { findMany: async () => [] },
     };
     const d = (await new AdminMerchantsService(prisma as unknown as PrismaService).getMerchantDetail("m1"))!;
@@ -171,6 +177,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
         findMany: async () => [],
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: { findMany: async () => rows },
     };
     const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
@@ -192,6 +199,7 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
         aggregate: async () => ({ _sum: { debtAmount: dec("8.00") }, _count: { _all: 1 } }),
         findMany: async () => [],
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: {
         findMany: async (args: { orderBy: unknown; take: number; cursor?: { id: string }; skip?: number }) => {
           expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
@@ -335,6 +343,7 @@ describe("AdminMerchantsService — D3 (2026-10-07, MJ-RH1): a merchant's non-re
         findUnique: async () => order,
         updateMany: async (a: { where: Record<string, unknown>; data: Record<string, unknown> }) => { calls.update = a; return { count: updateCount }; },
       },
+      merchantDish: NO_DISHES,
       merchantDebtLedger: { create: async (a: { data: Record<string, unknown> }) => { calls.ledger = a; return {}; } },
       auditLog: { create: async (a: { data: Record<string, unknown> }) => { calls.audit = a; return { id: "audit-9" }; } },
       rider: { updateMany: async () => { calls.riderTouched = true; return { count: 1 }; } },
@@ -724,5 +733,82 @@ describe("AdminMerchantsService.transferOwner (merchant web upgrade L4 — suppo
     const res = await h.svc.transferOwner("ops", "m1", { phone: "+263774000004", note: NOTE });
     expect(res.previousOwnerProfileId).toBe("farai");
     expect(h.members.find((m) => m.profileId === "farai")).toMatchObject({ merchantId: "m1", role: "staff", displayName: "Farai Chari" });
+  });
+
+  const SHOP = {
+    id: "m1",
+    name: "Mama's Kitchen",
+    cashRule: "collect_and_return",
+    pilotEnabled: false,
+    busyMode: false,
+    cuisineTags: ["Zimbabwean"],
+    createdAt: new Date("2026-07-01T00:00:00Z"),
+  };
+
+  it("the detail carries the shop front ops reviews before approving: signed logo and cover, about, the week's hours, the first items", async () => {
+    let dishQuery: { take?: number; orderBy?: unknown } | undefined;
+    const prisma = {
+      merchant: {
+        findUnique: async () => ({
+          ...SHOP,
+          logoUrl: "merchant/m1/logo.jpg",
+          logoThumbKey: "merchant/m1/logo.jpg.thumb.jpg",
+          coverPhotoUrl: "merchant/m1/cover.jpg",
+          description: "  Sadza and stew since 1998.  ",
+          priceLevel: 2,
+          hours: { mon: { open: "08:00", close: "20:00" }, sat: { open: "09:00" } },
+        }),
+      },
+      profile: { findUnique: async () => null },
+      order: { count: async () => 0, aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }), findMany: async () => [] },
+      merchantDebtLedger: { findMany: async () => [] },
+      merchantDish: {
+        findMany: async (args: { take?: number; orderBy?: unknown }) => {
+          dishQuery = args;
+          return [
+            { id: "d1", name: "Sadza & beef", priceUsd: dec("4.50"), photoUrl: "dish/d1.jpg", photoThumbKey: null, isDraft: false, category: { name: "Mains" } },
+            { id: "d2", name: "Maheu", priceUsd: dec("1.00"), photoUrl: null, photoThumbKey: null, isDraft: true, category: { name: "Drinks" } },
+          ];
+        },
+        count: async () => 14,
+      },
+    };
+    const storage = { createReadUrl: async (key: string) => `https://signed.example/${key}` };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService, undefined, undefined, storage as never);
+    const { shopFront } = (await svc.getMerchantDetail("m1"))!;
+    expect(dishQuery?.take).toBe(12);
+    expect(shopFront).toMatchObject({
+      // The logo is shown small, so its thumbnail is signed when it's the current one.
+      logoUrl: "https://signed.example/merchant/m1/logo.jpg.thumb.jpg",
+      coverPhotoUrl: "https://signed.example/merchant/m1/cover.jpg",
+      hasLogo: true,
+      hasCover: true,
+      about: "Sadza and stew since 1998.",
+      tags: ["Zimbabwean"],
+      priceLevel: 2,
+      itemCount: 14,
+    });
+    expect(shopFront.hours).toHaveLength(7);
+    expect(shopFront.hours[0]).toEqual({ day: "mon", open: "08:00", close: "20:00" });
+    // A day with only half a window reads as closed, never as a half-open day.
+    expect(shopFront.hours[5]).toEqual({ day: "sat", open: null, close: null });
+    expect(shopFront.items).toEqual([
+      { id: "d1", name: "Sadza & beef", category: "Mains", priceUsd: "4.50", photoUrl: "https://signed.example/dish/d1.jpg", hasPhoto: true, draft: false },
+      { id: "d2", name: "Maheu", category: "Drinks", priceUsd: "1.00", photoUrl: null, hasPhoto: false, draft: true },
+    ]);
+  });
+
+  it("the shop front degrades to text when photos can't be signed (no storage, or signing fails)", async () => {
+    const prisma = {
+      merchant: { findUnique: async () => ({ ...SHOP, logoUrl: "k/logo.jpg", logoThumbKey: null, coverPhotoUrl: null, description: null, priceLevel: null, hours: null }) },
+      profile: { findUnique: async () => null },
+      order: { count: async () => 0, aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }), findMany: async () => [] },
+      merchantDebtLedger: { findMany: async () => [] },
+      merchantDish: NO_DISHES,
+    };
+    const failing = { createReadUrl: async () => Promise.reject(new Error("signBlob denied")) };
+    const { shopFront } = (await new AdminMerchantsService(prisma as unknown as PrismaService, undefined, undefined, failing as never).getMerchantDetail("m1"))!;
+    expect(shopFront).toMatchObject({ logoUrl: null, hasLogo: true, coverPhotoUrl: null, hasCover: false, about: null, itemCount: 0, items: [] });
+    expect(shopFront.hours.every((h) => h.open === null)).toBe(true);
   });
 });

@@ -5498,6 +5498,7 @@ components, and record them all here. Each also follows D-105 below 900px.
 | 7 | `/config` "Settings": read-only key/value cards (deploy variable under each label), On/Off pills, the time-limit table | card, `.kv`, pills, `table.data` |
 | 7 | Alert strip above every page (hidden when empty): `kpill bad` / `kpill warn` links, ≥ `--target-min` on a phone | pills |
 | 7 | "Live" and "Settings" nav items (lucide `map-pin`, `sliders-horizontal`) | sidebar nav item |
+| 2026-10-18 | Merchant detail: Shop front card (owner: "admin must be able to see … logo, about etc before approving"): 3:1 cover with the round logo over it, About, tags, price level, the week's hours, the first 12 items as a photo grid (draft pill), "No logo" / "No photo" boxes on `--surface`; the Application card gains an optional "Shop front" row (logo · cover · about) | card, `.kv`, pills, tokens |
 
 One literal: inputs use 16px text on a phone so iOS doesn't zoom on focus.
 
