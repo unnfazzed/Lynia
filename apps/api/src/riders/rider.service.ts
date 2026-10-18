@@ -9,6 +9,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -47,6 +48,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { canGoOnline, onlineRefusalReason, type OnlineRefusal, REFUSAL_MESSAGE } from "./online-gate";
 import { domainEvents } from "../common/domain-events";
+import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
 
 /**
  * How long one forced KYC session replacement lasts before another can be claimed.
@@ -200,6 +202,8 @@ export class RiderService {
     // KYC observability (paid mints, undelivered KYC pushes, token-less bikers going online). The @Global
     // ObservabilityModule always injects it; TS-optional for the positional spec constructions.
     private readonly metrics?: MetricsService,
+    // The owner's new-biker alert. @Global (OwnerAlertsModule); @Optional for the positional spec constructions.
+    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
   /**
@@ -537,7 +541,13 @@ export class RiderService {
       throw err;
     }
 
-    if (this.env.KYC_MODE !== "auto") return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl: undefined };
+    // The owner hears once the application stands: here in manual mode, after the vendor accepted it in
+    // auto mode (a failed submit hands the claim back above, and the biker's retry is the application).
+    const announce = () => this.ownerAlerts?.notify(ownerAlertText.bikerApplication({ firstName: profile.firstName, kycStatus: initialKyc }));
+    if (this.env.KYC_MODE !== "auto") {
+      announce();
+      return { kycStatus: initialKyc, mode: this.env.KYC_MODE, verificationUrl: undefined };
+    }
 
     // SECRET, captured here or never — Didit hands `session_token` back only from session-create, so
     // a token dropped on this path means every later resume mints a fresh paid session (P0-2 / D7).
@@ -552,6 +562,7 @@ export class RiderService {
       throw new ServiceUnavailableException("Couldn't start ID verification. Please try again.");
     }
     await this.recordKycSessionMinted(profileId, "become");
+    announce();
     // Attach the session to the row this call claimed — only while the row still has none, so nothing that
     // landed meanwhile is overwritten. Only ever a still-pending session: the stub auto-pass lands `verified`
     // immediately, and a verified rider must carry no live credential.

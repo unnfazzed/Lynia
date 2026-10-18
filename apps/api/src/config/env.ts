@@ -99,6 +99,12 @@ export const envSchema = z.object({
   SENTRY_DSN: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   SENTRY_ENVIRONMENT: z.string().optional(),
+  // --- Owner alerts (owner-alerts/owner-alerts.service.ts) ---
+  // A Telegram message to the owner's phone on every new sign-up, biker application and order. Inert
+  // unless BOTH are set; "" counts as unset (the deploy removes them while OWNER_ALERTS_ENABLED is off).
+  // The bot token is Key Vault TELEGRAM-BOT-TOKEN and is never logged; the chat id is not secret.
+  TELEGRAM_BOT_TOKEN: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  TELEGRAM_CHAT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // --- Push (lane A4) ---
   // "fcm" sends via firebase-admin (ADC creds on Cloud Run — no key in env); "noop" logs only
   // (dev/test, and prod until the Firebase project + messaging role are provisioned).
