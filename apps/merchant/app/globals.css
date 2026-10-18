@@ -168,14 +168,21 @@ input:focus-visible,
   .kitchen-aside-first {
     order: -1;
   }
+}
 
-  /* iOS Safari zooms the whole page in when a focused field's text is under 16px. The kit draws
-   * these at 14-15px, which is right for the tablet; on a phone the zoom-and-pan that costs is
-   * worse than the point of type size. */
+/* iOS Safari zooms the whole page in when a focused field's text is under 16px. The kit draws
+ * these at 14-15px; on a touch screen the zoom-and-pan that costs is worse than the point of type
+ * size. Keyed on the pointer, not on the phone frame's container: the ringing screen's sheets open
+ * over the frame, outside it, and its "Something else" note zoomed the page mid-countdown. A floor,
+ * not a size: C5's time fields are drawn at 18px and keep it. */
+@media (pointer: coarse) {
   input,
   select,
   textarea {
     font-size: 16px !important;
+  }
+  .m-in.m-time:not(.m-sm) input {
+    font-size: 18px !important;
   }
 }
 

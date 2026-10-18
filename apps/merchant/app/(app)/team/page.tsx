@@ -206,9 +206,9 @@ export default function TeamPage() {
                     <button type="button" className="m-stretch" aria-label={`Open ${i.name}'s invite`} onClick={() => setSheet({ kind: "invite", invite: i })}>
                       <b>{i.name}</b>
                     </button>
-                    <span>
+                    <span className="m-li-sub">
                       {invitedAgo(i.createdAt, now)} ·{" "}
-                      <a href={whatsApp(i)} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }} onClick={() => renew(i)}>
+                      <a className="m-li-link" href={whatsApp(i)} target="_blank" rel="noreferrer" onClick={() => renew(i)}>
                         Resend
                       </a>
                     </span>
