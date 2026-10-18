@@ -346,6 +346,9 @@ export const envSchema = z.object({
   // U1's optional what's-new line (the pill "New · Faster live tracking"), one short sentence. Unset or
   // blank = no pill.
   APP_WHATS_NEW: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().trim().max(80).optional()),
+  // Owner 2026-10-18: the operator emails (comma-separated, case-insensitive) who may see a person's full phone
+  // number in the admin console (AdminPhoneRevealService). Unset or blank = nobody.
+  ADMIN_PHONE_REVEAL_OPERATORS: z.string().default(""),
   // --- Data retention (LR8, docs/DATA-RETENTION.md) ---
   // GPS coords on order_events are scrubbed this many days after the event; expired sessions are
   // hard-deleted this many days after they lapse. Driven by the POST /admin/retention/purge sweep.

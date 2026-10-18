@@ -120,6 +120,9 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // Admin console v2 §4 (PR 5): AdminPeopleService.nudge writes it under its advisory lock, and the day's row IS
   // the one-nudge-per-person-per-list-per-day cap — a forged row would block a real nudge.
   "person.nudge",
+  // Owner 2026-10-18: AdminPhoneRevealService.reveal writes it with each full-number reveal — the record of who
+  // looked at whose number; a forged row would put a false entry in that record.
+  "person.phone_reveal",
 ]);
 
 @Injectable()

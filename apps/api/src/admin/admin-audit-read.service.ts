@@ -150,6 +150,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "merchant.branch.create": "Branch added",
   "merchant.branch.switch": "Switched branch",
   "person.nudge": "Nudged",
+  "person.phone_reveal": "Phone number viewed",
 };
 
 export function auditActionLabel(action: string): string {

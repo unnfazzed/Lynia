@@ -25,6 +25,7 @@ import { WalletService } from "../wallet/wallet.service";
 import { AdminAuditReadService } from "./admin-audit-read.service";
 import { AdminLiveService } from "./admin-live.service";
 import { AdminPeopleService } from "./admin-people.service";
+import { AdminPhoneRevealService } from "./admin-phone-reveal.service";
 import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { AdminSearchService } from "./admin-search.service";
 import { AdminTimelineService } from "./admin-timeline.service";
@@ -49,6 +50,7 @@ Reflect.defineMetadata(
     AdminTimelineService,
     AdminMerchantApplicationService,
     AdminPeopleService,
+    AdminPhoneRevealService,
     AdminLiveService,
   ],
   AdminController,
@@ -65,7 +67,7 @@ const money = { statement: vi.fn(async () => ({ balance: "0.00", ledger: [], nex
 const sos = { acknowledge: vi.fn(async (id: string) => ({ id, acknowledgedAt: "2026-07-13T10:00:00.000Z" })) };
 
 /** The controller's later collaborators (console v2 PRs 3–7); these suites don't call them. */
-const laterServices = [AdminAuditReadService, AdminSearchService, AdminTimelineService, AdminMerchantApplicationService, AdminPeopleService, AdminLiveService].map(
+const laterServices = [AdminAuditReadService, AdminSearchService, AdminTimelineService, AdminMerchantApplicationService, AdminPeopleService, AdminPhoneRevealService, AdminLiveService].map(
   (provide) => ({ provide, useValue: {} }),
 );
 
@@ -275,5 +277,48 @@ describe("GET /admin/live/* and /admin/config — HTTP authz", () => {
     const config = await request(app.getHttpServer()).get("/admin/config").set("Authorization", bearer(ADMIN_ID, "admin"));
     expect(config.status).toBe(200);
     expect(config.body).toEqual({ kyc: { mode: "manual" } });
+  });
+});
+
+describe("POST /admin/people/:id/reveal-phone — HTTP authz (owner 2026-10-18)", () => {
+  let app: INestApplication;
+  const phoneReveal = { reveal: vi.fn(async () => ({ phone: "+263771234567" })), canReveal: vi.fn(() => true) };
+
+  beforeAll(async () => {
+    app = await buildAuthzApp([AdminController], [
+      { provide: AdminService, useValue: adminService },
+      { provide: AdminOrdersService, useValue: {} },
+      { provide: AdminRidersService, useValue: {} },
+      { provide: AdminKycReviewService, useValue: {} },
+      { provide: AdminCustomersService, useValue: {} },
+      { provide: AdminMerchantsService, useValue: {} },
+      { provide: AdminAuditService, useValue: {} },
+      { provide: SettlementsService, useValue: settlements },
+      { provide: SosService, useValue: sos },
+      { provide: WalletService, useValue: {} },
+      { provide: AdminKitchenService, useValue: {} },
+      { provide: AdminMoneyService, useValue: money },
+      ...laterServices.filter((p) => p.provide !== AdminPhoneRevealService),
+      { provide: AdminPhoneRevealService, useValue: phoneReveal },
+    ]);
+  });
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it.each(["customer", "rider"])("403 for a %s JWT, and never reads the number", async (role) => {
+    const res = await request(app.getHttpServer()).post(`/admin/people/${USER_ID}/reveal-phone`).set("Authorization", bearer(USER_ID, role));
+    expect(res.status).toBe(403);
+    expect(phoneReveal.reveal).not.toHaveBeenCalled();
+  });
+
+  it("passes the forwarded operator to the service for an admin JWT", async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/admin/people/${USER_ID}/reveal-phone`)
+      .set("Authorization", bearer(ADMIN_ID, "admin"))
+      .set("X-Operator", "owner@example.com");
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ phone: "+263771234567" });
+    expect(phoneReveal.reveal).toHaveBeenCalledWith("owner@example.com", USER_ID);
   });
 });
