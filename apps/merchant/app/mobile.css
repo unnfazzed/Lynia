@@ -1232,6 +1232,19 @@
   position: relative;
   z-index: 1;
 }
+/* E2's invited row: "Invited today · Resend". The kit draws Resend as 12.5px text, a ~15px target
+ * (upstream kit defect, DESIGN-DEVIATIONS D-48 table). The line keeps its drawn look; the link's hit
+ * box grows to --target-min, upward into the row and down to the row's bottom edge only, so it never
+ * reaches the next row. The sub-line stops clipping so the padding can take taps. */
+.m-li .m-t .m-li-sub {
+  overflow: visible;
+}
+.m-li-link {
+  color: var(--accent-text);
+  font-weight: 600;
+  padding: calc(var(--target-min) - 25px) 6px 10px;
+  margin: 0 -6px;
+}
 
 /* ── Shop (merchant mobile D1–D7) ───────────────────────────────────────────────────────────── */
 /* D1's white "Book a rider" in the mint header. */
