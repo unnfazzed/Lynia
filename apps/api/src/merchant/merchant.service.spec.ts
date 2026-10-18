@@ -355,6 +355,16 @@ describe("MerchantService attach-time photo verification (C1 / E8)", () => {
     expect(update).toHaveBeenCalledOnce();
   });
 
+  it("updateProfile clears a photo (and its thumbnail) and the price level on null, verifying nothing (D-115)", async () => {
+    const update = vi.fn(async () => profileRow);
+    const { s, verify } = withVerifier({ merchant: { findUnique: async () => profileRow, update } });
+    await s.updateProfile("p1", { coverPhotoUrl: null, logoUrl: null, priceLevel: null });
+    expect(verify).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { coverPhotoUrl: null, coverThumbKey: null, logoUrl: null, logoThumbKey: null, priceLevel: null } }),
+    );
+  });
+
   it("400s a cover/logo key outside the caller's own banner namespace — never verified, so never deleted", async () => {
     const update = vi.fn();
     const { s, verify } = withVerifier({ merchant: { findUnique: async () => profileRow, update } });

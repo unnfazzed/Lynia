@@ -190,6 +190,10 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   other tabs), one five-step lifecycle (Accept → Cook / Pack → Hand over → On the way → Cash back) on one
   urgency-sorted board. Its `BRIEF.md` wins over the drawings. Screens it doesn't redraw (sign-in,
   onboarding, settings sub-screens) keep D-48's flow, restyled only.
+- **The merchant Shop front follows its own handoff (`handoff/shop-front-v1/`).** `apps/merchant/app/(app)/shop/` and
+  its photo picker / crop sheet align to `packages/design/handoff/shop-front-v1/` (ledger D-115, owner 2026-10-18;
+  it retires D-48's "Shop front not redrawn" row). Its `README.md` wins over the drawings. Strings come from
+  `apps/merchant/app/lib/shop-front-copy.ts` (the handoff's `copy.ts`, verbatim).
 - **Customer briefs 06–09 follow their own handoff (`handoff/customer-briefs-06-09/`).** The late-cancel rider contact
   (After Send v2 18d/18e/18b/18f), the venue's note on D3b (D3g), the code-changed CodeCard (2.14b–d) and removing a
   prescription page (R8c–R8e) align to `packages/design/handoff/customer-briefs-06-09/` (ledger D-97, owner

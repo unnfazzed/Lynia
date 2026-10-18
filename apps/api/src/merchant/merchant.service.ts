@@ -357,12 +357,19 @@ export class MerchantService {
     const data: Prisma.MerchantUpdateInput = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.description !== undefined) data.description = body.description;
-    if (body.coverPhotoUrl !== undefined) {
+    // shop-front-v1 (D-115): `null` removes the photo, and its thumbnail with it.
+    if (body.coverPhotoUrl === null) {
+      data.coverPhotoUrl = null;
+      data.coverThumbKey = null;
+    } else if (body.coverPhotoUrl !== undefined) {
       await this.verifyPhotoKey(body.coverPhotoUrl, merchant.coverPhotoUrl, profileId, "banner");
       data.coverPhotoUrl = body.coverPhotoUrl;
       if (body.coverPhotoUrl !== merchant.coverPhotoUrl) data.coverThumbKey = await this.thumbFor(body.coverPhotoUrl);
     }
-    if (body.logoUrl !== undefined) {
+    if (body.logoUrl === null) {
+      data.logoUrl = null;
+      data.logoThumbKey = null;
+    } else if (body.logoUrl !== undefined) {
       await this.verifyPhotoKey(body.logoUrl, merchant.logoUrl, profileId, "banner");
       data.logoUrl = body.logoUrl;
       if (body.logoUrl !== merchant.logoUrl) data.logoThumbKey = await this.thumbFor(body.logoUrl);

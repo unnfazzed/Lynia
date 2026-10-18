@@ -31,6 +31,17 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+
+  /** True when `message` is the API's own words, not a fallback this client wrote ("Request failed (HTTP
+   *  500).", the 503 line, "Couldn't reach the server…"). */
+  fromServer = false;
+}
+
+/** The API's own message, for a screen that shows it when there is one and its own copy otherwise
+ *  (Shop front v1, D-115: "the API message, or `saveFail` when there is none"). A validation 400's schema
+ *  text is never a sentence for a person, so it doesn't count. */
+export function serverMessage(err: unknown): string | null {
+  return err instanceof ApiError && err.fromServer && !err.validation && err.message ? err.message : null;
 }
 
 /** The `{ reason }` a Nest `{ reason, message }` exception body carries, if any. */
@@ -209,7 +220,9 @@ async function rawFetch<T>(
       (typeof body?.message === "string" && body.message) ||
       (Array.isArray(body?.message) && body.message.join("; ")) ||
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
-    throw new ApiError(res.status, message, reasonOf(body), isValidationBody(res.status, body), retryAfterOf(res.status, body));
+    const err = new ApiError(res.status, message, reasonOf(body), isValidationBody(res.status, body), retryAfterOf(res.status, body));
+    err.fromServer = (typeof body?.message === "string" && !!body.message) || (Array.isArray(body?.message) && body.message.length > 0);
+    throw err;
   }
   return (await res.json()) as T;
 }
@@ -453,7 +466,9 @@ async function authedRequest<T>(path: string, opts: { method?: string; body?: un
       (res.status === 503 ? "Restaurants isn't live on this account yet." : `Request failed (HTTP ${res.status}).`);
     const reason = reasonOf(body);
     if (res.status === 403 && reason === "not_a_member") for (const listener of membershipLostListeners) listener();
-    throw new ApiError(res.status, message, reason, isValidationBody(res.status, body));
+    const err = new ApiError(res.status, message, reason, isValidationBody(res.status, body));
+    err.fromServer = typeof (body as { message?: unknown } | null)?.message === "string" && !!(body as { message: string }).message;
+    throw err;
   }
   return (await res.json()) as T;
 }
