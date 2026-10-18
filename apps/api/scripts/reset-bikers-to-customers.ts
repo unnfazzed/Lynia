@@ -6,6 +6,13 @@
  *   pnpm --filter @lynia/api bikers:reset-to-customer                # DRY RUN (default) — reports, writes nothing
  *   pnpm --filter @lynia/api bikers:reset-to-customer -- --apply     # APPLY
  *
+ * --force-test (owner, 2026-10-18: "detach") is for accounts whose biker activity is all TEST data: instead of
+ * skipping, it detaches their orders (riderId / dispatchOfferedRiderId → null; the customers' order history
+ * stays), deletes their offers, and lets the rider-row cascade take the wallet, ledger, top-ups, settlements and
+ * merchant-debt rows. Still skipped under --force-test: referrals they MADE (cash may be owed to a real person)
+ * and any profile that doesn't match exactly once. --redact prints "target N" instead of name + phone
+ * digits (the Azure job's output is read back into a public Actions log).
+ *
  * Run with the SAME environment as the API (DATABASE_URL). Each person is matched by first + last name AND the
  * last four digits of the phone, and must match exactly one profile. Anyone with live biker activity
  * (orders, offers, a wallet balance or ledger, pending/confirmed top-ups, referrals, a ban/suspension) is SKIPPED and reported, never
@@ -17,6 +24,8 @@ import { auditData } from "../src/admin/admin.shared";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const APPLY = process.argv.includes("--apply");
+const FORCE_TEST = process.argv.includes("--force-test");
+const REDACT = process.argv.includes("--redact");
 
 const TARGETS = [
   { firstName: "Benson", lastName: "Musendarudzi", last4: "4780" },
@@ -30,11 +39,11 @@ const ACTION = "rider.reset_to_customer";
 const ACTOR = "system:reset-bikers-script";
 
 async function main(): Promise<void> {
-  console.log(`\nReset bikers to customers — ${APPLY ? "APPLY" : "DRY RUN"}\n`);
+  console.log(`\nReset bikers to customers — ${APPLY ? "APPLY" : "DRY RUN"}${FORCE_TEST ? " (force-test: detach activity)" : ""}\n`);
   let skipped = 0;
 
-  for (const t of TARGETS) {
-    const label = `${t.firstName} ${t.lastName} (…${t.last4})`;
+  for (const [i, t] of TARGETS.entries()) {
+    const label = REDACT ? `target ${i + 1}` : `${t.firstName} ${t.lastName} (…${t.last4})`;
     const matches = await prisma.profile.findMany({
       where: {
         firstName: { equals: t.firstName, mode: "insensitive" },
@@ -76,24 +85,27 @@ async function main(): Promise<void> {
     ]);
 
     const blockers: string[] = [];
-    if (orders) blockers.push(`${orders} order(s) as biker`);
-    if (dispatchOffers) blockers.push(`${dispatchOffers} pending dispatch offer(s)`);
-    if (offers) blockers.push(`${offers} offer(s)`);
-    if (wallet && !wallet.balance.isZero()) blockers.push(`wallet balance ${wallet.balance.toString()}`);
-    if (ledger) blockers.push(`${ledger} wallet ledger row(s)`);
-    if (topUps) blockers.push(`${topUps} pending/confirmed top-up(s)`);
-    if (settlements) blockers.push(`${settlements} settlement(s)`);
-    if (debts) blockers.push(`${debts} merchant debt row(s)`);
+    const activity: string[] = [];
+    // Activity --force-test detaches/cascades; otherwise it blocks. Referrals made always block (cash may be owed).
+    const live = FORCE_TEST ? activity : blockers;
+    if (orders) live.push(`${orders} order(s) as biker`);
+    if (dispatchOffers) live.push(`${dispatchOffers} pending dispatch offer(s)`);
+    if (offers) live.push(`${offers} offer(s)`);
+    if (wallet && !wallet.balance.isZero()) live.push(`wallet balance ${wallet.balance.toString()}`);
+    if (ledger) live.push(`${ledger} wallet ledger row(s)`);
+    if (topUps) live.push(`${topUps} pending/confirmed top-up(s)`);
+    if (settlements) live.push(`${settlements} settlement(s)`);
+    if (debts) live.push(`${debts} merchant debt row(s)`);
     if (referralsMade) blockers.push(`${referralsMade} referral(s) made`);
-    if (referralCode) blockers.push("has a referral code");
-    if (p.rider.accountStatus !== "active") blockers.push(`account ${p.rider.accountStatus}`);
+    if (referralCode) live.push("has a referral code");
+    if (p.rider.accountStatus !== "active") live.push(`account ${p.rider.accountStatus}`);
     if (blockers.length) {
       console.log(`SKIP  ${label}: ${blockers.join(", ")}`);
       skipped++;
       continue;
     }
 
-    const state = `kyc=${p.rider.kycStatus}${p.rider.isOnline ? ", ONLINE" : ""}${referred ? ", was referred" : ""}`;
+    const state = `kyc=${p.rider.kycStatus}${p.rider.isOnline ? ", ONLINE" : ""}${referred ? ", was referred" : ""}${activity.length ? `; detaching: ${activity.join(", ")}` : ""}`;
     if (!APPLY) {
       console.log(`WOULD RESET  ${label} (${state})`);
       continue;
@@ -102,6 +114,12 @@ async function main(): Promise<void> {
     // One transaction; the delete re-asserts "no orders/offers" so activity that landed since the check above
     // makes it fail (FK) instead of erasing history. Rider-row children cascade; Referral (as referee) goes too.
     await prisma.$transaction(async (tx) => {
+      if (FORCE_TEST) {
+        await tx.order.updateMany({ where: { riderId: p.id }, data: { riderId: null } });
+        await tx.order.updateMany({ where: { dispatchOfferedRiderId: p.id }, data: { dispatchOfferedRiderId: null } });
+        await tx.offer.deleteMany({ where: { riderId: p.id } });
+        await tx.referralCode.deleteMany({ where: { riderId: p.id } });
+      }
       await tx.referral.deleteMany({ where: { refereeId: p.id } });
       await tx.rider.delete({ where: { profileId: p.id } });
       await tx.profile.update({ where: { id: p.id }, data: { role: "customer" } });
