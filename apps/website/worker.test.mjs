@@ -68,18 +68,18 @@ test("every other path is served from the static assets", async () => {
 });
 
 // Biker referral links (D-112): lyniago.com/r/<code>.
-test("a referral link sends Android to Play with the code in the install referrer", async () => {
-  const res = await get("/r/k7p-3qx", UA.androidWhatsApp);
-  assert.equal(res.status, 302);
-  assert.equal(
-    res.headers.get("location"),
+test("a referral link sends every device straight to Play with the code in the install referrer", async () => {
+  const play =
     "https://play.google.com/store/apps/details?id=zw.co.lynia&referrer=" +
-      "utm_source%3Dlyniago.com%26utm_medium%3Dbiker_referral%26utm_campaign%3Dbiker_referral%26utm_content%3DK7P3QX",
-  );
-  assert.equal(res.headers.get("cache-control"), "private, no-store");
-  assert.equal(res.headers.get("vary"), "User-Agent");
+    "utm_source%3Dlyniago.com%26utm_medium%3Dbiker_referral%26utm_campaign%3Dbiker_referral%26utm_content%3DK7P3QX";
+  for (const ua of [UA.androidWhatsApp, UA.android, UA.iphone, UA.windows, UA.mac, undefined]) {
+    const res = await get("/r/k7p-3qx", ua);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get("location"), play, String(ua));
+    assert.equal(res.headers.get("cache-control"), "private, no-store");
+  }
   // The same string packages/shared/src/referral.ts reads back (referralInstallReferrer).
-  const referrer = new URL(res.headers.get("location")).searchParams.get("referrer");
+  const referrer = new URL(play).searchParams.get("referrer");
   assert.equal(referrer, "utm_source=lyniago.com&utm_medium=biker_referral&utm_campaign=biker_referral&utm_content=K7P3QX");
 });
 
@@ -89,13 +89,6 @@ test("a referral link with a bad code still reaches the plain Play listing", asy
     assert.equal(res.headers.get("location"), "https://play.google.com/store/apps/details?id=zw.co.lynia", path);
   }
   assert.equal(codeOf("/r/K7P3QX/"), "K7P3QX");
-});
-
-test("a referral link sends iPhone and desktop to the bikers section", async () => {
-  for (const ua of [UA.iphone, UA.windows, undefined]) {
-    const res = await get("/r/K7P3QX", ua);
-    assert.equal(res.headers.get("location"), "https://lyniago.com/#riders");
-  }
 });
 
 test("only /r/<one segment> runs the referral redirect", async () => {

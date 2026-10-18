@@ -5639,11 +5639,11 @@ the friend becomes a biker (`src/auth/install-referral.ts`, sent with `POST /rid
 | Admin `/referrals` | Five KPI tiles (Joined, Verified, Riding, Verified not paid, Paid), a By-biker table with a CSV link, an Every-referral table (stage pill + jobs, warning pills, Mark paid…), a one-biker filter | KPI panel, card, `table.data`, pills, confirm modal (amount + note) |
 | Admin biker page | Referrals card: the link (selectable), joined · verified · paid counts, or "Create referral link" | card, `.kv`, quiet button, confirm modal |
 | Admin sidebar | "Referrals" nav item (lucide `user-plus`) | sidebar nav item |
-| Website | `lyniago.com/r/<code>`: a Worker redirect (Android → Play with the referrer, else `/#riders`). No page, copy or asset changes, so no launch edit (D-42) | `apps/website/referral.js` |
+| Website | `lyniago.com/r/<code>`: a Worker redirect straight to Play with the referrer, on every device (owner, 2026-10-18; it first sent non-Android visitors to `/#riders`). No page, copy or asset changes, so no launch edit (D-42) | `apps/website/referral.js` |
 
 Limits the owner should know: only a friend who installs the app fresh from the link on Android is counted (an
-app already on the phone keeps its original install referrer), and a friend who opens the link on a computer
-lands on the website's bikers section without the code.
+app already on the phone keeps its original install referrer). A friend who opens the link on a computer gets Play's
+web page; whether an install sent from there to their phone keeps the code is up to Play.
 
 
 ## D-113 · Merchant sign-in becomes "Get started": one way in for new and returning businesses — APPROVED (owner, 2026-10-18)
