@@ -191,17 +191,10 @@ Then run **Deploy Admin Console (Azure)** with `environment: production`. Its su
 *allowlist applied*. Error messages and fixes: `infra/azure/README.md` Step 6. Launch checks:
 [`ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md`](ADMIN-CONSOLE-LAUNCH-SMOKE-TEST.md).
 
-**Full phone numbers.** The console masks phone numbers (A-03). Operators named in the
-`ADMIN_PHONE_REVEAL_OPERATORS` repo Variable get a **Show number** button on customer and biker pages,
-which shows the full number with a Call link. Each reveal is written to the audit log
-(`person.phone_reveal`), and the route allows 60 reveals an hour. Unset means nobody. Use the email
-the console's 403 page or audit log shows for you (your sign-in, the same form as the allowlist above):
-
-```bash
-gh variable set ADMIN_PHONE_REVEAL_OPERATORS -R unnfazzed/Lynia -b "you@example.com"
-```
-
-Then run **Release (Azure)**. The API reads it at boot.
+**Full phone numbers.** The console masks phone numbers (A-03). Any admin can tap **Show number** or
+**Call biker** / **Call customer** on a biker or customer page to get the full number. Each reveal is
+written to the audit log (`person.phone_reveal`, "Phone number viewed"), and the route allows 60
+reveals an hour.
 
 ---
 

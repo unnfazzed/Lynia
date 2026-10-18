@@ -245,13 +245,7 @@ export class AdminController {
     return view;
   }
 
-  /** Whether the signed-in operator may see full phone numbers (owner 2026-10-18) — shows the "Show number" button. */
-  @Get("phone-reveal")
-  phoneRevealAccess(@AdminActor() actor: string) {
-    return { allowed: this.phoneReveal.canReveal(actor) };
-  }
-
-  /** One person's full phone number, for operators on ADMIN_PHONE_REVEAL_OPERATORS only. Audited; capped at 60 an hour. */
+  /** One person's full phone number, for any admin. Audited; capped at 60 an hour. */
   @Post("people/:profileId/reveal-phone")
   @Throttle({ limit: 60, windowSec: 3600, keyPrefix: "admin-phone-reveal" })
   revealPhone(@Param("profileId", ParseUUIDPipe) profileId: string, @AdminActor() actor: string) {

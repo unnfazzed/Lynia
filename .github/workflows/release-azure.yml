@@ -502,9 +502,6 @@ jobs:
           SENTRY_ENABLED: ${{ vars.SENTRY_ENABLED }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
           DEMO_ACCOUNT_ENABLED: ${{ vars.DEMO_ACCOUNT_ENABLED }}
-          # The operator emails allowed to see a person's full phone number in the admin console (owner 2026-10-18,
-          # AdminPhoneRevealService). Unset = nobody.
-          ADMIN_PHONE_REVEAL_OPERATORS: ${{ vars.ADMIN_PHONE_REVEAL_OPERATORS }}
           # iOS push (APNs, push.module.ts; docs/AZURE-OWNER-RUNBOOK.md "iOS push"). Its own credential,
           # independent of PUSH_PROVIDER: the .p8 key is Key Vault secret APNS-PRIVATE-KEY, mapped via
           # AZ_VENDOR_SECRETS (APNS_PRIVATE_KEY); the two ids are not secret.
@@ -557,7 +554,6 @@ jobs:
           opt RECOMMENDED_APP_VERSION_IOS "$RECOMMENDED_APP_VERSION_IOS"
           opt APP_WHATS_NEW "$APP_WHATS_NEW"
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
-          opt ADMIN_PHONE_REVEAL_OPERATORS "$ADMIN_PHONE_REVEAL_OPERATORS"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.
           for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do
