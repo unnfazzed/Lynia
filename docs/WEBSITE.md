@@ -83,13 +83,13 @@ app (`docs/CUSTOMER-WEB.md`).
 ## Biker referral links: `/r/<code>`
 
 A biker's personal link (owner, 2026-10-18, ledger D-112). Ops create it on the biker's page in the admin console
-and send it to the biker to share. `apps/website/referral.js` answers it with a `302`, the same headers as
-`/download`:
+and send it to the biker to share. `apps/website/referral.js` answers it with a `302` straight to the Google Play
+listing, on every device (owner, 2026-10-18: "i want it to directly go to googleplay"):
 
-| Visitor | Goes to |
-|---|---|
-| Android | The Play listing with `referrer=utm_source=lyniago.com&utm_medium=biker_referral&utm_campaign=biker_referral&utm_content=<CODE>`. When the friend becomes a biker the app reads it and the API records who brought them in |
-| Anything else | `https://lyniago.com/#riders` (the biker app is Android-only) |
+`https://play.google.com/store/apps/details?id=zw.co.lynia&referrer=utm_source=lyniago.com&utm_medium=biker_referral&utm_campaign=biker_referral&utm_content=<CODE>`
+(the referrer URL-encoded). When the friend installs on Android and becomes a biker, the app reads it and the API
+records who brought them in. On a computer, Play's web page can send the install to the visitor's phone; an iPhone
+just sees the listing (the biker app is Android-only).
 
 A code that isn't one (wrong length, look-alike letters) still reaches the plain Play listing. The referrer string
 is pinned on both sides: `apps/website/worker.test.mjs` and `packages/shared/src/referral.test.ts`. No page,

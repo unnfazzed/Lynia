@@ -41,7 +41,8 @@ If it doesn't, the phone's Play Store didn't pass the code on. Tell Claude which
 ## What counts, and what doesn't
 
 - Only a **fresh Android install from the link** carries the code. A friend who already has the app, installs
-  from the Play Store directly, or opens the link on a computer or iPhone isn't counted.
+  from the Play Store directly, or uses an iPhone isn't counted. The link always opens Google Play; on a computer,
+  an install sent from Play's web page to a phone may not carry the code.
 - A friend is counted **once, ever**: the first link wins. A biker can't refer themselves.
 - The code is only taken when the friend **becomes a biker** (not a customer), within a day of signing up as one.
 - The wallet is never touched. Payments are cash, recorded by you.
