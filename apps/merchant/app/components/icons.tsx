@@ -50,6 +50,9 @@ export type IconName =
   | "image"
   | "shield-check"
   | "camera"
+  | "lock"
+  | "rotate-cw"
+  | "move"
   | "circle-help";
 
 const PATHS: Record<IconName, string[]> = {
@@ -67,6 +70,10 @@ const PATHS: Record<IconName, string[]> = {
   "chevron-right": ["m9 18 6-6-6-6"],
   search: ["M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0", "m21 21-4.3-4.3"],
   x: ["M18 6 6 18", "m6 6 12 12"],
+  // Shop front v1 (D-115): the staff lock strip, Retry / Try again, and the crop sheet's "Drag to move".
+  lock: ["M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z", "M7 11V7a5 5 0 0 1 10 0v4"],
+  "rotate-cw": ["M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", "M21 3v5h-5"],
+  move: ["M12 2v20", "m15 19-3 3-3-3", "m19 9 3 3-3 3", "M2 12h20", "m5 9-3 3 3 3", "m9 5 3-3 3 3"],
   timer: ["M10 2h4", "m12 14 3-3", "M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0"],
   inbox: [
     "M22 12h-6l-2 3h-4l-2-3H2",
