@@ -15,7 +15,7 @@ done
 [ -n "$page" ] || fail "$BASE/login did not answer 200"
 grep -q '<title>LyniaGo Merchant</title>' <<<"$page" || fail "the sign-in page title is not LyniaGo Merchant"
 grep -q '/_next/static/' <<<"$page" || fail "the app bundle is not referenced"
-grep -q 'Sign in' <<<"$page" || fail "the sign-in page was not prerendered"
+grep -q 'Get started' <<<"$page" || fail "the sign-in page was not prerendered" # A1 heading, D-113
 
 # Every page is a static file; the sign-in gate and the ids run in the browser.
 for path in / /queue /queue/order /deliveries/booking /menu /h; do
