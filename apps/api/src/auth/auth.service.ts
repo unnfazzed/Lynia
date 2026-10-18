@@ -8,6 +8,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
@@ -16,6 +17,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
 import { maskPhone } from "../common/phone-mask";
+import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { classifyStoredDiditStatus } from "../kyc/didit";
 import { KycPendingStateService, pendingStateOf } from "../kyc/kyc-pending-state.service";
@@ -121,6 +123,8 @@ export class AuthService {
     private readonly metrics: MetricsService,
     private readonly pii: PiiCryptoService,
     private readonly kycPendingState: KycPendingStateService,
+    // The owner's new-sign-up alert. @Global (OwnerAlertsModule); @Optional for the positional unit harnesses.
+    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
   /** Full profile for the authenticated caller (GET /auth/me) — adds the rider record when present. */
@@ -688,6 +692,7 @@ export class AuthService {
         create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
         select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
       });
+      if (!existing) this.ownerAlerts?.notify(ownerAlertText.signUp(phone));
 
       this.assertMaySignIn(profile);
       const session = await this.issueSession(profile.id, profile.role, userAgent, device);
@@ -1037,6 +1042,7 @@ export class AuthService {
         create: { phone, firstName: "", lastName: "", role: "customer", phoneVerifiedAt: new Date() },
         select: { id: true, role: true, firstName: true, rider: { select: { accountStatus: true } } },
       });
+      this.ownerAlerts?.notify(ownerAlertText.signUp(phone));
     }
     this.assertMaySignIn(profile);
     const session = await this.issueSession(profile.id, profile.role, userAgent, device);

@@ -508,6 +508,10 @@ jobs:
           APNS_ENABLED: ${{ vars.APNS_ENABLED }}
           APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}
           APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
+          # The owner's phone alerts (owner-alerts.service.ts; docs/AZURE-OWNER-RUNBOOK.md §12): the bot token
+          # is Key Vault secret TELEGRAM-BOT-TOKEN, mapped via AZ_VENDOR_SECRETS; the chat id is not secret.
+          OWNER_ALERTS_ENABLED: ${{ vars.OWNER_ALERTS_ENABLED }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
           SET=()
@@ -657,6 +661,14 @@ jobs:
             SET+=("APNS_KEY_ID=$APNS_KEY_ID" "APNS_TEAM_ID=$APNS_TEAM_ID"); secret APNS_PRIVATE_KEY
           else
             drop APNS_KEY_ID APNS_TEAM_ID APNS_PRIVATE_KEY
+          fi
+          # Owner alerts. A Telegram chat id is a number (negative for a group); anything else would boot
+          # green and drop every alert, so refuse it here.
+          if [ "${OWNER_ALERTS_ENABLED:-false}" = "true" ]; then
+            [[ "$TELEGRAM_CHAT_ID" =~ ^-?[0-9]+$ ]] || { echo "::error::OWNER_ALERTS_ENABLED=true needs the TELEGRAM_CHAT_ID Variable (a number, from https://api.telegram.org/bot<token>/getUpdates) — got '$TELEGRAM_CHAT_ID'"; exit 1; }
+            SET+=("TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID"); secret TELEGRAM_BOT_TOKEN
+          else
+            drop TELEGRAM_CHAT_ID TELEGRAM_BOT_TOKEN
           fi
 
           # The tier itself, hardcoded and last.

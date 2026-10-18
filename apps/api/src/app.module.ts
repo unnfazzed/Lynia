@@ -16,6 +16,7 @@ import { LegalModule } from "./legal/legal.module";
 import { MatchingModule } from "./matching/matching.module";
 import { MerchantModule } from "./merchant/merchant.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { OwnerAlertsModule } from "./owner-alerts/owner-alerts.module";
 import { ClientMetricsModule } from "./observability/client-metrics.module";
 import { MetricsInterceptor } from "./observability/metrics.interceptor";
 import { ObservabilityModule } from "./observability/metrics.service";
@@ -55,6 +56,8 @@ import { WalletModule } from "./wallet/wallet.module";
     PaymentsModule,
     // Push notifications + device-token registry (consumes the PUSH seam).
     NotificationsModule,
+    // The owner's phone alerts on new sign-ups, biker applications and orders (Telegram; inert until armed).
+    OwnerAlertsModule,
     HealthModule,
     // Public legal pages (/legal/privacy, /legal/account-deletion) — the two unauthenticated URLs
     // the Google Play listing + Data safety form require (docs/PLAY-STORE-SUBMISSION.md) — plus

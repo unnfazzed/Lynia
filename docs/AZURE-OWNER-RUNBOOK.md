@@ -84,7 +84,7 @@ The easy path (Cloud Shell, Bash):
 bash infra/azure/vendor-secrets.sh
 ```
 
-For every vendor flag that is `true` (Bird, Didit, WhatsApp, local SMS, Sentry, the demo account), it
+For every vendor flag that is `true` (Bird, Didit, WhatsApp, local SMS, Sentry, the demo account, Paynow, owner alerts), it
 asks for each missing secret silently, stores it in Key Vault and updates `AZ_VENDOR_SECRETS`. Enter on a
 missing secret turns that feature's flag off. Then:
 
@@ -330,3 +330,36 @@ pnpm thumbs:backfill -- --apply --concurrency=3    # APPLY
 The summary prints photos scanned, already thumbnailed, made and failed. A non-zero exit means some
 failed; run it again to retry. Code: `apps/api/scripts/backfill-photo-thumbnails.ts` →
 `apps/api/src/adapters/storage/photo-thumbnail-backfill.ts`.
+
+## 12. Owner phone alerts (Telegram, about 5 min)
+
+A Telegram bot messages your phone the moment the platform gets something to act on
+(`apps/api/src/owner-alerts/owner-alerts.service.ts`):
+
+| Alert | What it tells you | What you do with it |
+|---|---|---|
+| 👤 New sign-up | The new account's phone, masked | — |
+| 🛵 New biker application | Their first name and whether the ID check passed | Review it in the console |
+| 📦 New parcel request | Fare, pickup → drop-off, items, **the sender's name and number**, **how many bikers are online near the pickup** | Fewer than 10 (⚠️): get bikers online |
+| 🍔 / 🛒 / 💊 New restaurant, shop or pharmacy order | **The venue it went to and its number**, total, items, whether it still has to be accepted, **the sender's name and number** | Call or WhatsApp the venue to take it |
+
+Every phone number comes with a WhatsApp link. Each order alert links to its page in the console. Alerts never block or slow a sign-up or an order: a
+failed send is a warning in the API log and nothing else.
+
+1. In Telegram, open **@BotFather** → `/newbot`. Name it (e.g. *LyniaGo Alerts*) and give it a username
+   ending in `bot`. Copy the **token** it replies with.
+2. Open your new bot, tap **Start** and send it any message.
+3. In a browser, open `https://api.telegram.org/bot<TOKEN>/getUpdates` (your token in place of
+   `<TOKEN>`). The number after `"chat":{"id":` is your **chat id**. For a team group instead: add the
+   bot to the group, send a message there, and use that chat's id (it starts with `-`).
+4. Cloud Shell (Bash), with your chat id:
+   ```bash
+   gh variable set TELEGRAM_CHAT_ID -R unnfazzed/Lynia -b 123456789
+   gh variable set OWNER_ALERTS_ENABLED -R unnfazzed/Lynia -b true
+   bash infra/azure/vendor-secrets.sh   # paste the bot token when it asks for TELEGRAM-BOT-TOKEN
+   ```
+5. Run **Terraform apply (Azure)** for production (two approvals), then **Release (Azure)**.
+
+To stop them: `gh variable set OWNER_ALERTS_ENABLED -R unnfazzed/Lynia -b false`, then **Release
+(Azure)**. Mute the chat in Telegram for quiet hours instead. If the token ever leaks, `/revoke` it in
+@BotFather and re-run step 4.

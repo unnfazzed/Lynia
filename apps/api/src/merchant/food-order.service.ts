@@ -91,6 +91,7 @@ import { PrescriptionService } from "./prescription.service";
 import { venueNoteOf } from "./venue-note";
 import { cancelAttribution } from "../common/cancel-attribution";
 import { domainEvents } from "../common/domain-events";
+import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
 
 // D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
 // money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
@@ -258,6 +259,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // D2 (owner 2026-10-07): seals the pickup code next to its hash so a reveal is repeatable. @Global in
     // the app; optional only for the positional unit harnesses (without it a row is hash-only, pre-D2).
     @Optional() private readonly codeCrypto?: PiiCryptoService,
+    // The owner's new-order alert. @Global (OwnerAlertsModule); optional like the rest.
+    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
   /** The MICRO_CACHE_DISABLED kill-switch plus "TTL 0 disables it" — OrdersService.microCacheBypassed. */
@@ -378,7 +381,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // cash off the table for food, so it's checked against the chosen payment method.
     const account = await this.prisma.profile.findUnique({
       where: { id: customerId },
-      select: { onHold: true, cashBanned: true, rider: { select: { accountStatus: true } } },
+      // The name and phone ride along for the owner's new-order alert, in the same round-trip.
+      select: { onHold: true, cashBanned: true, firstName: true, lastName: true, phone: true, rider: { select: { accountStatus: true } } },
     });
     if (account?.onHold) {
       throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
@@ -416,6 +420,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       where: { id: merchantId, OR: [CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop(this.env ?? SECTIONS_OFF)] },
       select: {
         id: true,
+        name: true,
+        // The venue's number for the owner's new-order alert (the same one customers see).
+        ownerProfile: { select: { phone: true } },
         location: true,
         closedUntil: true,
         hours: true,
@@ -589,6 +596,21 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
             });
       // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
       if (!slot) this.notifyQueue(merchantId, created.id);
+      this.ownerAlerts?.notify(
+        ownerAlertText.merchantOrder({
+          orderId: created.id,
+          merchantName: merchant.name,
+          merchantPhone: merchant.ownerProfile?.phone ?? null,
+          businessType: merchant.businessType,
+          shopKind: merchant.shopKind,
+          total: agreedFare,
+          items: itemDesc,
+          paymentMethod: body.paymentMethod,
+          merchantPhase: phase.merchantPhase,
+          scheduled: !!slot,
+          sender: { firstName: account?.firstName ?? "", lastName: account?.lastName ?? "", phone: account?.phone ?? null },
+        }),
+      );
       return this.toResponse(created);
     } catch (err) {
       // The idempotencyKey pre-check above races a concurrent duplicate submit; the

@@ -17,6 +17,7 @@ import { TrackingService } from "../tracking/tracking.service";
 import { customerSafeCancelReason } from "./cancel-reason";
 import { type BroadcastMeta, buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 import { domainEvents } from "../common/domain-events";
+import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
 
@@ -178,6 +179,8 @@ export class OrdersService {
     // Demand nudge (owner 2026-10-12): offline riders near a parcel opened in a quiet market. Always
     // provided by TrackingModule; TS-optional like the rest so existing positional specs stay valid.
     @Optional() private readonly nudge?: RiderNudgeService,
+    // The owner's new-order alert. @Global (OwnerAlertsModule); @Optional like `nudge`.
+    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
   /** The runtime kill-switch (MICRO_CACHE_DISABLED) plus the per-cache "TTL 0 disables it" rule. */
@@ -194,12 +197,14 @@ export class OrdersService {
    * and thrown in the same { reason, message } shape the rider online-gate uses, so the app's
    * ApiError.code pipeline routes it straight to the "account on hold" screen (gates.ts).
    * Read the caller's hold flag AND (if they're a rider) their account standing in one query, so the
-   * gate is a single round-trip on the hot create path.
+   * gate is a single round-trip on the hot create path. Returns the sender's name and phone (null for
+   * an unknown profile), which create() puts on the owner's new-order alert.
    */
-  async assertCustomerMayBroadcast(customerId: string): Promise<void> {
+  async assertCustomerMayBroadcast(customerId: string): Promise<{ firstName: string; lastName: string; phone: string | null } | null> {
     const account = await this.prisma.profile.findUnique({
       where: { id: customerId },
-      select: { onHold: true, rider: { select: { accountStatus: true } } },
+      // The name and phone ride along for the owner's new-order alert (create), in the same round-trip.
+      select: { onHold: true, firstName: true, lastName: true, phone: true, rider: { select: { accountStatus: true } } },
     });
     if (account?.onHold) {
       throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
@@ -218,11 +223,12 @@ export class OrdersService {
         message: "Your account is not in good standing.",
       });
     }
+    return account;
   }
 
   /** Customer creates a delivery and broadcasts it: it opens for offers immediately. */
   async create(input: CreateOrderRequest, customerId: string) {
-    await this.assertCustomerMayBroadcast(customerId);
+    const sender = await this.assertCustomerMayBroadcast(customerId);
 
     // Idempotent replay (BUG-HUNT): a client-generated key lets a timeout+retry or a double-tap on
     // "Broadcast" return the SAME order instead of opening a second live auction — and double-pushing
@@ -335,6 +341,19 @@ export class OrdersService {
       createdAt: order.createdAt.toISOString(),
       expiresAt: offerWindowEndsAt(order).toISOString(),
     });
+
+    this.ownerAlerts?.notify(
+      ownerAlertText.parcelOrder({
+        orderId: order.id,
+        proposedFare: order.proposedFare,
+        distanceKm: order.distanceKm,
+        pickup: input.pickup.landmark,
+        dropoff: input.dropoff.landmark,
+        items: order.itemDesc,
+        bikersNearby: ridersNearby,
+        sender: { firstName: sender?.firstName ?? "", lastName: sender?.lastName ?? "", phone: sender?.phone ?? null },
+      }),
+    );
 
     return this.toCreateResponse(order, ridersNearby);
   }
