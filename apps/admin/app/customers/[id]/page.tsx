@@ -16,6 +16,7 @@ import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { money } from "../../lib/format";
 import { PhoneReveal } from "../../components/PhoneReveal";
+import { CallButton } from "../../components/CallButton";
 import { canRevealPhones } from "../../actions/phone";
 
 /** Customer profile (kit `customers.html` detail): masked phone, spend, cancel pattern, rider
@@ -192,6 +193,7 @@ export default async function CustomerProfilePage({
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {/* S·2: the real, blocking hold/lift (mutates Profile.onHold + audit in one tx). The
                   flag/ban controls below remain audit-only placeholders (no backing model yet). */}
+              <CallButton profileId={c.id} phone={c.phoneMasked} label="Call customer" allowed={revealAllowed} connected={connected} />
               <CustomerActions id={c.id} name={c.name} onHold={onHold} connected={connected} />
               {/* X1/R-08: only shown once actually cash-banned — the ban itself has no console "apply"
                   counterpart (see LiftCashBanAction's docstring). */}

@@ -3,7 +3,7 @@
 import { REASONS } from "../../lib/reasons";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { mutateRider } from "../actions";
-import { IconPhone } from "../../components/icons";
+import { CallButton } from "../../components/CallButton";
 
 /**
  * Rider account-status actions (item 1). Suspended riders get Lift + Ban; an active rider the
@@ -21,7 +21,8 @@ export function RiderActions({
   banned,
   onHold,
   suspendSummary,
-  telHref,
+  phone,
+  revealAllowed,
   connected,
 }: {
   id: string;
@@ -33,7 +34,10 @@ export function RiderActions({
   onHold: boolean;
   /** "{trips} trips · {rating}" for the suspend consequence copy. */
   suspendSummary: string;
-  telHref: string;
+  /** The biker's phone as the API sent it (masked unless on a live order). */
+  phone: string;
+  /** Whether this operator may fetch the full number (owner 2026-10-18). */
+  revealAllowed: boolean;
   connected: boolean;
 }) {
   // A ban is terminal and can't be undone from the console — offering "Suspend" (or "Lift") here is
@@ -41,12 +45,7 @@ export function RiderActions({
   if (banned) {
     return (
       <>
-        <a className="btn ghost" href={telHref}>
-          <span style={{ display: "inline-flex", fontSize: 14 }}>
-            <IconPhone />
-          </span>
-          Call biker
-        </a>
+        <CallButton profileId={id} phone={phone} label="Call biker" allowed={revealAllowed} connected={connected} />
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           This account is permanently banned. A ban can&apos;t be reversed from the console.
         </div>
@@ -100,12 +99,7 @@ export function RiderActions({
 
   return (
     <>
-      <a className="btn ghost" href={telHref}>
-        <span style={{ display: "inline-flex", fontSize: 14 }}>
-          <IconPhone />
-        </span>
-        Call biker
-      </a>
+      <CallButton profileId={id} phone={phone} label="Call biker" allowed={revealAllowed} connected={connected} />
       {onHold ? (
         <ConfirmModal
           action="rider.clear_hold"

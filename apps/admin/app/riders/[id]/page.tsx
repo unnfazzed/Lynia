@@ -162,7 +162,6 @@ export default async function RiderProfilePage({
     { key: "when", header: "When", className: "mut", cell: (t) => t.when },
   ];
 
-  const telHref = `tel:${r.phone.replace(/[^\d+]/g, "")}`;
   const suspended = r.status === "suspended";
   const banned = r.status === "banned";
   const onHold = r.status === "on_hold";
@@ -424,7 +423,8 @@ export default async function RiderProfilePage({
                 banned={banned}
                 onHold={onHold}
                 suspendSummary={`${r.trips} trips · ${ratingTxt(r)}`}
-                telHref={telHref}
+                phone={r.phone}
+                revealAllowed={revealAllowed}
                 connected={connected}
               />
               {r.bike && r.plateStatus === "checking" ? (
