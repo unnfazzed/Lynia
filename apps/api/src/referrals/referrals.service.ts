@@ -16,6 +16,21 @@ export const REFERRAL_PAY_CAP_USD = 100;
 /** The newest referrals the console reads. Far above today's volume; `capped` says when it is reached. */
 const LIST_LIMIT = 2000;
 
+/** Written on the biker for every ID-check approval, by the vendor webhook and by an admin alike. */
+const KYC_APPROVE_ACTION = "rider.kyc_approve";
+
+/**
+ * Whether a friend counts as verified for a referral: approved at least once and not declined since. Reading
+ * only today's kycStatus undercounted: the nightly ID-expiry sweep turns a verified biker `expired` (and a
+ * re-check reads `pending`), which dropped a friend who had passed back to "joined" and refused their payment.
+ * A decline (`failed`, e.g. an admin overturning a vendor approval) does stop it counting. `verified` with no
+ * approval row (the QA stub's auto-pass, rows from before the webhook wrote one) still counts.
+ */
+export function countsAsVerified(kycStatus: string | undefined, firstApprovedAt: Date | undefined): boolean {
+  if (kycStatus === "verified") return true;
+  return !!firstApprovedAt && kycStatus !== "failed";
+}
+
 export type AttachOutcome = "attached" | "invalid" | "unknown" | "self" | "already" | "not_new";
 
 /** joined = became a biker; verified = passed the ID check; riding = verified and finished a job. */
@@ -106,6 +121,17 @@ export class ReferralsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Each biker's first ID-check approval (the approval audit rows, indexed on target + action). */
+  private async firstApprovals(riderIds: string[]): Promise<Map<string, Date>> {
+    if (!riderIds.length) return new Map();
+    const rows = await this.prisma.auditLog.groupBy({
+      by: ["target"],
+      where: { action: KYC_APPROVE_ACTION, target: { in: riderIds } },
+      _min: { createdAt: true },
+    });
+    return new Map(rows.flatMap((r) => (r._min.createdAt ? [[r.target, r._min.createdAt] as const] : [])));
+  }
+
   /**
    * Link a just-registered biker to the biker whose code their app carried. Best-effort and silent: the
    * caller never fails a sign-up over it, and the outcome is only logged. First code wins, once per biker.
@@ -153,9 +179,14 @@ export class ReferralsService {
       this.prisma.referralCode.findUnique({ where: { riderId }, select: { code: true } }),
       this.prisma.referral.findMany({ where: { referrerId: riderId }, select: { refereeId: true, paidAt: true } }),
     ]);
-    const verified = referrals.length
-      ? await this.prisma.rider.count({ where: { profileId: { in: referrals.map((r) => r.refereeId) }, kycStatus: "verified" } })
-      : 0;
+    const friendIds = referrals.map((r) => r.refereeId);
+    const [friends, approvals] = friendIds.length
+      ? await Promise.all([
+          this.prisma.rider.findMany({ where: { profileId: { in: friendIds } }, select: { profileId: true, kycStatus: true } }),
+          this.firstApprovals(friendIds),
+        ])
+      : [[], new Map<string, Date>()];
+    const verified = friends.filter((f) => countsAsVerified(f.kycStatus, approvals.get(f.profileId))).length;
     return {
       code: codeRow?.code ?? null,
       link: codeRow ? referralLink(codeRow.code) : null,
@@ -194,6 +225,7 @@ export class ReferralsService {
           }),
         ])
       : [[], []];
+    const approvals = await this.firstApprovals([...new Set(referrals.map((r) => r.refereeId))]);
     const byId = new Map(profiles.map((p) => [p.id, p]));
     const devices = new Map<string, Set<string>>();
     for (const s of sessions) {
@@ -207,7 +239,8 @@ export class ReferralsService {
       const referrer = byId.get(r.referrerId);
       const friend = byId.get(r.refereeId);
       const fr = friend?.rider;
-      const verified = fr?.kycStatus === "verified";
+      const firstApproved = approvals.get(r.refereeId);
+      const verified = countsAsVerified(fr?.kycStatus, firstApproved);
       const trips = fr?.tripsCount ?? 0;
       const stage: ReferralStage = verified ? (trips > 0 ? "riding" : "verified") : "joined";
       const flags: ReferralFlag[] = [];
@@ -227,7 +260,8 @@ export class ReferralsService {
           id: r.refereeId,
           name: nameOf(friend),
           kycStatus: fr?.kycStatus ?? "pending",
-          verifiedAt: verified && fr?.kycResolvedAt ? fr.kycResolvedAt.toISOString() : null,
+          // The first approval, not kycResolvedAt: a later expiry or re-check moves that.
+          verifiedAt: verified ? (firstApproved ?? fr?.kycResolvedAt ?? null)?.toISOString() ?? null : null,
           trips,
           accountStatus: fr?.accountStatus ?? "active",
         },
@@ -275,8 +309,11 @@ export class ReferralsService {
     });
     if (!referral) throw new NotFoundException("Referral not found");
     if (referral.paidAt) throw new ConflictException({ reason: "already_paid", message: "This referral is already marked paid." });
-    const friend = await this.prisma.rider.findUnique({ where: { profileId: referral.refereeId }, select: { kycStatus: true } });
-    if (friend?.kycStatus !== "verified") {
+    const [friend, approvals] = await Promise.all([
+      this.prisma.rider.findUnique({ where: { profileId: referral.refereeId }, select: { kycStatus: true } }),
+      this.firstApprovals([referral.refereeId]),
+    ]);
+    if (!countsAsVerified(friend?.kycStatus, approvals.get(referral.refereeId))) {
       throw new ConflictException({ reason: "not_verified", message: "The friend isn't a verified biker yet." });
     }
     const amount = new Prisma.Decimal(body.amount.toFixed(2));
