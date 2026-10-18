@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
-import { REFERRAL_ATTACH_WINDOW_MS, REFERRAL_PAID_ACTION, ReferralsService } from "./referrals.service";
+import { countsAsVerified, REFERRAL_ATTACH_WINDOW_MS, REFERRAL_PAID_ACTION, ReferralsService } from "./referrals.service";
 
 type Rider = {
   profileId: string;
@@ -40,6 +40,7 @@ function fakeDb() {
   const referrals: Referral[] = [];
   const sessions: Array<{ profileId: string; deviceId: string | null }> = [];
   const audits: Array<Record<string, unknown>> = [];
+  const approvals: Array<{ target: string; at: Date }> = [];
   let seq = 0;
 
   const addBiker = (id: string, first: string, over: Partial<Rider> = {}, idHash: string | null = null) => {
@@ -91,8 +92,8 @@ function fakeDb() {
     },
     rider: {
       findUnique: async ({ where }: { where: { profileId: string } }) => riders.get(where.profileId) ?? null,
-      count: async ({ where }: { where: { profileId: { in: string[] }; kycStatus: string } }) =>
-        where.profileId.in.filter((id) => riders.get(id)?.kycStatus === where.kycStatus).length,
+      findMany: async ({ where }: { where: { profileId: { in: string[] } } }) =>
+        where.profileId.in.flatMap((id) => (riders.has(id) ? [riders.get(id) as Rider] : [])),
     },
     profile: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
@@ -105,10 +106,18 @@ function fakeDb() {
       findMany: async ({ where }: { where: { profileId: { in: string[] } } }) =>
         sessions.filter((s) => s.deviceId && where.profileId.in.includes(s.profileId)),
     },
-    auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => (audits.push(data), data) },
+    auditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => (audits.push(data), data),
+      // The first ID-check approval per biker (ReferralsService.firstApprovals).
+      groupBy: async ({ where }: { where: { action: string; target: { in: string[] } } }) =>
+        where.target.in.flatMap((target) => {
+          const dates = approvals.filter((a) => a.target === target && where.action === "rider.kyc_approve").map((a) => a.at.getTime());
+          return dates.length ? [{ target, _min: { createdAt: new Date(Math.min(...dates)) } }] : [];
+        }),
+    },
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(db),
   };
-  return { db, riders, codes, referrals, sessions, audits, addBiker };
+  return { db, riders, codes, referrals, sessions, audits, approvals, addBiker };
 }
 
 function setup() {
@@ -223,5 +232,44 @@ describe("ReferralsService.markPaid", () => {
     await expect(service.markPaid("admin-1", id, { amount: 5 })).rejects.toBeInstanceOf(ConflictException);
     await expect(service.markPaid("admin-1", "missing", { amount: 5 })).rejects.toBeInstanceOf(NotFoundException);
     expect(audits).toHaveLength(0);
+  });
+});
+
+describe("a friend who passed the ID check stays verified (accurate tracking)", () => {
+  it("countsAsVerified: verified now, or approved once and not declined since", () => {
+    expect(countsAsVerified("verified", undefined)).toBe(true);
+    expect(countsAsVerified("expired", NOW)).toBe(true);
+    expect(countsAsVerified("pending", NOW)).toBe(true);
+    expect(countsAsVerified("failed", NOW)).toBe(false);
+    expect(countsAsVerified("expired", undefined)).toBe(false);
+    expect(countsAsVerified("pending", undefined)).toBe(false);
+    expect(countsAsVerified(undefined, undefined)).toBe(false);
+  });
+
+  it("keeps a friend whose ID later lapsed as verified, dated by the first approval, and payable", async () => {
+    const { service, addBiker, approvals, referrals } = setup();
+    addBiker("tino", "Tino", { kycStatus: "verified" });
+    addBiker("lapsed", "Lapsed", { kycStatus: "expired", kycResolvedAt: new Date("2027-01-01T00:00:00Z"), tripsCount: 4 });
+    addBiker("declined", "Declined", { kycStatus: "failed" });
+    approvals.push(
+      { target: "lapsed", at: new Date("2026-10-18T11:00:00Z") },
+      { target: "lapsed", at: new Date("2026-12-01T09:00:00Z") },
+      { target: "declined", at: new Date("2026-10-18T11:00:00Z") },
+    );
+    const { code } = await service.codeFor("tino");
+    await service.attach("lapsed", code, NOW);
+    await service.attach("declined", code, NOW);
+
+    const res = await service.list();
+    const byFriend = new Map(res.rows.map((r) => [r.friend.id, r]));
+    expect(byFriend.get("lapsed")).toMatchObject({ stage: "riding", friend: { verifiedAt: "2026-10-18T11:00:00.000Z" } });
+    expect(byFriend.get("declined")).toMatchObject({ stage: "joined", friend: { verifiedAt: null } });
+    expect(res.totals).toMatchObject({ referred: 2, verified: 1, riding: 1, unpaidVerified: 1 });
+    expect(await service.summaryFor("tino")).toMatchObject({ referred: 2, verified: 1, paidCount: 0 });
+
+    const lapsedId = referrals.find((r) => r.refereeId === "lapsed")?.id ?? "";
+    const declinedId = referrals.find((r) => r.refereeId === "declined")?.id ?? "";
+    await expect(service.markPaid("admin-1", lapsedId, { amount: 5 })).resolves.toEqual({ ok: true });
+    await expect(service.markPaid("admin-1", declinedId, { amount: 5 })).rejects.toBeInstanceOf(ConflictException);
   });
 });

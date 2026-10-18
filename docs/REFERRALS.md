@@ -13,7 +13,8 @@ tracks who brought in whom and how far each friend got. You decide who gets paid
    LyniaGo". Nothing on their screen mentions the referral.
 4. **Watch the numbers** on **Referrals** in the console sidebar:
    - **Joined**: became a biker through a link.
-   - **Verified**: passed the ID check.
+   - **Verified**: passed the ID check at least once. A friend whose ID later expires still counts; one whose
+     check was later declined doesn't.
    - **Riding**: verified and finished at least one job.
    - **Verified, not paid**: what you may owe.
    - **Paid**: what you've recorded.
@@ -24,6 +25,18 @@ tracks who brought in whom and how far each friend got. You decide who gets paid
 6. **Pay in cash, then tap Mark paid…** on that friend's row, with the amount and an optional note. It can be
    recorded once per friend, only once the friend is verified, and it shows in the Audit log and on the
    referrer's biker page.
+
+## Test it once before sharing links
+
+The code rides through the Play Store, which no automated test can reach. Once the app update that reads it is
+on phones, and before handing links out:
+
+1. Create your own test biker's link in the console.
+2. On an Android phone **without LyniaGo installed**, open the link from WhatsApp, install from Play, open the
+   app, sign up with a new number and tap "Want to earn? Ride with LyniaGo" through to the ID check.
+3. The new account should appear on **Referrals** within seconds, "Brought in by" your test biker.
+
+If it doesn't, the phone's Play Store didn't pass the code on. Tell Claude which phone and browser you used.
 
 ## What counts, and what doesn't
 
