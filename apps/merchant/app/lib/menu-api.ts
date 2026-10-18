@@ -137,7 +137,11 @@ export async function uploadPhotoBlob(
   blob: Blob,
   headers: Record<string, string>,
   timeoutMs: number = PHOTO_UPLOAD_TIMEOUT_MS,
+  /** Shop front v1 (D-115): the upload's progress, 0–100. Passing it sends the PUT through XHR, the one
+   *  browser API that reports upload progress; without it the PUT stays a fetch. */
+  onProgress?: (percent: number) => void,
 ): Promise<void> {
+  if (onProgress) return putWithProgress(uploadUrl, blob, headers, timeoutMs, onProgress);
   let res: Response;
   try {
     res = await fetch(uploadUrl, { method: "PUT", headers, body: blob, signal: AbortSignal.timeout(timeoutMs) });
@@ -149,4 +153,29 @@ export async function uploadPhotoBlob(
   // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 (the blob
   // exists). The bytes are there, and attach verifies them, so that is a success (E13).
   if (!res.ok && res.status !== 409) throw new Error(`Photo upload failed (${res.status}).`);
+}
+
+/** `uploadPhotoBlob`'s XHR twin: the same timeout, reachability reports, 409-is-success rule and messages. */
+function putWithProgress(uploadUrl: string, blob: Blob, headers: Record<string, string>, timeoutMs: number, onProgress: (percent: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+    xhr.timeout = timeoutMs;
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+    });
+    const unreachable = () => {
+      getReachabilityStore(API_BASE_URL).reportUnreachable();
+      reject(new Error("The upload timed out — check your connection and try again."));
+    };
+    xhr.addEventListener("error", unreachable);
+    xhr.addEventListener("timeout", unreachable);
+    xhr.addEventListener("load", () => {
+      getReachabilityStore(API_BASE_URL).reportReachable();
+      if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 409) resolve();
+      else reject(new Error(`Photo upload failed (${xhr.status}).`));
+    });
+    xhr.send(blob);
+  });
 }
