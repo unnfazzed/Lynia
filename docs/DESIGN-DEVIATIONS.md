@@ -5643,3 +5643,23 @@ Limits the owner should know: only a friend who installs the app fresh from the 
 app already on the phone keeps its original install referrer), and a friend who opens the link on a computer
 lands on the website's bikers section without the code.
 
+
+## D-113 · Merchant sign-in: a "Create an account" way in for new businesses — PROPOSED (owner ask, 2026-10-18)
+
+**Why:** the owner asked (this session, 2026-10-18): *"i need a sign up option for merchants that visit
+merchants.lyniago.com and are not registered"*, then *"lets put a normal create account for new businesses"*.
+Self-serve sign-up already works behind A1: a number with no business lands on A3 *What do you sell?* after the
+code. But A1 (`packages/design/handoff/merchant-mobile`) draws only "Sign in", so a new owner never learns that
+the same phone and code create the account.
+
+| Where | Element | Built from |
+|---|---|---|
+| A1 Sign in | A link under "Send code": "New business? Create an account" | `.m-lnk` (44px, `--target-min`) |
+| A1, create mode | Heading "Create your business account"; sub "Enter your phone number. We'll send you a code, then you'll set up your business."; link "Already on LyniaGo? Sign in" | `.m-h1`, `.m-sub`, `.m-lnk` |
+| A2 Code, create mode | The button reads "Continue" ("Checking…" while busy) instead of "Sign in" | `.m-btn` |
+| URL | `/login?new=1` opens create mode, for links from the website or WhatsApp | — |
+
+Nothing else changes: the same OTP, the same per-device sign-up cap, the same landing (`/join` with an invite,
+else `/onboarding`; a number already on a business lands on its dashboard). Screenshot sheet (360×720 and
+320×640) is on PR #1232; this entry becomes APPROVED when the owner approves it there. Upstream ask: draw the
+create-account link and heading on A1.

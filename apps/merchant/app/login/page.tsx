@@ -24,6 +24,20 @@ const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on
 const REMOVED_MESSAGE = "You’re no longer on the team. Ask the owner to add you again.";
 
 /**
+ * D-113 (owner, 2026-10-18): A1 draws no way in for a business that isn't on LyniaGo yet, so a new owner
+ * never learns that the same phone and code create the account. "Create an account" is the same two steps
+ * with its own words; after the code a number with no business lands on "What do you sell?" as before.
+ * `/login?new=1` opens it directly, for links from the website or WhatsApp.
+ */
+const CREATE = {
+  title: "Create your business account",
+  sub: "Enter your phone number. We’ll send you a code, then you’ll set up your business.",
+  toCreate: "New business? Create an account",
+  toSignIn: "Already on LyniaGo? Sign in",
+  submit: "Continue",
+} as const;
+
+/**
  * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
  * phone field with a fixed +263, "Send code" pinned at the bottom and the privacy line — the notice is
  * accepted once, here (README A1). Then six code boxes that sign in on the sixth digit, a resend
@@ -38,6 +52,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // A ref, not `busy`: two taps in one tick both run the handler before React re-renders.
   const submittingRef = useRef(false);
@@ -52,6 +67,21 @@ export default function LoginPage() {
   useEffect(() => {
     if (takeSignOutNotice() === "removed") setError(REMOVED_MESSAGE);
   }, []);
+
+  // D-113: read once on mount, not with useSearchParams (that would keep this page out of the static HTML).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1") setCreating(true);
+  }, []);
+
+  function switchMode(create: boolean) {
+    setCreating(create);
+    setError(null);
+    const url = new URL(window.location.href);
+    if (create) url.searchParams.set("new", "1");
+    else url.searchParams.delete("new");
+    window.history.replaceState(window.history.state, "", url);
+    inputRef.current?.focus();
+  }
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -133,9 +163,14 @@ export default function LoginPage() {
           }}
         >
           <MerchantLockup />
-          <h1 className="m-h1" style={{ marginTop: 24 }}>
-            Sign in
-          </h1>
+          <div style={{ marginTop: 24 }}>
+            <h1 className="m-h1">{creating ? CREATE.title : "Sign in"}</h1>
+            {creating && (
+              <p className="m-sub" style={{ marginTop: 8 }}>
+                {CREATE.sub}
+              </p>
+            )}
+          </div>
           <div className="m-fld">
             <label htmlFor="phone">Phone number</label>
             <div className="m-in">
@@ -163,6 +198,9 @@ export default function LoginPage() {
           <div style={{ flex: 1 }} />
           <button type="submit" className="m-btn" disabled={busy || digits.length < 9}>
             {busy ? "Sending…" : "Send code"}
+          </button>
+          <button type="button" className="m-lnk" style={{ margin: "-8px 0" }} onClick={() => switchMode(!creating)}>
+            {creating ? CREATE.toSignIn : CREATE.toCreate}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
             {/* Terms added by owner instruction 2026-09-30 (D-49): one set for every kind of user. */}
@@ -237,7 +275,7 @@ export default function LoginPage() {
         )}
         <div style={{ flex: 1 }} />
         <button type="submit" className="m-btn" disabled={busy || code.length !== 6}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? (creating ? "Checking…" : "Signing in…") : creating ? CREATE.submit : "Sign in"}
         </button>
       </form>
     </div>

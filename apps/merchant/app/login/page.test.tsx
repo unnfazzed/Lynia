@@ -229,3 +229,39 @@ describe("CF-01 double-submit guard", () => {
     await act(async () => resolve(SESSION));
   });
 });
+
+describe("D-113 · Create an account", () => {
+  it("Sign in offers 'New business? Create an account', which retitles the same phone step", () => {
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New business? Create an account" }));
+    expect(screen.getByRole("heading", { name: "Create your business account" })).toBeTruthy();
+    expect(screen.getByText("Enter your phone number. We’ll send you a code, then you’ll set up your business.")).toBeTruthy();
+    expect(screen.getByLabelText("Phone number")).toBeTruthy();
+    expect(window.location.search).toBe("?new=1");
+    fireEvent.click(screen.getByRole("button", { name: "Already on LyniaGo? Sign in" }));
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(window.location.search).toBe("");
+  });
+
+  it("/login?new=1 opens on Create an account", async () => {
+    window.history.replaceState(null, "", "/login?new=1");
+    render(<LoginPage />);
+    expect(await screen.findByRole("heading", { name: "Create your business account" })).toBeTruthy();
+  });
+
+  it("a new number goes phone → code → 'What do you sell?', with Continue on the code step", async () => {
+    vi.mocked(requestOtp).mockResolvedValue({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
+    vi.mocked(verifyOtp).mockResolvedValue(SESSION as never);
+    vi.mocked(getMyMerchant).mockRejectedValue(new ApiError(403, "not a member", "not_a_member"));
+    window.history.replaceState(null, "", "/login?new=1");
+    render(<LoginPage />);
+    await screen.findByRole("heading", { name: "Create your business account" });
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "0773333333" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    const input = await screen.findByLabelText("6-digit code");
+    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "123456" } });
+    await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/onboarding"));
+    expect(verifyOtp).toHaveBeenCalledWith("+263773333333", "123456");
+  });
+});
