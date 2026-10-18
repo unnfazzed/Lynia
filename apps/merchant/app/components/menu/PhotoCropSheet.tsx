@@ -2,49 +2,46 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cropRectFromView, MAX_ZOOM, MIN_ZOOM, type CropRect } from "../../lib/image-compress";
+import { SF } from "../../lib/shop-front-copy";
 import { useVocabulary, type Vocabulary } from "../../lib/vocabulary";
 import { Icon } from "../icons";
-import { ghostButtonStyle, primaryButtonStyle } from "../queue/styles";
 
 /**
- * M4·6 `dish_photo` (1:1) and M5·2 `shop_crop` (3:1) — the reposition step the gallery puts between
- * choosing a file and uploading it (`r-merchant.jsx:1450-1479`, `1378-1402`, frame at `1277-1298`):
- * a dashed aspect frame, "Drag to move", a zoom control, and a live customer preview beside it.
+ * The reposition step between choosing a photo and uploading it, as a phone sheet (Shop front v1 "Crop
+ * sheet", packages/design/handoff/shop-front-v1, ledger D-115): `top: 24px`, the body scrolls, the Save /
+ * Cancel pair is pinned. The stage draws the WHOLE photo and dims everything outside the dashed frame, so
+ * what gets cut off is visible; the banner frame marks where the logo will sit.
  *
- * The crop is REAL, not a mock frame: the drag/zoom state resolves to a source-pixel rectangle
- * (`cropRectFromView`) that `compressImage` draws to canvas in place of its automatic centre crop, so
- * what the merchant frames here is literally the JPEG that gets uploaded. No new dependency — pointer
- * events over the `<canvas>` pipeline `image-compress.ts` already had.
+ * The crop is REAL: the drag/zoom state resolves to a source-pixel rectangle (`cropRectFromView`) that
+ * `compressImage` draws to canvas, so what the merchant frames here is literally the JPEG that gets uploaded.
+ * The dish photo (M4·6) uses the same sheet with its own words and its menu-row preview.
  *
- * Approximated, and flagged rather than silently decided: pinch-to-zoom. The kit's copy says "pinch or
- * slide to zoom"; this ships the slide (a real range input, so it is also keyboard-operable — arrow
- * keys nudge the frame too), because a two-pointer pinch gesture on a kitchen tablet is a meaningfully
- * bigger interaction surface than the zoom control itself and buys nothing the slider can't do.
+ * Pinch-to-zoom is still the slider (a real range input, so it is keyboard-operable; arrow keys nudge too).
  */
 
 export type CropKind = "dish" | "banner" | "logo";
 
-/** A shop's item photo speaks its words (lib/vocabulary, D-44); a restaurant's is the drawn M4·6 copy. */
-const copyFor = (v: Vocabulary): Record<CropKind, { title: string; sub: string; save: string; previewLabel: string }> => ({
-  dish: {
-    title: `Position the ${v.item} photo`,
-    sub: v.itemCropSub,
-    save: "Save photo",
-    previewLabel: v.itemPreviewLabel,
-  },
-  banner: {
-    title: "Position your banner",
-    sub: "Drag the picture and slide to zoom. Anything outside the dashed frame is cut off.",
-    save: "Save banner",
-    previewLabel: "LIVE PREVIEW",
-  },
-  logo: {
-    title: "Position your logo",
-    sub: "Square crop. Drag the picture and slide to zoom — anything outside the dashed frame is cut off.",
-    save: "Save logo",
-    previewLabel: "LIVE PREVIEW",
-  },
-});
+interface Copy {
+  title: string;
+  sub: string;
+  save: string;
+  previewLabel: string;
+  tip: string;
+}
+
+const copyFor = (v: Vocabulary, kind: CropKind): Copy => {
+  if (kind === "dish") {
+    return {
+      title: `Position the ${v.item} photo`,
+      sub: v.itemCropSub,
+      save: "Save photo",
+      previewLabel: v.itemPreviewLabel,
+      tip: `Customers scan photos before they read names. One clear daylight shot per ${v.item} is enough.`,
+    };
+  }
+  const c = SF.crop[kind];
+  return { title: c.title, sub: c.sub, save: c.save, previewLabel: SF.crop.livePreview, tip: kind === "banner" ? v.bannerPhotoTip : SF.logoSub };
+};
 
 interface View {
   zoom: number;
@@ -54,42 +51,27 @@ interface View {
 
 const INITIAL_VIEW: View = { zoom: 1, panX: 0, panY: 0 };
 
-/** Geometry of the crop row: the gap between the frame and the live preview, and the narrowest the
- *  preview column is allowed to get before the row wraps instead.
- *
- *  `CROP_PREVIEW_MIN` must equal `BannerPreview`'s own box width, not merely approach it: the
- *  preview is a fixed-width card, so a row-break threshold that reserved LESS than it needs would
- *  keep the columns side by side at a width where the preview then overflows its own column. One
- *  number, used by both. */
-const CROP_ROW_GAP = 22;
-const CROP_PREVIEW_MIN = 260;
-
-/** The dashed viewport's own display size. 3:1 gets the kit's 430-wide banner frame, 1:1 its 240
- *  square (`r-merchant.jsx:1387`, `1461`); height always follows from the ratio so the frame IS the
- *  aspect it claims.
- *
- *  `available` is the measured width of the column the frame sits in, and only ever shrinks it: on a
- *  tablet the sheet is far wider than 420 so the drawn size wins, while on a phone the 420-wide
- *  banner frame would otherwise be wider than the whole screen. It has to be a real number rather
- *  than a CSS clamp because the crop maths converts drag distances through `frame.width` — a frame
- *  whose true width the component could not read would pan at the wrong rate. */
-function frameSize(aspect: number, available?: number | null): { width: number; height: number } {
-  const drawn = aspect >= 2 ? 430 : 240;
-  const width = available != null && available > 0 ? Math.max(160, Math.min(drawn, Math.round(available))) : drawn;
-  return { width, height: Math.round(width / aspect) };
+/** The stage and the frame inside it, from the stage's measured width (README "Crop sheet"). */
+function geometry(kind: CropKind, width: number) {
+  if (kind === "banner") {
+    const height = Math.round(width * 0.5);
+    const fw = width - 24;
+    const fh = Math.round(fw / 3);
+    return { height, frame: { left: 12, top: Math.round((height - fh) / 2), width: fw, height: fh } };
+  }
+  const height = Math.round(width * 0.72);
+  const fw = height - 36;
+  return { height, frame: { left: Math.round((width - fw) / 2), top: 18, width: fw, height: fw } };
 }
 
-/** Maps a source-pixel crop rect onto a display box: the `<img>` styles that make exactly `crop` fill
- *  `boxWidth × boxHeight`. Shared by the frame and every live preview, so the preview can never drift
- *  from what will actually be uploaded. */
-function imageStyleFor(crop: CropRect, natural: { width: number; height: number }, boxWidth: number): React.CSSProperties {
-  const scale = boxWidth / crop.width;
+/** A photo placed so that exactly `crop` fills the box, in percentages (it holds at any box size). */
+export function croppedImageStyle(crop: CropRect, natural: { width: number; height: number }): React.CSSProperties {
   return {
     position: "absolute",
-    left: -crop.x * scale,
-    top: -crop.y * scale,
-    width: natural.width * scale,
-    height: natural.height * scale,
+    left: `${(-crop.x / crop.width) * 100}%`,
+    top: `${(-crop.y / crop.height) * 100}%`,
+    width: `${(natural.width / crop.width) * 100}%`,
+    height: `${(natural.height / crop.height) * 100}%`,
     maxWidth: "none",
     pointerEvents: "none",
     userSelect: "none",
@@ -101,24 +83,28 @@ export function PhotoCropSheet({
   aspect,
   file,
   shopName,
+  bannerPreview,
   onCancel,
   onConfirm,
 }: {
   kind: CropKind;
   aspect: number;
   file: File;
-  /** Only used to label the banner/logo customer preview — falls back to a neutral placeholder. */
+  /** Labels the logo's list-row preview. */
   shopName?: string;
+  /** The banner's live preview: the screen's own storefront card, given the framed photo. */
+  bannerPreview?: (photo: { url: string; crop: CropRect; natural: { width: number; height: number } }) => React.ReactNode;
   onCancel: () => void;
-  /** The merchant's framing, in SOURCE pixels. Nothing is uploaded until this resolves. */
-  onConfirm: (crop: CropRect) => void;
+  /** The merchant's framing, in SOURCE pixels, and the photo's own size. Nothing is uploaded until this. */
+  onConfirm: (crop: CropRect, natural: { width: number; height: number }) => void;
 }) {
   const words = useVocabulary();
-  const COPY = copyFor(words);
+  const COPY = copyFor(words, kind);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [failed, setFailed] = useState(false);
   const [view, setView] = useState<View>(INITIAL_VIEW);
+  const [dragged, setDragged] = useState(false);
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -127,40 +113,33 @@ export function PhotoCropSheet({
     setNatural(null);
     setFailed(false);
     setView(INITIAL_VIEW);
+    setDragged(false);
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // Measured rather than assumed. The row is what gets measured, never the frame's own column: the
-  // column is content-sized, so measuring it and then sizing the frame from the result would be a
-  // loop. The row's width comes from the sheet above it and is independent of anything below.
-  const [rowWidth, setRowWidth] = useState<number | null>(null);
-  const rowRef = useRef<HTMLDivElement | null>(null);
+  // The frame's size comes from the stage's measured width: the pan maths converts drag distances through
+  // it, so it has to be a real number, not a CSS value the component can't read.
+  const [stageWidth, setStageWidth] = useState(328);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    const el = rowRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const el = stageRef.current;
+    if (!el) return undefined;
+    if (el.clientWidth > 0) setStageWidth(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setRowWidth(entry.contentRect.width);
+      if (entry && entry.contentRect.width > 0) setStageWidth(entry.contentRect.width);
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [failed]);
 
-  const drawnFrame = frameSize(aspect);
-  // Wide enough for the drawn frame (plus its pad and the gap) AND the preview beside it? Then
-  // nothing changes — this is the tablet, and the kit's geometry stands. Otherwise the row has
-  // already wrapped, the frame column owns the full row, and the frame shrinks to fit it.
-  const fitsBesidePreview = rowWidth == null || rowWidth >= drawnFrame.width + 16 + CROP_ROW_GAP + CROP_PREVIEW_MIN;
-  const frame = frameSize(aspect, fitsBesidePreview ? null : (rowWidth ?? 0) - 16);
+  const geo = geometry(kind, stageWidth);
+  const frame = geo.frame;
   const crop = natural ? cropRectFromView(natural.width, natural.height, aspect, view) : null;
 
-  // How much source slack each axis has at the current zoom — 0 means that axis is already flush with
-  // the source edge, so dragging it does nothing and the hint says so instead of feeling broken.
-  const slack = natural
-    ? {
-        x: (natural.width - (crop?.width ?? 0)) / 2,
-        y: (natural.height - (crop?.height ?? 0)) / 2,
-      }
-    : { x: 0, y: 0 };
+  // How much source slack each axis has at the current zoom — 0 means that axis is flush with the source
+  // edge, so dragging it does nothing and the sheet says so instead of feeling broken.
+  const slack = natural ? { x: (natural.width - (crop?.width ?? 0)) / 2, y: (natural.height - (crop?.height ?? 0)) / 2 } : { x: 0, y: 0 };
   const canPan = slack.x > 0.5 || slack.y > 0.5;
 
   const nudge = useCallback(
@@ -189,6 +168,7 @@ export function PhotoCropSheet({
     if (!drag || drag.pointerId !== e.pointerId) return;
     nudge(e.clientX - drag.x, e.clientY - drag.y);
     dragRef.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+    setDragged(true);
   }
 
   function endDrag(e: React.PointerEvent<HTMLButtonElement>) {
@@ -197,190 +177,179 @@ export function PhotoCropSheet({
 
   function onKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
     const step = e.shiftKey ? 24 : 8;
-    const moves: Record<string, [number, number]> = {
-      ArrowLeft: [step, 0],
-      ArrowRight: [-step, 0],
-      ArrowUp: [0, step],
-      ArrowDown: [0, -step],
-    };
+    const moves: Record<string, [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
     const move = moves[e.key];
     if (!move) return;
     e.preventDefault();
     nudge(move[0], move[1]);
   }
 
+  // Dismiss: drag the handle down past 30% of the sheet's height (a drag on the photo never moves the sheet).
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const handleDrag = useRef<{ pointerId: number; y: number } | null>(null);
+  const [pull, setPull] = useState(0);
+  const onHandleDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    handleDrag.current = { pointerId: e.pointerId, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHandleMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = handleDrag.current;
+    if (d && d.pointerId === e.pointerId) setPull(Math.max(0, e.clientY - d.y));
+  };
+  const onHandleUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = handleDrag.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    handleDrag.current = null;
+    const height = sheetRef.current?.clientHeight ?? 0;
+    if (height > 0 && pull > height * 0.3) onCancel();
+    else setPull(0);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   const ready = !!objectUrl && !!natural && !!crop && !failed;
+  const scale = crop ? frame.width / crop.width : 1;
+  const imageStyle: React.CSSProperties =
+    crop && natural
+      ? {
+          position: "absolute",
+          left: frame.left - crop.x * scale,
+          top: frame.top - crop.y * scale,
+          width: natural.width * scale,
+          height: natural.height * scale,
+          maxWidth: "none",
+          pointerEvents: "none",
+          userSelect: "none",
+        }
+      : { position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" };
+  const logoSpot = Math.round((64 * frame.width) / 328);
 
   return (
-    <div className="kitchen-sheet-overlay" role="dialog" aria-modal="true" aria-label={COPY[kind].title}>
-      <div className="kitchen-sheet" style={{ maxWidth: kind === "banner" ? 800 : 660 }}>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>{COPY[kind].title}</div>
-        <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 4, marginBottom: 16 }}>{COPY[kind].sub}</div>
-
-        {failed && (
-          <div style={{ fontSize: 13.5, color: "var(--danger-ink)", background: "var(--danger-wash)", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontWeight: 700 }}>
-            That file couldn&apos;t be opened as a photo. Pick a JPEG or PNG from this phone.
+    <div className="m-overlay m-crop" role="dialog" aria-modal="true" aria-label={COPY.title}>
+      <div className="m-overlay-frame">
+        <button type="button" className="m-scrim m-crop-scrim" aria-label={SF.cancel} onClick={onCancel} />
+        <div ref={sheetRef} className="m-crop-sheet" style={pull ? { transform: `translateY(${pull}px)` } : undefined}>
+          <div className="m-crop-handle" onPointerDown={onHandleDown} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}>
+            <span />
           </div>
-        )}
-
-        <div ref={rowRef} style={{ display: "flex", gap: CROP_ROW_GAP, flexWrap: "wrap" }}>
-          <div style={{ flex: "0 0 auto", minWidth: 0, maxWidth: "100%" }}>
-            {/* Kit's CropFrame: the surface pad, the dashed accent boundary, the ratio badge and the
-             *  "Drag to move" chip (r-merchant.jsx:1279-1285). The dashed rect IS the crop viewport
-             *  here, so "anything outside it is cut off" is literally true rather than decorative. */}
-            <div style={{ width: frame.width + 16, padding: 8, borderRadius: 12, background: "var(--surface)", position: "relative" }}>
-              {/* A real <button>, not a focusable div: the frame IS an interactive control (you
-               *  operate it to pan), so it gets native focus, native keyboard reachability, and a
-               *  label that says how. It has no onClick — activating it does nothing; the arrow keys
-               *  are the keyboard equivalent of the drag. */}
+          <div className="m-crop-hd">
+            <div className="m-sf-sheet-t">{COPY.title}</div>
+            <p className="m-sf-sheet-s">{COPY.sub}</p>
+          </div>
+          <div className="m-crop-bd">
+            {failed ? (
+              <div className="m-sf-strip" data-tone="bad" role="alert">
+                <span className="m-sf-strip-ic">
+                  <Icon name="circle-alert" size={16} />
+                </span>
+                <span className="m-sf-strip-body m-sf-strip-msg">{SF.crop.unreadable}</span>
+              </div>
+            ) : null}
+            <div ref={stageRef} className="m-crop-stage" style={{ height: geo.height, display: failed ? "none" : undefined }}>
+              {objectUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={objectUrl}
+                  alt=""
+                  draggable={false}
+                  onLoad={(e) => {
+                    // The intrinsic size is the only value that leaves the DOM here, and every crop/preview
+                    // dimension derives from it. A decode that reports 0×0 (a truncated or unsupported file the
+                    // browser still fires `load` for) would divide into NaN geometry: treat it as the failure it
+                    // is. The numeric guard also ends the DOM→style taint path CodeQL flags (js/xss-through-dom).
+                    const width = Number(e.currentTarget.naturalWidth);
+                    const height = Number(e.currentTarget.naturalHeight);
+                    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) setNatural({ width, height });
+                    else setFailed(true);
+                  }}
+                  onError={() => setFailed(true)}
+                  style={imageStyle}
+                />
+              )}
+              {ready && (
+                <>
+                  {/* Everything outside the frame, dimmed: four rects, not a 999px shadow (slow on cheap Android). */}
+                  <i className="m-crop-dim" style={{ left: 0, top: 0, width: stageWidth, height: frame.top }} />
+                  <i className="m-crop-dim" style={{ left: 0, top: frame.top + frame.height, width: stageWidth, height: geo.height - frame.top - frame.height }} />
+                  <i className="m-crop-dim" style={{ left: 0, top: frame.top, width: frame.left, height: frame.height }} />
+                  <i className="m-crop-dim" style={{ left: frame.left + frame.width, top: frame.top, width: stageWidth - frame.left - frame.width, height: frame.height }} />
+                </>
+              )}
+              {/* A real <button>: the frame is operated to pan, so it gets focus, the arrow keys, and a label. */}
               <button
                 type="button"
-                aria-label={`${COPY[kind].title} — drag, or use the arrow keys, to move the picture inside the frame`}
+                className="m-crop-frame"
+                aria-label={`${COPY.title} — drag, or use the arrow keys, to move the picture inside the frame`}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={endDrag}
                 onPointerCancel={endDrag}
                 onKeyDown={onKeyDown}
-                style={{
-                  width: frame.width,
-                  height: frame.height,
-                  padding: 0,
-                  position: "relative",
-                  overflow: "hidden",
-                  borderRadius: 8,
-                  border: "2px dashed var(--accent)",
-                  background: "var(--bg)",
-                  touchAction: "none",
-                  cursor: canPan ? "grab" : "default",
-                  display: "grid",
-                  placeItems: "center",
-                }}
+                style={{ left: frame.left, top: frame.top, width: frame.width, height: frame.height, cursor: canPan ? "grab" : "default" }}
               >
-                {objectUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={objectUrl}
-                    alt=""
-                    draggable={false}
-                    onLoad={(e) => {
-                      // The image's intrinsic size is the only value that leaves the DOM here, and every
-                      // crop/preview dimension is derived from it. Coerce and validate rather than trust
-                      // it: a decode that reports 0×0 (a truncated or unsupported file the browser still
-                      // fires `load` for) would otherwise divide through into NaN geometry and render an
-                      // invisible, un-croppable frame. Treat that as the load failure it is. The explicit
-                      // numeric guard also terminates the DOM→style taint path CodeQL flags here
-                      // (js/xss-through-dom): nothing but finite numbers can reach the style object.
-                      const width = Number(e.currentTarget.naturalWidth);
-                      const height = Number(e.currentTarget.naturalHeight);
-                      if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) setNatural({ width, height });
-                      else setFailed(true);
-                    }}
-                    onError={() => setFailed(true)}
-                    style={
-                      crop && natural
-                        ? imageStyleFor(crop, natural, frame.width)
-                        : { position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }
-                    }
+                {kind === "banner" && (
+                  <span
+                    className="m-crop-ring"
+                    style={{ left: Math.round((14 * frame.width) / 328), top: frame.height - Math.round(logoSpot / 2) - 2, width: logoSpot, height: logoSpot }}
                   />
                 )}
-                {!ready && <span style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "ui-monospace, monospace" }}>{failed ? "unreadable file" : "opening your file…"}</span>}
-                {ready && canPan && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      left: "50%",
-                      top: "50%",
-                      transform: "translate(-50%,-50%)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      background: "rgba(20,24,27,.72)",
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      borderRadius: 999,
-                      padding: "6px 12px",
-                      pointerEvents: "none",
-                    }}
-                  >
-                    <Icon name="navigation" size={13} color="#fff" />
-                    Drag to move
+                {kind !== "banner" && <span className="m-crop-ring" style={{ inset: 4 }} />}
+                <span className="m-crop-badge">{aspect >= 2 ? "3:1" : "1:1"}</span>
+                {ready && canPan && !dragged && (
+                  <span className="m-crop-drag">
+                    <Icon name="move" size={16} />
+                    {SF.crop.drag}
                   </span>
                 )}
               </button>
-              <span
-                style={{
-                  position: "absolute",
-                  right: 14,
-                  top: 12,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  color: "var(--muted)",
-                  background: "var(--bg)",
-                  borderRadius: 999,
-                  padding: "3px 9px",
-                }}
-              >
-                {aspect >= 2 ? "3:1" : "1:1"}
-              </span>
             </div>
 
-            {/* Zoom: minus / track / plus / "1.4×" (r-merchant.jsx:1288-1296). A real range input, so
-             *  the control is keyboard- and screen-reader-operable, not just a drawn track. */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, width: frame.width + 16 }}>
-              <button type="button" onClick={() => setView((v) => ({ ...v, zoom: Math.max(MIN_ZOOM, v.zoom - 0.2) }))} disabled={!ready} style={zoomButtonStyle(!ready)} aria-label="Zoom out">
-                <Icon name="minus" size={16} color="var(--muted)" />
+            <div className="m-crop-zoom">
+              <button type="button" className="m-crop-zb" onClick={() => setView((v) => ({ ...v, zoom: Math.max(MIN_ZOOM, v.zoom - 0.2) }))} disabled={!ready} aria-label={SF.crop.zoomOut}>
+                <Icon name="minus" size={16} />
               </button>
               <input
                 type="range"
+                className="m-crop-range"
                 min={MIN_ZOOM}
                 max={MAX_ZOOM}
                 step={0.05}
                 value={view.zoom}
                 disabled={!ready}
-                aria-label="Zoom"
+                aria-label={SF.crop.zoom}
                 onChange={(e) => setView((v) => ({ ...v, zoom: Number(e.target.value) }))}
-                style={{ flex: 1, accentColor: "var(--accent)" }}
+                style={{ ["--fill" as string]: `${((view.zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}%` }}
               />
-              <button type="button" onClick={() => setView((v) => ({ ...v, zoom: Math.min(MAX_ZOOM, v.zoom + 0.2) }))} disabled={!ready} style={zoomButtonStyle(!ready)} aria-label="Zoom in">
-                <Icon name="plus" size={16} color="var(--muted)" />
+              <button type="button" className="m-crop-zb" onClick={() => setView((v) => ({ ...v, zoom: Math.min(MAX_ZOOM, v.zoom + 0.2) }))} disabled={!ready} aria-label={SF.crop.zoomIn}>
+                <Icon name="plus" size={16} />
               </button>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", minWidth: 42, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {view.zoom.toFixed(1)}×
-              </span>
+              <span className="m-crop-zv">{view.zoom.toFixed(1)}×</span>
             </div>
 
-            <div style={{ display: "flex", gap: 12, marginTop: 16, width: frame.width + 16, maxWidth: "100%" }}>
-              <button type="button" onClick={onCancel} style={{ ...ghostButtonStyle, flex: 1 }}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!ready}
-                onClick={() => crop && onConfirm(crop)}
-                style={{ ...primaryButtonStyle, flex: 1, opacity: ready ? 1 : 0.5 }}
-              >
-                {COPY[kind].save}
-              </button>
-            </div>
-          </div>
-
-          <div style={{ flex: 1, minWidth: `min(${CROP_PREVIEW_MIN}px, 100%)` }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>{COPY[kind].previewLabel}</div>
-            {kind === "banner" ? (
-              <BannerPreview crop={crop} natural={natural} url={objectUrl} shopName={shopName} />
+            <div className="m-sf-sl">{COPY.previewLabel}</div>
+            {kind === "banner" && bannerPreview && objectUrl && crop && natural ? (
+              bannerPreview({ url: objectUrl, crop, natural })
+            ) : kind === "dish" ? (
+              <DishPreview crop={crop} natural={natural} url={objectUrl} words={words} />
             ) : (
-              <DishPreview crop={crop} natural={natural} url={objectUrl} square={kind === "logo"} words={words} />
+              <LogoPreview crop={crop} natural={natural} url={objectUrl} name={shopName} />
             )}
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 10, lineHeight: 1.45 }}>
-              {kind === "dish" ? `Customers scan photos before they read names. One clear daylight shot per ${words.item} is enough.` : words.bannerPhotoTip}
-            </div>
-            {ready && !canPan && (
-              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8, lineHeight: 1.45 }}>
-                This photo is already exactly the right shape — nothing is being cut off, so there is nothing to move. Zoom in if you
-                want a closer crop.
-              </div>
-            )}
+            <p className="m-sf-tip">{COPY.tip}</p>
+            {ready && !canPan && <p className="m-sf-tip">{SF.crop.alreadyFits}</p>}
+          </div>
+          <div className="m-crop-ft">
+            <button type="button" className="m-btn" disabled={!ready} onClick={() => crop && natural && onConfirm(crop, natural)}>
+              {COPY.save}
+            </button>
+            <button type="button" className="m-btn2" onClick={onCancel}>
+              {SF.cancel}
+            </button>
           </div>
         </div>
       </div>
@@ -388,87 +357,38 @@ export function PhotoCropSheet({
   );
 }
 
-/** M5·2's miniature of the customer's restaurant page (`CustomerPreview`, r-merchant.jsx:1302-1323) —
- *  the same shop card the Shop screen already renders under "WHAT CUSTOMERS SEE". */
-function BannerPreview({
-  crop,
-  natural,
-  url,
-  shopName,
-}: {
-  crop: CropRect | null;
-  natural: { width: number; height: number } | null;
-  url: string | null;
-  shopName?: string;
-}) {
-  const boxWidth = CROP_PREVIEW_MIN;
+/** The logo at list size: a 56px circle in a row with the shop's name (README "LIVE PREVIEW"). */
+function LogoPreview({ crop, natural, url, name }: { crop: CropRect | null; natural: { width: number; height: number } | null; url: string | null; name?: string }) {
   return (
-    <div style={{ width: boxWidth, borderRadius: 16, border: "1px solid var(--line)", overflow: "hidden", background: "var(--bg)" }}>
-      <div style={{ height: Math.round(boxWidth / 3), background: "var(--surface)", position: "relative", overflow: "hidden" }}>
+    <div className="m-crop-row">
+      <div className="m-crop-thumb" style={{ borderRadius: "50%" }}>
         {url && crop && natural && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt="" draggable={false} style={imageStyleFor(crop, natural, boxWidth)} />
+          <img src={url} alt="" draggable={false} style={croppedImageStyle(crop, natural)} />
         )}
       </div>
-      <div style={{ padding: "12px 12px 14px" }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{shopName || "Your shop"}</div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>The line customers read under your name.</div>
+      <div style={{ minWidth: 0 }}>
+        <b>{name || SF.nameFallback}</b>
+        <span>{SF.crop.logoPreviewSub}</span>
       </div>
     </div>
   );
 }
 
-/** M4·6's "HOW IT LOOKS ON THE MENU" — the cropped square in the same 44px thumb the merchant's own
- *  menu list uses, so the framing is judged at the size it is actually seen at. */
-function DishPreview({
-  crop,
-  natural,
-  url,
-  square,
-  words,
-}: {
-  crop: CropRect | null;
-  natural: { width: number; height: number } | null;
-  url: string | null;
-  square: boolean;
-  words: Vocabulary;
-}) {
-  const thumb = 56;
+/** M4·6's "HOW IT LOOKS ON THE MENU": the cropped square in a menu row, judged at the size it is seen at. */
+function DishPreview({ crop, natural, url, words }: { crop: CropRect | null; natural: { width: number; height: number } | null; url: string | null; words: Vocabulary }) {
   return (
-    <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "6px 14px", background: "var(--bg)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0" }}>
-        <div style={{ width: thumb, height: thumb, borderRadius: square ? "50%" : 10, background: "var(--surface)", overflow: "hidden", position: "relative", flexShrink: 0 }}>
-          {url && crop && natural && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="" draggable={false} style={imageStyleFor(crop, natural, thumb)} />
-          )}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{square ? "Your shop" : `This ${words.item}`}</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{square ? "Your logo, as customers see it" : words.itemPreviewSub}</div>
-        </div>
+    <div className="m-crop-row">
+      <div className="m-crop-thumb">
+        {url && crop && natural && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" draggable={false} style={croppedImageStyle(crop, natural)} />
+        )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 0", borderTop: "1px solid var(--line)", opacity: 0.45 }}>
-        <div style={{ width: thumb, height: thumb, borderRadius: 10, background: "var(--surface)", flexShrink: 0 }} />
-        <div style={{ fontSize: 15, fontWeight: 700 }}>Another {words.item}</div>
+      <div style={{ minWidth: 0 }}>
+        <b>{`This ${words.item}`}</b>
+        <span>{words.itemPreviewSub}</span>
       </div>
     </div>
   );
 }
-
-function zoomButtonStyle(disabled: boolean): React.CSSProperties {
-  return {
-    display: "grid",
-    placeItems: "center",
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    border: "1px solid var(--line)",
-    background: "#fff",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.5 : 1,
-    flexShrink: 0,
-  };
-}
-
-
