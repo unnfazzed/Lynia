@@ -18,23 +18,21 @@ import { formatLocalDigits, localDigits, RESEND_AFTER_S, toE164 } from "../lib/p
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
 /** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). */
-const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on your own phone, or try tomorrow.";
+const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Use your own phone, or try tomorrow.";
 
 /** MJ-L2 (ledger D-90): why the app signed someone out — the owner took them off the team. */
 const REMOVED_MESSAGE = "You’re no longer on the team. Ask the owner to add you again.";
 
 /**
- * D-113 (owner, 2026-10-18): A1 draws no way in for a business that isn't on LyniaGo yet, so a new owner
- * never learns that the same phone and code create the account. "Create an account" is the same two steps
- * with its own words; after the code a number with no business lands on "What do you sell?" as before.
- * `/login?new=1` opens it directly, for links from the website or WhatsApp.
+ * D-113 (owner, 2026-10-18): one way in for everyone. A1 drew "Sign in", which told a business that isn't on
+ * LyniaGo yet that this screen wasn't for it, though the same phone and code create its account (a number
+ * with no business lands on "What do you sell?"). The owner chose "Get started" over a separate sign-up.
  */
-const CREATE = {
-  title: "Create your business account",
-  sub: "Enter your phone number. We’ll send you a code, then you’ll set up your business.",
-  toCreate: "New business? Create an account",
-  toSignIn: "Already on LyniaGo? Sign in",
+const ENTRY = {
+  title: "Get started",
+  sub: "New or returning, enter your phone number. We’ll send you a code.",
   submit: "Continue",
+  busy: "Checking…",
 } as const;
 
 /**
@@ -52,7 +50,6 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
-  const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // A ref, not `busy`: two taps in one tick both run the handler before React re-renders.
   const submittingRef = useRef(false);
@@ -67,21 +64,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (takeSignOutNotice() === "removed") setError(REMOVED_MESSAGE);
   }, []);
-
-  // D-113: read once on mount, not with useSearchParams (that would keep this page out of the static HTML).
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("new") === "1") setCreating(true);
-  }, []);
-
-  function switchMode(create: boolean) {
-    setCreating(create);
-    setError(null);
-    const url = new URL(window.location.href);
-    if (create) url.searchParams.set("new", "1");
-    else url.searchParams.delete("new");
-    window.history.replaceState(window.history.state, "", url);
-    inputRef.current?.focus();
-  }
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -164,12 +146,10 @@ export default function LoginPage() {
         >
           <MerchantLockup />
           <div style={{ marginTop: 24 }}>
-            <h1 className="m-h1">{creating ? CREATE.title : "Sign in"}</h1>
-            {creating && (
-              <p className="m-sub" style={{ marginTop: 8 }}>
-                {CREATE.sub}
-              </p>
-            )}
+            <h1 className="m-h1">{ENTRY.title}</h1>
+            <p className="m-sub" style={{ marginTop: 8 }}>
+              {ENTRY.sub}
+            </p>
           </div>
           <div className="m-fld">
             <label htmlFor="phone">Phone number</label>
@@ -198,9 +178,6 @@ export default function LoginPage() {
           <div style={{ flex: 1 }} />
           <button type="submit" className="m-btn" disabled={busy || digits.length < 9}>
             {busy ? "Sending…" : "Send code"}
-          </button>
-          <button type="button" className="m-lnk" style={{ margin: "-8px 0" }} onClick={() => switchMode(!creating)}>
-            {creating ? CREATE.toSignIn : CREATE.toCreate}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
             {/* Terms added by owner instruction 2026-09-30 (D-49): one set for every kind of user. */}
@@ -275,7 +252,7 @@ export default function LoginPage() {
         )}
         <div style={{ flex: 1 }} />
         <button type="submit" className="m-btn" disabled={busy || code.length !== 6}>
-          {busy ? (creating ? "Checking…" : "Signing in…") : creating ? CREATE.submit : "Sign in"}
+          {busy ? ENTRY.busy : ENTRY.submit}
         </button>
       </form>
     </div>

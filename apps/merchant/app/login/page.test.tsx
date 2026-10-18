@@ -55,11 +55,13 @@ async function signIn(deliveryChannel?: "whatsapp" | "sms") {
   fireEvent.change(await toCodeStep(deliveryChannel), { target: { value: "123456" } });
 }
 
-describe("A1 · Sign in (merchant mobile redesign, D-48)", () => {
-  it("is the LyniaGo Merchant lockup, 'Sign in', a +263 phone field and the privacy line", () => {
+describe("A1 · Get started (merchant mobile redesign, D-48; one way in, D-113)", () => {
+  it("is the LyniaGo Merchant lockup, 'Get started' with the new-or-returning line, a +263 phone field and the privacy line", () => {
     render(<LoginPage />);
     expect(screen.getByText("Merchant")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Get started" })).toBeTruthy();
+    expect(screen.getByText("New or returning, enter your phone number. We’ll send you a code.")).toBeTruthy();
+    expect(screen.queryByText(/Sign in/)).toBeNull();
     expect(screen.getByText("+263")).toBeTruthy();
     expect(screen.getByRole("link", { name: "privacy notice" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "terms" }).getAttribute("href")).toMatch(/\/legal\/terms$/);
@@ -102,7 +104,7 @@ describe("A2 · Code", () => {
   it("Wrong number? goes back to the phone step", async () => {
     await toCodeStep();
     fireEvent.click(screen.getByRole("button", { name: "Wrong number?" }));
-    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Get started" })).toBeTruthy();
   });
 
   it("MJ-M9: the phone's Back on the code step returns to the number — it doesn't leave the app", async () => {
@@ -110,7 +112,7 @@ describe("A2 · Code", () => {
     await toCodeStep();
     expect(window.history.state?.lyniaStep).toBe(true); // the code step is its own entry
     window.history.back();
-    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Get started" })).toBeTruthy();
     expect((screen.getByLabelText("Phone number") as HTMLInputElement).value).toBe("77 333 3333");
   });
 
@@ -177,7 +179,7 @@ describe("refusals", () => {
   it("says what to do when a shared device has hit the new-account cap", async () => {
     vi.mocked(verifyOtp).mockRejectedValue(new ApiError(429, "Too many sign-ups", "device_signup_cap"));
     await signIn();
-    expect(await screen.findByText("This device has added 3 new people today. Sign in on your own phone, or try tomorrow.")).toBeTruthy();
+    expect(await screen.findByText("This device has added 3 new people today. Use your own phone, or try tomorrow.")).toBeTruthy();
   });
 
   it("any other 429 (the route's own attempt limit) keeps the API's words", async () => {
@@ -219,49 +221,13 @@ describe("CF-01 double-submit guard", () => {
     await act(async () => resolve({ sent: true, channel: "bird-verify" }));
   });
 
-  it("the sixth digit and a Sign in tap in the same tick verify once", async () => {
+  it("the sixth digit and a Continue tap in the same tick verify once", async () => {
     let resolve: (v: unknown) => void = () => {};
     vi.mocked(verifyOtp).mockImplementation(() => new Promise((r) => (resolve = r)) as never);
     const input = await toCodeStep();
     fireEvent.change(input, { target: { value: "123456" } });
-    fireEvent.click(screen.getByRole("button", { name: /Sign/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue|Checking/ }));
     expect(verifyOtp).toHaveBeenCalledTimes(1);
     await act(async () => resolve(SESSION));
-  });
-});
-
-describe("D-113 · Create an account", () => {
-  it("Sign in offers 'New business? Create an account', which retitles the same phone step", () => {
-    render(<LoginPage />);
-    fireEvent.click(screen.getByRole("button", { name: "New business? Create an account" }));
-    expect(screen.getByRole("heading", { name: "Create your business account" })).toBeTruthy();
-    expect(screen.getByText("Enter your phone number. We’ll send you a code, then you’ll set up your business.")).toBeTruthy();
-    expect(screen.getByLabelText("Phone number")).toBeTruthy();
-    expect(window.location.search).toBe("?new=1");
-    fireEvent.click(screen.getByRole("button", { name: "Already on LyniaGo? Sign in" }));
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
-    expect(window.location.search).toBe("");
-  });
-
-  it("/login?new=1 opens on Create an account", async () => {
-    window.history.replaceState(null, "", "/login?new=1");
-    render(<LoginPage />);
-    expect(await screen.findByRole("heading", { name: "Create your business account" })).toBeTruthy();
-  });
-
-  it("a new number goes phone → code → 'What do you sell?', with Continue on the code step", async () => {
-    vi.mocked(requestOtp).mockResolvedValue({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
-    vi.mocked(verifyOtp).mockResolvedValue(SESSION as never);
-    vi.mocked(getMyMerchant).mockRejectedValue(new ApiError(403, "not a member", "not_a_member"));
-    window.history.replaceState(null, "", "/login?new=1");
-    render(<LoginPage />);
-    await screen.findByRole("heading", { name: "Create your business account" });
-    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "0773333333" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    const input = await screen.findByLabelText("6-digit code");
-    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
-    fireEvent.change(input, { target: { value: "123456" } });
-    await vi.waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/onboarding"));
-    expect(verifyOtp).toHaveBeenCalledWith("+263773333333", "123456");
   });
 });

@@ -5644,22 +5644,23 @@ app already on the phone keeps its original install referrer), and a friend who 
 lands on the website's bikers section without the code.
 
 
-## D-113 · Merchant sign-in: a "Create an account" way in for new businesses — PROPOSED (owner ask, 2026-10-18)
+## D-113 · Merchant sign-in becomes "Get started": one way in for new and returning businesses — PROPOSED (owner, 2026-10-18)
 
-**Why:** the owner asked (this session, 2026-10-18): *"i need a sign up option for merchants that visit
-merchants.lyniago.com and are not registered"*, then *"lets put a normal create account for new businesses"*.
-Self-serve sign-up already works behind A1: a number with no business lands on A3 *What do you sell?* after the
-code. But A1 (`packages/design/handoff/merchant-mobile`) draws only "Sign in", so a new owner never learns that
-the same phone and code create the account.
+**Why:** the owner asked (this session, 2026-10-18) for a sign-up option for businesses that aren't registered,
+then decided: *"no need or new screens since sign in can handle both new and users returning .. renname Sign In
+to Get Started"*. Self-serve sign-up already works behind A1: a number with no business lands on A3 *What do you
+sell?* after the code. But A1 (`packages/design/handoff/merchant-mobile`) says "Sign in", which tells a business
+that isn't on LyniaGo that the screen isn't for it. No new screen, route or element beyond one line.
 
-| Where | Element | Built from |
+| Where | Drawn | Now |
 |---|---|---|
-| A1 Sign in | A link under "Send code": "New business? Create an account" | `.m-lnk` (44px, `--target-min`) |
-| A1, create mode | Heading "Create your business account"; sub "Enter your phone number. We'll send you a code, then you'll set up your business."; link "Already on LyniaGo? Sign in" | `.m-h1`, `.m-sub`, `.m-lnk` |
-| A2 Code, create mode | The button reads "Continue" ("Checking…" while busy) instead of "Sign in" | `.m-btn` |
-| URL | `/login?new=1` opens create mode, for links from the website or WhatsApp | — |
+| A1 heading | "Sign in" | "Get started" |
+| A1, under the heading | — | "New or returning, enter your phone number. We'll send you a code." (`.m-sub`) |
+| A2 button | "Sign in" / "Signing in…" | "Continue" / "Checking…" |
+| Device-cap error | "…Sign in on your own phone, or try tomorrow." | "…Use your own phone, or try tomorrow." |
 
 Nothing else changes: the same OTP, the same per-device sign-up cap, the same landing (`/join` with an invite,
-else `/onboarding`; a number already on a business lands on its dashboard). Screenshot sheet (360×720 and
-320×640) is on PR #1232; this entry becomes APPROVED when the owner approves it there. Upstream ask: draw the
-create-account link and heading on A1.
+else `/onboarding`; a number already on a business lands on its dashboard). The owner named the heading; the
+sub-line and button wording were chosen at the owner's request ("decide cool copy for that"). Screenshot sheet
+(360×720 and 320×640) is shared in the session on PR #1232; this entry becomes APPROVED when the owner approves
+it. Upstream ask: redraw A1/A2 with this copy.
