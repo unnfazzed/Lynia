@@ -965,15 +965,17 @@ export const BecomeMerchantRequest = z
   });
 export type BecomeMerchantRequest = z.infer<typeof BecomeMerchantRequest>;
 
-/** D-30 shop-front fields, editable by the merchant against a live customer-view miniature. */
+/** D-30 shop-front fields, editable by the merchant against a live customer-view miniature. A key left
+ *  out stays as it is; `null` clears it (shop-front-v1, D-115: Remove photo, and tapping the selected price
+ *  level again). */
 export const UpdateMerchantProfileRequest = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(500).optional(),
-    coverPhotoUrl: UploadObjectKey.optional(),
-    logoUrl: UploadObjectKey.optional(),
+    coverPhotoUrl: UploadObjectKey.nullable().optional(),
+    logoUrl: UploadObjectKey.nullable().optional(),
     cuisineTags: z.array(z.string().trim().min(1).max(24)).max(3).optional(),
-    priceLevel: z.number().int().min(1).max(3).optional(),
+    priceLevel: z.number().int().min(1).max(3).nullable().optional(),
   })
   .strict();
 export type UpdateMerchantProfileRequest = z.infer<typeof UpdateMerchantProfileRequest>;

@@ -1,0 +1,44 @@
+/* Lynia typeface — Inter (the same typeface Grab's app uses in-product; free, SIL Open Font License).
+
+   SELF-HOSTED, DATA-LIGHT (Zimbabwe: expensive data, slow networks, cheap Android phones):
+   - Only THREE weights ship as Latin .woff2 in assets/fonts/ — 400 (body), 600 (labels/buttons),
+     700 (titles). Total ~135KB, cached after first load, no third-party (Google Fonts) round-trip.
+   - `font-display: swap` + the system fallback stack in --font-sans mean text paints INSTANTLY in
+     Roboto (present on every Android) and upgrades to Inter when the webfont arrives. The design
+     must read correctly in the fallback — never depend on Inter-only metrics.
+   - Paths are relative to THIS file (tokens/) → ../assets/fonts/. If you relocate the tokens,
+     fix the url()s. Consumers that link styles.css from a different depth get the fonts via this
+     same relative closure. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/inter-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/inter-700.woff2") format("woff2");
+}
+
+/* Fredoka 600 — the LyniaGo / brand WORDMARK face only (never body/UI text). Self-hosted, one
+   Latin weight (~16KB), so the logo lockup never needs a Google Fonts round-trip and can't fail
+   on a weak network. Interim until the wordmark is shipped as vector outlines. Use via
+   --font-wordmark with a rounded-sans fallback so the lockup still reads if the font is slow. */
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/fredoka-600.woff2") format("woff2");
+}

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shop front v1 · all screens</title>
+<link rel="stylesheet" href="tokens/fonts.css"><link rel="stylesheet" href="tokens/colors.css"><link rel="stylesheet" href="tokens/typography.css"><link rel="stylesheet" href="tokens/spacing.css">
+<style>
+body{margin:0;background:var(--surface);font-family:var(--font-sans);color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent-text)}a:hover{color:var(--cta-fill-pressed)}
+.doc{padding:40px 40px 80px;display:flex;flex-direction:column;gap:48px}
+.row{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.cell{display:flex;flex-direction:column;gap:10px}
+.cap{font-size:13px;font-weight:700;color:var(--muted)}
+.note{font-size:13px;line-height:1.5;color:var(--muted);text-wrap:pretty}
+.ph{position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06);display:flex;flex-direction:column}
+.spin{display:inline-block;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:sfspin .8s linear infinite;flex:none;box-sizing:border-box}
+@keyframes sfspin{to{transform:rotate(360deg)}}
+.caret{display:inline-block;width:2px;height:20px;background:var(--accent);margin-left:1px;flex:none}
+</style></head>
+<body><template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00812f"></rect><rect x="30" y="30" width="40" height="40" rx="8" fill="#e9f8ef"></rect></svg></template><div class="doc" id="doc"></div>
+<script src="sf-copy.js"></script>
+<script src="sf-screens.js"></script>
+</body></html>
