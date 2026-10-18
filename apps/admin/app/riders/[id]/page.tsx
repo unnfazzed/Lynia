@@ -1,6 +1,6 @@
 import { formatPhoneLocal, tokens } from "@lynia/shared";
 import { adminFetch, adminFetchResult } from "../../lib/api";
-import type { RiderDetail, TripRow, WalletView, WalletLedgerEntry } from "../../lib/adminTypes";
+import type { RiderDetail, RiderReferralSummary, TripRow, WalletView, WalletLedgerEntry } from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
 import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
@@ -14,6 +14,7 @@ import { enumLabel, fmtDateTime, money } from "../../lib/format";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { fetchTimeline, TimelineCard } from "../../components/Timeline";
+import { CreateReferralLinkButton } from "../../referrals/ReferralActions";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle, SubsectionUnavailable } from "../../components/states";
 import { IconAlert, IconBike } from "../../components/icons";
 
@@ -101,10 +102,12 @@ export default async function RiderProfilePage({
   // absent (older API) or unreachable, in which case the wallet card degrades to a "not available" note.
   // LC-D07: `walletCursor` pages further back past the first 20 entries via the "Load older" link below.
   // Admin console v2 §4 / §8: the timeline and the audit rows load alongside it, each best-effort the same way.
-  const [wallet, timeline, audit] = await Promise.all([
+  // D-112: the biker's referral link and how their referrals are doing, best-effort the same way.
+  const [wallet, timeline, audit, referral] = await Promise.all([
     adminFetch<WalletView>(`/admin/riders/${id}/wallet${walletCursor ? `?cursor=${encodeURIComponent(walletCursor)}` : ""}`),
     fetchTimeline(`/admin/people/${id}/timeline?as=rider`, tlCursor),
     fetchAuditFor(id),
+    adminFetch<RiderReferralSummary>(`/admin/riders/${id}/referral`),
   ]);
 
   // `commission_freeze` state (design OV-4A). `undefined` today for EVERY rider — no admin read surface
@@ -420,6 +423,38 @@ export default async function RiderProfilePage({
             <div style={{ fontSize: 11, color: tokens.color.muted, marginTop: 10 }}>
               Suspensions and bans require a reason code and are recorded in the audit log.
             </div>
+          </section>
+
+          {/* D-112: the biker's personal link to share, and the friends who joined through it. */}
+          <section className="card">
+            <div className="block-title">Referrals</div>
+            {!referral ? (
+              <SubsectionUnavailable noun="referral link" />
+            ) : referral.link ? (
+              <KeyValue
+                rows={[
+                  { label: "Link", value: <span className="mono" style={{ userSelect: "all", wordBreak: "break-all" }}>{referral.link}</span> },
+                  {
+                    label: "Friends",
+                    value: (
+                      <span>
+                        {referral.referred} joined · {referral.verified} verified · {referral.paidCount} paid ·{" "}
+                        <a href={`/referrals?referrer=${r.id}`} style={{ color: tokens.color.accentText }}>
+                          view
+                        </a>
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="mut" style={{ fontSize: 12 }}>
+                  No link yet. Create one, then send it to the biker to share with friends.
+                </div>
+                <CreateReferralLinkButton id={r.id} name={r.name} connected={connected} />
+              </div>
+            )}
           </section>
         </div>
       </div>

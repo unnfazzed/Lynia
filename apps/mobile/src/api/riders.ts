@@ -1,3 +1,4 @@
+import { installReferralCode } from "../auth/install-referral";
 import { ApiError, apiFetch } from "./client";
 
 export interface BecomeResult {
@@ -20,9 +21,11 @@ export interface BecomeResult {
 }
 
 /** The photo is optional since 2026-10-02 (D-62): sign-up sends none. `photoUrl`, when sent, is the
- *  storage key minted by `POST /uploads/kyc-photo` (not a URL). */
-export function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Promise<BecomeResult> {
-  return apiFetch("/riders/become", { method: "POST", body });
+ *  storage key minted by `POST /uploads/kyc-photo` (not a URL). The referral code from Play's install
+ *  referrer rides along when the app was installed from a biker's link (D-112); the caller never sees it. */
+export async function becomeRider(body: { bikeReg?: string; photoUrl?: string }): Promise<BecomeResult> {
+  const referralCode = await installReferralCode();
+  return apiFetch("/riders/become", { method: "POST", body: referralCode ? { ...body, referralCode } : body });
 }
 
 /**

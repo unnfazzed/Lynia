@@ -28,7 +28,7 @@ byte-identical to the handoff, except for:
 |---|---|
 | `packages/design/handoff/lyniago-website/` | The handoff, **verbatim**: `README.md` (the spec), `CLAUDE-CODE-PROMPT.md`, `reference/LandingPage-reference-offline.html` (the approved design with every asset inlined) and `site/`. Current export: 2026-09-28, the "mobile optimisation" revision. |
 | `apps/website/site/` | The deploy root: the handoff's `site/` plus the launch edits and extra files. |
-| `apps/website/wrangler.jsonc` | The site Worker (`lyniago-website`): static assets, Custom Domain `lyniago.com`, unknown paths get `404.html`. Only `/download` runs a script (`run_worker_first`). |
+| `apps/website/wrangler.jsonc` | The site Worker (`lyniago-website`): static assets, Custom Domain `lyniago.com`, unknown paths get `404.html`. Only `/download` and `/r/*` run a script (`run_worker_first`). |
 | `apps/website/worker.js`, `download.js` (+ `worker.test.mjs`) | The smart download link `/download` (below). |
 | `apps/website/www-redirect/` | The `lyniago-www-redirect` Worker: `www.lyniago.com/*` → 301 → `https://lyniago.com/*`. |
 | `apps/website/site/_headers` | Cache and security headers (below). |
@@ -62,7 +62,7 @@ by the visitor's User-Agent:
 | Desktop, and iPads (iPadOS 13+ Safari claims to be a Mac) | `https://lyniago.com/#app` |
 
 The answer is `Cache-Control: private, no-store` and `Vary: User-Agent`, so no cache hands one device's
-answer to another. Cloudflare runs the script for `/download` only (`run_worker_first`); everything else
+answer to another. Cloudflare runs the script for `/download` and `/r/*` only (`run_worker_first`); everything else
 stays a free static-asset request. To change a destination, edit `apps/website/download.js` and its test.
 
 ### The desktop QR popup
@@ -79,6 +79,21 @@ change, scan it from the popup at 100% zoom with a real Android and a real iPhon
 
 The iPhone Add to Home Screen tip that `?install=1` opens is §2 of the same handoff, built in the customer web
 app (`docs/CUSTOMER-WEB.md`).
+
+## Biker referral links: `/r/<code>`
+
+A biker's personal link (owner, 2026-10-18, ledger D-112). Ops create it on the biker's page in the admin console
+and send it to the biker to share. `apps/website/referral.js` answers it with a `302`, the same headers as
+`/download`:
+
+| Visitor | Goes to |
+|---|---|
+| Android | The Play listing with `referrer=utm_source=lyniago.com&utm_medium=biker_referral&utm_campaign=biker_referral&utm_content=<CODE>`. When the friend becomes a biker the app reads it and the API records who brought them in |
+| Anything else | `https://lyniago.com/#riders` (the biker app is Android-only) |
+
+A code that isn't one (wrong length, look-alike letters) still reaches the plain Play listing. The referrer string
+is pinned on both sides: `apps/website/worker.test.mjs` and `packages/shared/src/referral.test.ts`. No page,
+copy or asset changes, so this is not a launch edit.
 
 ## Search and AI visibility
 

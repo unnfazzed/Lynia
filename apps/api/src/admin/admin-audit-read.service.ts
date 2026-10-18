@@ -104,6 +104,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "rider.plate_verify": "Plate verified",
   "rider.suspend_food_debt": "Suspended for a food debt",
   "wallet.credit": "Wallet credited",
+  // D-112: ops recorded the cash they paid a biker for a referral (target = the referrer, targetType rider).
+  "referral.paid": "Referral paid in cash",
   "customer.hold": "Put on hold",
   "customer.lift": "Hold lifted",
   "customer.cash_ban_lift": "Cash ban lifted",

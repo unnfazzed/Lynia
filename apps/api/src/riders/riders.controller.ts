@@ -1,10 +1,11 @@
-import { Body, Controller, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Logger, Patch, Post, UseGuards } from "@nestjs/common";
 import { UploadObjectKey } from "@lynia/shared";
 import { z } from "zod";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { ReferralsService } from "../referrals/referrals.service";
 import { RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RiderService } from "./rider.service";
 
@@ -27,6 +28,9 @@ const BecomeRider = z.object({
   // demand). Kept the column/field name `photoUrl`; the value it carries is now the object key.
   // OPTIONAL since 2026-10-02 (owner): the rider photo is no longer a sign-up step — it can be added later.
   photoUrl: UploadObjectKey.optional(),
+  // Biker referrals (D-112): the code from Play's install referrer, when the app was installed from a biker's
+  // lyniago.com/r/<code> link. Loose on purpose: a malformed one is ignored, never a reason to refuse sign-up.
+  referralCode: z.string().max(32).optional(),
 });
 // lat/lng are optional — when the going-online request carries the rider's position we corridor-check it
 // (Q1 out-of-area gate); an older client that omits them just skips the check.
@@ -67,9 +71,12 @@ const Heartbeat = z.object({
 @Controller("riders")
 @UseGuards(JwtAuthGuard)
 export class RidersController {
+  private readonly logger = new Logger(RidersController.name);
+
   constructor(
     private readonly riders: RiderService,
     private readonly profile: RiderProfileService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   /** D-79 (owner 2026-10-06): the rider adds or changes their photo / bike plate from Bike & documents. */
@@ -90,8 +97,16 @@ export class RidersController {
   // lost-response replay locked an honest biker out of sign-up for an hour. 30/hour still blunts a script.
   @Throttle({ limit: KYC_ROUTE_REQUEST_CAP, windowSec: 3600, keyPrefix: "become" })
   @Post("become")
-  become(@Body(new ZodBody(BecomeRider)) body: z.infer<typeof BecomeRider>, @CurrentUser() id: string) {
-    return this.riders.becomeRider(id, body);
+  async become(@Body(new ZodBody(BecomeRider)) body: z.infer<typeof BecomeRider>, @CurrentUser() id: string) {
+    const { referralCode, ...data } = body;
+    const result = await this.riders.becomeRider(id, data);
+    // After the claim, so only a real new biker is attached; best-effort, a failure never fails sign-up.
+    if (referralCode) {
+      await this.referrals.attach(id, referralCode).catch((err: unknown) => {
+        this.logger.warn(`Referral attach failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
+    return result;
   }
 
   /** Re-run KYC for an existing rider whose check is pending/failed (Didit allows retries). */
