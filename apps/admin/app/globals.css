@@ -130,7 +130,10 @@ aside.sidenav {
   border-right: 1px solid var(--line);
   padding: var(--space-lg) var(--space-md);
   display: flex; flex-direction: column; gap: 2px;
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; height: 100vh; height: 100dvh;
+  /* The nav outgrows a short window; without its own scroll the bottom items (Settings, Sign out)
+     spill past the sticky box and can never be reached. */
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .sidenav .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; }
 .sidenav .brand b { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
@@ -362,6 +365,7 @@ a.funnel-step:hover .label { color: var(--accent-text); }
   .shell { flex-direction: column; }
   aside.sidenav {
     width: auto; height: auto; z-index: 40;
+    overflow: visible; /* the menu panel hangs below the bar; the panel scrolls itself */
     flex-direction: row; align-items: center; gap: var(--space-sm);
     padding: var(--space-sm) var(--space-lg);
     border-right: 0; border-bottom: 1px solid var(--line);
@@ -379,7 +383,11 @@ a.funnel-step:hover .label { color: var(--accent-text); }
     position: absolute; top: 100%; left: 0; right: 0;
     background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-menu);
     padding: var(--space-sm) var(--space-md) var(--space-md);
-    max-height: 80vh; overflow-y: auto;
+    /* Fill to the bottom of the VISIBLE viewport (dvh, not vh: mobile toolbars sit inside vh and hid
+       the panel's last rows), less the top bar (padding + menu button + border). */
+    max-height: calc(100vh - var(--target-min) - 2 * var(--space-sm) - 1px);
+    max-height: calc(100dvh - var(--target-min) - 2 * var(--space-sm) - 1px);
+    overflow-y: auto; overscroll-behavior: contain;
   }
   .sidenav a.nav-item { min-height: var(--target-min); }
   .sidenav .foot { margin-top: var(--space-sm); }
