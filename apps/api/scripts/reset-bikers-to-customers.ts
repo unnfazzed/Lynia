@@ -8,8 +8,8 @@
  *
  * Run with the SAME environment as the API (DATABASE_URL). Each person is matched by first + last name AND the
  * last four digits of the phone, and must match exactly one profile. Anyone with live biker activity
- * (orders, offers, a wallet balance or ledger, referrals, a ban/suspension) is SKIPPED and reported, never
- * removed. Sessions are revoked so a stale token can't keep the biker screens open.
+ * (orders, offers, a wallet balance or ledger, pending/confirmed top-ups, referrals, a ban/suspension) is SKIPPED and reported, never
+ * removed. Declined/expired top-ups moved no money and don't block (they go with the row). Sessions are revoked so a stale token can't keep the biker screens open.
  */
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
       prisma.offer.count({ where: { riderId: p.id } }),
       prisma.commissionAccount.findUnique({ where: { riderId: p.id }, select: { balance: true } }),
       prisma.commissionLedger.count({ where: { riderId: p.id } }),
-      prisma.topUp.count({ where: { riderId: p.id } }),
+      prisma.topUp.count({ where: { riderId: p.id, status: { in: ["pending", "confirmed"] } } }),
       prisma.settlement.count({ where: { riderId: p.id } }),
       prisma.merchantDebtLedger.count({ where: { riderId: p.id } }),
       prisma.referral.count({ where: { referrerId: p.id } }),
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     if (offers) blockers.push(`${offers} offer(s)`);
     if (wallet && !wallet.balance.isZero()) blockers.push(`wallet balance ${wallet.balance.toString()}`);
     if (ledger) blockers.push(`${ledger} wallet ledger row(s)`);
-    if (topUps) blockers.push(`${topUps} top-up(s)`);
+    if (topUps) blockers.push(`${topUps} pending/confirmed top-up(s)`);
     if (settlements) blockers.push(`${settlements} settlement(s)`);
     if (debts) blockers.push(`${debts} merchant debt row(s)`);
     if (referralsMade) blockers.push(`${referralsMade} referral(s) made`);
