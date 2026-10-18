@@ -56,11 +56,10 @@ async function signIn(deliveryChannel?: "whatsapp" | "sms") {
 }
 
 describe("A1 · Get started (merchant mobile redesign, D-48; one way in, D-113)", () => {
-  it("is the LyniaGo Merchant lockup, 'Get started' with the new-or-returning line, a +263 phone field and the privacy line", () => {
+  it("is the LyniaGo Merchant lockup, 'Get started', a +263 phone field and the privacy line", () => {
     render(<LoginPage />);
     expect(screen.getByText("Merchant")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Get started" })).toBeTruthy();
-    expect(screen.getByText("New or returning, enter your phone number. We’ll send you a code.")).toBeTruthy();
     expect(screen.queryByText(/Sign in/)).toBeNull();
     expect(screen.getByText("+263")).toBeTruthy();
     expect(screen.getByRole("link", { name: "privacy notice" })).toBeTruthy();

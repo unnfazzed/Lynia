@@ -30,7 +30,6 @@ const REMOVED_MESSAGE = "You’re no longer on the team. Ask the owner to add yo
  */
 const ENTRY = {
   title: "Get started",
-  sub: "New or returning, enter your phone number. We’ll send you a code.",
   submit: "Continue",
   busy: "Checking…",
 } as const;
@@ -145,12 +144,9 @@ export default function LoginPage() {
           }}
         >
           <MerchantLockup />
-          <div style={{ marginTop: 24 }}>
-            <h1 className="m-h1">{ENTRY.title}</h1>
-            <p className="m-sub" style={{ marginTop: 8 }}>
-              {ENTRY.sub}
-            </p>
-          </div>
+          <h1 className="m-h1" style={{ marginTop: 24 }}>
+            {ENTRY.title}
+          </h1>
           <div className="m-fld">
             <label htmlFor="phone">Phone number</label>
             <div className="m-in">

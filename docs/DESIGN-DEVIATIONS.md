@@ -5650,17 +5650,16 @@ lands on the website's bikers section without the code.
 then decided: *"no need or new screens since sign in can handle both new and users returning .. renname Sign In
 to Get Started"*. Self-serve sign-up already works behind A1: a number with no business lands on A3 *What do you
 sell?* after the code. But A1 (`packages/design/handoff/merchant-mobile`) says "Sign in", which tells a business
-that isn't on LyniaGo that the screen isn't for it. No new screen, route or element beyond one line.
+that isn't on LyniaGo that the screen isn't for it. No new screen, route or element.
 
 | Where | Drawn | Now |
 |---|---|---|
 | A1 heading | "Sign in" | "Get started" |
-| A1, under the heading | — | "New or returning, enter your phone number. We'll send you a code." (`.m-sub`) |
 | A2 button | "Sign in" / "Signing in…" | "Continue" / "Checking…" |
 | Device-cap error | "…Sign in on your own phone, or try tomorrow." | "…Use your own phone, or try tomorrow." |
 
 Nothing else changes: the same OTP, the same per-device sign-up cap, the same landing (`/join` with an invite,
-else `/onboarding`; a number already on a business lands on its dashboard). The owner named the heading; the
-sub-line and button wording were chosen at the owner's request ("decide cool copy for that"). Screenshot sheet
+else `/onboarding`; a number already on a business lands on its dashboard). The owner named the heading and removed
+the sub-line the first draft had; the button wording was chosen at the owner's request ("decide cool copy for that"). Screenshot sheet
 (360×720 and 320×640) is shared in the session on PR #1232; this entry becomes APPROVED when the owner approves
 it. Upstream ask: redraw A1/A2 with this copy.
