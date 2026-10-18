@@ -18,10 +18,21 @@ import { formatLocalDigits, localDigits, RESEND_AFTER_S, toE164 } from "../lib/p
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
 /** The per-device sign-up cap (the API's `device_signup_cap`: 3 new accounts per device per day). */
-const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Sign in on your own phone, or try tomorrow.";
+const DEVICE_CAP_MESSAGE = "This device has added 3 new people today. Use your own phone, or try tomorrow.";
 
 /** MJ-L2 (ledger D-90): why the app signed someone out — the owner took them off the team. */
 const REMOVED_MESSAGE = "You’re no longer on the team. Ask the owner to add you again.";
+
+/**
+ * D-113 (owner, 2026-10-18): one way in for everyone. A1 drew "Sign in", which told a business that isn't on
+ * LyniaGo yet that this screen wasn't for it, though the same phone and code create its account (a number
+ * with no business lands on "What do you sell?"). The owner chose "Get started" over a separate sign-up.
+ */
+const ENTRY = {
+  title: "Get started",
+  submit: "Continue",
+  busy: "Checking…",
+} as const;
 
 /**
  * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
@@ -134,7 +145,7 @@ export default function LoginPage() {
         >
           <MerchantLockup />
           <h1 className="m-h1" style={{ marginTop: 24 }}>
-            Sign in
+            {ENTRY.title}
           </h1>
           <div className="m-fld">
             <label htmlFor="phone">Phone number</label>
@@ -237,7 +248,7 @@ export default function LoginPage() {
         )}
         <div style={{ flex: 1 }} />
         <button type="submit" className="m-btn" disabled={busy || code.length !== 6}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? ENTRY.busy : ENTRY.submit}
         </button>
       </form>
     </div>
