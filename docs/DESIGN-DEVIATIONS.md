@@ -5704,3 +5704,13 @@ clear them (the handoff's Remove photo and "tap the selected price again"); omit
 **Open items carried from the handoff:** restaurant tag suggestions (`SF.suggest.food`) are the handoff's proposed
 list, pending a product decision.
 
+**Readings where the handoff disagrees with itself** (no owner question needed; recorded so the next pass knows):
+
+| Where | README | Drawing (`sf-screens.js`) | App |
+|---|---|---|---|
+| Empty banner content inset | "padded 76px from the left so it clears the logo" | 92px (8px edge + the logo's 84px) | **92px**: at 76 the dashed box runs 8px under the logo, which the README's own reason forbids |
+| Line height | not stated | none set (Inter's `normal`) | `normal` on the screen, its sheets and the card, so labels and pills sit at the drawn heights; text with its own line height keeps it |
+
+Screenshot sheet (every frame, handoff left, app right): `docs/parity/SHOP-FRONT-V1-2026-10-18.png`, made by
+`tools/parity/shoot-shop-front-v1.mjs`.
+

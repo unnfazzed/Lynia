@@ -3727,3 +3727,876 @@
   cursor: pointer;
   flex: none;
 }
+
+/* ── Shop front v1 (packages/design/handoff/shop-front-v1, ledger D-115) ─────────────────────────── */
+/* The page: 16px edge, 24px between groups (README "Layout"). */
+.m-sf-page {
+  /* The handoff sets no line-height (Inter's normal): labels and pills sit at the drawn heights only
+   * without the app body's 1.5. Text that sets its own (the card's name and line, helpers) keeps it. */
+  line-height: normal;
+  padding: 4px var(--space-lg) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+.m-sf-page[data-saving] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.m-sf-intro {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+.m-sf-grp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.m-sf-sl {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.m-sf-tip {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+}
+.m-sf-lblrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+.m-sf-lbl {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+}
+.m-sf-lbl i {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--muted);
+}
+.m-sf-count {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.m-sf-help {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+}
+.m-sf-help[data-err] {
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+
+/* Fields: 52 tall, radius 12, 16px text; focus 2px accent, error 2px danger (the padding takes the extra px). */
+.m-sf-in {
+  display: block;
+  width: 100%;
+  min-height: var(--target-primary);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--bg);
+  scroll-margin-bottom: var(--space-lg);
+}
+textarea.m-sf-in {
+  padding: 13px 14px;
+  resize: none;
+  overflow: hidden;
+}
+.m-sf-in:focus,
+.m-sf-in[aria-invalid="true"] {
+  outline: none;
+  border-width: 2px;
+  padding: 0 13px;
+}
+textarea.m-sf-in:focus,
+textarea.m-sf-in[aria-invalid="true"] {
+  padding: 12px 13px;
+}
+.m-sf-in:focus {
+  border-color: var(--accent);
+}
+.m-sf-in[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* WHAT CUSTOMERS SEE: the storefront card, which is also the photo editor. */
+.m-sf-card {
+  line-height: normal;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--bg);
+}
+.m-sf-ban {
+  position: relative;
+  aspect-ratio: 3 / 1;
+  background: var(--surface);
+}
+.m-sf-ban-hit {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+}
+button.m-sf-ban-hit {
+  cursor: pointer;
+}
+.m-sf-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.m-sf-scrim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(20, 24, 27, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+}
+/* The empty banner: a dashed mint box kept clear of the logo on the left. */
+.m-sf-ban-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: var(--accent-wash);
+  padding: 8px 8px 8px 92px;
+}
+.m-sf-ban-box {
+  flex: 1;
+  min-width: 0;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 8px;
+  color: var(--accent-text);
+  text-align: center;
+}
+.m-sf-ban-box b {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.m-sf-ban-box span {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.m-sf-change {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  height: var(--target-min);
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+/* The 64px logo with its 3px ring, 14px in, overlapping the banner's bottom edge by 32px. */
+.m-sf-ring {
+  position: absolute;
+  left: 11px;
+  bottom: -35px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.m-sf-logo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+}
+button.m-sf-logo {
+  cursor: pointer;
+}
+.m-sf-logo-empty {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px dashed var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.m-sf-logo-ini {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.m-sf-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: var(--shadow-badge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.m-sf-txt {
+  padding: 40px 14px 14px;
+}
+.m-sf-name {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.m-sf-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.m-sf-desc {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.4;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.m-sf-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.m-sf-tags span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent-wash);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+}
+
+/* Strips under the card and in the bar: neutral, or danger with a 1px border. */
+.m-sf-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.m-sf-strip[data-act] {
+  padding: 8px 8px 8px 14px;
+}
+.m-sf-strip[data-below] {
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+.m-sf-strip[data-tone="bad"] {
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger-ink);
+}
+.m-sf-strip-ic {
+  display: flex;
+  flex: none;
+  color: var(--muted);
+}
+.m-sf-strip[data-tone="bad"] .m-sf-strip-ic {
+  color: var(--danger-ink);
+}
+.m-sf-strip[data-below] .m-sf-strip-ic {
+  padding-top: 2px;
+}
+.m-sf-strip-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.m-sf-strip-body b {
+  font-weight: 700;
+}
+.m-sf-strip-body small {
+  display: block;
+  font-size: 13px;
+}
+.m-sf-strip[data-tone="bad"] .m-sf-strip-msg {
+  font-weight: 600;
+}
+.m-sf-pill {
+  height: var(--target-min);
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-text);
+  border: none;
+  flex: none;
+  align-self: flex-start;
+  cursor: pointer;
+}
+.m-sf-pill[data-bad] {
+  color: var(--danger-ink);
+}
+.m-sf-busy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  font-size: 14px;
+}
+.m-sf-busy-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.m-sf-busy-row b {
+  flex: 1;
+}
+.m-sf-busy-row span:last-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.m-sf-busy small {
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-sf-spin {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--muted);
+  animation: m-spin 0.8s linear infinite;
+  flex: none;
+}
+.m-sf-prog {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.m-sf-prog i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* Tags: 44px chips with a 44×44 remove target, the field + Add pill, one-tap suggestions. */
+.m-sf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+.m-sf-chip {
+  height: var(--target-min);
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 700;
+  padding-left: 14px;
+}
+.m-sf-chip[data-flash] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.m-sf-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-sf-chip button {
+  width: var(--target-min);
+  height: var(--target-min);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.m-sf-tagrow {
+  display: flex;
+  gap: var(--space-sm);
+}
+.m-sf-tagrow .m-sf-in {
+  flex: 1;
+  min-width: 0;
+}
+.m-sf-add {
+  height: var(--target-primary);
+  padding: 0 20px;
+  border-radius: var(--radius-pill);
+  border: none;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  flex: none;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.m-sf-add[data-on] {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.m-sf-sug {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: 4px;
+}
+.m-sf-sug-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+.m-sf-sugchip {
+  height: var(--target-min);
+  padding: 0 14px 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.m-sf-sugchip svg {
+  color: var(--accent-text);
+}
+
+/* Price level: three equal 44px chips, ink when chosen. */
+.m-sf-prices {
+  display: flex;
+  gap: var(--space-sm);
+}
+.m-sf-pchip {
+  flex: 1;
+  height: var(--target-min);
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.m-sf-pchip[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Save: grey and disabled when clean (C7), green when dirty, green with a spinner while saving. */
+.m-sf-save:disabled {
+  opacity: 1;
+  background: var(--line);
+  color: var(--muted);
+}
+.m-sf-save[aria-busy="true"] {
+  background: var(--cta-fill);
+  color: var(--on-accent);
+}
+
+/* Loading skeleton, in the real layout. */
+.m-sf-sk {
+  background: var(--surface);
+  border-radius: 8px;
+  flex: none;
+}
+
+/* Couldn't load (T14b), centred like T4. */
+.m-sf-fail {
+  padding: 72px 32px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.m-sf-fail-ic {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-sf-fail b {
+  font-size: 20px;
+  font-weight: 700;
+  text-wrap: pretty;
+}
+.m-sf-fail p {
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0;
+  text-wrap: pretty;
+}
+.m-sf-fail .m-btn2 {
+  margin-top: 8px;
+  color: var(--accent-text);
+}
+
+/* Sheets on this screen: title 20/700, a muted line, then the actions. */
+.m-sf-sheet-t {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.m-sf-sheet-s {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: -6px 0 0;
+  text-wrap: pretty;
+}
+.m-sf-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 0 14px;
+}
+.m-sf-list button {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.m-sf-list button + button {
+  border-top: 1px solid var(--line);
+}
+.m-sf-list svg {
+  color: var(--accent-text);
+}
+.m-sf-list button[data-danger],
+.m-sf-list button[data-danger] svg {
+  color: var(--danger-ink);
+}
+.m-sf-leave {
+  color: var(--danger-ink);
+}
+.m-sheet.m-sf-sheet {
+  line-height: normal;
+}
+/* Saving: back is locked and drawn muted (C7). */
+.m-sf-saving .m-back {
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* Shop front v1 (D-115): first-run-v2's saved toast. */
+.m-toast[data-tone="saved"] {
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  background: var(--forest);
+  padding: 14px 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Shop front v1 crop sheet (README "Crop sheet"): full height less 24px, body scrolls, CTA pair pinned. */
+.m-crop {
+  z-index: 75;
+}
+.m-crop-sheet {
+  line-height: normal;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 24px;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-sheet);
+  display: flex;
+  flex-direction: column;
+}
+.m-crop-handle {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+  touch-action: none;
+  cursor: grab;
+}
+.m-crop-handle span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.m-crop-hd {
+  flex: none;
+  padding: 6px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.m-crop-bd {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* The body scrolls; nothing in it shrinks to fit (the preview card would collapse to its banner). */
+.m-crop-bd > * {
+  flex-shrink: 0;
+}
+.m-crop-stage {
+  position: relative;
+  flex: none;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.m-crop-dim {
+  position: absolute;
+  background: rgba(20, 24, 27, 0.5);
+  pointer-events: none;
+}
+.m-crop-frame {
+  position: absolute;
+  padding: 0;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  background: none;
+  touch-action: none;
+  overflow: hidden;
+}
+.m-crop-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px dashed var(--bg);
+  pointer-events: none;
+}
+.m-crop-badge {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+}
+.m-crop-drag {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 24, 27, 0.72);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.m-crop-zoom {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-crop-zb {
+  width: var(--target-min);
+  height: var(--target-min);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.m-crop-zb:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The slider: a 44px-tall hit area, a 4px track with the accent fill, a 24px thumb. */
+.m-crop-range {
+  flex: 1;
+  min-width: 0;
+  height: var(--target-min);
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background:
+    linear-gradient(var(--accent), var(--accent)) 0 50% / var(--fill, 0%) 4px no-repeat,
+    linear-gradient(var(--line), var(--line)) 0 50% / 100% 4px no-repeat;
+  cursor: pointer;
+}
+.m-crop-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-badge);
+}
+.m-crop-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-badge);
+}
+.m-crop-range::-moz-range-track {
+  background: transparent;
+}
+.m-crop-zv {
+  min-width: 36px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.m-crop-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 12px 14px;
+}
+.m-crop-row b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-crop-row span {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-crop-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.m-crop-ft {
+  flex: none;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 16px rgba(20, 24, 27, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
