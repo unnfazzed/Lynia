@@ -109,7 +109,7 @@ originate**, plus fleet-first routing for the orders it did.
 ### Data model (Prisma)
 
 > **Amended by the CEO review, R6 (owner, D3 "Fleet per owner").** The fleet belongs to the merchant
-> **owner** (`merchants.owner_profile_id`, which every branch row has), not to one branch row.
+> **owner** (`merchants.owner_profile_id`, which is **nullable**, `schema.prisma:1152`: admin can't enable fleet for a merchant with no owner, and an owner change is refused while fleet links exist (E11)), not to one branch row.
 > - `Rider.fleetMerchantId` becomes **`Rider.fleetOwnerProfileId`** plus an optional
 >   **`Rider.fleetHomeMerchantId`** (the home branch, whose offers go to that biker first).
 > - Invites, Join, Leave and Remove work at owner level.
@@ -311,7 +311,7 @@ Call sites from the code map:
 ### Commission and billing
 
 > **Amended by the CEO review, C1 (owner, D4).**
-> - The ledger row is written **inside the same transaction** as each billable terminal transition (delivered/completed, cancelled after pickup, undelivered), next to `chargeCommission(tx, …)` (`order-lifecycle.service.ts:749`).
+> - The ledger row is written **inside the same transaction** as each billable terminal transition (delivered/completed, cancelled after pickup, undelivered), next to each `chargeCommission(tx, …)` call: `order-lifecycle.service.ts:893` (rate), `:1512` (auto-complete) and `admin-orders.service.ts:324` (admin terminal path). The cancel-after-pickup and undelivered transitions get their own write.
 > - A **nightly reconciliation** finds billable fleet orders with no ledger row and raises an alert.
 
 - `chargeCommission` skips fleet jobs entirely: no `free_job` row, and no ride commission on the biker.
@@ -877,6 +877,14 @@ applied only on a yes.
 | E8 stuck fleet bookings (eng) | Section 4. fleet_searching with no taker and the merchant away | Waits forever | After T minutes, push the merchant ("None of your bikers took it"); expire at a cap, with notice | pending (/plan-eng-review) | |
 | E9 Join vs in-flight accept race (eng) | Section 4 async ordering | Unspecified | The Join transaction locks the rider row (FOR UPDATE) and re-checks active ride/offers; accept CAS + trigger cover the other order | pending (/plan-eng-review) | |
 | E10 erasure of a fleet biker (eng) | Section 3. Privacy service + pii-manifest | Unspecified | Erasure clears the fleet link; ledger keeps a plain riderId uuid (no cascade), like addedByProfileId | pending (/plan-eng-review) | |
+| OV1 accept-vs-Join race (outside voice) | acceptDispatch has no transaction (food-dispatch.service.ts:737); the trigger reads the rider row without locking | Race can leak a fleet biker onto public work | The trigger takes `SELECT … FOR SHARE` on the rider row; a riders-side trigger refuses a fleet-link change while the rider has a non-terminal order outside the new scope; Join/Leave lock `FOR UPDATE`; a both-orders race test | approved | owner, D5: "Apply lock + riders guard (recommended)" |
+| OV4 ship-blockers (outside voice) | E1, E4, E8, E9 were pending for eng | Pending | Promoted to **P1 tasks that block T1's merge**; eng review still picks the mechanisms | approved | owner, D6: "Promote to P1 tasks (recommended)" |
+| OV5 fee on marketplace orders (Open Question 2) | A public biker pays the configured rate x delivery fee today | Undecided | Own-biker app orders: **merchant billed the configured commission rate x the order's delivery fee** on the same weekly bill. Phone bookings: the flat fee per ride | approved | owner, D7: "Commission % to merchant (recommended)" |
+| OV6 batching (outside voice) | one_active_ride index (0001_init/migration.sql:150) | One active ride per biker | Deferred to TODOS.md (P2) | deferred | owner, D8: "Add to TODOS.md (recommended)" |
+| E11 nullable owner + owner change (eng) | schema.prisma:1152; R6 | Unguarded | Fleet enable requires a non-null owner; a `merchants` trigger refuses an owner change while fleet links exist; restate every trigger condition, predicate, statement key and room in owner terms before T1 | pending (/plan-eng-review), blocks T1 | |
+| E12 fleet round distance bound (eng) | Owner fleets span branches | No bound | Fleet rounds limited to `pickupReachM` from the booking's branch; home branch first | pending (/plan-eng-review) | |
+| E13 bulk onboarding for 50+ bikers (eng/design) | Outside voice #6 | One invite at a time | Bulk invite (CSV/paste of phones) + a roster progress view | pending (/plan-eng-review, /plan-design-review) | |
+| E14 fleet socket room (eng) | Outside voice #10. Fleet offers are pushed to each rider | `fleet:<owner>` room | Drop the room; just keep fleet riders out of BOARD_ROOM | pending (/plan-eng-review) | |
 
 ## Answered decision (R1): Keep, deferral declined. Same answer applied to R2–R5
 Commitment comparison:
@@ -1137,6 +1145,27 @@ Admin:    Fleet money -> owner -> fee / statement (per branch) / mark paid / pau
 All of these surfaces go through the step-0 handoff (pixel-parity rule). **Recommend /plan-design-review**
 for the handoff brief (E6, E7).
 
+### Outside Voice (native fallback; Codex not installed, so external coverage is unavailable)
+A read-only Plan subagent (in-host, model identity not reported) returned 10 findings. Its factual claims
+were checked against the code:
+- **Confirmed:** acceptDispatch has no transaction (food-dispatch.service.ts:737).
+- **Confirmed:** owner_profile_id is nullable (schema.prisma:1152).
+- **Confirmed:** the one_active_ride index exists.
+- **Confirmed:** the chargeCommission call sites are 893/1512 and admin 324, not 749.
+
+Dispositions:
+1. Race between accept and Join, **Critical**: OV1 applied (D5).
+2. R6 not worked through the plan / nullable owner, High: corrected in the plan; E11 (blocks T1).
+3. Round-machinery reuse overstated, High: T3 rescoped as its own sweeper/expiry; estimate raised.
+4. Ship-blockers left pending, High: OV4, so E1/E4/E8/E9 are now P1 (D6).
+5. Pricing undecided before R1, High: OV5 decided (D7). The fee level (Open Question 3) is still open and is
+   set per merchant by admin.
+6. Big clients: batching deferred to a TODO (D8); distance bound E12; bulk onboarding E13.
+7. No named merchant, Medium: known. The Assignment stands, and the owner chose to build now.
+8. C1 call sites, Medium: corrected.
+9. Clients changed: `status` is free text on the wire; the admin deploy path goes to T13.
+10. Complexity/estimates, Low: E14 pending; estimates raised.
+
 ### What already exists
 - `MerchantBooking` + `OrdersService.create`: reused for fleet bookings.
 - `FoodDispatchAttempt` rounds: reused for fleet offers.
@@ -1147,7 +1176,8 @@ for the handoff brief (E6, E7).
 - Version gate, Telegram alerts (#1244), multi-branch owners (`owner_profile_id`): reused.
 
 ### NOT in scope
-- Nothing is deferred or rejected. The owner declined every proposed deferral (R1–R5, D2 answer).
+- Deferred: **fleet batching** (multi-order trips), owner D8. It's in TODOS.md, P2.
+- No other deferrals: the owner declined R1–R5 (D2 answer).
 
 ### Dream state delta
 This plan delivers owner-level fleets, fleet bookings, a fee ledger and Preferred's retirement. Two things
@@ -1194,7 +1224,7 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Surfaced by: Section 1 / Section 9. Files: apps/api/prisma/schema.prisma, apps/api/prisma/migrations/*. Verify: trigger integration specs (T6) + online-safe migration guard
 - [ ] **T2 (P1, human: ~3d / CC: ~3h)**: api: `common/fleet-scope.ts` + all 8 doors (board/push/listOpen/bid/list/pick/dispatch/admin assign) + clone carry-over
   - Surfaced by: Section 1, learning rider-exclusivity-doors. Verify: door specs; hostile-QA spec
-- [ ] **T3 (P1, human: ~2d / CC: ~2h)**: api: fleet booking (fleet_searching, rounds, convert CAS, pause-cancel guard, drop-back)
+- [ ] **T3 (P1, human: ~5d / CC: ~6h)**: api: fleet booking as its **own** sweeper/expiry/drop path (FoodDispatch rounds are keyed on `requested`/`merchantPhase`, food-dispatch.service.ts:217-941). Reuse only the attempt rows and the offer push. Plus convert CAS and pause-cancel guard
   - Surfaced by: Section 4. Files: merchant-booking.service.ts, food-dispatch.service.ts. Verify: race specs
 - [ ] **T4 (P1, human: ~1d / CC: ~1h)**: api: ledger write in terminal txns + nightly reconciliation + Telegram alert (C1)
   - Surfaced by: Section 2. Files: order-lifecycle.service.ts, wallet.service.ts. Verify: chaos test (kill mid-txn)
@@ -1207,10 +1237,13 @@ Synthesized from this review's findings. Each task derives from a specific findi
 - [ ] **T8 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md: link the Merchant commission settlement TODO to the fleet fee; mark TODO-3's consent half superseded by Own bikers
   - Surfaced by: Step 0B. Verify: docs check
 - [ ] **T9 (P1, design gate)**: design handoff export (step 0) incl. E6/E7: run /plan-design-review first
-- [ ] **T10 (P2, human: ~2d / CC: ~2h)**: marketplace fleet-first + Preferred retirement behind PREFERRED_RETIRED (R1, R2)
+- [ ] **T10 (P2, human: ~3d / CC: ~3h)**: marketplace fleet-first + Preferred retirement behind PREFERRED_RETIRED (R1, R2); app-order fee = configured rate x delivery fee, billed to the merchant (OV5)
+- [ ] **T11 (P1, human: ~1d / CC: ~1h)**: api: rider-row `FOR SHARE` in the trigger + riders-side guard trigger + Join/Leave `FOR UPDATE` + both-orders race test (OV1)
+- [ ] **T12 (P1, blocks T1 merge)**: api: E1 violation mapping/alerts, E4 owner-only invites + rate limit + IDOR scoping, E8 stuck-booking push/expiry, E9 Join lock (OV4)
+- [ ] **T13 (P2, human: ~30min / CC: ~5min)**: docs: admin app deploy path in the Distribution Plan; TODOS.md fleet batching entry (OV6)
 
-Approval readiness: PASS. Checked rows: R1–R5 (D2 answer, Keep), R6 (D3 answer), C1 (D4 answer). E1–E10 stay
-pending, owned by /plan-eng-review or /plan-design-review, and are not applied as accepted work.
+Approval readiness: PASS. Checked rows: R1–R5 (D2, Keep), R6 (D3), C1 (D4), OV1 (D5), OV4 (D6: E1/E4/E8/E9 are now P1), OV5 (D7),
+OV6 (D8, deferred). E2, E3, E5–E7 and E10–E14 stay pending, owned by /plan-eng-review or /plan-design-review.
 
 ### Completion Summary
 ```
@@ -1239,15 +1272,43 @@ pending, owned by /plan-eng-review or /plan-design-review, and are not applied a
   | Dream state delta    | written                                     |
   | Error/rescue registry| 10 rows, 0 CRITICAL GAPS                    |
   | Failure modes        | 8 total, 0 CRITICAL GAPS                    |
-  | TODOS.md updates     | 0 items proposed (T8 is a doc correction)   |
+  | TODOS.md updates     | 1 item proposed, 1 added (fleet batching)   |
   | Scope proposals      | 5 cuts proposed, 0 accepted; 1 addition (R6) |
   | CEO plan             | skipped by mode                             |
-  | Outside voice        | see report                                  |
-  | Lake Score           | 1/1 recommendations chose complete option   |
+  | Outside voice        | codex not installed; native Plan fallback  |
+  |                      | completed: 10 findings, all dispositioned  |
+  | Lake Score           | N/A (no coverage-scored questions)          |
   | Diagrams produced    | 6 (architecture, data flow, async ordering, |
   |                      | error map, deployment, UI flow)             |
   | Stale diagrams found | 0                                           |
-  | Unresolved decisions | 10 (E1-E10, owned by eng/design review)     |
+  | Unresolved decisions | 10 (E2,E3,E5-E7,E10-E14 -> eng/design)      |
   | Reality rows         | 7/7 rows, 3 unverified                      |
   +====================================================================+
 ```
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: SCOPE_REDUCTION, 0 critical gaps (5 cuts proposed, all declined; R6 owner fleets added; C1 + OV1/OV4/OV5 decided) |
+| Outside Review | native Plan subagent (codex not installed) | Independent 2nd opinion | 1 | unavailable (external); native completed | 10 findings; 10 dispositioned (5 decided by owner, 5 corrected or routed to eng); no completed external review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+
+- **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable (CLI not installed). The native in-host Plan
+  fallback completed with 10 findings. That is not external coverage.
+- **VERDICT:** No reviews are CLEAR yet. The CEO review is ISSUES OPEN, with 10 implementation decisions routed
+  to eng/design. Eng review required.
+
+**UNRESOLVED DECISIONS:**
+- E2 trigger cost on the hot orders table (eng)
+- E3 ledger adjustments for disputes (eng)
+- E5 fleet metrics and alerts (eng)
+- E6 branch staff view under owner fleets (eng/design)
+- E7 where the fleet bill shows in the merchant app (design)
+- E10 erasure of a fleet biker (eng)
+- E11 nullable owner and owner-change guard; restate the trigger in owner terms (eng; blocks T1)
+- E12 fleet round distance bound (eng)
+- E13 bulk onboarding for 50+ bikers (eng/design)
+- E14 drop the fleet socket room (eng)
