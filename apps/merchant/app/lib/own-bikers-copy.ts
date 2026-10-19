@@ -1,0 +1,83 @@
+// Own bikers v1 (2026-10-19, ledger D-117) · the merchant's strings, verbatim from
+// packages/design/handoff/own-bikers-v1/copy.ts (`OB.merchant`). The handoff writes its sample data into some strings
+// ("Chicken Inn", "Kuda", "4 bikers", "$34.50"); here those are parameters, the words around them unchanged.
+// User-facing copy says "biker" (D-101).
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export const OBM = {
+  ownBikers: "Own bikers",
+  /** `ownBikersV` "4 bikers · 1 invite open"; the invite part only while one is open. */
+  ownBikersV: (bikers: number, invites: number) =>
+    [plural(bikers, "biker", "bikers"), invites > 0 ? `${plural(invites, "invite", "invites")} open` : null].filter(Boolean).join(" · "),
+  ownBikersPaused: "Paused",
+  /** `ownBikersStaffV` "4 bikers". */
+  ownBikersStaffV: (bikers: number) => plural(bikers, "biker", "bikers"),
+
+  rosterTitle: "Own bikers",
+  /** `thisWeek` "This week: 23 rides · $34.50". */
+  thisWeek: (rides: number, total: string) => ({ lead: "This week: ", value: `${plural(rides, "ride", "rides")} · ${total}` }),
+  grpBikers: "YOUR BIKERS",
+  grpInvites: "INVITES",
+  stOnJob: "On a job",
+  stOnline: "Online",
+  stOffline: "Offline",
+  cashWith: (amount: string) => `Cash with them ${amount}`,
+  cancels: (n: number) => `${n} cancels this week`,
+  invSigningUp: "Signing up",
+  invWaitingId: "Waiting for ID check",
+  invNotOpened: "Link not opened yet",
+  sentAgo: (ago: string) => `Shared ${ago} ago`,
+  shareAgain: "Share again",
+  revoke: "Revoke",
+  inviteExpired: "Link expired",
+  newLink: "New link",
+  inviteBiker: "Invite a biker",
+  call: "Call",
+  homeBranch: "Home branch",
+  cashHeld: "Cash with them",
+  cancelsWeek: "Cancels this week",
+  none: "None",
+  removeBiker: "Remove from my bikers",
+  removeT: (name: string) => `Remove ${name} from your bikers?`,
+  removeB: (name: string, shop: string) => `${name} stops getting jobs from ${shop} straight away. Any cash they hold is still owed to you.`,
+  removeCashB: (name: string, amount: string) => `${name} still has ${amount} of your cash. Get it back before you remove them.`,
+  removeYes: "Remove",
+  keep: "Keep",
+  staffLock: "Only the owner can invite or remove bikers.",
+  emptyT: "Invite your bikers",
+  emptyB: "They'll get jobs from your shop only.",
+  grpPreferred: "FROM YOUR PREFERRED RIDERS",
+  dismiss: "Dismiss",
+  invite: "Invite",
+  invited: "Invited",
+
+  inviteT: "Invite a biker",
+  inviteB: "You get an invite link to share. They open it, sign up with this phone number, pass the ID check, then join your bikers.",
+  phone: "Phone",
+  phoneHelp: "Only this number can use the link.",
+  name: "Name",
+  namePh: "e.g. Kuda",
+  createLink: "Get invite link",
+  creating: "Getting link…",
+  linkReady: (name: string) => `Invite link for ${name}`,
+  linkSub: "Works for 7 days, for this number only.",
+  shareWa: "Share on WhatsApp",
+  copyLink: "Copy link",
+  copied: "Link copied",
+  alreadyInvited: "Already invited · same link",
+  inviteAnother: "Invite another",
+  done: "Done",
+  cantCreate: "Couldn't get a link",
+  cantReach: "Can't reach LyniaGo",
+  tryAgain: "Try again",
+  /** `waText` "Hi Kuda, join Chicken Inn Avondale’s bikers on LyniaGo:" (the link follows). */
+  waText: (name: string, branch: string) => `Hi ${name}, join ${branch}’s bikers on LyniaGo:`,
+  readyBanner: (name: string) => `${name} is ready`,
+  bookFirst: "Book your first delivery",
+
+  loading: "Loading your bikers…",
+  loadFailT: "Couldn't load your bikers",
+  loadFailB: "Check your connection, then try again.",
+  offlineToast: "You're offline. This list may be out of date.",
+} as const;

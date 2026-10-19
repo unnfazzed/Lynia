@@ -68,6 +68,8 @@
   --shadow-card: 0 1px 4px rgba(20, 24, 27, 0.08), 0 2px 12px rgba(20, 24, 27, 0.06);
   /* Shop front v1 (D-115): the Saved toast, the logo's camera badge and slider thumb, and the sheets. */
   --forest: #063b22;
+  /* Own bikers v1 (D-117): secondary text on --forest (the offline toast's wifi-off). */
+  --on-forest-muted: #bfe6cd;
   --shadow-badge: 0 1px 3px rgba(20, 24, 27, 0.16);
   --shadow-sheet: 0 -2px 16px rgba(20, 24, 27, 0.08);
 

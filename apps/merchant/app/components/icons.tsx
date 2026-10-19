@@ -53,9 +53,16 @@ export type IconName =
   | "lock"
   | "rotate-cw"
   | "move"
-  | "circle-help";
+  | "circle-help"
+  | "user-plus"
+  | "send"
+  | "message-circle";
 
 const PATHS: Record<IconName, string[]> = {
+  // Own bikers v1 (D-117): Invite a biker, Get invite link / Share again, Share on WhatsApp.
+  "user-plus": ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", "M19 8v6", "M22 11h-6"],
+  send: ["m22 2-7 20-4-9-9-4Z", "M22 2 11 13"],
+  "message-circle": ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z"],
   "circle-help": ["M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
   camera: ["M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z", "M15 13a3 3 0 1 1-6 0 3 3 0 0 1 6 0"],
   "arrow-left-right": ["M8 3 4 7l4 4", "M4 7h16", "m16 21 4-4-4-4", "M20 17H4"],

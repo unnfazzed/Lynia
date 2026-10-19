@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AccountPage from "./page";
+import { getFleet } from "../../lib/fleet-api";
 import { ToastProvider } from "../../components/m/Toast";
 import { merchantProfile } from "../../testing/fixtures";
 
-const state = vi.hoisted(() => ({ business: null as unknown, branches: [] as unknown[], invites: [] as unknown[], replace: vi.fn() }));
+const state = vi.hoisted(() => ({
+  business: null as unknown,
+  branches: [] as unknown[],
+  invites: [] as unknown[],
+  replace: vi.fn(),
+  // Own bikers (OB-M1): the roster read, and whether Preferred riders is retired.
+  fleet: null as unknown,
+  retired: false,
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: state.replace, push: vi.fn() }) }));
 vi.mock("../../lib/business", () => ({ useBusiness: () => state.business, clearBusinessCache: vi.fn() }));
 vi.mock("../../lib/branches", () => ({ useBranches: () => state.branches }));
@@ -16,6 +25,13 @@ vi.mock("../../lib/team-api", () => ({
   noBusinessPath: vi.fn(async () => (state.invites.length > 0 ? "/join" : "/onboarding")),
 }));
 vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn(async () => ({ riders: [{}, {}, {}, {}], cap: 20 })) }));
+vi.mock("../../lib/fleet-api", () => ({
+  getFleet: vi.fn(async () => {
+    if (!state.fleet) throw new Error("Own bikers isn't live yet");
+    return state.fleet;
+  }),
+}));
+vi.mock("../../lib/order-flags", () => ({ usePreferredRetired: () => state.retired }));
 const signOut = vi.fn();
 vi.mock("../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ signOut }) }));
 vi.mock("../../lib/config", () => ({ supportWhatsAppUrl: (text?: string) => `https://wa.me/263770000000${text ? `?text=${encodeURIComponent(text)}` : ""}` }));
@@ -25,6 +41,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   state.invites = [];
+  state.fleet = null;
+  state.retired = false;
 });
 
 const ALL_DAY = { open: "08:00", close: "22:00" };
@@ -91,5 +109,59 @@ describe("T3 · Account (Merchant v2, D-77)", () => {
     show();
     await screen.findByText("1 invite open");
     expect(screen.queryByText(/invited you/)).toBeNull();
+  });
+});
+
+describe("OB-M1 · the Own bikers row (own-bikers-v1, D-117)", () => {
+  const invite = (inviteState: string) => ({ id: crypto.randomUUID(), name: "Kuda", phoneMasked: "•• 0192", state: inviteState, homeBranch: "Avondale", sharedAt: "2026-10-19T10:00:00.000Z", expiresAt: "2026-10-26T10:00:00.000Z" });
+  const fleet = (over: Record<string, unknown> = {}) => ({
+    enabled: true,
+    paused: false,
+    role: "owner",
+    bikers: [{}, {}, {}, {}],
+    invites: [invite("signing_up"), invite("expired")],
+    suggestions: [],
+    ...over,
+  });
+
+  it("a fleet owner gets “Own bikers · 4 bikers · 1 invite open” instead of Preferred riders (an expired link isn't open)", async () => {
+    state.business = merchantProfile({ myRole: "owner", hours: WEEK });
+    state.fleet = fleet();
+    show();
+    const row = await screen.findByRole("link", { name: /Own bikers/ });
+    expect(row.getAttribute("href")).toBe("/own-bikers");
+    expect(row.textContent).toContain("4 bikers · 1 invite open");
+    expect(screen.queryByRole("link", { name: /Preferred bikers/ })).toBeNull();
+  });
+
+  it("paused reads as the gold “Paused” chip; staff see a plain count", async () => {
+    state.business = merchantProfile({ myRole: "owner", hours: WEEK });
+    state.fleet = fleet({ paused: true });
+    show();
+    const paused = await screen.findByRole("link", { name: /Own bikers/ });
+    expect(paused.querySelector("em")?.textContent).toBe("Paused");
+    cleanup();
+    state.business = merchantProfile({ myRole: "staff", hours: WEEK });
+    state.fleet = fleet({ role: "staff" });
+    show();
+    expect((await screen.findByRole("link", { name: /Own bikers/ })).textContent).toContain("4 bikers");
+    expect(screen.queryByText(/invite open/)).toBeNull();
+  });
+
+  it("without a fleet the row is gone; Preferred riders stays until it is retired", async () => {
+    state.business = merchantProfile({ myRole: "owner", hours: WEEK });
+    show();
+    expect((await screen.findByRole("link", { name: /Preferred bikers/ })).getAttribute("href")).toBe("/riders");
+    expect(screen.queryByRole("link", { name: /Own bikers/ })).toBeNull();
+    cleanup();
+    state.retired = true;
+    show();
+    // Let the fleet read settle (it refuses: no fleet), so the row's absence isn't just the read still running.
+    await vi.waitFor(() => expect(getFleet).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("link", { name: /Preferred bikers/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Own bikers/ })).toBeNull();
   });
 });

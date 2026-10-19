@@ -4383,7 +4383,8 @@ button.m-sf-logo {
 }
 
 /* Shop front v1 (D-115): first-run-v2's saved toast. */
-.m-toast[data-tone="saved"] {
+.m-toast[data-tone="saved"],
+.m-toast[data-tone="offline"] {
   bottom: calc(96px + env(safe-area-inset-bottom));
   background: var(--forest);
   padding: 14px 16px;
@@ -4709,4 +4710,496 @@ button.m-sf-logo {
 .m-country-empty {
   padding: 16px;
   text-align: center;
+}
+
+/* ── Own bikers v1 (packages/design/handoff/own-bikers-v1, ledger D-117) ─────────────────────────────────── */
+
+/* New part 2: the roster state chip, and the cash chip in the same anatomy. */
+.m-ob-chip {
+  height: 24px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: none;
+}
+.m-ob-chip > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.m-ob-chip[data-state="on_a_job"] {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.m-ob-chip[data-state="offline"] {
+  color: var(--muted);
+}
+.m-ob-chip[data-state="offline"] > i {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+.m-ob-chip.m-ob-cash {
+  padding: 0 10px;
+  background: var(--highlight);
+  color: var(--ink);
+}
+
+/* The roster (OB-M2–M5, M7): E2 Team rows plus the state chip, in a 16-radius list card. */
+.m-ob-bd {
+  flex: 1;
+  padding: 4px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.m-ob-week {
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-ob-week b {
+  color: var(--ink);
+}
+.m-ob-list {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0 14px;
+}
+.m-ob-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.m-ob-list > * + * {
+  border-top: 1px solid var(--line);
+}
+button.m-ob-row {
+  cursor: pointer;
+}
+.m-ob-row > .m-ob-chev {
+  align-self: center;
+  display: flex;
+  color: var(--muted);
+}
+.m-ob-av {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.m-ob-av[data-dash] {
+  border: 2px dashed var(--line);
+  background: none;
+  color: var(--muted);
+}
+.m-ob-av[data-quiet] {
+  background: var(--surface);
+  color: var(--muted);
+}
+.m-ob-t {
+  flex: 1;
+  min-width: 0;
+}
+.m-ob-t > b {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+/* The handoff's rows run at the browser's normal line height, tighter than the app's body text. */
+.m-ob-t > span {
+  display: block;
+  font-size: 13px;
+  line-height: normal;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.m-ob-t > b[data-muted] {
+  color: var(--muted);
+}
+.m-ob-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.m-ob-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+/* The handoff's 44 px pills: mint (Share again, Invite), outline (Revoke, New link, Call). */
+.m-ob-pill {
+  height: var(--target-min);
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  flex: none;
+  white-space: nowrap;
+  border: none;
+  cursor: pointer;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  text-decoration: none;
+}
+.m-ob-pill[data-out] {
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.m-ob-pill[data-ink] {
+  color: var(--ink);
+}
+.m-ob-pill[data-off] {
+  background: var(--surface);
+  color: var(--muted);
+  cursor: default;
+}
+.m-ob-pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Info strips (merchant-v2): the staff lock (neutral), the remove-with-cash note (gold), errors (bad). */
+.m-ob-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.m-ob-strip[data-act] {
+  padding: 8px 8px 8px 14px;
+}
+.m-ob-strip > .m-ob-strip-ic {
+  display: flex;
+  flex: none;
+  color: var(--muted);
+}
+.m-ob-strip > div {
+  flex: 1;
+  min-width: 0;
+}
+.m-ob-strip[data-tone="gold"] {
+  background: var(--highlight-wash);
+  border: 1px solid var(--highlight-border);
+}
+.m-ob-strip[data-tone="gold"] > .m-ob-strip-ic {
+  color: var(--highlight-ink);
+}
+.m-ob-strip[data-tone="bad"] {
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger-ink);
+}
+.m-ob-strip[data-tone="bad"] > .m-ob-strip-ic {
+  color: var(--danger-ink);
+}
+.m-ob-strip[data-tone="bad"] .m-ob-pill {
+  background: var(--bg);
+  color: var(--danger-ink);
+}
+
+/* OB-M5 suggestions card. */
+.m-ob-sug {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 4px 4px 4px 14px;
+}
+.m-ob-sug-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-ob-sug-hd > .m-bh {
+  flex: 1;
+}
+.m-ob-x {
+  width: var(--target-min);
+  height: var(--target-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.m-ob-sug-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+/* OB-M7 the first biker joined. */
+.m-ob-ready {
+  background: var(--accent-wash);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  box-sizing: border-box;
+  color: var(--ink);
+  text-decoration: none;
+}
+.m-ob-ready > .m-ob-ready-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--cta-fill);
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.m-ob-ready b {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+}
+.m-ob-ready span {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-text);
+  margin-top: 2px;
+}
+
+/* OB-M4 EmptyState L (D-78): a 64 tinted mark in an 88 halo, a title, one line, one soft pill (52 tall here). */
+.m-ob-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 120px 40px 0;
+}
+.m-ob-empty-mark {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.m-ob-empty-mark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--accent-wash);
+}
+.m-ob-empty-mark > span {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.m-ob-empty-mark > span::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--highlight);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.m-ob-empty b {
+  margin-top: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  max-width: 264px;
+}
+.m-ob-empty p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 264px;
+}
+.m-ob-empty .m-ob-pill {
+  margin-top: 20px;
+  height: var(--target-primary);
+  padding: 0 24px;
+}
+
+/* Couldn't load (shop-front T14b). */
+.m-ob-fail {
+  padding: 72px 32px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.m-ob-fail-ic {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-ob-fail b {
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-ob-fail p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.m-ob-fail .m-btn2 {
+  margin-top: 8px;
+  color: var(--accent-text);
+}
+
+/* Loading skeleton, in the real layout. */
+.m-ob-sk {
+  background: var(--surface);
+  border-radius: 8px;
+  flex: none;
+}
+
+/* The biker sheet (OB-M2): key/value rows. */
+.m-ob-kv {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--target-min);
+  border-top: 1px solid var(--line);
+}
+.m-ob-kv > span:first-child {
+  flex: 1;
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-ob-kv > b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-ob-ghost {
+  min-height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-wash);
+  color: var(--danger-ink);
+  border: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  width: 100%;
+  cursor: pointer;
+}
+.m-ob-sheet-t {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+}
+.m-ob-sheet-s {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: -6px 0 0;
+}
+
+/* OB-M6 the invite link card. */
+.m-ob-link {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-ob-link-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.m-ob-link-hd > .m-ob-link-ic {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.m-ob-link-hd b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+.m-ob-link-hd span {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.m-ob-url {
+  min-height: 52px;
+  border-radius: 12px;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  box-sizing: border-box;
+}
+.m-ob-url > code {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 600 13px ui-monospace, Menlo, monospace;
+  color: var(--muted);
 }

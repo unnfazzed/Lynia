@@ -12,6 +12,8 @@ import { RetryableError } from "../../components/RetryableError";
 import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
 import { addRider, listRiders, removeRider } from "../../lib/riders-api";
+import { usePreferredRetired } from "../../lib/order-flags";
+import { useRouter } from "next/navigation";
 import { type AddRiderErrors, type AddRiderForm, riderInviteLink, riderInviteMessage, riderLine, riderPill, validateAddRider } from "../../lib/riders";
 
 type LoadState =
@@ -42,6 +44,12 @@ export default function RidersPage() {
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const actingRef = useRef(false);
+  // Own bikers T9: once Preferred riders is retired (PREFERRED_RETIRED) this screen is gone; a bookmark lands on Account.
+  const router = useRouter();
+  const retired = usePreferredRetired();
+  useEffect(() => {
+    if (retired) router.replace("/account");
+  }, [retired, router]);
 
   const load = useCallback(async () => {
     setState({ status: "loading" });
