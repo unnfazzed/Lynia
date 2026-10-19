@@ -1972,6 +1972,19 @@ the handoff wins for screens and copy, and these product changes apply:
      no row and sends a Telegram alert, because a miss is a path that forgot to bill.
    - `FleetLedgerService.adjust` writes the append-only corrections (E3/OV-F6): an admin, a reason, the open week,
      and an optional ride that must be on the branch's bill. The admin route is T7's.
+11. **T6 (done 2026-10-19): the hardening.**
+   - E1: `reportFleetScopeViolation(err, { path, orderId, riderId })` in `common/fleet-scope.ts`. Each door
+     that maps the database's refusal to a 409 calls it, and it writes three signals: a `fleet_scope_violation`
+     log line, a Sentry error, and a Telegram alert. The doors are `matching.selectOffer`,
+     `food.acceptDispatch`, `fleet.accept`, Join, Leave and Remove. Telegram goes through a sink that
+     `OwnerAlertsService` registers, so `common/` stays free of dependency injection.
+   - E4: owner-only invite, revoke, link and remove, plus the per-owner rate limit, were done in T3a. New
+     integration specs prove that one owner's biker, invite and link, and one business's "My bikers" booking
+     (retry, Send to any biker, cancel), all read as not found to another business and change nothing.
+   - E6: staff book "My bikers" and see a read-only roster (T3a and T3b, pinned by `fleet.controller.spec.ts`).
+     The bill's owner-only view arrives with T7's statement.
+   - E10: erasure now also clears the biker's fleet link (`fleetOwnerProfileId`, `fleetHomeMerchantId`,
+     `fleetJoinedAt`), alongside the fleet invites to their number (T1). Ledger rows keep a plain rider id.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -1997,7 +2010,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [x] **T5 (P1, human: ~2d / CC: ~2h)**: DONE 2026-10-19 (see amendment 10). api: ledger write in terminal txns (wallet.service charge sites 893/1512/
   admin 324 + cancel/undelivered), reconciliation on the lifecycle sweep, adjustments
   - Surfaced by: C1, E3, OV-F6. Verify: chaos spec (kill mid-txn) + reconciliation alert spec
-- [ ] **T6 (P1, human: ~1d / CC: ~1h)**: api: E1 409 mapping at commit, E4 owner-only + rate limit + IDOR, E6 role
+- [x] **T6 (P1, human: ~1d / CC: ~1h)**: DONE 2026-10-19 (see amendment 11). api: E1 409 mapping at commit, E4 owner-only + rate limit + IDOR, E6 role
   checks, E10 erasure
   - Surfaced by: OV4, E6, E10. Verify: IDOR and role specs; privacy spec
 - [ ] **T7 (P2, human: ~2d / CC: ~2h)**: api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,

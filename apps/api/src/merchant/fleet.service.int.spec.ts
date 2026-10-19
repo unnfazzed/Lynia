@@ -236,3 +236,23 @@ describe("roster", () => {
     expect((await fleet.roster(o.access)).suggestions).toEqual([]);
   });
 });
+
+describe("E4: one owner can't reach another owner's fleet", () => {
+  it("another owner's biker, invite and link all read as not found, and change nothing", async () => {
+    const a = await owner();
+    const b = await owner();
+    const tendai = await biker("Tendai");
+    await prisma.rider.update({ where: { profileId: tendai.id }, data: { fleetOwnerProfileId: a.ownerId, fleetHomeMerchantId: a.branchId, fleetJoinedAt: new Date() } });
+    const inv = await fleet.invite(a.access, a.ownerId, { name: "Kuda", phone: "0771234567" });
+
+    await expect(fleet.removeBiker(b.access, b.ownerId, tendai.id)).rejects.toMatchObject({ status: 404 });
+    await expect(fleet.revokeInvite(b.access, b.ownerId, inv.invite.id)).rejects.toMatchObject({ status: 404 });
+    await expect(fleet.inviteLink(b.access, inv.invite.id)).rejects.toMatchObject({ status: 404 });
+
+    expect((await prisma.rider.findUniqueOrThrow({ where: { profileId: tendai.id } })).fleetOwnerProfileId).toBe(a.ownerId);
+    expect((await prisma.fleetInvite.findUniqueOrThrow({ where: { id: inv.invite.id } })).revokedAt).toBeNull();
+    const roster = await fleet.roster(b.access);
+    expect(roster.bikers).toEqual([]);
+    expect(roster.invites).toEqual([]);
+  });
+});

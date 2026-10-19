@@ -240,6 +240,14 @@ describe("PrivacyService.eraseAccount", () => {
     expect(data).not.toHaveProperty("verifiedIdHash");
   });
 
+  // Own bikers (D-117, E10): erasing an Own biker drops their link to the business; the bills keep a plain id.
+  it("E10: clears the Own bikers link on erasure", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567", rider: {} }, false);
+    await svc.eraseAccount("p1");
+    const data = (calls.riderUpdate as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ fleetOwnerProfileId: null, fleetHomeMerchantId: null, fleetJoinedAt: null });
+  });
+
   // KYC-R26-05: the rest of the ID check's per-person traces go too; the one-way hash still stays.
   it("KYC-R26-05: scrubs the document expiry day and the vendor's status + time on erasure", async () => {
     const { svc, calls } = eraseHarness({ phone: "+263771234567", rider: {} }, false);

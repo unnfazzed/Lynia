@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
-import { assertRiderInFleetScope, inFleetScope, isFleetScopeViolation, ridersInFleetScope, rethrowFleetScope } from "./fleet-scope";
+import { assertRiderInFleetScope, inFleetScope, isFleetScopeViolation, ridersInFleetScope, rethrowFleetScope, setFleetScopeAlertSink } from "./fleet-scope";
 
 /** Riders keyed by id → their fleet owner; branches keyed by id → their owner. */
 function fakeDb(riders: Record<string, string | null>, branches: Record<string, string | null>): PrismaService {
@@ -41,8 +41,23 @@ describe("fleet scope (Own bikers, D-117)", () => {
     expect(isFleetScopeViolation(new Error("fleet_scope: rider x is outside the scope of order y"))).toBe(true);
     expect(isFleetScopeViolation(new Error("fleet_link: rider x has a live job outside the new scope"))).toBe(true);
     expect(isFleetScopeViolation(new Error("duplicate key value violates unique constraint"))).toBe(false);
-    expect(() => rethrowFleetScope(new Error("fleet_scope: nope"))).toThrow(ConflictException);
+    expect(() => rethrowFleetScope(new Error("fleet_scope: nope"), { path: "test" })).toThrow(ConflictException);
     const other = new Error("boom");
-    expect(() => rethrowFleetScope(other)).toThrow(other);
+    expect(() => rethrowFleetScope(other, { path: "test" })).toThrow(other);
+  });
+
+  it("E1: a refusal is reported (Telegram via the registered sink), and other errors are not", () => {
+    const sink = vi.fn();
+    setFleetScopeAlertSink(sink);
+    try {
+      expect(() => rethrowFleetScope(new Error("boom"), { path: "test" })).toThrow();
+      expect(sink).not.toHaveBeenCalled();
+      expect(() => rethrowFleetScope(new Error("fleet_scope: nope"), { path: "fleet.accept", orderId: "o1", riderId: "r1" })).toThrow(ConflictException);
+      expect(sink).toHaveBeenCalledTimes(1);
+      expect(sink.mock.calls[0][0]).toContain("fleet.accept");
+      expect(sink.mock.calls[0][0]).toContain("o1");
+    } finally {
+      setFleetScopeAlertSink(null);
+    }
   });
 });

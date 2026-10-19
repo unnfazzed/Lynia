@@ -589,3 +589,16 @@ describe("T5 the fleet bill", () => {
     });
   });
 });
+
+describe("E4: another business's booking", () => {
+  it("reads as not found for retry, Send to any biker and cancel, and is left untouched", async () => {
+    const a = await fleetOwner();
+    await biker({ fleet: a });
+    const b = await fleetOwner();
+    const { booking } = await bookings.createFleet(a.access, a.ownerId, book());
+    await expect(bookings.fleetRetry(b.access, booking.id)).rejects.toMatchObject({ status: 404 });
+    await expect(bookings.fleetConvert(b.access, b.ownerId, booking.id, 2.5)).rejects.toMatchObject({ status: 404 });
+    await expect(bookings.cancel(b.access, b.ownerId, booking.id)).rejects.toMatchObject({ status: 404 });
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: booking.id } })).status).toBe("fleet_searching");
+  });
+});

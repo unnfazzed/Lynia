@@ -462,7 +462,7 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         throw new ConflictException({ reason: "one_active_ride", message: "You're already on another active job" });
       }
-      rethrowFleetScope(err);
+      rethrowFleetScope(err, { path: "fleet.accept", orderId, riderId });
     }
     await this.closeOffers(orderId, { exceptRiderId: riderId });
     try {
