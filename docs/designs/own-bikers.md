@@ -1878,6 +1878,19 @@ Corrections F1/F2-clone/F9 are applied as required mechanisms of approved rules.
 9. **Ops:** MetricsService signals + OwnerAlertsService Telegram (violation, reconciliation miss, unpaid > 7 days,
    cancel rate) + an admin live tile (E5). Erasure clears the link and keeps the ledger (E10).
 
+## Amended by the design handoff (D-117, owner 2026-10-19): binding, overrides older text above
+The Claude Design export is in `packages/design/handoff/own-bikers-v1/` (ledger D-117). Where it and this plan differ,
+the handoff wins for screens and copy, and these product changes apply:
+1. **Invites are shared links, not SMS.** `POST` an invite (phone + name, owner only) returns a link bound to that
+   phone number: valid 7 days, revocable, the same link on a re-invite. The owner shares it on WhatsApp (wa.me with the
+   number and `waText`) or copies it. LyniaGo sends nothing, so the SMS send, the "SMS not sent" state, the SMS cost
+   guard and the 24 h resend cooldown are gone. The rate limit per owner stays (it now limits link creation). The link
+   opens sign-up with the number prefilled (deep link). Invite states: Link not opened yet · Signing up · Waiting for
+   ID check · Joined · Expired · Revoked.
+2. **Kitchens get Book a biker** when Own bikers is on (card inside the mint top card).
+3. **Staff see Money · Fleet rides rows** for their branch; the fleet bill card is owner-only.
+4. Remove-biker confirm warns when the biker holds cash (`m.removeCashB`).
+
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
 Assumption: features ~30x, tests ~50x human÷CC.
@@ -1890,7 +1903,8 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [ ] **T2 (P1, human: ~3d / CC: ~3h)**: api: common/fleet-scope.ts + the 8 doors + admin assign + parity spec
   - Surfaced by: CEO T2/T6, E14. Files: apps/api/src/common, orders, offers, matching, merchant, tracking, admin
   - Verify: hostile-QA int table (each door refuses)
-- [ ] **T3 (P1, human: ~5d / CC: ~5h)**: api: merchant/fleet.service.ts: invite (one at a time), Join/Leave/Remove
+- [ ] **T3 (P1, human: ~5d / CC: ~5h)**: api: merchant/fleet.service.ts: invite by phone-bound link (one at a time,
+  D-117: no SMS; link + sign-up deep link), Join/Leave/Remove
   with locks, fleet booking in one txn, its own sweeper (expiry + push, E8), convert CAS, drop path, no-strike
   cancels
   - Surfaced by: F1, F2, OV-F2, OV-F8, E8, E9, E13. Verify: race specs (convert vs accept, Join vs accept, stale tap)
@@ -1907,7 +1921,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [ ] **T7 (P2, human: ~2d / CC: ~2h)**: api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,
   owner bill, getWeeklyStatement fleet section, metrics + Telegram alerts + admin live tile
   - Surfaced by: E5, E7, OV-F4, OV-F7. Verify: statement specs (Harare week), alert threshold specs
-- [ ] **T8 (P1, gate)**: Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design
+- [x] **T8 (P1, gate)**: DONE 2026-10-19, D-117. Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design
   review brief (pack: `docs/designs/own-bikers-claude-design/`), plus owner approval of the deviation draft → then
   the merchant/biker/admin screens (lanes B/C/D)
 - [ ] **T9 (P2, human: ~3d / CC: ~3h)**: api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note

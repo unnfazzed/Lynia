@@ -5772,3 +5772,38 @@ picker; these follow from it:
 | Merchant open switch, "opens", "Off until", "Back on at" | the browser's clock | Harare's clock, as the server decides (D4) |
 | Merchant country sheet | no check on the chosen row | the check the app's sheet draws, in `--accent-text` |
 | Customer shop and payment number | the owner's sign-in number when the venue has none | only a +263 owner number; never a foreign one |
+
+
+## D-117 · Own bikers v1: merchant fleets, fleet variants of the biker app, admin Own bikers page — APPROVED (owner, 2026-10-19)
+
+**Why:** Own bikers (merchant-owned fleets, `docs/designs/own-bikers.md`) replaces Preferred riders and needs
+screens that no handoff draws. The owner commissioned them in Claude Design from
+`docs/designs/own-bikers-claude-design/BRIEF.md` and supplied the export, `packages/design/handoff/own-bikers-v1/`
+(copied verbatim). It extends merchant-v2 (D-77) + shop-front-v1 (D-115), merchant-mobile E2/E3 (D-48), rider-v2
+(D-54), tab-bar-v1 (D-56), empty-states-v2 (D-78), first-run-v2 (D-82) and the admin console kit.
+
+The handoff's own ledger line: `2026-10-19 · Own bikers v1 · merchant: Own bikers row replaces Preferred riders
+(T3); roster + invite sheet (invite by shared link bound to the phone number, no SMS); Book gets My bikers | Any
+biker with no fare stepper on My bikers (S4), also for kitchens; K5 cash card shows food + delivery for Own-biker
+app orders. Biker: fleet variants of JobCard/pins, food offer, Done, Money hero and Cancel sheet with no fare,
+commission, top-up or strike; invite/Join/paused banners; public-biker sheet. Admin: Own bikers page. New parts:
+countdown bar, roster state chip. No new tokens.`
+
+**Owner decisions on the handoff's open items (2026-10-19):**
+
+| Item | Decision |
+|---|---|
+| Invites | **By shared link, no SMS.** "Get invite link" returns a link bound to the phone number (7 days, revocable, same link on re-invite); the owner shares it on WhatsApp or copies it. Replaces the brief's SMS invite, "SMS not sent" row and 24 h resend cooldown |
+| Draft strings (`m.staffLock`, `m.emptyT/emptyB`, `m.pausedB`, `b.refNet`, `b.leaveB`, `b.pubT/pubB/pub1–3`) | Approved verbatim |
+| Kitchen "Book a biker" card | Inside the mint top card under the KPI strip (as drawn) |
+| Staff and Money · Fleet rides | Staff see the ride rows; the fleet bill card is owner-only (as drawn) |
+| Admin sidebar "Riders" | Unchanged here; renaming to "Bikers" belongs to a kit-wide D-101 pass |
+
+**Corrections the export makes to older kits** (from its README; no owner question needed): the K1b/T2
+`--highlight-sun*` names become the real `--highlight` / `--highlight-chip-ink` tokens; empty-states-v2's info-tone
+hex values become `--muted` / `--line`; the admin kit's danger pill and button become `--danger-ink` on
+`--danger-wash`, and every control on the Own bikers admin page is drawn at 44 px.
+
+**Shipping:** four PRs in the handoff's order (merchant Account + roster, merchant Book + board + money, biker app,
+admin), each behind `FLEET_UI_LIVE`. Strings come from the handoff's `copy.ts`, verbatim. User-facing copy says
+"biker" (D-101); the "From your Preferred riders" header names the retired feature on purpose.

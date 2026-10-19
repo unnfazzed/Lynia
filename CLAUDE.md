@@ -194,6 +194,12 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   its photo picker / crop sheet align to `packages/design/handoff/shop-front-v1/` (ledger D-115, owner 2026-10-18;
   it retires D-48's "Shop front not redrawn" row). Its `README.md` wins over the drawings. Strings come from
   `apps/merchant/app/lib/shop-front-copy.ts` (the handoff's `copy.ts`, verbatim).
+- **Own bikers follows its own handoff (`handoff/own-bikers-v1/`).** The merchant Own bikers roster, invite sheet,
+  Book a biker's My bikers | Any biker choice, fleet cash card and Money · Fleet rides (OB-M1–M14), the biker app's
+  fleet variants (invite/Join/paused banners, fleet board, offer, Done, Money, Cancel, Leave, public-biker sheet;
+  OB-R1–R13) and the admin Own bikers page (OB-A1–A4) align to `packages/design/handoff/own-bikers-v1/` (ledger
+  D-117, owner 2026-10-19). Its `README.md` wins over the drawings. Invites are shared links, never SMS. Strings come
+  from its `copy.ts`, verbatim.
 - **Customer briefs 06–09 follow their own handoff (`handoff/customer-briefs-06-09/`).** The late-cancel rider contact
   (After Send v2 18d/18e/18b/18f), the venue's note on D3b (D3g), the code-changed CodeCard (2.14b–d) and removing a
   prescription page (R8c–R8e) align to `packages/design/handoff/customer-briefs-06-09/` (ledger D-97, owner

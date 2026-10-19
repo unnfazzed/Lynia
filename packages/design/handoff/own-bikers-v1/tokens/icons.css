@@ -1,0 +1,10 @@
+/* Lynia iconography — Lucide (open, rounded line icons matching Grab's in-app icon style).
+   SELF-HOSTED subset: assets/lynia-icons.js ships only the ~22 icons Lynia uses (~5KB) instead
+   of the full CDN library (~300KB) — a hard data-budget rule. In React use the DS <Icon name>;
+   in plain HTML use <i data-lucide="name"> + lucide.createIcons(). This file sets sizing defaults. */
+:root {
+  --icon-size: 20px;       /* default inline icon */
+  --icon-size-lg: 24px;    /* nav / list-leading icons */
+  --icon-size-tile: 28px;  /* empty-state & service-tile icons */
+  --icon-stroke: 2px;      /* Lucide default stroke — matches Grab's rounded outline weight */
+}

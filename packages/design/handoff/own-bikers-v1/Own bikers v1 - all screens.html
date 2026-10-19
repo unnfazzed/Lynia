@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Own bikers v1 · all screens</title>
+<link rel="stylesheet" href="tokens/fonts.css"><link rel="stylesheet" href="tokens/colors.css"><link rel="stylesheet" href="tokens/typography.css"><link rel="stylesheet" href="tokens/spacing.css">
+<style>
+body{margin:0;background:var(--surface);font-family:var(--font-sans);color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent-text)}a:hover{color:var(--cta-fill-pressed)}
+.doc{padding:40px 40px 80px;display:flex;flex-direction:column;gap:48px}
+.row{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.cell{display:flex;flex-direction:column;gap:10px}
+.cap{font-size:13px;font-weight:700;color:var(--muted)}
+.note{font-size:13px;line-height:1.5;color:var(--muted);text-wrap:pretty}
+.ph{position:relative;overflow:hidden;background:var(--bg);border-radius:24px;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06);display:flex;flex-direction:column}
+.spin{display:inline-block;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:obspin .8s linear infinite;flex:none;box-sizing:border-box}
+@keyframes obspin{to{transform:rotate(360deg)}}
+.skel{animation:obpulse 1.1s ease-in-out infinite alternate}@keyframes obpulse{from{opacity:.5}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.spin,.skel{animation:none}}
+.caret{display:inline-block;width:2px;height:20px;background:var(--accent);margin-left:1px;flex:none}
+.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{font-size:13px;font-weight:700;text-decoration:none;min-height:36px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg)}
+</style></head>
+<body><template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#00812f"></rect><circle cx="50" cy="50" r="20" fill="#e9f8ef"></circle></svg></template><div class="doc" id="doc"></div>
+<script src="ob-copy.js?v=3"></script>
+<script src="ob-kit.js?v=3"></script>
+<script src="ob-merchant.js?v=3"></script>
+<script src="ob-biker.js?v=3"></script>
+<script src="ob-admin.js?v=3"></script>
+<script>
+(function(){
+const conflicts=[
+['merchant-v2 T3','The Account row reads “Preferred riders · 4”.','Replaced by “Own bikers” for fleets, removed for non-fleets (BRIEF wins).'],
+['merchant-v2 S4 / K5','Strings say “rider” (“Book a rider”, “Find a rider”, “Delivery $3.20 · rider’s”).','New strings say biker. For Own-biker app orders the delivery fee comes back to the shop, so K5 shows the sum.'],
+['BRIEF OB-M2 / OB-M6','SMS invites, “SMS not sent · Resend”, 24 h resend.','Owner decision: no SMS. A phone-bound invite link the owner shares (WhatsApp / copy).'],
+['merchant-v2 K1b / T2','Chips use --highlight-sun / --highlight-sun-ink, which aren’t tokens.','Drawn with --highlight and --highlight-chip-ink (same values). No new tokens.'],
+['merchant-v2 S4','The Book card exists only on the shop board.','Fleet kitchens get it in the same slot (inside the mint top card). Proposed; open item 2.'],
+['rider-v2 board','The count reads “4 parcels near you”, cards carry a fare and Make an offer, and there’s a demand line.','Fleet board: “Chicken Inn jobs”, no fare, no offer button, no demand line (rule 7).'],
+['rider-v2 TabBar','Flat 60 px bar.','tab-bar-v1 is newer: floating pill, 72 px reserve. Drawn with Lucide glyphs; the build uses the illustrated art.'],
+['rider-v2 Money','Collected cash shows +$X in green (it was the biker’s).','For fleet bikers none of it is theirs, so amounts are ink.'],
+['ui_kits/admin','.kpill.bad and .btn.danger put --danger text on white or wash.','--danger-ink on --danger-wash (rule 6).'],
+['Prompt rule 3 vs admin kit','44 px targets everywhere vs the kit’s 28–32 px desktop buttons.','Brief wins: admin controls drawn at 44 px.'],
+['empty-states-v2 vs BRIEF §5','EmptyState pill is 44 px; §5 wants “Invite a biker” at 52.','OB-M4 keeps the soft pill, 52 px tall.'],
+['tab-bar-v1 v1.4','Glass bar with no shadow.','Drawn as glass; solid fallback per v1.4.'],
+['BRIEF sample data','“4 bikers” vs “6 bikers”, “4 online” vs a roster with 2 online, a bill overdue mid-week, a credit that breaks the branch total, #B204 on two bikers.','One data set: 4 bikers, 2 online; this week’s bill Unpaid, last week’s 2 days overdue (merchant + admin); #B190 charged then credited; biker app is Tendai (R4–R12) and Kuda (R1–R3).']];
+let h=`<div style="max-width:920px;display:flex;flex-direction:column;gap:10px"><div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--accent-text)">LYNIAGO · OWN BIKERS V1 · 2026-10-19</div><div style="font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.15">Own bikers: merchant, biker and admin</div><div style="font-size:16px;line-height:1.5;color:var(--muted);text-wrap:pretty">Merchants invite their own bikers. Own bikers only get jobs from their own shop: no fare, no commission, no top-up, no strikes. They still collect cash and bring it back. Built on merchant-v2 + shop-front-v1, rider-v2, empty-states-v2 and the admin kit. <b style="color:var(--ink)">New parts: the countdown bar and the roster state chip. No new tokens.</b></div></div>`;
+h+=`<div style="max-width:920px;display:flex;flex-direction:column;gap:12px"><div style="font-size:20px;font-weight:700">Where the brief and the handoffs disagree</div><div style="background:var(--bg);border-radius:16px;padding:4px 20px">${conflicts.map((c,i)=>`<div style="display:grid;grid-template-columns:180px 1fr 1fr;gap:16px;padding:12px 0;font-size:13px;line-height:1.45;${i?'border-top:1px solid var(--line)':''}"><b>${c[0]}</b><span style="color:var(--muted)">${c[1]}</span><span>${c[2]}</span></div>`).join('')}</div></div>`;
+const head=h;
+function render(sel){let h=head+`<div class="toc">${OBS.map((s,i)=>`<a href="?s=${i}" data-s="${i}" style="${String(i)===sel?'background:var(--accent-wash);border-color:var(--accent-text)':''}">${s.t}</a>`).join('')}<a href="?s=all" data-s="all" style="${sel==='all'?'background:var(--accent-wash);border-color:var(--accent-text)':''}">All</a></div>`;
+for(const s of (sel==='all'?OBS:[OBS[+sel]||OBS[0]])){h+=`<div style="display:flex;flex-direction:column;gap:16px"><div><div style="font-size:20px;font-weight:700">${s.t}</div>${s.s?`<div class="note" style="max-width:760px;margin-top:4px;font-size:14px">${s.s}</div>`:''}</div><div class="row">${s.c.map(c=>{const w=s.wide?1440:c[1].includes('width:320px')?320:360;return `<div class="cell" style="width:${w}px"><div class="cap">${c[0]}</div>${c[1]}${c[2]?`<div class="note">${c[2]}</div>`:''}</div>`;}).join('')}</div></div>`;}
+document.getElementById('doc').innerHTML=h;}
+const FR=OBS.flatMap(s=>s.c.map(c=>({l:c[0],h:c[1]})));
+window.__frames=FR.map(f=>f.l);
+window.__show=i=>{const f=FR[i],d=document.getElementById('doc');d.style.padding='0';d.style.gap='0';document.body.style.background='var(--bg)';document.body.style.overflow='hidden';const w=f.h.includes('width:1440px')?1440:f.h.includes('width:320px')?320:360,h=w===1440?900:w===320?640:720,s=Math.min(innerWidth/w,innerHeight/h);d.innerHTML=`<div style="width:${w}px;height:${h}px;transform:scale(${s});transform-origin:0 0">${f.h}</div>`;window.scrollTo(0,0);return [w,h];};
+const q=new URLSearchParams(location.search).get('s');render(q==null||q===''?'0':q);
+document.addEventListener('click',e=>{const a=e.target.closest('a[data-s]');if(!a)return;e.preventDefault();history.replaceState(null,'','?s='+a.dataset.s);render(a.dataset.s);});
+})();
+</script>
+</body></html>
