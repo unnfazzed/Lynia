@@ -13,7 +13,7 @@ only two**, because login codes are WhatsApp-only with no SMS (owner decision 20
 
 | `OTP_CHANNEL` | Delivers by | Who owns the code | Production |
 |---|---|---|---|
-| `bird-verify` | Bird **Verify** API, WhatsApp only | Bird (generate, send, expiry, attempts) | ✅ allowed |
+| `bird-verify` | Bird **Verify** API, WhatsApp (SMS after it in 18 countries Bird's WhatsApp won't serve) | Bird (generate, send, expiry, attempts) | ✅ allowed |
 | `whatsapp` (code default) | Meta WhatsApp Cloud API template | this API (`otp-store.ts`) | ✅ allowed |
 | `bird` | Bird SMS API | this API | ❌ refused by the release |
 | `local-sms` | a local A2P SMS gateway | this API | ❌ refused by the release |
@@ -37,14 +37,26 @@ Bird's Verify API owns the whole code lifecycle; this API only calls two endpoin
 POST https://{region}.platform.bird.com/v1/verify/verifications
 Authorization: Bearer {BIRD_VERIFY_API_KEY}
 {"to":{"phone_number":"+263771234567"},"options":{"code_length":6,"channels":["whatsapp"]}}
+                                     (["whatsapp","sms"] for the countries listed below)
 
 POST https://{region}.platform.bird.com/v1/verify/verifications/check
 Authorization: Bearer {BIRD_VERIFY_API_KEY}
 {"to":{"phone_number":"+263771234567"},"code":"123456"}
 ```
 
-- **WhatsApp only.** `channels` never includes `"sms"`, so an undeliverable WhatsApp attempt fails loud
-  instead of silently becoming a text. The app's resend is another WhatsApp attempt.
+- **WhatsApp only, except where Bird can't send it.** For most numbers `channels` is `["whatsapp"]`, so an
+  undeliverable WhatsApp attempt fails loud instead of silently becoming a text, and the app's resend is
+  another WhatsApp attempt. Bird's shared WhatsApp sender refuses passcodes to Bangladesh, Egypt, India,
+  Indonesia, Iraq, Kazakhstan, Kuwait, Malaysia, Morocco, Nepal, Nigeria, Oman, Pakistan, Saudi Arabia,
+  South Africa, Sri Lanka, Ukraine and the UAE ([Bird: country configuration](https://bird.com/docs/guides/verify/countries)),
+  so numbers there get `["whatsapp", "sms"]` (owner 2026-10-19, D-116; `verifyChannelsFor` in
+  `bird-verify.ts`). Bird logs the refused WhatsApp attempt as `channel_restricted` and sends the SMS; the
+  app then says "Sent by SMS". Those sends also spend their own daily budget, `OTP_RL_SMS_GLOBAL_MAX`
+  (default 100), so SMS pumping can't use up Zimbabwe's share of `OTP_RL_GLOBAL_MAX`.
+- **Countries.** Every country is enabled for Verify by default (dashboard: Verify → Countries); this API
+  narrows it with `OTP_ALLOWED_COUNTRY_CODES` (default `*`). Keep SMS switched on for the 18 countries
+  above. A `422` from Bird (a country switched off, or no channel that reaches it) tells a number from
+  abroad to use another number (`whatsapp_unavailable`); for +263 it stays the 503 outage answer.
 - **Region** comes from the key's own prefix (`bk_eu1_…` → `eu1`). A key that doesn't match
   `bk_<region>_` fails at first use. There is no base-URL variable for Verify.
 - `code_length` is pinned to 6 to match the app's code field.
