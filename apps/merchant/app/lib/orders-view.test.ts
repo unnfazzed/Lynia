@@ -5,6 +5,9 @@ import { detailView, homeSections, itemsEditedLabel, itemsLine, liveBar, openSta
 import { alarmOrders } from "./alarm";
 import { vocabulary } from "./vocabulary";
 
+// An instant at that wall time in Harare: the kitchen's hours are read on Harare's clock (D-116 review).
+const harare = (y: number, m: number, d: number, h: number, mi = 0, sec = 0): Date => new Date(Date.UTC(y, m, d, h - 2, mi, sec));
+
 const o = merchantOrder;
 
 describe("the Orders home's lists (merchant mobile B1, D-48)", () => {
@@ -109,7 +112,7 @@ describe("the merchant track (Order flow v2 M3–M6, D-59)", () => {
 });
 
 describe("the header's open/closed line and switch (B1/B5)", () => {
-  const WED_NOON = new Date(2026, 8, 30, 12, 0); // a Wednesday
+  const WED_NOON = harare(2026, 8, 30, 12, 0); // a Wednesday
   // Only Wednesday and Thursday: an absent day means closed that day.
   const hours = { wed: { open: "08:00", close: "22:00" }, thu: { open: "08:00", close: "22:00" } } as MerchantProfileResponse["hours"];
 
@@ -118,17 +121,17 @@ describe("the header's open/closed line and switch (B1/B5)", () => {
   });
 
   it("closed by hand says when it opens next", () => {
-    const closedUntil = new Date(2026, 9, 1, 0, 0).toISOString();
+    const closedUntil = harare(2026, 9, 1, 0, 0).toISOString();
     expect(openStatus(merchantProfile({ hours, closedUntil }), WED_NOON)).toEqual({ open: false, closedByHand: true, label: "Closed · opens 08:00" });
   });
 
   it("outside hours reads closed without being closed by hand", () => {
-    expect(openStatus(merchantProfile({ hours }), new Date(2026, 8, 30, 6, 0))).toEqual({ open: false, closedByHand: false, label: "Closed · opens 08:00" });
+    expect(openStatus(merchantProfile({ hours }), harare(2026, 8, 30, 6, 0))).toEqual({ open: false, closedByHand: false, label: "Closed · opens 08:00" });
   });
 
   it("a restaurant with no hours set is open, and a close that has passed doesn't count", () => {
     expect(openStatus(merchantProfile({ hours: null }), WED_NOON).open).toBe(true);
-    expect(openStatus(merchantProfile({ hours, closedUntil: new Date(2026, 8, 30, 11, 0).toISOString() }), WED_NOON).open).toBe(true);
+    expect(openStatus(merchantProfile({ hours, closedUntil: harare(2026, 8, 30, 11, 0).toISOString() }), WED_NOON).open).toBe(true);
   });
 });
 

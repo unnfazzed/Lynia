@@ -76,6 +76,7 @@ import { takeKycLaunch } from "../../../src/kyc/launch-hint";
 import { KYC_DRAFT_KEY } from "../../../src/logic/kyc-draft";
 import { KYC_RETRY_TRY_LATER } from "../../../src/logic/gates";
 import { PD } from "../../../src/ui/firstrun/copy";
+import { RO } from "../../../src/ui/onboarding/copy";
 import { RiderIntro } from "../../../src/ui/onboarding/rider";
 import BecomeRiderScreen from "../become";
 
@@ -662,7 +663,7 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
         [new ApiError(429, "ThrottlerException: Too Many Requests"), KYC_RETRY_TRY_LATER],
         [new ApiError(409, "This national ID is already linked to another account.", "id_in_use"), `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`],
         // D-116: a customer signed up on a foreign number can't ride.
-        [new ApiError(403, "Biking needs a Zimbabwe number (+263).", "phone_country"), "Biking needs a Zimbabwe number (+263). Sign in with one to ride."],
+        [new ApiError(403, "Biking needs a Zimbabwe number (+263).", "phone_country"), RO.phoneCountry],
       ];
       for (const [err, said] of cases) {
         show.mockClear();

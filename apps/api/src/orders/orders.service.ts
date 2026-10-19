@@ -1225,13 +1225,12 @@ export class OrdersService {
     else if ((revealed || handbackReveal) && isRider) {
       // Merchant web upgrade L2 (D9): a business's booking is sent by its booking account, whose phone is
       // the non-dialable `business:<id>`. The rider calls the business on its pickup contact phone.
-      // D-116: a customer abroad orders for family at home, so the account phone may be +44. The rider
-      // calls the number on the order — a venue order's "your phone" (drop-off contact), a parcel's
-      // sender (pickup contact) — and the account phone only when the order carries none.
-      const orderContact = riderWaypoint(order.orderType === "merchant" ? order.dropoff : order.pickup).contactPhone;
+      // The account holder, even on a diaspora order (D-116 review, owner 2026-10-19): only they can
+      // re-send a locked delivery code, so the rider's "call to re-send" must reach them. The door and
+      // pickup contacts reach the rider on the waypoints below.
       counterpartyPhone = isBusinessBookingAccountPhone(order.customer.phone)
         ? riderWaypoint(order.pickup).contactPhone
-        : (orderContact ?? order.customer.phone);
+        : order.customer.phone;
     }
 
     // The snapshot's side-reads are independent of one another, and this is the hottest read path in

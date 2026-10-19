@@ -1,4 +1,4 @@
-import { formatPhoneDisplay } from "@lynia/shared";
+import { formatPhoneDisplay, HOME_COUNTRY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -46,7 +46,7 @@ export default function AccountTabScreen(): React.ReactElement {
   const becomeState = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me, launch) : null;
   // Biking needs a Zimbabwe number (D-116): a customer signed in from abroad isn't offered the card for a
   // path the server refuses at the end.
-  const become = becomeState === "none" && !me?.phone.startsWith("+263") ? null : becomeState;
+  const become = becomeState === "none" && !me?.phone.startsWith(`+${HOME_COUNTRY.dial}`) ? null : becomeState;
   const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
   const declineLabel = riderDeclineLabel(me?.rider?.kycDeclineReason);
   // Held for a person or in manual (ops) review — hours, not the automated check's minute.

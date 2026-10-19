@@ -45,7 +45,7 @@ function becomeErrorMessage(e: unknown): string {
   if (e instanceof ApiError && e.status === 429) return KYC_RETRY_TRY_LATER;
   if (e instanceof ApiError && e.code === "id_in_use") return `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`;
   // D-116: customers may sign up on any country's number; bikers need a +263 one.
-  if (e instanceof ApiError && e.code === "phone_country") return "Biking needs a Zimbabwe number (+263). Sign in with one to ride.";
+  if (e instanceof ApiError && e.code === "phone_country") return RO.phoneCountry;
   return "Couldn't start biker setup.";
 }
 

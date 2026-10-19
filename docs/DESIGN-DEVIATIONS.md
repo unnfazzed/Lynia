@@ -5752,9 +5752,23 @@ picker; these follow from it:
 | C2 / A1 under 🇿🇼, a number from abroad typed by hand ("07711 123456") | cut to nine digits that passed as +263 77…, so the code went to a stranger | a tenth digit is kept and refused: "That’s too long for a Zimbabwe number. Tap the flag to choose your country." |
 | C2 / A1, "+44" typed by hand | the "+" vanished; only a paste switched the country | the "+" stays and the country switches once the code names one |
 | C4 "Change number" after an app restart | back on 🇿🇼 with an empty field | the number and its country come back |
-| C4 / A2, a number Bird's shared WhatsApp sender can't reach (South Africa, Nigeria, UAE, India and 14 more) | "Couldn't send the code — try again in a moment." | WhatsApp first, then SMS, for those 18 countries only (owner, 2026-10-19: *"put SMS fallback only for these countries"*); C4 then reads "Sent by SMS". Every other country stays WhatsApp only. A number Bird still can't reach at all: "We can’t send a WhatsApp code to this number yet. Try a number from another country that’s on WhatsApp." (`422 whatsapp_unavailable`) |
+| C4 / A2, a number Bird's shared WhatsApp sender can't reach (South Africa, Nigeria, UAE, India and 14 more) | "Couldn't send the code — try again in a moment." | WhatsApp first, then SMS, for those 18 countries only (owner, 2026-10-19: *"put SMS fallback only for these countries"*); C4 then reads "Sent by SMS". Every other country stays WhatsApp only. A number from abroad Bird still can't take: "We can’t send a code to this number. Check it, or use a number that’s on WhatsApp." (`422 whatsapp_unavailable`); a +263 number keeps the outage line "Couldn't send the code — try again in a moment." |
 | Account, a customer on a non-+263 number | the Become-a-biker card, refused at R1's end | no card |
 | Send "Use my location" / Review & place "Use my current location" from abroad | a London pin (and a world-wide map) | no pin; the Send out-of-area line "We don't cover that pickup or drop-off yet. We deliver across Zimbabwe." as a toast |
 | Browse B7 "Set" | dead when no fix came back | runs the PC1 location ask, which falls back to the address search |
 | Open / closed, closing soon, menu windows | read on the phone's clock | read on Harare's clock, as the API does |
-| Biker's "Call" on a job | the customer's sign-in number | the number on the order (the food order's "your phone", the parcel's sender), the sign-in number only when the order has none |
+| Biker's "Call" on a job | the customer's sign-in number | unchanged after review (owner, 2026-10-19, D2): only the account holder can re-send a locked delivery code, so the call stays theirs; the door and pickup contacts reach the biker on the order's stops |
+
+
+**Final review round (2026-10-19, gstack engineering + design review; owner decisions D1–D4):**
+
+| Where | Before | Now |
+|---|---|---|
+| C2 / A1 starting flag | always 🇿🇼 | the phone's or browser's own country, by its time zone (Zimbabwe when it can't tell; bikers always 🇿🇼). A South African "071 234 5678" typed under 🇿🇼 passed as a Zimbabwe number (D3) |
+| A1, nine digits under 🇿🇼 that aren't 71/73/77/78 | sent as +263 | "That doesn’t look like a mobile number. Zimbabwe mobiles start with 71, 73, 77 or 78." (C3's line), Send off |
+| C3, a biker's number from abroad | "…Tap the flag to choose your country." (a flag they can't change) | "Biking needs a Zimbabwe number (+263). Sign in with one to ride." |
+| C4 / A2, a country the allowlist leaves out | "Enter a valid phone number" | "Sign-in isn’t available for numbers from this country yet." (`400 country_not_served`) |
+| Sign-in codes by SMS (the 18 countries) | shared the 500-a-day budget | their own 100-a-day budget (`OTP_RL_SMS_GLOBAL_MAX`), so SMS pumping can't lock Zimbabwe out; "any country" never applies on a plain SMS channel; the country list and caps are repo Variables (D1) |
+| Merchant open switch, "opens", "Off until", "Back on at" | the browser's clock | Harare's clock, as the server decides (D4) |
+| Merchant country sheet | no check on the chosen row | the check the app's sheet draws, in `--accent-text` |
+| Customer shop and payment number | the owner's sign-in number when the venue has none | only a +263 owner number; never a foreign one |

@@ -55,7 +55,7 @@ describe("birdVerifyStart", () => {
     expect(res).toEqual({ channel: "whatsapp" });
   });
 
-  it("D-116: a 422 (no WhatsApp route, e.g. South Africa on Bird's shared sender) is a clear 422, not 'try again'", async () => {
+  it("D-116: a 422 for a number from abroad is a clear 422, not 'try again'", async () => {
     const fetchMock = (async () => new Response('{"code":"no_channels"}', { status: 422 })) as unknown as typeof fetch;
     const err = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567")).catch((e: unknown) => e);
     expect((err as { getStatus(): number }).getStatus()).toBe(422);
@@ -187,9 +187,34 @@ describe("verifyChannelsFor (D-116: SMS fallback only where WhatsApp can't carry
     }
   });
 
-  it("adds SMS after WhatsApp for the 18 countries Bird's shared WhatsApp sender refuses", () => {
-    for (const phone of ["+27821234567", "+2348012345678", "+971501234567", "+919812345678", "+77011234567", "+380501234567", "+201001234567"]) {
-      expect(verifyChannelsFor(phone)).toEqual(["whatsapp", "sms"]);
-    }
+  it.each([
+    ["Bangladesh", "+8801712345678"],
+    ["Egypt", "+201001234567"],
+    ["India", "+919812345678"],
+    ["Indonesia", "+6281234567890"],
+    ["Iraq", "+9647701234567"],
+    ["Kazakhstan +77", "+77011234567"],
+    ["Kazakhstan +76", "+76012345678"],
+    ["Kuwait", "+96550012345"],
+    ["Malaysia", "+60123456789"],
+    ["Morocco", "+212612345678"],
+    ["Nepal", "+9779812345678"],
+    ["Nigeria", "+2348012345678"],
+    ["Oman", "+96891234567"],
+    ["Pakistan", "+923001234567"],
+    ["Saudi Arabia", "+966501234567"],
+    ["South Africa", "+27821234567"],
+    ["Sri Lanka", "+94771234567"],
+    ["Ukraine", "+380501234567"],
+    ["UAE", "+971501234567"],
+  ])("%s gets WhatsApp then SMS", (_country, phone) => {
+    expect(verifyChannelsFor(phone)).toEqual(["whatsapp", "sms"]);
   });
+
+  it.each([["Algeria", "+213551234567"], ["Yemen", "+967712345678"], ["Mozambique", "+258841234567"]])(
+    "%s, next to a listed code, stays WhatsApp only",
+    (_country, phone) => {
+      expect(verifyChannelsFor(phone)).toEqual(["whatsapp"]);
+    },
+  );
 });

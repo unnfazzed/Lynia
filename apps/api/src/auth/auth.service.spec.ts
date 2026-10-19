@@ -6,7 +6,7 @@ import type { KycPendingStateService } from "../kyc/kyc-pending-state.service";
 import type { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { AuthService, kycExpiredOn } from "./auth.service";
+import { AuthService, COUNTRY_NOT_SERVED, kycExpiredOn } from "./auth.service";
 import { ConsoleOtpSender } from "./otp-sender";
 import { InMemoryOtpStore } from "./otp-store";
 import { TokenService } from "./token.service";
@@ -203,7 +203,10 @@ describe("AuthService.requestOtp — destination country allowlist", () => {
     const send = vi.spyOn(sender, "send");
     const store = new InMemoryOtpStore();
     const svc = new AuthService(env, {} as unknown as PrismaService, new TokenService(env), store, sender, fakeMetrics(), pii, fakeKycPendingState());
-    await expect(svc.requestOtp("+447911123456", "1.1.1.1")).rejects.toMatchObject({ status: 400, message: "Enter a valid phone number" });
+    const err = await svc.requestOtp("+447911123456", "1.1.1.1").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400 });
+    // D-116 review: a reason the apps can show, not "Enter a valid phone number" for a valid number.
+    expect((err as { getResponse(): unknown }).getResponse()).toEqual({ reason: "country_not_served", message: COUNTRY_NOT_SERVED });
     expect(send).not.toHaveBeenCalled();
     expect(await store.ttl("rl:phone:+447911123456")).toBeNull();
     expect(await store.ttl("rl:ip:1.1.1.1")).toBeNull();
@@ -215,6 +218,13 @@ describe("AuthService.requestOtp — destination country allowlist", () => {
     await expect(svc.requestOtp("+27821234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
     await expect(svc.requestOtp("+263771234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
     await expect(svc.requestOtp("+14155551234", "1.1.1.1")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("D-116 review: \"*\" means any country on the WhatsApp channels only — a plain SMS channel stays at +263", async () => {
+    for (const OTP_CHANNEL of ["bird", "local-sms", "sms"] as const) {
+      const { svc } = make({ ...baseEnv, OTP_CHANNEL, OTP_ALLOWED_COUNTRY_CODES: "*" } as Env, {});
+      await expect(svc.requestOtp("+2348012345678", "1.1.1.1")).rejects.toMatchObject({ status: 400 });
+    }
   });
 
   it("an OTP_TEST_PHONES number and a demo number are not refused by the allowlist", async () => {
@@ -1186,6 +1196,28 @@ describe("AuthService — bird-verify channel (end-to-end through requestOtp/ver
       new Response(JSON.stringify({ id: "vrf_1", last_channel: "whatsapp" }), { status: 200 })) as unknown as typeof fetch;
     const res = await withFetch(fetchMock, () => svc.requestOtp("+263770000080", "1.1.1.1"));
     expect(res).toEqual({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
+  });
+
+  it("D-116 review: an SMS-lane country spends its own small daily budget, so it can't use up Zimbabwe's", async () => {
+    const env = { ...birdEnv, OTP_RL_SMS_GLOBAL_MAX: 2, OTP_RL_GLOBAL_MAX: 10 } as Env;
+    const { svc } = make(env, fakePrisma());
+    const ok = (async () => new Response(JSON.stringify({ id: "vrf" }), { status: 200 })) as unknown as typeof fetch;
+    await withFetch(ok, async () => {
+      await svc.requestOtp("+2348012345671", "1.1.1.1");
+      await svc.requestOtp("+2348012345672", "1.1.1.2");
+      // The third Nigerian number hits the SMS budget...
+      await expect(svc.requestOtp("+2348012345673", "1.1.1.3")).rejects.toMatchObject({ status: 429 });
+      // ...a refused request spends nothing, and Zimbabwe and the UK still get through.
+      await expect(svc.requestOtp("+263770000090", "1.1.1.4")).resolves.toMatchObject({ sent: true });
+      await expect(svc.requestOtp("+447911123456", "1.1.1.5")).resolves.toMatchObject({ sent: true });
+    });
+  });
+
+  it("D-116 review: a Bird 422 for a Zimbabwe number is the outage 503, not 'use another country'", async () => {
+    const { svc } = make(birdEnv, fakePrisma());
+    const no = (async () => new Response("{}", { status: 422 })) as unknown as typeof fetch;
+    await expect(withFetch(no, () => svc.requestOtp("+263770000091", "1.1.1.1"))).rejects.toMatchObject({ status: 503 });
+    await expect(withFetch(no, () => svc.requestOtp("+27821234567", "1.1.1.1"))).rejects.toMatchObject({ status: 422 });
   });
 
   it("verifyOtp mints a session on a successful Bird check", async () => {

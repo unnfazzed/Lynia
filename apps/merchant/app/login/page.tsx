@@ -1,6 +1,6 @@
 "use client";
 
-import { countryFlag, countryForE164, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164 as intlE164, type Country } from "@lynia/shared";
+import { countryFlag, countryForE164, deviceCountry, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164 as intlE164, type Country } from "@lynia/shared";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
@@ -38,6 +38,8 @@ const ENTRY = {
 
 /** D-116: a number from abroad typed under the default Zimbabwe flag. */
 const TOO_LONG_FOR_ZW = "That’s too long for a Zimbabwe number. Tap the flag to choose your country.";
+/** The customer app's C3 line (OB.phoneNotMobile): nine digits that aren't a Zimbabwe mobile. */
+const NOT_ZW_MOBILE = "That doesn’t look like a mobile number. Zimbabwe mobiles start with 71, 73, 77 or 78.";
 
 /**
  * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
@@ -61,11 +63,21 @@ export default function LoginPage() {
   // "+4" typed by hand, before the code after it names a country.
   const [draft, setDraft] = useState<string | null>(null);
   const tooLong = isHome && digits.length > LOCAL_DIGITS;
+  // D-116 review: nine digits under the Zimbabwe flag must be a Zimbabwe mobile, or a lookalike from abroad
+  // (a South African 071…) would be sent to a stranger as +263.
+  const notMobile = isHome && digits.length === LOCAL_DIGITS && !/^7[1378]/.test(digits);
+  const phoneProblem = tooLong ? TOO_LONG_FOR_ZW : notMobile ? NOT_ZW_MOBILE : null;
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Start on the browser's own country (by its time zone) once it has loaded, unless a number is already
+  // in: the page is prerendered, so the server's first paint (Zimbabwe) must match until then.
+  useEffect(() => {
+    const own = deviceCountry();
+    if (own && !inputRef.current?.value) setCountry(own);
+  }, []);
   // A ref, not `busy`: two taps in one tick both run the handler before React re-renders.
   const submittingRef = useRef(false);
   // MJ-M9: the code step is its own history entry, so Back returns to the number instead of leaving.
@@ -211,13 +223,13 @@ export default function LoginPage() {
               />
             </div>
           </div>
-          {(error || tooLong) && (
+          {(error || phoneProblem) && (
             <div className="m-alert" role="alert">
-              {error ?? TOO_LONG_FOR_ZW}
+              {error ?? phoneProblem}
             </div>
           )}
           <div style={{ flex: 1 }} />
-          <button type="submit" className="m-btn" disabled={busy || (isHome ? digits.length !== LOCAL_DIGITS : intlPhoneProblem(digits, country) !== null)}>
+          <button type="submit" className="m-btn" disabled={busy || (isHome ? digits.length !== LOCAL_DIGITS || notMobile : intlPhoneProblem(digits, country) !== null)}>
             {busy ? "Sending…" : "Send code"}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>

@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { COMMISSION, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
+import { COMMISSION, DEFAULT_COUNTRY_CODE, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -22,7 +22,7 @@ import { PiiCryptoService } from "../common/pii-crypto.service";
 import { classifyStoredDiditStatus } from "../kyc/didit";
 import { KycPendingStateService, pendingStateOf } from "../kyc/kyc-pending-state.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { birdVerifyCheck, birdVerifyStart } from "./bird-verify";
+import { birdVerifyCheck, birdVerifyStart, verifyChannelsFor } from "./bird-verify";
 import { carrierFromPhone } from "./otp-carrier";
 import { deliveryChannelFor, OTP_SENDER, previewDeliveryChannel, type OtpDeliveryChannel, type OtpSender } from "./otp-sender";
 import { OTP_STORE, type OtpStore } from "./otp-store";
@@ -85,6 +85,7 @@ const rlFrom = (env: Env) => ({
   phone: { max: env.OTP_RL_PHONE_MAX, windowSec: 3600 },
   ip: { max: env.OTP_RL_IP_MAX, windowSec: 3600 },
   global: { max: env.OTP_RL_GLOBAL_MAX, windowSec: 86400 },
+  smsGlobal: { max: env.OTP_RL_SMS_GLOBAL_MAX, windowSec: 86400 },
   // KB-IDENTITY-BINDING L1: cap NEW-account creation per device per day. Phone-only identity makes a fresh
   // SIM = a fresh account for free; binding signups to a (soft) device id raises that cost and blunts
   // casual multi-accounting. Generous enough for a genuinely shared family device; tight enough that one
@@ -95,9 +96,13 @@ const rlFrom = (env: Env) => ({
 });
 // The calling codes an OTP may be sent to (OTP_ALLOWED_COUNTRY_CODES, comma-separated, validated in
 // config/env.ts), or "*" for any. Falls back to "*" when the var is absent (env.ts's default).
+/** D-116: a calling code OTP_ALLOWED_COUNTRY_CODES leaves out (`400 country_not_served`). */
+export const COUNTRY_NOT_SERVED = "Sign-in isn’t available for numbers from this country yet.";
+const SMS_OTP_CHANNELS: ReadonlySet<Env["OTP_CHANNEL"]> = new Set(["bird", "local-sms", "sms"]);
 const otpAllowedCountryCodes = (env: Env): string[] | "*" => {
   const raw = (env.OTP_ALLOWED_COUNTRY_CODES ?? "*").trim();
-  if (raw === "*") return "*";
+  // "*" is any country on the WhatsApp channels only; a plain SMS channel stays home (D-116 toll-fraud guard).
+  if (raw === "*") return SMS_OTP_CHANNELS.has(env.OTP_CHANNEL) ? [DEFAULT_COUNTRY_CODE] : "*";
   return raw
     .split(",")
     .map((e) => e.trim().replace(/^\+/, ""))
@@ -437,17 +442,21 @@ export class AuthService {
     // Checked before the rate limiters so a refused number spends no budget. An OTP_TEST_PHONES entry
     // is an operator-listed number and is exempt.
     if (!this.isAllowedOtpDestination(phone) && !this.isTestPhone(phone)) {
-      throw new BadRequestException("Enter a valid phone number");
+      throw new BadRequestException({ reason: "country_not_served", message: COUNTRY_NOT_SERVED });
     }
     const rl = rlFrom(this.env);
-    const rlKeys = [`rl:phone:${phone}`, `rl:ip:${ip}`, "rl:global"];
     // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
     // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
     const rlSteps: Array<[string, { max: number; windowSec: number }, string?]> = [
-      [rlKeys[0], rl.phone, "otp_send_limit"],
-      [rlKeys[1], rl.ip],
-      [rlKeys[2], rl.global],
+      [`rl:phone:${phone}`, rl.phone, "otp_send_limit"],
+      [`rl:ip:${ip}`, rl.ip],
+      ["rl:global", rl.global],
     ];
+    // D-116: a code that may go out by SMS also spends the smaller SMS budget (see OTP_RL_SMS_GLOBAL_MAX).
+    if (this.env.OTP_CHANNEL === "bird-verify" && verifyChannelsFor(phone).includes("sms")) {
+      rlSteps.push(["rl:global:sms", rl.smsGlobal]);
+    }
+    const rlKeys = rlSteps.map(([key]) => key);
     // Each bucket is charged in turn. When one refuses, every bucket this request already charged
     // (the refusing one included) is given back, so a refused request spends nothing — otherwise a
     // request turned away by the per-IP or global cap would still have used up the phone's allowance.

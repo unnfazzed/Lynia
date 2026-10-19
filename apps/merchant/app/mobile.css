@@ -4610,16 +4610,22 @@ button.m-sf-logo {
   margin-left: -6px;
   padding: 0 6px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-input);
   background: none;
   font: inherit;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
 }
-.m-cc:hover,
 .m-cc:focus-visible {
   background: var(--surface);
+}
+/* Hover only where a pointer hovers: on a phone :hover sticks after the tap (D-116 review). */
+@media (hover: hover) {
+  .m-cc:hover,
+  .m-country:hover {
+    background: var(--surface);
+  }
 }
 .m-cc-flag {
   font-size: 20px;
@@ -4666,7 +4672,7 @@ button.m-sf-logo {
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 52px;
+  min-height: var(--target-primary);
   padding: 0 16px;
   border: none;
   background: none;
@@ -4675,9 +4681,6 @@ button.m-sf-logo {
   color: var(--ink);
   text-align: left;
   cursor: pointer;
-}
-.m-country:hover {
-  background: var(--surface);
 }
 .m-country.m-on {
   background: var(--accent-wash);
@@ -4697,6 +4700,11 @@ button.m-sf-logo {
 }
 .m-country-dial {
   color: var(--muted);
+}
+.m-country-check {
+  display: inline-flex;
+  width: 18px;
+  flex: none;
 }
 .m-country-empty {
   padding: 16px;

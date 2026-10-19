@@ -57,22 +57,22 @@ describe("rightNowStatus", () => {
   const hours: PartialMerchantHours = { mon: { open: "09:00", close: "21:00" } };
 
   it("reports open with the closing time while inside today's window", () => {
-    expect(rightNowStatus(hours, new Date("2026-07-27T14:30:00"))).toEqual({ open: true, label: "Open until 21:00" });
+    expect(rightNowStatus(hours, new Date("2026-07-27T14:30:00+02:00"))).toEqual({ open: true, label: "Open until 21:00" });
   });
 
   it("reports the opening time before today's window starts", () => {
-    expect(rightNowStatus(hours, new Date("2026-07-27T06:00:00"))).toEqual({ open: false, label: "Opens at 09:00" });
+    expect(rightNowStatus(hours, new Date("2026-07-27T06:00:00+02:00"))).toEqual({ open: false, label: "Opens at 09:00" });
   });
 
   it("reports closed after today's window ends", () => {
-    expect(rightNowStatus(hours, new Date("2026-07-27T22:00:00"))).toEqual({ open: false, label: "Closed for today" });
+    expect(rightNowStatus(hours, new Date("2026-07-27T22:00:00+02:00"))).toEqual({ open: false, label: "Closed for today" });
   });
 
   it("reports closed today when the day has no window at all", () => {
-    expect(rightNowStatus(hours, new Date("2026-07-28T14:00:00"))).toEqual({ open: false, label: "Closed today" });
+    expect(rightNowStatus(hours, new Date("2026-07-28T14:00:00+02:00"))).toEqual({ open: false, label: "Closed today" });
   });
 
   it("reports closed today when hours are null (never set)", () => {
-    expect(rightNowStatus(null, new Date("2026-07-27T14:00:00"))).toEqual({ open: false, label: "Closed today" });
+    expect(rightNowStatus(null, new Date("2026-07-27T14:00:00+02:00"))).toEqual({ open: false, label: "Closed today" });
   });
 });

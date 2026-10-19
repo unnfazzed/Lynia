@@ -130,6 +130,38 @@ describe("A1 · the sign-in country (D-116: owners abroad sign in on their own n
     expect(input().value).toBe("");
   });
 
+  it("D-116 review: nine digits under Zimbabwe must be a Zimbabwe mobile (a South African 071… lookalike can't send)", () => {
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "0612345678" } });
+    expect(screen.getByRole("alert").textContent).toBe("That doesn’t look like a mobile number. Zimbabwe mobiles start with 71, 73, 77 or 78.");
+    expect((screen.getByRole("button", { name: "Send code" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("D-116 review: starts on the browser's own country, by its time zone", () => {
+    const real = Intl.DateTimeFormat;
+    Intl.DateTimeFormat = (() => ({ resolvedOptions: () => ({ timeZone: "Europe/London" }) })) as unknown as typeof Intl.DateTimeFormat;
+    try {
+      render(<LoginPage />);
+      expect(segment().getAttribute("aria-label")).toBe("Country: United Kingdom, +44. Change");
+    } finally {
+      Intl.DateTimeFormat = real;
+    }
+  });
+
+  it("D-116 review: back from the code step keeps a UK number whole, under the UK flag", async () => {
+    vi.mocked(requestOtp).mockResolvedValue({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    fireEvent.click(screen.getByRole("button", { name: /United Kingdom/ }));
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "07911 123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await screen.findByLabelText("6-digit code");
+    fireEvent.click(screen.getByRole("button", { name: /Wrong number/ }));
+    const back = await screen.findByRole("button", { name: /^Country: / });
+    expect(back.getAttribute("aria-label")).toBe("Country: United Kingdom, +44. Change");
+    expect((screen.getByLabelText("Phone number") as HTMLInputElement).value).toBe("7911123456");
+  });
+
   it("Escape closes the list without a change", () => {
     render(<LoginPage />);
     fireEvent.click(segment());

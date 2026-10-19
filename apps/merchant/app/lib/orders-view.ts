@@ -1,4 +1,4 @@
-import { RESTAURANTS_TIMING, type MerchantBookingResponse, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
+import { harareWallClock, RESTAURANTS_TIMING, type MerchantBookingResponse, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { dayKeyFor, DAY_KEYS, type PartialMerchantHours } from "./hours";
 import { countOf, type Vocabulary } from "./vocabulary";
 import { groupQueue, isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
@@ -168,6 +168,8 @@ export function itemsEditedLabel(o: Pick<MerchantOrderResponse, "itemsEditedAt">
   return o.itemsEditedAt ? `Items changed ${hm(o.itemsEditedAt)}` : null;
 }
 
+const hhmm = (d: Date): string => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
 /** "12:36" (local time) for an ISO instant; "" for none. */
 export function hm(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -235,18 +237,22 @@ export interface OpenStatus {
   label: string;
 }
 
-/** B1/B5's header line and switch. */
+/**
+ * B1/B5's header line and switch. Hours are read on Harare's clock, as the API decides open/closed (D-116
+ * review: an owner signed in from London or Dallas saw the switch disagree with the server for hours a day).
+ */
 export function openStatus(business: Pick<MerchantProfileResponse, "hours" | "closedUntil"> | null, now: Date): OpenStatus {
   const hours = (business?.hours ?? null) as PartialMerchantHours | null;
   const closedByHand = !!business?.closedUntil && new Date(business.closedUntil).getTime() > now.getTime();
-  const today = hours?.[dayKeyFor(now)];
-  const nowHm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const wall = harareWallClock(now);
+  const today = hours?.[dayKeyFor(wall)];
+  const nowHm = `${String(wall.getHours()).padStart(2, "0")}:${String(wall.getMinutes()).padStart(2, "0")}`;
   const inHours = !hours || (!!today && nowHm >= today.open && nowHm < today.close);
   if (inHours && !closedByHand) {
     return { open: true, closedByHand: false, label: today ? `Open · until ${today.close}` : "Open" };
   }
-  const from = closedByHand ? new Date(business!.closedUntil!) : now;
-  const next = nextOpenTime(hours, from) ?? (closedByHand && !hours ? hm(business!.closedUntil) : null);
+  const from = closedByHand ? harareWallClock(new Date(business!.closedUntil!)) : wall;
+  const next = nextOpenTime(hours, from) ?? (closedByHand && !hours ? hhmm(from) : null);
   return { open: false, closedByHand, label: next ? `Closed · opens ${next}` : "Closed" };
 }
 

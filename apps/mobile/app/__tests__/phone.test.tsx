@@ -179,6 +179,24 @@ describe("C2 · the country segment (D-116)", () => {
     }
   });
 
+  it("starts on the phone's own country (a South African phone starts on South Africa); a biker stays on Zimbabwe", () => {
+    const real = Intl.DateTimeFormat;
+    const fake = (() => ({ resolvedOptions: () => ({ timeZone: "Africa/Johannesburg" }) })) as unknown as typeof Intl.DateTimeFormat;
+    Intl.DateTimeFormat = fake;
+    try {
+      const t = mount();
+      expect(segment(t)!.props.accessibilityLabel).toBe("Country: South Africa, +27. Change");
+      act(() => live?.unmount());
+      mockParams = { intent: "rider" };
+      const r = mount();
+      expect(segment(r)).toBeUndefined();
+      expect(text(r)).toContain("+263");
+    } finally {
+      Intl.DateTimeFormat = real;
+      mockParams = {};
+    }
+  });
+
   it("reopens the list on the chosen country when it sits below the pinned group", () => {
     const t = mount();
     act(() => {
@@ -229,7 +247,11 @@ describe("C2 · the country segment (D-116)", () => {
     expect(text(t)).toContain("🇿🇼");
     expect(segment(t)).toBeUndefined();
     typeIn(t, "+44 7911 123456");
-    expect(field(t)).toBeDefined();
+    // The pasted UK number can't switch a biker's country: it reads as too long for Zimbabwe, and nothing is sent.
+    expect(segment(t)).toBeUndefined();
+    await send(t);
+    expect(mockRequestOtp).not.toHaveBeenCalled();
+    expect(text(t)).toContain("Biking needs a Zimbabwe number (+263). Sign in with one to ride.");
   });
 });
 

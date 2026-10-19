@@ -172,11 +172,17 @@ export const envSchema = z.object({
   // ceiling; the per-phone cap is what bounds abuse of one number (E2E 2026-10-05 FS-1).
   OTP_RL_IP_MAX: z.coerce.number().int().positive().default(200), // per IP, per hour
   OTP_RL_GLOBAL_MAX: z.coerce.number().int().positive().default(500), // all senders, per day
+  // D-116: codes that may go out by SMS (Bird Verify's WhatsApp-then-SMS lane for the 18 countries its
+  // WhatsApp sender can't reach) have their own, smaller daily budget, so SMS-pumping traffic to those
+  // countries can't spend the shared one and lock Zimbabwe out of sign-in. Counted in OTP_RL_GLOBAL_MAX too.
+  OTP_RL_SMS_GLOBAL_MAX: z.coerce.number().int().positive().default(100), // SMS-capable sends, per day
   OTP_RL_DEVICE_SIGNUP_MAX: z.coerce.number().int().positive().default(3), // NEW accounts per device, per day
   // The E.164 calling codes `POST /auth/otp/request` sends a code to, comma-separated ("263" or
   // "263,27"; a leading "+" is accepted), or "*" for any country. A number in an unlisted calling code is
   // refused before any rate-limit or provider spend. Defaults to "*" (owner 2026-10-19): customers and
   // merchants in the diaspora sign up on their own numbers; bikers are held to +263 at /riders/become.
+  // "*" means any country only on the WhatsApp channels (bird-verify, whatsapp); on a plain SMS channel
+  // (bird, local-sms, sms) it reads as "263", so a fallback flip can't open SMS to the world.
   OTP_ALLOWED_COUNTRY_CODES: z
     .string()
     .default("*")

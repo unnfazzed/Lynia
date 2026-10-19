@@ -4,6 +4,7 @@
  * order hint, R6a reconcile, R6b just closed, R7b failed toast, R7c offline, R9a empty, R9b no address,
  * and the exact place-order payload + the replace-into-the-order navigation.
  */
+import { SEND_COPY } from "../../../src/ui/send/kit";
 import { BackHandler, Text } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import renderer, { act } from "react-test-renderer";
@@ -35,6 +36,16 @@ jest.mock("expo-router", () => ({
   Redirect: () => null,
 }));
 let mockMe: { phone: string } | undefined;
+const mockFix = jest.fn(async () => ({ coords: { latitude: -17.83, longitude: 31.05 } }));
+const mockReverseGeocode = jest.fn(async () => [] as unknown[]);
+jest.mock("expo-location", () => ({
+  Accuracy: { Balanced: 3 },
+  requestForegroundPermissionsAsync: async () => ({ status: "granted", granted: true, canAskAgain: true }),
+  getForegroundPermissionsAsync: async () => ({ status: "granted", granted: true, canAskAgain: true }),
+  getCurrentPositionAsync: () => mockFix(),
+  getLastKnownPositionAsync: async () => null,
+  reverseGeocodeAsync: () => mockReverseGeocode(),
+}));
 jest.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), useQuery: () => ({ data: mockMe }) }));
 
 const dish = (id: string, name: string, priceUsd: number, extra: object = {}) => ({ id, name, description: null, priceUsd, photoUrl: null, outOfStock: false, ...extra });
@@ -407,6 +418,24 @@ describe("States", () => {
     expect(all).toContain("Set a delivery address to place your order");
     expect(all).not.toContain("Delivery fee");
     expect(all.some((s) => s.startsWith("Arrives"))).toBe(false);
+  });
+
+  it("D-116 — Use my current location from abroad sets no drop-off and says we don't cover it", async () => {
+    const t = render();
+    await flush();
+    const edits = t.root.findAll((n) => typeof n.props.onPress === "function" && n.findAllByType(Text).some((x) => x.props.children === "Edit"));
+    act(() => edits[0]!.props.onPress());
+    mockFix.mockResolvedValueOnce({ coords: { latitude: 51.5, longitude: -0.12 } });
+    mockReverseGeocode.mockClear();
+    const useCurrent = t.root.findAll((n) => typeof n.props.onUseCurrent === "function")[0]!;
+    await act(async () => {
+      useCurrent.props.onUseCurrent();
+    });
+    await flush();
+    expect(mockReverseGeocode).not.toHaveBeenCalled();
+    const all = texts(t);
+    expect(all).toContain(SEND_COPY.outArea);
+    expect(all).not.toContain("51.50000, -0.12000");
   });
 
   it("R3a/R3b — Deliver to ✎ opens the inline address card; out of area blocks Use this address", async () => {
