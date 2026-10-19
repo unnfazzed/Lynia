@@ -209,7 +209,7 @@ export default function PhoneScreen(): React.ReactElement {
               autoComplete="tel"
               textContentType="telephoneNumber"
               accessibilityLabel={`${OB.phoneLabel}, +${country.dial}`}
-              style={{ flex: 1, height: "100%", fontSize: 17, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}
+              style={{ flex: 1, minWidth: 0, height: "100%", fontSize: 17, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}
             />
           </View>
           {error ? (
