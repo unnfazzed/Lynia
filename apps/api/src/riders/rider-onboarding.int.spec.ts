@@ -44,7 +44,8 @@ const created: string[] = [];
 
 async function makeCustomer(): Promise<string> {
   const p = await prisma.profile.create({
-    data: { role: "customer", firstName: "Tendai", lastName: "M", phone: `int_${crypto.randomUUID()}` },
+    // A unique Zimbabwe mobile: becoming a biker needs a +263 number (D-116).
+    data: { role: "customer", firstName: "Tendai", lastName: "M", phone: `+2637${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}` },
     select: { id: true },
   });
   created.push(p.id);
