@@ -71,7 +71,11 @@ function makeWorld() {
     merchant: {
       // resolveMerchantAccess's legacy fallback: nobody here predates the owner backfill.
       findFirst: async () => null,
+      // Own bikers OV-F8 at Join: the business's owner (none of these people is anyone's Own biker).
+      findUnique: async () => ({ ownerProfileId: null }),
     },
+    // Own bikers OV-F8 at Join: nobody here rides for a fleet.
+    rider: { findUnique: async () => null },
     merchantMember: {
       // A business's team, or (listMemberships / the Join lock) the businesses one person is on.
       findMany: async ({ where }: { where: { merchantId?: string; profileId?: string } }) =>

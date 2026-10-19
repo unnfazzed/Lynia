@@ -1909,6 +1909,17 @@ the handoff wins for screens and copy, and these product changes apply:
    `cloneForRebroadcast` refuses a fleet source (F2). There is **no admin manual assign** in the code today, so
    there is no door to guard there. Hand-offs: **T3** Join must call `kickRiderFromBoard` and withdraw the biker's
    pending public offers. **T9** replaces "fleet bikers never get food dispatch" with own-shop-first.
+8. **T3 is two PRs.** **T3a (done 2026-10-19):** `merchant/fleet.service.ts` + `fleet.controller.ts`.
+   - Owner side (`/merchant/fleet`): the roster (staff read-only with masked numbers), invite links (one live per
+     owner and phone, the same link on a re-invite, a new one once lapsed, 30 per owner per day), Share again,
+     Revoke, Remove (refused mid-job), and dismiss suggestions.
+   - Biker side (`/fleet`): `me`, `invites/open` (only the invited number), Join with the OB-R3 refusals, and
+     Leave (refused mid-job). Join withdraws pending public bids, kicks the biker off the board and pushes the
+     owner. The team-side Join refuses one of the owner's Own bikers (OV-F8, both directions).
+   - Everything sits behind `RESTAURANTS_ENABLED` and the new `FLEET_UI_LIVE` (off; a GitHub Variable on release).
+   - Left for later PRs: the OB-M7 inbox row (merchant screens), the deep link that opens `lyniago.com/j/<code>`
+     in the app (Android intent filter + website route), cash held and cancels on the roster (T3b/T4).
+   **T3b (next):** "Ring my bikers" bookings, rounds, accept, convert to Any biker, the drop path, no-strike cancels.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

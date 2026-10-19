@@ -86,6 +86,17 @@ export class MerchantInvitesService {
       throw new ForbiddenException({ reason: "account_restricted", message: "This number can't join a business. Message LyniaGo on WhatsApp." });
     }
 
+    // Own bikers OV-F8 (D-117): staff or biker, not both. One of this owner's own bikers can't join any of the
+    // owner's teams (FleetService.join refuses the other direction).
+    const fleetOwner = await this.prisma.rider.findUnique({ where: { profileId }, select: { fleetOwnerProfileId: true } });
+    const branchOwner = await this.prisma.merchant.findUnique({ where: { id: invite.merchantId }, select: { ownerProfileId: true } });
+    if (fleetOwner?.fleetOwnerProfileId && fleetOwner.fleetOwnerProfileId === branchOwner?.ownerProfileId) {
+      throw new ConflictException({
+        reason: "fleet_biker",
+        message: `You ride for ${invite.merchant.name}. Leave its bikers first, or join the team from a different account.`,
+      });
+    }
+
     // Staff work at one business. Only an owner opening branches is on several
     // (docs/plans/2026-09-30-multi-branch-owners.md), and that never goes through an invite.
     const current = await listMemberships(this.prisma, profileId);

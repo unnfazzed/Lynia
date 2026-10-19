@@ -443,6 +443,10 @@ export const envSchema = z.object({
   // ON; "false" is the kill switch: while off, Rx items are not listed and an order containing one is
   // refused. The pharmacist check stays mandatory either way.
   RX_ENABLED: z.enum(["true", "false"]).default("true"),
+  // Own bikers (docs/designs/own-bikers.md, ledger D-117): every Own bikers route (the owner's roster and invites,
+  // the biker's invites, Join and Leave). Fail-safe OFF like the verticals above: while off, those routes 503 and
+  // nobody can join a fleet, so the T1/T2 guards stay inert. Fleets also need admin to enable an owner (T7).
+  FLEET_UI_LIVE: z.enum(["true", "false"]).default("false"),
   // Penalty suspension (owner 2026-10-12, see common/penalties.ts): unset means SUSPENDED — no
   // automatic holds, strike cooldowns, merchant cash-debt job lock or customer cash ban, and existing ones
   // are ignored. "false" switches penalties back on. Read at point of use via penaltiesSuspended().

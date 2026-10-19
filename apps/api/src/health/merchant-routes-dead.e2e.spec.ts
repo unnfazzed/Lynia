@@ -26,6 +26,9 @@
  * Import-coupling (matching/offers/orders never importing merchant code) is separately enforced by
  * the depcruise `express-no-merchant-coupling` rule.
  */
+import { MerchantFleetController, RiderFleetController } from "../merchant/fleet.controller";
+import { FleetEnabledGuard } from "../merchant/fleet-enabled.guard";
+import { FleetService } from "../merchant/fleet.service";
 import "reflect-metadata";
 import { Module, type INestApplication } from "@nestjs/common";
 import { NestFactory, Reflector } from "@nestjs/core";
@@ -202,6 +205,8 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       MerchantTeamController,
       MerchantInvitesController,
       MerchantBranchesController,
+      MerchantFleetController,
+      RiderFleetController,
     ],
     providers: [
       { provide: ENV, useValue: env },
@@ -210,6 +215,8 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       JwtAuthGuard,
       MerchantGuard,
       RestaurantsEnabledGuard,
+      FleetEnabledGuard,
+      { provide: FleetService, useValue: {} },
       { provide: MerchantService, useValue: merchantServiceStub },
       { provide: FoodOrderService, useValue: foodOrderServiceStub },
       { provide: FoodDispatchService, useValue: foodDispatchServiceStub },
@@ -276,6 +283,8 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "MerchantBookingController",
       "MerchantBranchesController",
       "MerchantController",
+      // Own bikers (D-117): the owner's roster and invite links.
+      "MerchantFleetController",
       "MerchantInvitesController",
       "MerchantOrderController",
       "MerchantRidersController",
@@ -308,6 +317,9 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "/merchant/bookings",
       "/merchant/riders",
       "/merchant/team",
+      // Own bikers (D-117): the owner's roster and the biker's side are dead with the vertical too.
+      "/merchant/fleet",
+      "/fleet/me",
       "/merchant/invites",
       // Multi-branch owners.
       "/merchant/branches",
