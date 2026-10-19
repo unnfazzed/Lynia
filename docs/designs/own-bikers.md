@@ -1286,6 +1286,389 @@ OV6 (D8, deferred). E2, E3, E5–E7 and E10–E14 stay pending, owned by /plan-e
   +====================================================================+
 ```
 
+
+## Eng Review (plan-eng-review, 2026-10-19)
+
+Target: `docs/designs/own-bikers.md`. The report file is this same plan.
+
+### Scope Challenge
+- **Reuse found:**
+  - `MerchantInvite` + `merchant-invites.service.ts` (schema.prisma:1387)
+  - `kickRiderFromBoard`, which finds a biker's sockets across every instance (tracking.gateway.ts:514)
+  - `OwnerAlertsService` (Telegram, owner-alerts/owner-alerts.service.ts)
+  - the lifecycle reconcile sweep (order-lifecycle.service.ts:168)
+- **Complexity:** about 45 files and about 7 new services, so the gate tripped. Feature cuts: none proposed (the
+  CEO review settled scope).
+- **Scope record:** feature answers: CEO D2/D3 (unchanged); structure: **Smaller arrangement** (eng D1);
+  accepted scope: every approved feature, arranged as:
+  - new `common/fleet-scope.ts` + `merchant/fleet.service.ts` (invite/join/leave/remove/booking/convert, with
+    its own fleet sweeper)
+  - the fleet ledger written inside `wallet.service` at the charge sites
+  - `MerchantInvite` with `kind = biker`
+  - room moves via `kickRiderFromBoard`
+  - alerts via `OwnerAlertsService`
+  - reconciliation + weekly statement close on the lifecycle sweep
+  - **no `fleet:<owner>` socket room** (this settles E14)
+
+  Pending remedies: E2, E3, E5, E6, E7, E10, E11, E12, E13.
+- **Result:** scope accepted as-is (a smaller arrangement that keeps scope is not a reduction).
+
+```
+REALITY: premise-table finding unverified=3 (demand premises, unchanged from CEO). Code premises verified: schema.prisma:1387, tracking.gateway.ts:514, food-dispatch.service.ts:737, schema.prisma:1152
+REALITY: already-done pass. origin/main has no fleet commits since the CEO review
+REALITY: surface-check pass. Reused symbols exist (MerchantInvite, kickRiderFromBoard, OwnerAlertsService, reconcileStaleDeliveries)
+REALITY: binding-decisions pass. 8 decisions honoured (B, flat fee in arrears, Preferred retired, no deferrals, owner fleets, C1, OV1, OV5)
+REALITY: numbers finding. File/service counts are [estimated]; effort figures are [estimated]
+REALITY: deferred-asks pass. No linked issue
+REALITY: pr-count finding. 4 PRs (migrations+API, screens, marketplace+retirement, preferred-code deletion) vs the default one per wave
+```
+
+## Decision ledger
+
+
+### E11: owner key for fleet scope (nullable owner, owner change)
+Finding: 1, P1, confidence 9/10, apps/api/prisma/schema.prisma:1152 `ownerProfileId String? @map("owner_profile_id")`. Reviewer: CEO outside voice + eng.
+Plan baseline: R6 (CEO D3) fleets belong to the owner; the CEO E11 row proposes "enable requires non-null owner; owner change refused while links exist". Pending.
+Runtime evidence: owner_profile_id is nullable; branches set it (merchant-branches.service.ts:119); no trigger on merchants.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Fleet enable with a NULL owner | allowed (unguarded) | refused (409) | refused (409) |
+| Owner change while fleet links exist | silently moves bikers and billing | refused by a merchants trigger | refused by a merchants trigger |
+| How the trigger finds the order's owner | join merchants at check time | join merchants at check time | `orders.fleet_owner_profile_id` copied at write; no join |
+| Trigger/predicate/statement restated in owner terms | no | yes | yes |
+Question D2:
+D2 — E11: How does the fleet guard know which owner an order belongs to, safely? Branch claude/tender-euler-mhwajf. ELI10: fleets belong to the merchant owner, but the owner column on a branch can be empty, and nothing stops an owner change. An empty owner makes the safety check compare blank to blank, and an owner change would silently hand bikers and bills to someone else. Stakes: a wrong owner key means exclusivity and billing are both wrong for every branch of a big client. Recommendation: A because it closes both holes with the smallest schema change and keeps one source of truth for ownership. Completeness: A=10/10, B=10/10. Net: A joins at check time; B copies the owner onto each order for speed at the cost of a second copy.
+Header: E11 owner
+Options:
+A) Guard + join (recommended)
+Admin enable refuses a merchant with a NULL owner; a merchants trigger refuses an owner_profile_id change while any rider links to that owner; the orders trigger joins merchants to read the owner; restate trigger, predicate, statement key in owner terms. Effort S (human ~4h / CC ~20min), risk low, one source of truth. ✅ Closes both NULL and owner-change holes. ✅ No duplicated owner data. ❌ One extra indexed join per checked write.
+B) Guard + copy owner
+Same two guards, plus orders.fleet_owner_profile_id written alongside fleet_merchant_id so the trigger compares columns with no join. Effort S (human ~6h / CC ~30min), risk low, two copies of ownership. ✅ Cheapest trigger check on the hot table. ✅ Statement grouping by owner without a join. ❌ A second owner copy that must never drift.
+
+State: approved
+Actual answer: A) Guard + join (recommended), user answer to eng D2
+Accepted scope: Admin enable refuses NULL owner; merchants trigger refuses owner_profile_id change while riders link to that owner; orders trigger joins merchants for the owner; trigger, predicate and statement key restated in owner terms; specs for both guards.
+History: none
+
+
+### E2: fleet trigger cost on the hot orders table
+Finding: 2, P2, confidence 8/10, every write to `orders` passes the planned constraint trigger (plan § One choke point). Reviewer: CEO Section 7 + eng.
+Plan baseline: CEO E2 row (pending): WHEN clause + rider index + hot-path-indexes spec row.
+Runtime evidence: apps/api/src/prisma/hot-path-indexes.spec.ts exists and guards hot-path indexes; orders is written on every status step.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Trigger fires on | every orders write | only when rider_id or fleet_merchant_id changes | every orders write |
+| Indexes | none planned | riders(fleet_owner_profile_id), orders(fleet_merchant_id, status), merchant_fleet_ledger(merchant_id, created_at) | same indexes |
+| hot-path-indexes.spec row | no | yes | yes |
+| Guarantee (E11/OV1) | approved | unchanged | unchanged |
+Question D3:
+D3 — E2: Limit when the fleet trigger runs on the busy orders table? Branch claude/tender-euler-mhwajf. ELI10: every order status change writes the orders table. If the safety trigger runs on every write it adds work to the hottest table in the app; but it only needs to check when the biker or the fleet tag changes. Stakes: an always-on trigger slows every delivery update at rush hour for 0 extra safety. Recommendation: A because the WHEN clause keeps the full guarantee and removes cost on the 95%+ of writes that don't touch the rider. Completeness: A=10/10, B=8/10. Net: same safety, A is cheaper.
+Header: E2 trigger
+Options:
+A) WHEN clause + indexes (recommended)
+Trigger fires only WHEN rider_id or fleet_merchant_id changes; add the three indexes and a hot-path-indexes.spec row. Effort S (human ~2h / CC ~10min), risk low, low maintenance. ✅ No cost on ordinary status writes. ✅ Index spec stops a future migration dropping them. ❌ WHEN clause must be kept in sync if new fleet columns appear.
+B) Always-on trigger + indexes
+Trigger fires on every orders write; same indexes and spec row. Effort S (human ~1h / CC ~5min), risk low, simplest SQL. ✅ No WHEN clause to maintain. ✅ Catches any write shape. ❌ Runs the check on every status update for no extra safety.
+
+State: approved
+Actual answer: A) WHEN clause + indexes (recommended), user answer to eng D3
+Accepted scope: Trigger fires only WHEN rider_id or fleet_merchant_id changes; indexes riders(fleet_owner_profile_id), orders(fleet_merchant_id, status), merchant_fleet_ledger(merchant_id, created_at); hot-path-indexes.spec rows.
+History: none
+
+
+### E3: correcting a fleet fee (disputes)
+Finding: 3, P2, confidence 7/10, plan § Commission and billing: the ledger is idempotent per order with no correction path. Reviewer: CEO Section 3 + eng.
+Plan baseline: CEO E3 row (pending): admin void/credit row, append-only, actor + reason.
+Runtime evidence: CommissionLedger and MerchantDebtLedger are append-only "one row per event, never mutated" (schema.prisma:1655-1672 comment); admin fare-adjust writes a delta (admin-orders.service.ts:423-456).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| How a wrong fee is corrected | not possible | admin writes a void/credit row (append-only, actor + reason); statement nets it | admin edits the fee row in place |
+| Audit trail | n/a | full (every change is a row) | lost (old value overwritten) |
+| Matches repo ledger convention | n/a | yes (CommissionLedger, MerchantDebtLedger) | no |
+Question D4:
+D4 — E3: How does admin fix a fleet fee a big client disputes? Branch claude/tender-euler-mhwajf. ELI10: chains will dispute some rides ("that one was cancelled before the biker left"). Today the plan has no way to correct a fee once written. Stakes: without a correction path, ops edits the database by hand and the weekly bill can't be explained. Recommendation: A because it matches how every other money ledger in this repo works and keeps the history a client can audit. Completeness: A=10/10, B=6/10. Net: A keeps history; B is a smaller form but loses it.
+Header: E3 disputes
+Options:
+A) Append-only credit (recommended)
+Admin adds a void/credit row (kind=adjustment, negative fee, actor, reason, orderId) from the fleet money page; statement totals net it; never mutates the original row. Effort S (human ~4h / CC ~20min), risk low, consistent with existing ledgers. ✅ Full audit trail for disputes. ✅ Same pattern as CommissionLedger. ❌ Statement view must show adjustments as their own lines.
+B) Edit in place
+Admin edits the fee value on the ledger row. Effort S (human ~2h / CC ~10min), risk medium, breaks the ledger convention. ✅ Simplest admin form. ✅ Statement totals stay one row per ride. ❌ Old value is lost; a disputed bill can't be reconstructed.
+
+State: approved
+Actual answer: A) Append-only credit (recommended), user answer to eng D4
+Accepted scope: Ledger kind=adjustment rows (negative fee, actor, reason, orderId) written by admin; original rows never mutated; statement nets adjustments and lists them as separate lines; spec for void/credit and statement netting.
+History: none
+
+
+### E5: fleet metrics and alerts
+Finding: 4, P2, confidence 8/10, plan § Section 8: no metric or alert says fleet is working or broken. Reviewer: CEO Section 8 + eng.
+Plan baseline: CEO E5 row (pending): metrics + Telegram alerts.
+Runtime evidence: OwnerAlertsService (apps/api/src/owner-alerts/owner-alerts.service.ts) sends Telegram to the owner; MetricsService exists (apps/api/src/observability/metrics.service.ts); Sentry is live.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Metrics: booking created/accepted/converted, time-to-accept, scope violations, reconciliation misses, statement unpaid days | none | yes (MetricsService) | yes |
+| Telegram alert on scope violation | none | yes (OwnerAlertsService) | no (Sentry only) |
+| Telegram alert on reconciliation miss | none | yes | no (Sentry only) |
+| Telegram alert on statement unpaid > 7 days | none | yes | no |
+| Admin live fleet tile | none | yes (admin-live counts) | no |
+Question D5:
+D5 — E5: How do you find out fleet billing or exclusivity is broken? Branch claude/tender-euler-mhwajf. ELI10: today nothing tells you if a fleet guard fired, a fee went missing or a client hasn't paid. You already get Telegram alerts for sign-ups and orders, so the same channel can carry fleet alerts. Stakes: without alerts, a missed fee or an unpaid big client is found weeks later at reconciliation, if at all. Recommendation: A because it reuses the alert channel you already watch on your phone, so problems reach you the same day. Completeness: A=10/10, B=6/10. Net: A puts fleet problems on your phone; B leaves them in Sentry.
+Header: E5 alerts
+Options:
+A) Metrics + Telegram (recommended)
+MetricsService counters/timers for the six signals; OwnerAlertsService Telegram on scope violation, reconciliation miss, statement unpaid > 7 days; admin live tile with today's fleet bookings and unpaid owners. Effort S (human ~1d / CC ~45min), risk low, reuses two services. ✅ Problems reach the owner's phone the same day. ✅ Measures success criteria (time to accept, fallback rate). ❌ A few more alert messages to tune for noise.
+B) Metrics + Sentry only
+Same metrics; errors go to Sentry; no Telegram, no admin tile. Effort S (human ~4h / CC ~20min), risk medium. ✅ No alert noise. ✅ Less to build. ❌ Unpaid statements and fee gaps aren't errors, so nothing surfaces them.
+
+State: approved
+Actual answer: A) Metrics + Telegram (recommended), user answer to eng D5
+Accepted scope: MetricsService counters/timers: fleet booking created/accepted/converted, time-to-accept, scope violations, reconciliation misses, statement unpaid days; OwnerAlertsService Telegram on scope violation, reconciliation miss, statement unpaid > 7 days; admin live fleet tile.
+History: none
+
+
+### E6: what branch staff can do under owner-level fleets
+Finding: 5, P2, confidence 8/10, R6 (CEO D3) makes fleets owner-level; staff work one branch at a time (schema.prisma:1310-1311 "works on one at a time"). Reviewer: CEO Section 11 + eng.
+Plan baseline: CEO E6 row (pending): staff see their branch's fleet jobs + read-only roster; owner manages.
+Runtime evidence: MerchantMember has role owner/staff; access resolver reads merchant_members (merchant-access.ts:36).
+Comparison grid:
+| Commitment | Current | A | B | C |
+|---|---|---|---|---|
+| Staff book "My bikers" for their branch | unspecified | yes | no (owner only) | yes |
+| Staff see fleet roster | unspecified | read-only | no | full |
+| Staff invite/remove bikers | unspecified | no (owner only) | no | yes |
+| Staff see fleet bill | unspecified | no (owner only) | no | yes |
+| E4 owner-only invites/IDOR (approved P1) | approved | unchanged | unchanged | conflicts (staff could invite) |
+Question D6:
+D6 — E6: What can a branch's staff do with the owner's bikers? Branch claude/tender-euler-mhwajf. ELI10: at a big chain, each branch's counter staff take the phone orders, but only the owner should hire, remove or pay for bikers. Stakes: if staff can't book, the feature is useless at branches; if staff can invite/remove, one employee can disrupt the whole chain's fleet. Recommendation: A because staff need to dispatch daily while hiring and billing stay with the owner, matching the approved owner-only invites (E4). Completeness: A=10/10, B=5/10, C=6/10. Net: A gives staff dispatch only; B blocks staff; C gives staff everything.
+Header: E6 staff
+Options:
+A) Staff dispatch only (recommended)
+Staff book "My bikers" for their branch and see a read-only roster (who's online); only the owner invites, removes, sees the bill. Effort S (human ~4h / CC ~20min), risk low. ✅ Branches can dispatch without the owner. ✅ Hiring and money stay with the owner. ❌ Role checks on every fleet endpoint.
+B) Owner only
+Every fleet action, including booking "My bikers", is owner-only. Effort S (human ~2h / CC ~10min), risk low. ✅ Simplest permissions. ✅ No staff-facing fleet UI. ❌ Branch counters can't dispatch the fleet, which defeats the phone-order wedge.
+C) Staff full access
+Staff can book, invite, remove and see the bill. Effort S (human ~2h / CC ~10min), risk high. ✅ No role branching. ✅ Fastest for small teams. ❌ Contradicts the approved owner-only invites (E4) and exposes billing.
+
+State: approved
+Actual answer: A) Staff dispatch only (recommended), user answer to eng D6
+Accepted scope: Staff: book My bikers for their active branch + read-only roster (online state). Owner only: invite, remove, bill, fee view. Role check on every fleet endpoint with specs for staff-allowed and staff-refused paths. UI states go to the design handoff.
+History: none
+
+
+### E7: where the fleet bill appears in the merchant app
+Finding: 6, P2, confidence 8/10, the existing weekly statement (merchant.service.ts:937 getWeeklyStatement, route GET /merchant/statement/weekly at merchant.controller.ts:55) already shows a commission line at 0%. Reviewer: CEO Section 11 + eng.
+Plan baseline: R3 (CEO D2) keeps a stored MerchantFleetStatement for billing/paid tracking; CEO E7 row (pending): show fleet lines inside the existing weekly statement vs a separate screen.
+Runtime evidence: getWeeklyStatement computes per-merchant (branch) totals on the fly; fleet bills are per owner with per-branch lines (R6).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Stored MerchantFleetStatement for paid tracking (R3) | approved | unchanged | unchanged |
+| Branch view (weekly statement screen) | food sales + 0% commission | + a "Fleet rides" section for that branch (rides, fee, adjustments) | unchanged |
+| Owner bill view | none | an owner-level "Fleet bill" (all branches, paid/unpaid) inside the same statement area | a separate "Fleet bill" screen |
+| Number of bills a merchant reads | 1 | 1 (one statement area) | 2 |
+Question D7:
+D7 — E7: Where does a merchant see what they owe for their bikers? Branch claude/tender-euler-mhwajf. ELI10: the merchant app already has a weekly statement page. The fleet fees could appear on that same page, or on a new separate page. Stakes: two separate money pages confuse big clients about what they owe and lead to disputes. Recommendation: A because one statement area is the bill the 12-month plan wants anyway, and it reuses an existing screen. Note: options differ in kind, not coverage, so there is no completeness score. Net: A merges into the existing statement; B adds a new page.
+Header: E7 bill
+Options:
+A) Inside weekly statement (recommended)
+Add a "Fleet rides" section to each branch's existing weekly statement and an owner-level fleet bill (all branches, paid/unpaid) in the same statement area; the stored statement still tracks paid. Effort M (human ~1.5d / CC ~1h), risk low, extends getWeeklyStatement. ✅ One place for everything a merchant owes or earned. ✅ Reuses the drawn statement screen and its route. ❌ getWeeklyStatement gains a fleet branch to test.
+B) Separate fleet bill
+New "Fleet bill" screen for the owner; the weekly statement stays food-only. Effort M (human ~1.5d / CC ~1h), risk low. ✅ No changes to the existing statement code. ✅ Clear separation of food sales vs fleet costs. ❌ Two money pages; the merchant has to reconcile them.
+
+State: approved
+Actual answer: A) Inside weekly statement (recommended), user answer to eng D7
+Accepted scope: getWeeklyStatement gains a per-branch "Fleet rides" section (rides, fee, adjustments); owner-level fleet bill (all branches, paid/unpaid) in the same statement area; stored MerchantFleetStatement keeps paid tracking; specs for both views. Screen drawing goes to the design handoff.
+History: none
+
+
+### E10: erasing a fleet biker's data
+Finding: 7, P2, confidence 8/10, the privacy service erases profiles (apps/api/src/privacy/privacy.service.ts) and pii-manifest.ts lists PII fields; the plan adds rider links, invite phones and ledger rows that carry riderId. Reviewer: CEO Section 3 + eng.
+Plan baseline: CEO E10 row (pending): erasure clears the fleet link; ledger keeps a plain riderId uuid (no cascade).
+Runtime evidence: MerchantPreferredRider, MerchantInvite and ReferralCode already use "plain id (no relation)" so erasure never deletes money/audit rows (schema.prisma:1376, 1395, 1408).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Erasure clears Rider.fleetOwnerProfileId/fleetHomeMerchantId | unspecified | yes | yes (row deleted) |
+| Pending fleet invites to that phone | unspecified | revoked | cascaded away |
+| Ledger rows for that biker | unspecified | kept, plain riderId uuid (tombstone) | deleted by FK cascade |
+| Owner's past bills stay correct | unspecified | yes | no (totals change) |
+| pii-manifest + privacy spec rows | no | yes | yes |
+Question D8:
+D8 — E10: What happens to fleet records when a biker asks to delete their account? Branch claude/tender-euler-mhwajf. ELI10: a biker can erase their data. Their fleet link and pending invites should go, but the merchant's past bills record rides they did. If those rows are deleted, the owner's past bills change. Stakes: deleting ledger rows silently rewrites a big client's paid bills. Recommendation: A because it follows the repo's existing tombstone pattern and keeps bills stable while removing personal data. Completeness: A=10/10, B=5/10. Net: A keeps billing intact; B loses it.
+Header: E10 erasure
+Options:
+A) Clear link, keep ledger (recommended)
+Erasure clears the fleet link and revokes pending invites to that phone; ledger rows keep a plain riderId uuid with no FK cascade; pii-manifest and privacy spec updated. Effort S (human ~3h / CC ~15min), risk low, matches MerchantInvite/ReferralCode. ✅ Past bills never change. ✅ No personal data left beyond an opaque id. ❌ Ledger has no FK, so joins must tolerate a missing rider.
+B) Cascade delete
+Ledger rows reference the rider with onDelete: Cascade; erasure removes them. Effort S (human ~2h / CC ~10min), risk high. ✅ Nothing of the biker remains. ✅ Simple FK. ❌ Erasing one biker rewrites the owner's billed and paid statements.
+
+State: approved
+Actual answer: A) Clear link, keep ledger (recommended), user answer to eng D8
+Accepted scope: Erasure clears Rider fleet link and revokes pending fleet invites to that phone; ledger rows keep a plain riderId uuid (no FK cascade); joins tolerate a missing rider; pii-manifest.ts + privacy.service spec rows.
+History: none
+
+
+### E12: how far away a fleet booking can ring an Own biker
+Finding: 8, P2, confidence 8/10, R6 (CEO D3) lets an owner's bikers serve every branch; the plan's fleet rounds have no distance limit. Food dispatch limits candidates to RESTAURANTS_DISPATCH.pickupReachM (dispatch-strategy.ts:73). Reviewer: CEO outside voice + eng.
+Plan baseline: CEO E12 row (pending): fleet rounds limited to pickupReachM from the booking's branch; home branch first.
+Runtime evidence: NearestRiderDispatchStrategy uses tracking.nearbyRiders(lat, lng, radiusM) (dispatch-strategy.ts:73).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Distance limit for fleet offers | none | pickupReachM from the booking's branch (same as food) | none (any of the owner's online bikers) |
+| Order of offers | unspecified | home-branch bikers first, then nearest | nearest |
+| No one in reach | unspecified | "None of your bikers nearby" + Send to any biker | n/a |
+Question D9:
+D9 — E12: Should a branch's booking ring the owner's bikers who are far away? Branch claude/tender-euler-mhwajf. ELI10: a chain's bikers serve every branch. Without a distance limit, a booking at one branch could ring a biker 30 km away at another branch, who then wastes an hour getting there. Stakes: slow pickups and cold food for big clients, and bikers abandoning long trips. Recommendation: A because it reuses the same pickup radius food dispatch already uses, so behaviour matches what bikers know. Completeness: A=10/10, B=6/10. Net: A keeps pickups close; B maximises who gets offered.
+Header: E12 distance
+Options:
+A) Pickup radius + home first (recommended)
+Fleet rounds only offer Own bikers within pickupReachM of the booking's branch; home-branch bikers first, then nearest; if none in reach, show "None of your bikers nearby" with Send to any biker. Effort S (human ~3h / CC ~15min), risk low, reuses nearbyRiders. ✅ Pickups stay quick for big chains. ✅ Same radius as food dispatch. ❌ A far-away idle biker is never offered the job.
+B) No distance limit
+Offer any of the owner's online Own bikers, nearest first. Effort S (human ~1h / CC ~5min), risk medium. ✅ Maximum chance someone accepts. ✅ Simplest query. ❌ Bikers 30 km away get rung and may accept trips that take an hour.
+
+State: approved
+Actual answer: B) No distance limit, user answer to eng D9
+Accepted scope: Fleet rounds offer any of the owner's online, eligible Own bikers, nearest first, with no radius limit. Spec: a far biker of the owner is offered; another owner's biker never is.
+History: none
+
+
+### E13: onboarding many bikers at once
+Finding: 9, P2, confidence 7/10, the invite flow (plan § Invitee journey) sends one invite at a time; a big chain may bring 30-50 bikers. Reviewer: CEO outside voice + eng.
+Plan baseline: CEO E13 row (pending): bulk invite (paste/CSV of phones) + roster progress view.
+Runtime evidence: MerchantInvite is @@unique([merchantId, phone]) with expiresAt (schema.prisma:1387-1403); E4 (approved P1) rate-limits invites per owner.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Invite many numbers in one action | no | paste up to 50 numbers (one per line); each validated, deduped, existing-member skipped | no, one at a time |
+| Roster progress (Invited / Signing up / Waiting for ID / Joined / Expired) | planned per invite | same, with counts at the top | same |
+| E4 rate limit per owner (approved) | approved | bulk counts against it; limit sized for 50/day | unchanged |
+| SMS sends | one per invite | one per valid number, with per-number result | one per invite |
+Question D10:
+D10 — E13: Can an owner invite all their bikers in one go? Branch claude/tender-euler-mhwajf. ELI10: a big chain might have 40 bikers. Typing 40 numbers one at a time is a chore that slows the first client's launch. A paste box takes them all at once and shows which ones worked. Stakes: a painful first-day setup is the first impression for a big client. Recommendation: A because it removes the slowest part of onboarding a chain for little code. Completeness: A=10/10, B=6/10. Net: A is faster setup; B is less to build.
+Header: E13 bulk
+Options:
+A) Paste-many invite (recommended)
+Owner pastes up to 50 phone numbers; each is normalised to E.164, deduped, skipped if already in the fleet, and gets its own SMS and result row; counts toward the approved per-owner rate limit (sized 50/day). Effort S (human ~1d / CC ~45min), risk low. ✅ A chain's whole fleet invited in one action. ✅ Per-number results show bad numbers immediately. ❌ Rate limit and SMS cost must allow a burst of 50.
+B) One at a time
+Keep single invites only. Effort S (zero implementation work), risk low. ✅ No bulk validation code. ✅ Smaller SMS bursts. ❌ Onboarding a 40-biker chain takes 40 separate invites.
+
+State: approved
+Actual answer: B) One at a time, user answer to eng D10
+Accepted scope: Single invites only (no bulk paste). E4 per-owner rate limit sized for single invites. No bulk validation code.
+History: none
+
+
+Approval readiness: PASS. Checked: E11 (eng D2), E2 (D3), E3 (D4), E5 (D5), E6 (D6), E7 (D7), E10 (D8), E12 (D9),
+E13 (D10), E14 (settled by D1 Smaller arrangement). Carried forward unchanged from the CEO review: C1, OV1, OV4
+(E1/E4/E8/E9 = P1), OV5, R1–R6.
+
+### Section 1: Architecture (eng)
+- [P1] (confidence: 9/10) apps/api/src/merchant/food-dispatch.service.ts:737
+  `// Best-effort (this path has no transaction)`. The fleet accept CAS needs a transaction around the
+  rider-row lock and the order update, or OV1's `FOR SHARE` has nothing to hold. Disposition: required by OV1
+  (approved); T11 covers it.
+- [P2] (confidence: 8/10) apps/api/src/tracking/tracking.gateway.ts:514. `kickRiderFromBoard` is reused to
+  move a joining biker off the board (approved, D1). No new choice.
+- Distribution: no new artifact. The API ships via `release-azure.yml`; the merchant web and admin web deploy
+  on their existing paths; the biker app ships as an OTA to `production` (check at build time that no native
+  module changed).
+- Dispositions: both carried by existing approvals. No new questions.
+
+### Section 2: Code quality (eng)
+- [P2] (confidence: 8/10) The predicate exists in TS (`fleet-scope.ts`) and SQL (the trigger). The parity
+  spec (T6, approved) keeps them aligned. That is not a shared-code extraction, because the two run on
+  different runtimes.
+- [P2] (confidence: 7/10) `getWeeklyStatement` (merchant.service.ts:937) gains a fleet section (E7). Keep the
+  fleet query in `fleet.service` and call it from the statement, so the statement method doesn't grow past
+  5 branches.
+- Shared-code rubric: no extraction proposed (no two verified callers with equal contracts).
+- Dispositions: carried by approvals (T6, E7). No new questions.
+
+### Section 3: Tests (eng). Framework: vitest (`apps/api` `test` and `test:int`), Prisma int specs (`*.int.spec.ts`)
+
+```
+CODE PATHS                                                    USER FLOWS
+[+] common/fleet-scope.ts                                     [+] Owner invites a biker
+  ├── isFleetJob(rider, order) [GAP] unit table               │   ├── [GAP] invite -> SMS -> Join card after KYC
+  └── parity with SQL trigger   [GAP] int (T6)                │   ├── [GAP] expired / revoked invite
+[+] migration: orders_fleet_scope trigger + merchants guard    │   └── [GAP] biker in another fleet
+  ├── fleet rider on own-owner order  [GAP] int               [+] Branch staff books "My bikers"
+  ├── fleet rider on public/other     [GAP] int (refused)     │   ├── [GAP] [→E2E] accept -> codes -> deliver -> ledger
+  ├── public rider on fleet order     [GAP] int (refused)     │   ├── [GAP] convert vs accept race (one wins)
+  ├── rider_id NULL writes            [GAP] int (cond. 2 only) │   ├── [GAP] stale convert tap after cancel
+  ├── NULL owner enable               [GAP] int (E11 refused) │   └── [GAP] staff refused invite/remove/bill (E6)
+  └── owner change with links         [GAP] int (E11 refused) [+] Join / Leave
+[+] merchant/fleet.service.ts                                 │   ├── [GAP] Join while active ride -> refused
+  ├── invite/join/leave/remove        [GAP] int + IDOR (E4)   │   ├── [GAP] Join vs accept race both orders (OV1/E9)
+  ├── booking (fleet_searching)       [GAP] int               │   └── [GAP] Leave mid-delivery -> refused
+  ├── sweeper: expiry + push (E8)     [GAP] int               [+] Weekly bill
+  └── convert CAS                     [GAP] int race          │   ├── [GAP] branch "Fleet rides" section (E7)
+[+] wallet.service fleet ledger write (C1)                    │   ├── [GAP] owner bill paid/unpaid
+  ├── delivered / cancelled-after-pickup / undelivered rows   │   └── [GAP] adjustment netting (E3)
+  │                                   [GAP] int (same txn)    [+] Erasure (E10)
+  ├── commission skipped for fleet    [GAP] int               │   └── [GAP] link cleared, ledger kept
+  └── chaos: kill mid-txn             [GAP] int               [+] Alerts (E5)
+[+] lifecycle sweep: reconciliation   [GAP] unit + alert      │   └── [GAP] violation / miss / unpaid > 7d -> Telegram
+[+] doors (8): listOpen, push, boardSubscribe, makeOffer,
+    listForOrder, selectOffer, acceptDispatch, admin assign  [GAP] one int row each (hostile-QA table)
+[REGRESSION] dispatch-strategy.spec.ts preferred-first tests [★★★ TESTED] must still pass with PREFERRED_RETIRED unset
+[REGRESSION] offer-ranking PREFERRED_OFFER_BONUS tests       [★★★ TESTED] same, flag unset
+
+COVERAGE: 0/34 new paths tested (all new: proposals) | regressions: 2/2 protected by existing specs
+QUALITY: new tests planned at ★★★ (behavior + edge + error) | GAPS: 34 (1 E2E)
+```
+
+- **Regression rule:** Preferred retirement changes dispatch for every merchant. The approved contract is
+  "flag unset = unchanged" (CEO R2 + Distribution), so the existing `dispatch-strategy.spec.ts` and
+  offer-ranking specs must stay green with the flag unset. New specs cover flag set. Carried forward; no
+  question needed.
+- **Tests to retire:** the preferred-rider specs (`merchant-riders.service.spec.ts`, the preferred cases in
+  `dispatch-strategy.spec.ts`, `riders/page.test.tsx`), but only in the follow-up PR that deletes the code,
+  2 weeks after the flag flips.
+- The Test Plan Artifact is written to `~/.gstack/projects/unnfazzed-Lynia/`.
+- Dispositions: every test is required proof of an approved behavior. No new questions.
+
+### Section 4: Performance (eng)
+- [P2] (confidence: 8/10) The trigger cost is closed by E2 (WHEN clause + indexes).
+- [P2] (confidence: 7/10) With E12 (no distance limit), a fleet round queries all of the owner's online bikers.
+  That's bounded by fleet size (tens), so it's fine. It needs the `riders(fleet_owner_profile_id)` index
+  (E2, approved).
+- [P3] (confidence: 6/10) The weekly owner bill aggregates ledger rows across branches. It's indexed by
+  `merchant_fleet_ledger(merchant_id, created_at)` (E2). At about 100 rides/day per chain that's about 700
+  rows/week, which is small. Medium confidence, so verify with real volume.
+- Dispositions: covered by approvals. No new questions.
+
+### Worktree parallelization
+| Step | Modules touched | Depends on |
+|---|---|---|
+| Schema + triggers + fleet-scope | apps/api/prisma, apps/api/src/common | — |
+| Doors + fleet.service + ledger | apps/api/src/{orders,offers,matching,merchant,tracking,wallet,admin} | schema |
+| Merchant screens | apps/merchant | API contracts + design handoff |
+| Biker screens | apps/mobile | API contracts + design handoff |
+| Admin fleet money | apps/admin | API contracts + design handoff |
+
+- Lane A: schema → doors/service/ledger (shared apps/api, sequential).
+- Lanes B, C, D: merchant / mobile / admin screens, in parallel, once A's contracts merge and the handoff
+  exists.
+- **Execution order:** Launch A. Merge A. Then launch B + C + D together.
+- **Conflict flags:** `packages/shared/src/contracts.ts` is touched by A only. B/C/D consume it.
+
+### Failure modes (eng)
+No critical gaps. Every new path above has a planned test plus error handling (CEO Error & Rescue map + E1/E8
+P1s). E12 (no radius) has a visible failure mode: long pickups. It's measured by E5 time-to-accept and noted as
+a shortcut.
+
+### NOT in scope (eng)
+- Bulk invites: the owner chose one at a time (D10). Upgrade trigger: a client onboarding more than ~15
+  bikers.
+- Distance limit on fleet rounds: the owner chose none (D9). Upgrade trigger: E5 shows long pickups.
+- Fleet batching: TODOS.md (CEO D8).
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
