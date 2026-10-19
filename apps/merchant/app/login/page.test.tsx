@@ -98,6 +98,21 @@ describe("A1 · the sign-in country (D-116: owners abroad sign in on their own n
     expect((screen.getByRole("button", { name: "Send code" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("focuses the search with a keyboard and mouse, but the sheet on a phone (no keyboard over the list)", () => {
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    expect(document.activeElement).toBe(screen.getByLabelText("Search country or code"));
+    fireEvent.keyDown(document, { key: "Escape" });
+    const orig = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q === "(pointer: coarse)", media: q })) as unknown as typeof window.matchMedia;
+    try {
+      fireEvent.click(segment());
+      expect(document.activeElement).toBe(screen.getByRole("dialog"));
+    } finally {
+      window.matchMedia = orig;
+    }
+  });
+
   it("Escape closes the list without a change", () => {
     render(<LoginPage />);
     fireEvent.click(segment());

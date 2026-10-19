@@ -139,6 +139,19 @@ describe("C2 · the country segment (D-116)", () => {
     expect(labels.slice(0, 3)).toEqual(["Zimbabwe, +263", "South Africa, +27", "United Kingdom, +44"]);
   });
 
+  it("reopens the list on the chosen country when it sits below the pinned group", () => {
+    const t = mount();
+    act(() => {
+      fieldFor(t, "263").props.onChangeText("+254712345678");
+    });
+    act(() => {
+      segment(t)!.props.onPress();
+    });
+    const list = t.root.find((n) => Array.isArray(n.props?.data) && "initialScrollIndex" in n.props);
+    const at = (list.props.data as { iso: string }[]).findIndex((c) => c.iso === "KE");
+    expect(list.props.initialScrollIndex).toBe(at - 3);
+  });
+
   it("sends a UK number in E.164 once the UK is picked, with the trunk 0 dropped", async () => {
     const t = mount();
     pick(t, "United Kingdom, +44");

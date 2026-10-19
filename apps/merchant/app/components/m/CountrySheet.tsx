@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export function CountrySheet({ selected, onSelect, onClose }: { selected: Country; onSelect: (c: Country) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const rows = useMemo(() => COUNTRY_PICKER_ORDER.filter((c) => countryMatches(c, query)), [query]);
   const searching = query.trim().length > 0;
 
@@ -19,7 +21,12 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
-    searchRef.current?.focus();
+    // On a phone, focusing the search would open the keyboard over half the list before anyone asked to
+    // type, so focus moves to the sheet itself there; a keyboard and mouse go straight to the search.
+    const touch = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    (touch ? sheetRef.current : searchRef.current)?.focus();
+    // Open on the current choice when it sits below the pinned group.
+    listRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView?.({ block: "center" });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeRef.current();
     };
@@ -31,7 +38,7 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
     <div className="m-overlay" style={{ zIndex: 70 }}>
       <div className="m-overlay-frame">
         <button type="button" className="m-scrim" aria-label="Close" onClick={onClose} />
-        <div className="m-sheet m-country-sheet" role="dialog" aria-modal="true" aria-labelledby="m-country-title">
+        <div ref={sheetRef} tabIndex={-1} className="m-sheet m-country-sheet" role="dialog" aria-modal="true" aria-labelledby="m-country-title">
           <div className="m-grab" />
           <b id="m-country-title" className="m-branches-title">
             Choose your country
@@ -47,7 +54,7 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <ul className="m-country-list" aria-label="Countries">
+          <ul ref={listRef} className="m-country-list" aria-label="Countries">
             {rows.length === 0 ? <li className="m-hint m-country-empty">No country matches “{query.trim()}”</li> : null}
             {rows.map((c, i) => {
               const isSelected = c.iso === selected.iso;

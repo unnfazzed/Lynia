@@ -61,6 +61,11 @@ export function CountrySheet({
   const [query, setQuery] = useState("");
   const rows = useMemo(() => COUNTRY_PICKER_ORDER.filter((c) => countryMatches(c, query)), [query]);
   const searching = query.trim().length > 0;
+  // Open on the current choice when it sits below the pinned group (the sheet mounts on each open).
+  const [startIndex] = useState(() => {
+    const at = COUNTRY_PICKER_ORDER.findIndex((c) => c.iso === selected.iso);
+    return at >= PINNED_COUNTRY_COUNT ? at - 3 : 0;
+  });
   const close = (): void => {
     setQuery("");
     onClose();
@@ -121,6 +126,7 @@ export function CountrySheet({
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             initialNumToRender={16}
+            initialScrollIndex={startIndex}
             getItemLayout={(_, index) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index })}
             ListEmptyComponent={<EmptyRow icon="search" text={OB.countryNoMatch(query.trim())} centred style={{ paddingTop: 24 }} />}
             renderItem={({ item, index }) => {
