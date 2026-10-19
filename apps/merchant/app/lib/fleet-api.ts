@@ -1,4 +1,12 @@
-import type { CreateFleetInviteRequest, FleetBillsResponse, FleetInviteLinkResponse, OwnerFleetResponse } from "@lynia/shared";
+import type {
+  CreateFleetBookingRequest,
+  CreateFleetBookingResponse,
+  CreateFleetInviteRequest,
+  FleetBillsResponse,
+  FleetInviteLinkResponse,
+  MerchantBookingResponse,
+  OwnerFleetResponse,
+} from "@lynia/shared";
 import { authedFetch } from "./api-client";
 
 /**
@@ -36,4 +44,19 @@ export function removeFleetBiker(riderId: string): Promise<{ ok: true }> {
 /** OB-M5's ✕: the Preferred-rider suggestions are gone for good. */
 export function dismissFleetSuggestions(): Promise<{ ok: true }> {
   return authedFetch<{ ok: true }>("/merchant/fleet/suggestions/dismiss", { method: "POST" });
+}
+
+/** OB-M8 "Ring my bikers": the booking rings the business's own bikers. The delivery code comes back once, now. */
+export function createFleetBooking(body: CreateFleetBookingRequest): Promise<CreateFleetBookingResponse> {
+  return authedFetch<CreateFleetBookingResponse>("/merchant/fleet/bookings", { method: "POST", body });
+}
+
+/** OB-M10 "Try my bikers again". */
+export function retryFleetBooking(bookingId: string): Promise<MerchantBookingResponse> {
+  return authedFetch<MerchantBookingResponse>(`/merchant/fleet/bookings/${bookingId}/retry`, { method: "POST" });
+}
+
+/** OB-M10/M11 "Send to any biker": the same booking, the same code, to the public at this fare. */
+export function sendFleetBookingToAny(bookingId: string, proposedFare: number): Promise<MerchantBookingResponse> {
+  return authedFetch<MerchantBookingResponse>(`/merchant/fleet/bookings/${bookingId}/any-biker`, { method: "POST", body: { proposedFare } });
 }

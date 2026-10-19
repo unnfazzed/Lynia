@@ -15,6 +15,7 @@ import { RetryableError } from "../../components/RetryableError";
 import { showNotLiveHome } from "../../lib/branches";
 import { ApiError, getMyMerchant, type MerchantProfile } from "../../lib/api-client";
 import { bookingsAvailable, homePath } from "../../lib/booking";
+import { useFleet } from "../../lib/use-fleet";
 import { buildBoard } from "../../lib/board";
 import { useBookings } from "../../lib/use-bookings";
 import { Board } from "../../components/queue/Board";
@@ -142,7 +143,10 @@ export default function QueuePage() {
   const scheduled = useScheduled(ready, queueSize);
   // S1 (Merchant v2, D-77): a shop's own rider bookings sit on the same board as its customer orders.
   const shop = ready && state.merchant.businessType === "shop";
-  const { bookings } = useBookings(shop && bookingsAvailable(state.status === "ready" ? state.merchant : null));
+  // Own bikers (OB-M8, D-117): a kitchen with Own bikers books them from the same card, and its bookings join the board.
+  const { fleet } = useFleet(ready && !shop);
+  const fleetKitchen = !shop && !!fleet && fleet !== "unreachable";
+  const { bookings } = useBookings((shop || fleetKitchen) && bookingsAvailable(state.status === "ready" ? state.merchant : null));
   const now = useNow(15_000);
   if (state.status !== "ready") {
     return (
@@ -155,7 +159,7 @@ export default function QueuePage() {
   }
 
   const v = vocabulary(state.merchant.businessType, state.merchant.shopKind);
-  const board = buildBoard({ orders, bookings, v, shop, now });
+  const board = buildBoard({ orders, bookings, v, shop, now, tagged: shop || fleetKitchen });
   // MJ-RM4: K1c "All quiet" is about what the board draws — an ended booking (or an order the board
   // doesn't show) used to leave a blank page under the top card instead.
   const nothing = board.length === 0 && (scheduled?.length ?? 0) === 0;
@@ -177,7 +181,7 @@ export default function QueuePage() {
     <Kitchen active="queue" backfillCount={backfillCount}>
       <OrdersHeader merchant={state.merchant} open={open} disabled={actionsDisabled} refreshKey={queueSize}>
         {/* S1: a shop books riders for its own sales from the top card; they join this board as BOOKED. */}
-        {shop && <BookRiderCard href="/deliveries/new" />}
+        {(shop || fleetKitchen) && <BookRiderCard href="/deliveries/new" />}
       </OrdersHeader>
 
       {notLive ? (

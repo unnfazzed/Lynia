@@ -87,8 +87,9 @@ function orderCards(
   v: Vocabulary,
   shop: boolean,
   now: number,
+  tagged = shop,
 ): { section: BoardSection["id"]; card: BoardCard; rank: number } | null {
-  const tag: BoardTag | undefined = shop ? "APP" : undefined;
+  const tag: BoardTag | undefined = tagged ? "APP" : undefined;
   const href = orderHref(o.id);
   const label = orderLabel(o);
   // 1 · NEEDS YOU
@@ -342,9 +343,12 @@ export function buildBoard(input: {
   v: Vocabulary;
   shop: boolean;
   now: number;
+  /** APP / BOOKED tags: a shop's board, or (Own bikers, OB-M13) a kitchen that books its own bikers too. */
+  tagged?: boolean;
 }): BoardSection[] {
+  const tagged = input.tagged ?? input.shop;
   const placed = [
-    ...input.orders.map((o) => orderCards(o, input.v, input.shop, input.now)),
+    ...input.orders.map((o) => orderCards(o, input.v, input.shop, input.now, tagged)),
     ...(input.bookings ?? []).map((b) => bookingCard(b, input.now)),
   ].filter((x): x is NonNullable<typeof x> => x !== null);
   const pick = (id: BoardSection["id"]) =>
