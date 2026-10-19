@@ -1933,6 +1933,144 @@ None. 17 answered.
 - Parallelization: 4 lanes, 3 parallel / 1 sequential
 - Lake Score: 7/9 = answers picking a 10/10 option / answers scored for Completeness (E12 and E13 chose the 6/10 option)
 
+
+## Design Review (plan-design-review, 2026-10-19)
+
+Target: `docs/designs/own-bikers.md`. Focus: all 7 dimensions (D1). Mockups: none. The gstack designer exited 2
+("No OpenAI API key found"), so this review is text-only, and the brief below is what the designer draws from.
+Outside voice: native Claude subagent (Codex not installed). Its gaps were folded into issues 4–10.
+
+**Ratings, before → after**
+
+| Pass | Dimension | Before | After | Decided by |
+|------|-----------|--------|-------|------------|
+| 1 | Information hierarchy | 3 | 8 | 1A, 2A, 3A |
+| 2 | Interaction states | 2 | 9 | 4A, 5A, 6A, 7A, 8A |
+| 3 | User journey | 3 | 9 | 9A, 10A |
+| 4 | Specificity (no "the designer decides") | 6 | 9 | 11A |
+| 5 | Design-system fit | 4 | 8 | 12A, 13A (defaulted, see below) |
+| 6 | Responsive and accessibility | 5 | 8 | requirements R-A1–R-A6 (DESIGN.md, pending owner confirmation) |
+| 7 | Unresolved decisions | 3 decisions open | 3 proposed | P7-1–P7-3 (pending owner confirmation) |
+
+### Decisions (owner, 2026-10-19)
+
+| # | Decision | What the handoff draws |
+|---|----------|------------------------|
+| 1 | **1A Urgency order** | Roster row: name + home branch; state chip (On a job › Online › Offline); "Cash with them $X" in Cash-due yellow when > 0; "N cancels this week" muted. Sort: on a job and online first. Pending invites in their own group below. "This week: N rides · $X" line is owner-only. Staff variant hides Invite, Remove and all money. |
+| 2 | **2A Row with live value** | Account › Orders & people: fleet merchants get an "Own bikers" row with the value "4 bikers · 1 invite open" ("Paused" in the warning colour when paused). Non-fleet merchants: the Preferred riders row is removed and the card keeps Taking orders · Team. Staff see the row read-only. |
+| 3 | **3A Owed-first table** | Admin 1440: fleet owners sorted unpaid > 7 days (danger) › unpaid › paid. Columns: owner, branches, bikers, this week $, unpaid $, days overdue, status. A row opens a side panel: fee, pause/unpause, weekly bills with Mark paid, Adjust (reason required). Pause and Disable use a confirm dialog naming what stops. |
+| 4 | **4A Live count + skip** | Searching card: "3 of your bikers online · ringing…" with a 2-minute countdown bar. After 3 rounds (≈2 min): "None of your bikers took it" + "Send to any biker". 0 online: no search, "None of your bikers are online" + "Send to any biker" at once. No network: "Can't reach Lynia · Retry". Pins N = 3 rounds, T = 2 min. |
+| 5 | **5A Smart default** | Book opens on "My bikers" only when ≥ 1 Own biker is online; otherwise on "Any biker" with the hint "0 of your bikers online" under the toggle. The merchant can switch either way. |
+| 6 | **6A Distinct states** | Biker, paused: Jobs tab EmptyState "<Owner>'s deliveries are paused" + "Ask <Owner> for details". Merchant, paused: Book shows an "Own bikers paused" banner with a WhatsApp "Contact Lynia" button. Disabled: the biker gets a one-time sheet "You're a public biker now" explaining public jobs and top-up, then the normal board. |
+| 7 | **7A Fast repeat + resend** | Invite sheet: phone + name, "Send invite"; it stays open with "Invite another" and the last result. Invite rows show state + "Sent 2d ago" + Resend (once per 24 h) + Revoke. SMS failed: danger row "SMS not sent · Resend". Expired: muted row "Invite again". |
+| 8 | **8A Full state table** | See the state table below. |
+| 9 | **9A Visible pending invite** | From sign-up on, the biker Home shows a muted card "<Owner> invited you · finish your ID check to join" (no Join button). When KYC passes it becomes the Join card and a push says "<Owner> is waiting for you". |
+| 10 | **10A Push + book nudge** | Each Join pushes the owner "<Name> joined your bikers". On the first Join only, the roster shows the banner "<Name> is ready · Book your first delivery", which opens Book with My bikers selected. The Notifications feed gets the same item. |
+| 11 | **11A Map to drawn parts** | See the component map below. New components only where the map says "new". |
+| 12 | **12A Fleet variants (biker)** | Offer card and pins: "<Owner> job" tag, distance + drop-off, no fare. Done: leads with "Return $X to <Owner>" (or "Nothing to return"). Money hero for fleet bikers: "Cash with you · owed to <Owner> $X"; no Earnings, commission or top-up. Cancel sheet: no strike line; "This tells <Owner>". Logged as D-ledger rows against rider-v2. |
+| 13 | **13A Zero-fare + cash card (merchant)**, *defaulted* | Book: segmented My bikers \| Any biker at the top. My bikers hides the fare stepper; the button reads "Ring my bikers". "Send to any biker" brings the stepper back, prefilled. Order cash card for Own-biker app orders: "Cash back from <Biker>: food $X + delivery $Y = $Z" (OV-F5). Logged as D-ledger rows against merchant-v2 §6/§7. |
+
+**Issue 13 was not answered.** The session's context ran out while it was open, and 13A (the recommended option) was
+written in so the brief is complete. It is the only one of the 13 not chosen by the owner. If the owner picks 13B
+(keep the stepper disabled at $0 and the existing cash card copy), delete the two merchant-v2 rows in the deviation
+draft below and the §6 cash card line. Nothing else depends on it.
+
+### Journey storyboards
+
+**Owner (the 5-minute moment is the first Join):**
+1. Admin enables the owner's fleet (fee set) → owner sees Account › "Own bikers · 0 bikers".
+2. Opens the roster → empty state "Invite your bikers" + Invite pill. If they had Preferred riders, the
+   "Invite as Own biker?" suggestions show here once (P7-3).
+3. Invite sheet: phone + name → Send invite → "Invite another" (7A). Rows sit in the pending group with
+   "Sent 2d ago" + Resend / Revoke.
+4. A biker joins → push "<Name> joined your bikers" → the roster banner "<Name> is ready · Book your first
+   delivery" (10A) → Book with My bikers selected (5A).
+5. "Ring my bikers" → "3 of your bikers online · ringing…" (4A) → accepted → the usual merchant-v2 order
+   lifecycle → cash card "Cash back from <Biker>" (13A).
+6. Monday: Money › weekly statement › "Fleet rides" section per branch + the owner fleet bill (E7).
+
+**Biker (the risky stretch is the hours between the SMS and the end of the ID check):**
+1. SMS with link → app install / sign-up (first-run-v2, D-82) → Home shows "<Owner> invited you · finish your
+   ID check to join" (9A).
+2. KYC passes → push "<Owner> is waiting for you" → Join card → confirm → the board becomes "<Owner> jobs".
+3. Offer: "<Owner> job" tag, distance, drop-off, no fare (12A) → deliver → Done "Return $X to <Owner>".
+4. Money tab: "Cash with you · owed to <Owner> $X".
+5. Account › Leave (refused mid-delivery: "You can leave after this delivery"). Disabled by Lynia → one-time
+   "You're a public biker now" sheet (6A).
+
+### State table (8A)
+
+| Surface | Loading | Empty | Error | Offline | Partial / special |
+|---------|---------|-------|-------|---------|-------------------|
+| Roster (merchant) | skeleton rows | D-78 EmptyState "Invite your bikers" + Invite pill (owner); staff: no pill | couldn't-load EmptyState + Retry | last list + offline toast | invites only: pending group alone + 10A banner when the first one joins |
+| Invite sheet | button spinner | — | inline "Couldn't send · Try again"; SMS failed → danger row (7A) | "Can't reach Lynia · Retry" | duplicate phone: "Already invited" with Resend |
+| Book › My bikers | count shimmer under the toggle | 0 online → 4A skip | "Can't reach Lynia · Retry" | same | paused → 6A banner; searching → 4A card |
+| Biker fleet Jobs | board skeleton | EmptyState "No <Owner> jobs right now" | couldn't-load + Retry | rider-v2 offline banner | paused → 6A EmptyState |
+| Join card | — | — | Join tap fails → toast + Retry | toast + Retry | refusals per P7-2 |
+| Leave | button spinner | — | toast + Retry | toast | mid-delivery → "You can leave after this delivery" |
+| Statement › Fleet rides | rows shimmer | "No fleet rides this week" one line | couldn't-load + Retry | cached week | adjustment rows show the reason and the original ride |
+| Admin fleet table | table skeleton | "No fleets yet" | inline error + Retry | — | overdue rows in danger (3A) |
+
+### Component map (11A)
+
+| Fleet surface | Built from |
+|---------------|-----------|
+| Roster rows | merchant-v2 Team list rows (+ state chip, cash line) |
+| Invite sheet | merchant-v2 Team invite sheet |
+| Book toggle | merchant-v2 segmented control |
+| Searching / none-took-it card | merchant-v2 Book searching card (+ count, countdown bar) |
+| Statement Fleet rides | merchant-v2 Money "This week" list rows |
+| Account row | merchant-v2 Account › Orders & people row with a value |
+| Biker invite / Join / paused cards | rider-v2 board banner + D-78 EmptyState |
+| "You're a public biker now" | first-run-v2 full sheet pattern |
+| Fleet offer card, Done, Money hero, Cancel sheet | rider-v2 parts, fleet variants (12A) |
+| Admin fleet table + side panel | the existing admin console table + side panel |
+| **New** | countdown bar (Book searching); state chip on roster rows (if the Team list has none) |
+
+### Pass 6: responsive and accessibility (R-A1–R-A6, from DESIGN.md § Responsive & accessibility)
+These restate DESIGN.md rules for the new surfaces. They need the owner's confirmation only where they change a
+drawn layout (R-A2).
+- **R-A1** State is never colour-only: chips carry text ("On a job", "Online", "Offline"); the cash line is text
+  plus the Cash-due colour; overdue admin rows also say "N days overdue".
+- **R-A2** At 320 px the segmented toggle keeps "My bikers | Any biker" on one line and moves "4 online" under it;
+  roster rows wrap the cash line to a second line instead of truncating the name.
+- **R-A3** Resend, Revoke, Invite another, the toggle halves and the Join button use `var(--target-min)`;
+  Join and "Ring my bikers" use `var(--target-primary)`.
+- **R-A4** The searching card announces the count and time left as text in a polite live region; the countdown
+  bar is not the only signal.
+- **R-A5** Sunlight contrast (AA+) for Cash-due yellow text: the amount is in the text colour on a yellow chip,
+  not yellow text on white.
+- **R-A6** Screen-reader order on the roster row: name, state, cash, cancels, actions.
+
+### Pass 7: open decisions (proposed, owner to confirm)
+- **P7-1 "<Owner>" in biker copy** is the biker's home branch's merchant name (the name on the shop they work at),
+  not the owner's person name. Chains with one brand get the same word across branches anyway.
+- **P7-2 Join card copy and refusals:** card "<Owner> wants you on their bikers · Jobs from <Owner> only, no fare,
+  no top-up" + Join / Not now. Refusals: team member of a branch → "You work at <Owner>. Ask them to add you as a
+  biker from a different account" (OV-F8); in another fleet → "Leave <Other> first"; invite revoked or expired →
+  "This invite has ended. Ask <Owner> for a new one".
+- **P7-3 "Invite as Own biker?" suggestions** appear once, owner only, at the top of the roster's pending group
+  ("From your Preferred riders"), each with Invite; dismiss hides them for good.
+
+### Deviation draft (for `docs/DESIGN-DEVIATIONS.md`, owner approval needed before any screen ships; T10)
+- rider-v2 offer card and map pins: fleet variant with no fare, "<Owner> job" tag (12A).
+- rider-v2 Done: fleet variant "Return $X to <Owner>" (12A).
+- rider-v2 Money hero: fleet variant "Cash with you · owed to <Owner>" (12A).
+- rider-v2 Cancel sheet: fleet variant with no strike line (12A).
+- merchant-v2 §7 Book: My bikers \| Any biker toggle; fare stepper hidden on My bikers; "Ring my bikers" (13A).
+- merchant-v2 §6 cash card: "Cash back from <Biker>: food + delivery" for Own-biker app orders (13A, OV-F5).
+- merchant-v2 Account: "Preferred riders" row replaced by "Own bikers" for fleet merchants, removed otherwise (2A).
+
+### Unresolved decisions (design)
+- Issue 13: 13A written in by default, not chosen by the owner.
+- R-A2 (the 320 px layout change) and P7-1–P7-3: proposed, owner to confirm.
+
+### Completion summary (design)
+- Passes: 7 of 7 evaluated. Issues decided by the owner: 12 (1–12, all option A). Defaulted: 1 (13A).
+- Mockups: none (designer tool had no OpenAI key).
+- Outside voice: native Claude subagent, findings folded into issues 4–10.
+- Next gate: T8, the design handoff export for these surfaces, then lanes B/C/D. The API lane (T1–T7) does not wait.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
@@ -1940,14 +2078,16 @@ None. 17 answered.
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: SCOPE_REDUCTION, 0 critical gaps |
 | Outside Review | native Plan subagent, CEO + Eng (codex not installed) | Independent 2nd opinion | 2 | unavailable (external); native completed both times | CEO: 10 findings, all dispositioned. Eng: 10 findings; 3 corrected, 7 decided by owner (D11–D17). No completed external review |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 41 issues, 0 critical gaps (all mapped to approved tasks T1–T10; 0 unresolved) |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | ISSUES OPEN | 7 passes; 12 decided by owner, 1 defaulted (13A); R-A2 + P7-1–P7-3 proposed. Ratings now 8–9/10 |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 - **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable in both the CEO and the Eng review (CLI not
   installed). The native in-host Plan fallbacks completed: 10 findings each. They are not external coverage.
 - **VERDICT:** No review is CLEAR. Eng is ISSUES OPEN because it mapped 41 items of planned work; it has 0
   unresolved decisions and 0 critical gaps. Eng review required. Implementation can start on the API-only lane
-  (T1–T7); the screens wait on the design handoff (T8).
+  (T1–T7); the screens wait on the design handoff (T8). The design review wrote the handoff brief (decisions 1–13,
+  storyboards, state table, component map, deviation draft); the handoff export and the D-ledger approval are next.
 
 **UNRESOLVED DECISIONS:**
 - + 10 unresolved from prior reviews (the CEO review's E-rows; all 10 were since answered in eng D1–D10, see Decision ledger)
+- Design: issue 13 defaulted to 13A (not answered); R-A2 and P7-1–P7-3 proposed, owner to confirm.
