@@ -199,3 +199,18 @@ starts from reasoning, not archaeology.
   booking. All of it stays hidden until the owner sets the `MERCHANT_SUPPORT_WHATSAPP` repository
   variable (international digits, e.g. `263771234567`) and the merchant web redeploys. The restaurant
   go-live card's button and restaurant Help land with L5.
+
+## Own bikers (from /plan-ceo-review 2026-10-19, `docs/designs/own-bikers.md`)
+
+### Fleet batching: multi-order trips for Own bikers
+
+- **What:** Let an Own biker carry 2–3 nearby orders on one trip.
+- **Why:** Big multi-branch chains batch at rush hour. Today the `one_active_ride` unique index
+  (`apps/api/prisma/migrations/0001_init/migration.sql:150`) allows one active ride per biker.
+- **Pros:** Chain throughput. It's a selling point for big clients.
+- **Cons:** It changes the core order lifecycle (one rider per active order, codes, cash handshake, tracking).
+- **Context:** The CEO review outside voice (finding #6) raised it. It was kept out of the Own bikers v1 scope
+  (SCOPE REDUCTION mode). Start from the index, `ACTIVE_RIDE_STATUSES` and the dispatch "one active ride"
+  gate.
+- **Effort:** human XL / CC L. **Priority:** P2.
+- **Trigger / blocked by:** Own bikers v1 live with at least one chain.
