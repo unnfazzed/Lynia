@@ -108,6 +108,16 @@ originate**, plus fleet-first routing for the orders it did.
 
 ### Data model (Prisma)
 
+> **Amended by the CEO review, R6 (owner, D3 "Fleet per owner").** The fleet belongs to the merchant
+> **owner** (`merchants.owner_profile_id`, which every branch row has), not to one branch row.
+> - `Rider.fleetMerchantId` becomes **`Rider.fleetOwnerProfileId`** plus an optional
+>   **`Rider.fleetHomeMerchantId`** (the home branch, whose offers go to that biker first).
+> - Invites, Join, Leave and Remove work at owner level.
+> - `Order.fleetMerchantId` stays the **branch** the ride is billed to.
+> - Trigger condition 1 compares `rider.fleet_owner_profile_id` with the owner of that branch.
+> - The weekly bill is one per owner, with a line per branch.
+> - Read "merchant" as "owner" wherever a biker's link is described below.
+
 - **`Merchant.fleetEnabled`** (bool, admin), **`Merchant.fleetRideFee`** (Decimal, admin) and
   **`Merchant.fleetPausedAt`** (admin pause for non-payment).
 - **`Rider.fleetMerchantId`** (nullable FK, unique per rider by construction) and **`Rider.fleetJoinedAt`**.
@@ -299,6 +309,10 @@ Call sites from the code map:
 - If a public biker delivers: normal biker commission, and no merchant fee.
 
 ### Commission and billing
+
+> **Amended by the CEO review, C1 (owner, D4).**
+> - The ledger row is written **inside the same transaction** as each billable terminal transition (delivered/completed, cancelled after pickup, undelivered), next to `chargeCommission(tx, …)` (`order-lifecycle.service.ts:749`).
+> - A **nightly reconciliation** finds billable fleet orders with no ledger row and raises an alert.
 
 - `chargeCommission` skips fleet jobs entirely: no `free_job` row, and no ride commission on the biker.
 - Fleet jobs do **not** use up the biker's 10 free jobs, and do **not** count toward `tripsCount` for
@@ -835,3 +849,405 @@ issues verified: 7 of 7
 
 Verification is deterministic: a fix counts when its `applied_text` is in the current design and absent from the round-3 snapshot. It confirms applied edits, never a review verdict; no reviewer was launched past the cap.
 <!-- gstack:office-hours:concerns:end -->
+
+## CEO Review (plan-ceo-review, 2026-10-19): SCOPE REDUCTION
+
+Mode: SCOPE REDUCTION, chosen by the owner (D1). The architecture of approach B is kept: consent, exclusivity
+enforced by the DB trigger, fleet bookings, and the fee ledger. Each deferral below is asked separately and
+applied only on a yes.
+
+### Decision ledger
+
+| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
+|---|---|---|---|---|---|
+| R1 marketplace fleet-first (owner) | Plan § "Marketplace orders at a fleet merchant"; premise 4 | Own bikers take the merchant's marketplace orders first, then public bikers | Defer: Own bikers serve only "My bikers" bookings in v1. The merchant's marketplace orders go to public bikers (and never to another merchant's fleet) | approved (Keep; deferral declined) | owner, D2 answer 2026-10-19: "i am executing everything now .. it has to be ready to handle big clients" — keep all of R1–R5 in scope |
+| R2 retire Preferred (owner) | Owner decision D6; build step 3; Distribution § PREFERRED_RETIRED | Retire Preferred for all merchants in step 3 | Defer: leave Preferred untouched until Own bikers has one live merchant | approved (Keep; deferral declined) | owner, D2 answer 2026-10-19: "i am executing everything now .. it has to be ready to handle big clients" — keep all of R1–R5 in scope |
+| R3 fleet statement model (owner) | Plan models MerchantFleetStatement; the existing weekly statement is at merchant.service.ts:937 (GET /merchant/statement/weekly) | New MerchantFleetStatement model + weekly job | Defer the new model: put fleet fee lines on the existing weekly statement, plus one admin "week paid" record | approved (Keep; deferral declined) | owner, D2 answer 2026-10-19: "i am executing everything now .. it has to be ready to handle big clients" — keep all of R1–R5 in scope |
+| R4 pause machinery (owner) | Plan § Pause (fleetPausedAt semantics) | Pause with full semantics (bookings, marketplace, cancellations, predicate) | Defer pause: v1 has only enable/disable. Non-payment is handled by phoning the merchant, then disabling | approved (Keep; deferral declined) | owner, D2 answer 2026-10-19: "i am executing everything now .. it has to be ready to handle big clients" — keep all of R1–R5 in scope |
+| R5 admin fleet UI (owner) | Build step 2 "admin fleet money"; admin is a 1440 surface that needs a handoff | Admin web page for fee, statement, paid, pause | Defer the page: an admin API plus a documented ops script for fee and paid, until a second fleet merchant exists | approved (Keep; deferral declined) | owner, D2 answer 2026-10-19: "i am executing everything now .. it has to be ready to handle big clients" — keep all of R1–R5 in scope |
+| R6 big chains: fleet per owner (owner) | Multi-branch owners are one Merchant row per branch (schema.prisma:244); owner said "ready to handle big clients" | A biker links to one Merchant row (branch) | A biker links to the **owner** (`Rider.fleetOwnerProfileId`) and serves every branch that owner has, with an optional `fleetHomeMerchantId` that orders their offers first. One weekly bill per owner, with a line per branch. The trigger and predicate compare the order's owning merchant's **owner** | approved | owner, D3 answer 2026-10-19: "Fleet per owner (recommended)" |
+| C1 fleet ledger write mechanism (Section 2 owner) | Plan § Commission and billing: rows on delivered/completed, cancelled-after-pickup, undelivered; chargeCommission(tx) runs inside the completion transaction (order-lifecycle.service.ts:749) | Unspecified: a failed or skipped write loses the fee silently | A: write in the same transaction at every terminal transition + a nightly reconciliation that alerts | approved | owner, D4 answer: "Same txn + nightly check (recommended)". Covers the C1 mechanism only |
+| E1 trigger violation handling (eng) | Section 2. The trigger raising means an app door was missed | A DB exception reaches the user as a 500 | A custom SQLSTATE mapped to 409 `fleet_scope_violation`, a structured log {orderId, riderId, path}, Sentry error + Telegram alert | pending (/plan-eng-review) | |
+| E2 trigger cost on hot `orders` (eng) | Section 7. Every orders write passes the trigger | Fires on every write | `WHEN (rider_id or fleet_merchant_id changed)`; index `riders(fleet_owner_profile_id)`; a hot-path-indexes.spec row | pending (/plan-eng-review) | |
+| E3 ledger adjustments for disputes (eng) | Section 3/8. Big clients will dispute fees | None | An admin void/credit row, append-only, with actor + reason (mirrors CommissionLedger) | pending (/plan-eng-review) | |
+| E4 invite abuse + IDOR (eng) | Section 3. Invites send SMS to any phone; Remove/Leave take ids | Unspecified | Owner-only invite/remove; a rate limit per owner; SMS cost guard; every fleet endpoint scoped to the caller's owner | pending (/plan-eng-review) | |
+| E5 fleet metrics + alerts (eng) | Section 8 | None | Metrics: booking created/accepted/converted/time-to-accept, scope violations, statement unpaid days. Telegram alert (#1244 channel) on a violation, a reconciliation miss, or a statement unpaid >7 days | pending (/plan-eng-review) | |
+| E6 branch staff view under owner fleets (eng/design) | R6 consequence. Staff work one branch at a time | Unspecified | Staff see their branch's fleet jobs and a read-only roster; only the owner manages | pending (/plan-eng-review, /plan-design-review) | |
+| E7 where the fleet bill shows in the merchant app (design) | Section 11. An E3 weekly statement already exists (merchant.service.ts:937) | Separate fleet statement | Fleet lines inside the existing weekly statement vs a separate screen | pending (/plan-design-review) | |
+| E8 stuck fleet bookings (eng) | Section 4. fleet_searching with no taker and the merchant away | Waits forever | After T minutes, push the merchant ("None of your bikers took it"); expire at a cap, with notice | pending (/plan-eng-review) | |
+| E9 Join vs in-flight accept race (eng) | Section 4 async ordering | Unspecified | The Join transaction locks the rider row (FOR UPDATE) and re-checks active ride/offers; accept CAS + trigger cover the other order | pending (/plan-eng-review) | |
+| E10 erasure of a fleet biker (eng) | Section 3. Privacy service + pii-manifest | Unspecified | Erasure clears the fleet link; ledger keeps a plain riderId uuid (no cascade), like addedByProfileId | pending (/plan-eng-review) | |
+
+## Answered decision (R1): Keep, deferral declined. Same answer applied to R2–R5
+Commitment comparison:
+| Commitment | Source/approval or pending | Current | A | B |
+|---|---|---|---|---|
+| Own bikers serve "My bikers" bookings | premise 3 (approved) | yes | yes | yes |
+| Own bikers get first offer on the merchant's marketplace orders | premise 4 (pending R1) | yes | no, deferred to TODOS.md | yes |
+| Fleet riders never get another merchant's orders | premise 2 (approved) | yes | yes | yes |
+| Marketplace unassign/ledger/predicate branches | plan § Marketplace | built | not built | built |
+
+Question: D2 — R1: Defer fleet-first routing for the merchant's marketplace orders?
+Header: R1 market
+A) Defer to TODOS.md (recommended)
+Own bikers only take the merchant's own phone bookings in v1. Effort S (it removes work), risk low. ✅ Removes the predicate branch on merchantId, the marketplace unassign rule and the marketplace ledger kind. ✅ The phone-order wedge, the pain you named, ships whole. ❌ A fleet merchant's Lynia app orders still go to public bikers while their own bikers may sit idle.
+B) Keep in scope
+Own bikers get first offer on the merchant's Lynia marketplace orders too. Effort M, risk medium. ✅ Own bikers are busier, and app orders stay in-house. ✅ The 12-month "fleet first, overflow public" story starts now. ❌ It adds the pre-assignment predicate, unassign-clears-fleet rules and two more trigger cases.
+
+
+## Answered decision (C1): A, same transaction + nightly check
+Commitment comparison:
+| Commitment | Source/approval or pending | Current | A | B | C |
+|---|---|---|---|---|---|
+| Fee row exists for every billable fleet ride | plan § Commission and billing (approved) | intended | guaranteed | guaranteed if every path calls it | eventually, if the job runs |
+| Write is in the same DB transaction as the terminal status change | pending C1 | unspecified | yes, all 3 terminal paths | yes, all 3 terminal paths | no |
+| A missed or failed write is detected and alerted | pending C1 | no | nightly reconciliation + Telegram alert | no | the job is the only writer |
+| Idempotent on orderId | plan (approved) | yes | yes | yes | yes |
+
+Question: D4 — C1: How is the fleet fee row guaranteed to be written when a fleet ride ends?
+Header: C1 ledger
+A) Same txn + nightly check (recommended)
+Write the ledger row inside the same transaction as the delivered/completed, cancelled-after-pickup and undelivered transitions (next to chargeCommission), plus a nightly job that finds billable fleet orders with no row and alerts. Effort S, risk low. ✅ A fee can never silently go missing, because the status change and the fee commit together. ✅ The reconciliation catches a future code path that forgets the call. ❌ Adds one scheduled job and one alert to maintain.
+B) Same transaction only
+Write the ledger row inside the terminal-transition transactions, with no reconciliation. Effort S, risk medium. ✅ Atomic with the status change on today's paths. ✅ No extra job. ❌ A new terminal path added later that forgets the call loses fees with no signal.
+C) Async job only
+A periodic job scans finished fleet orders and writes missing rows. Effort S, risk medium. ✅ One writer, decoupled from the lifecycle code. ✅ Self-heals after outages. ❌ Fees lag, and the weekly statement can be short if the job is late or failing.
+
+### Section 1: Architecture
+
+```
+                    +-------------------- apps/api (NestJS) ---------------------+
+ merchant web  ---> | merchant-fleet.controller (invite/list/remove, owner-only)  |
+ (Own bikers,       | merchant-booking.service ── "My bikers" ──┐                 |
+  Book a biker)     |                                           v                 |
+                    |        common/fleet-scope.ts (pure predicate, one source)    |
+ biker app  ------> | rider-fleet.controller (Join/Leave)   ^   ^   ^   ^         |
+ (Join card,        | food-dispatch.service (rounds) -------+   |   |   |         |
+  fleet Jobs)       | offers / matching / orders.listOpen ------+   |   |         |
+                    | tracking.gateway (BOARD_ROOM vs fleet:<owner>) +   |         |
+                    | admin-orders assign ----------------------------------+      |
+                    | order-lifecycle (terminal txns) -> wallet.chargeCommission   |
+                    |                                 -> fleet-ledger.write (C1)   |
+ admin  ----------> | admin fleet API (enable/fee/pause/statement/paid, E3 void)   |
+                    +----------------------------+--------------------------------+
+                                                 v
+                    Postgres: riders.fleet_owner_profile_id, orders.fleet_merchant_id/fleet_fee,
+                    merchant_fleet_ledger, merchant_fleet_statement,
+                    CONSTRAINT TRIGGER orders_fleet_scope (DEFERRABLE INITIALLY DEFERRED)
+```
+
+- **Coupling:** eight call sites depend on `fleet-scope`. That is justified: one predicate instead of eight
+  ad-hoc checks. The predicate also exists in SQL (the trigger), so a parity spec must run the same
+  fixtures through both (Section 5).
+- **Scaling (big clients):**
+  - A 5-branch chain with 50 bikers is one `fleet:<owner>` room and rounds of at most 10 offers, which
+    stays within today's dispatch limits.
+  - The first thing to break at 100x is the trigger on the hot `orders` table (E2). Weekly statement
+    aggregation needs an index on `merchant_fleet_ledger(merchant_id, created_at)`.
+- **Single points of failure:**
+  - Trigger correctness: if it's wrong, either every fleet write fails or a leak goes through. Mitigated
+    by trigger specs and E1 alerting.
+  - Nightly reconciliation (C1): a missed run is tolerable, because writes are already transactional.
+- **Rollback:**
+  - API: a previous-revision re-point (`rollback.yml`).
+  - Behaviour: unset `FLEET_UI_LIVE`, disable per merchant, unset `PREFERRED_RETIRED`.
+  - Schema: the migration is expand-only, so it stays in place.
+- **Value test:** no process artifacts. The statement is product (billing), not a report about the work.
+- **Findings:**
+  - R6 re-keys the link to the owner (approved, applied above).
+  - The predicate duplicated in SQL needs a parity test (task T6).
+
+### Section 2: Error & Rescue Map
+
+```
+METHOD/CODEPATH                    | WHAT CAN GO WRONG                          | ERROR
+-----------------------------------|--------------------------------------------|---------------------------
+fleet-scope / trigger              | a door missed, the trigger raises           | FleetScopeViolation (custom SQLSTATE)
+rider-fleet.join                   | active ride / open obligation / other fleet | FleetJoinRefused (409, reason code)
+                                   | KYC not verified / invite expired, revoked  | FleetInviteInvalid (410/403)
+merchant-booking.create(My bikers) | fleet disabled / paused / no Own bikers     | FleetUnavailable (409)
+fleet booking accept (CAS)         | already taken / already converted           | DispatchConflict (409)
+convert to Any biker               | status no longer fleet_searching            | ConvertConflict (409)
+fleet-ledger.write (in txn)        | write fails -> whole transition rolls back  | Prisma error, rethrown
+nightly reconciliation             | finds billable order with no row            | ReconciliationMiss (alert)
+invite SMS send                    | provider down / rate limited                | SmsSendFailed (invite stays "Invited", retry)
+weekly statement job               | job fails / duplicate run                   | idempotent upsert per (owner, week)
+
+ERROR                  | RESCUED? | RESCUE ACTION                                | USER SEES
+-----------------------|----------|----------------------------------------------|------------------------------------------
+FleetScopeViolation    | N <- GAP | E1: map to 409, log, Sentry + Telegram       | today: 500; after E1: "Not available for this biker"
+FleetJoinRefused       | Y        | refuse with reason                           | "Finish your job / settle cash first"
+FleetInviteInvalid     | Y        | refuse                                       | "This invite has expired"
+FleetUnavailable       | Y        | offer Any biker                              | "Own bikers paused, contact Lynia" / Any biker
+DispatchConflict       | Y        | loser gets clean message                     | "Already taken"
+ConvertConflict        | Y        | refresh booking                              | "A biker already accepted"
+ledger write failure   | Y        | txn rollback, lifecycle retries as today     | delivery confirm retries; no lost fee
+ReconciliationMiss     | Y (C1)   | alert + admin backfill                       | invisible to users; ops alerted
+SmsSendFailed          | N <- GAP | retry with backoff, show "SMS not sent, resend" | today: silent; covered by E4/E5
+```
+
+**GAPS:** FleetScopeViolation (E1) and SmsSendFailed (E4/E5). Both are pending eng rows. Neither is
+silent revenue loss (C1 closed that).
+
+### Section 3: Security & Threat Model
+
+| Threat | Likelihood | Impact | Mitigated? |
+|---|---|---|---|
+| A merchant invites strangers' numbers (SMS spam, cost) | Med | Med | E4 (pending): owner-only + rate limit |
+| IDOR: Remove/Leave/statement for another owner's fleet | Med | High | E4 (pending): every endpoint scoped to the caller's owner |
+| A biker joins a fleet to escape commission, then delivers public work | Low | High | Trigger + doors (approved); commission bypass only for fleet jobs (approved) |
+| A merchant learns a biker's KYC state through invite status | Low | Low | Only for numbers it invited, and only coarse states. Accepted as designed |
+| Fee tampering / disputes | Med | Med | Fee snapshot on the order (approved); E3 adjustments with audit (pending) |
+| PII: invite phones, erasure | Med | Med | pii-manifest update (planned); E10 (pending) |
+| SQL injection in the trigger | Low | High | Static trigger SQL with no dynamic SQL |
+
+No new secrets and no new dependencies.
+
+### Section 4: Data Flow & Interaction Edge Cases
+
+```
+FLEET BOOKING: merchant input -> validate (fleetEnabled, !paused, pin, COD amount) -> create order
+  (status fleet_searching, fee snapshot) + MerchantBooking (same txn; trigger deferred to commit)
+  -> rounds to Own bikers -> accept CAS -> assigned -> ... -> terminal txn + ledger row (C1)
+ shadow: no Own biker online -> rounds empty -> "None of your bikers took it" (+E8 push/expiry)
+         paused mid-search   -> pause-cancel guard (status + rider_id) -> merchant told
+         duplicate submit    -> client idempotency key (existing booking create) -> one order
+         convert vs accept   -> one row condition, exactly one wins (approved)
+```
+
+**Async ordering (invariant: an order's rider is in its fleet scope at commit)**
+
+```
+ Join(biker B, owner O)          accept(order X, B)            shared state
+ lock rider B (E9) ---------->   (blocked on row lock)         B.fleet=null
+ check: no active ride, OK
+ set B.fleet=O, commit -------> resumes: CAS rider_id=B        B.fleet=O
+                                 trigger at commit: X is public, B fleet=O -> REFUSED -> 409
+ Reverse order: accept commits first -> Join sees active ride -> FleetJoinRefused
+```
+
+Proof needed (T5): a controlled pause/release test for both orders.
+
+| Interaction | Edge case | Handled? | How |
+|---|---|---|---|
+| Join tap | double tap | Y | first Join wins; second gets "already joined" |
+| Book "My bikers" | merchant closes the app mid-search | Partly | E8 (pending) push + expiry |
+| Convert | stale tap after a biker accepted | Y | the CAS guard |
+| Remove biker | biker mid-delivery | Y | refused until the ride ends |
+| Invite list | 50+ bikers (big client) | Partly | paginate the roster (design E6/E7) |
+
+### Section 5: Code Quality
+
+- Fits existing patterns: a `common/` helper like `commission-cover.ts`, ledgers mirroring
+  `CommissionLedger` / `MerchantDebtLedger`.
+- **Duplication risk:** the scope predicate exists in TS and SQL. One TS source plus a parity spec (T6).
+- **Complexity:** `FoodDispatchService.tick` would branch for parcel fleet bookings. Prefer a thin
+  `FleetDispatch` entry that reuses the round machinery, rather than more branches inside `tick`
+  (eng decides).
+- Over-engineering check: the owner-level fleet is justified by R6. No speculative abstractions.
+
+### Section 6: Tests
+
+| New thing | Type | Happy | Failure | Edge |
+|---|---|---|---|---|
+| Trigger | integration (DB) | fleet rider on own-owner order commits | public order refused; other owner refused | rider_id NULL; booking insert order (deferred) |
+| fleet-scope parity | unit | same fixtures, TS == SQL | — | NULL/NULL |
+| Doors (8) | integration | allowed path | each refuses cross-traffic | admin assign |
+| Join/Leave | integration | joins, sockets move | active ride / debt / other fleet | double tap; E9 race |
+| Fleet booking + convert | integration | accept | convert-vs-accept race; pause-cancel-vs-accept | stale tap |
+| Ledger (C1) | integration | row in the same txn | txn rollback leaves no row and no status change | idempotent retry |
+| Reconciliation | unit + job | finds the missing row, alerts | — | none missing means no alert |
+| Statement (owner, per branch) | integration | totals by branch | — | week boundary (Harare) |
+| Preferred retirement flag | integration | flag on: no bonus, no row | — | flag off: unchanged |
+
+- **2am Friday test:** run a full chain (owner, 2 branches, 3 bikers) through booking → delivery →
+  ledger → statement, and assert zero cross-traffic.
+- **Hostile QA test:** a fleet biker calls every public endpoint directly by id.
+- **Chaos test:** kill the API mid-terminal-transition. Assert there's never a status change without
+  its fee row, and never a fee row without its status change.
+
+### Section 7: Performance
+
+- E2: the trigger WHEN clause plus a rider index.
+- New queries need indexes: `riders(fleet_owner_profile_id)`, `orders(fleet_merchant_id, status)`,
+  `merchant_fleet_ledger(merchant_id, created_at)`.
+- Nightly reconciliation is bounded to the last 48h of terminal fleet orders.
+- No N+1: the doors batch the fleet scope for the candidate list, as `ridersWhoCoverCommission` does.
+
+### Section 8: Observability
+
+- E5 (pending): metrics, Telegram alerts and an admin view.
+- **Runbook entries:**
+  - scope violation: read the log, find the missed door, hotfix
+  - reconciliation miss: admin backfill
+  - unpaid >7 days: phone the owner, then pause
+- **Debuggability:** a structured log at Join/Leave/Remove/convert/ledger write, with owner, branch, order
+  and rider ids.
+
+### Section 9: Deployment & Rollout
+
+```
+1 migration A: ALTER TYPE order_status ADD VALUE 'fleet_searching' (its own migration; Postgres can't use
+  a new enum value in the same txn)
+2 migration B: nullable columns + tables + indexes + deferred constraint trigger (expand-only)
+3 API deploy (release-azure.yml on merge). FLEET_UI_LIVE unset, so nothing user-visible yet
+4 merchant web deploy + biker app OTA to production (JS-only, verify no native module)
+5 set FLEET_UI_LIVE; admin enables the first owner; watch E5 metrics for 1h
+6 later wave: PREFERRED_RETIRED=1 + notifications-feed item; delete preferred code 2 weeks later
+Rollback: unset flags (minutes) -> previous API revision (rollback.yml) -> republish previous OTA.
+Schema stays (expand-only).
+```
+
+- Deploy-time window: old API and new schema together is safe, because the columns are nullable and the
+  trigger is inert while no fleet links exist.
+- Wire safety: `status` is `z.string()` on the wire (`contracts.ts:1616`), so old apps survive the new
+  value.
+- Join only exists in the new biker app, so an old install can't become a fleet biker.
+
+### Section 10: Long-Term Trajectory
+
+- **Reversibility: 3/5.**
+  - Flags and links are reversible.
+  - The enum value and tables are one-way, but harmless.
+  - Preferred retirement is reversible until the code is deleted.
+- **Debt:**
+  1. A parallel fleet statement next to the E3 weekly statement (E7).
+  2. The predicate exists in TS and SQL (T6 parity).
+  3. The Merchant commission settlement TODO is now partly real: the fleet fee is the first real merchant
+     charge (T8).
+- **12-month fit:** owner-level fleets plus one bill per owner is the right base for "Lynia runs delivery
+  for big chains".
+
+### Section 11: Design & UX (UI scope: yes)
+
+```
+Merchant: Account -> Own bikers -> [Invite] -> invite states (Invited / Signing up / Waiting for ID / Joined / Expired)
+          Book a biker -> [My bikers | Any biker] -> searching -> assigned -> ... ; "None took it" -> Send to any biker
+Biker:    Home -> Join card (KYC verified) -> confirm -> fleet Jobs ("<Owner> jobs") -> offer -> deliver ; Account -> Leave
+Admin:    Fleet money -> owner -> fee / statement (per branch) / mark paid / pause
+```
+
+| Feature | Loading | Empty | Error | Success | Partial |
+|---|---|---|---|---|---|
+| Own bikers roster | skeleton | EmptyState (D-78) "No bikers yet" + Invite | load error EmptyState | list | pending invites shown |
+| My bikers booking | searching | "None of your bikers took it" | FleetUnavailable copy | assigned | converted |
+| Biker fleet Jobs | — | EmptyState "No <Owner> jobs right now" | offline | offer card | — |
+| Fleet statement | skeleton | "No fleet rides this week" | error | totals per branch | unpaid flag |
+
+All of these surfaces go through the step-0 handoff (pixel-parity rule). **Recommend /plan-design-review**
+for the handoff brief (E6, E7).
+
+### What already exists
+- `MerchantBooking` + `OrdersService.create`: reused for fleet bookings.
+- `FoodDispatchAttempt` rounds: reused for fleet offers.
+- `MerchantInvite` + Team join flow: reused for fleet invites.
+- `commission-cover.ts`: the pattern for `fleet-scope.ts`.
+- `chargeCommission(tx)`: where the ledger write goes (C1).
+- E3 weekly statement (`merchant.service.ts:937`): overlaps the fleet statement (E7).
+- Version gate, Telegram alerts (#1244), multi-branch owners (`owner_profile_id`): reused.
+
+### NOT in scope
+- Nothing is deferred or rejected. The owner declined every proposed deferral (R1–R5, D2 answer).
+
+### Dream state delta
+This plan delivers owner-level fleets, fleet bookings, a fee ledger and Preferred's retirement. Two things
+remain between it and the 12-month ideal: one unified merchant bill (E7 + the commission settlement TODO),
+and WhatsApp intake for phone orders (office-hours approach C, not chosen).
+
+### Failure Modes Registry
+
+```
+CODEPATH            | FAILURE MODE            | RESCUED? | TEST? | USER SEES?            | LOGGED?
+--------------------|-------------------------|----------|-------|-----------------------|--------
+trigger             | missed door             | N (E1)   | Y     | 500 until E1          | Sentry
+fleet ledger write  | write fails             | Y (C1)   | Y     | retry, no lost fee     | Y
+reconciliation      | job down                | Y        | Y     | nothing (ops alert)   | Y
+invite SMS          | provider down           | N (E4/5) | N     | invite stuck          | partial
+fleet booking       | no Own biker online     | Y        | Y     | "None took it"        | Y
+fleet booking       | merchant away, stuck    | N (E8)   | N     | customer waits        | N
+Join                | race with accept        | Y (E9)   | Y(T5) | 409 reason            | Y
+statement job       | duplicate run           | Y        | Y     | nothing               | Y
+```
+
+CRITICAL GAPS (RESCUED=N, TEST=N, silent): **0** after C1. Two rows (invite SMS, stuck booking) are not
+silent and are tracked as E4/E5 and E8.
+
+### Stale Diagram Audit
+No ASCII diagrams exist in the files this plan touches today, so there is nothing stale. The new ones above
+are the reference.
+
+### Reality rows
+```
+REALITY: premise-table finding unverified=3 (demand premises) receipts: preferred-riders.ts:12, tracking.gateway.ts:344, merchant-booking.service.ts:162, merchant.service.ts:937
+REALITY: already-done pass. No fleet commits on origin/main
+REALITY: surface-check finding. /merchant/statement/weekly exists (merchant.controller.ts:55); new fleet routes are named in Section 1
+REALITY: binding-decisions pass. 6 decisions logged (B, flat fee in arrears, Preferred retired, no deferrals, owner fleets, C1)
+REALITY: numbers finding. $0.10–0.25 [estimated]; 70%/2min/15% [estimated]; 2 km [measured: dispatch-strategy.ts:19]
+REALITY: deferred-asks pass. No linked issue
+REALITY: pr-count finding. 3–4 PRs (migrations+API, screens, marketplace+retirement, preferred-code deletion); default is one PR per wave
+```
+
+## Implementation Tasks
+Synthesized from this review's findings. Each task derives from a specific finding above.
+
+- [ ] **T1 (P1, human: ~3d / CC: ~3h)**: api: schema + two migrations (enum value first) + deferred constraint trigger keyed on owner (R6)
+  - Surfaced by: Section 1 / Section 9. Files: apps/api/prisma/schema.prisma, apps/api/prisma/migrations/*. Verify: trigger integration specs (T6) + online-safe migration guard
+- [ ] **T2 (P1, human: ~3d / CC: ~3h)**: api: `common/fleet-scope.ts` + all 8 doors (board/push/listOpen/bid/list/pick/dispatch/admin assign) + clone carry-over
+  - Surfaced by: Section 1, learning rider-exclusivity-doors. Verify: door specs; hostile-QA spec
+- [ ] **T3 (P1, human: ~2d / CC: ~2h)**: api: fleet booking (fleet_searching, rounds, convert CAS, pause-cancel guard, drop-back)
+  - Surfaced by: Section 4. Files: merchant-booking.service.ts, food-dispatch.service.ts. Verify: race specs
+- [ ] **T4 (P1, human: ~1d / CC: ~1h)**: api: ledger write in terminal txns + nightly reconciliation + Telegram alert (C1)
+  - Surfaced by: Section 2. Files: order-lifecycle.service.ts, wallet.service.ts. Verify: chaos test (kill mid-txn)
+- [ ] **T5 (P1, human: ~1d / CC: ~1h)**: api: owner-level invite/Join/Leave/Remove with E9 locking + socket room moves
+  - Surfaced by: Section 4. Verify: both-order race test with pause/release
+- [ ] **T6 (P1, human: ~4h / CC: ~30min)**: api: TS/SQL predicate parity spec
+  - Surfaced by: Section 5. Verify: shared fixtures through both
+- [ ] **T7 (P2, human: ~1d / CC: ~1h)**: api+admin: weekly owner statement per branch, mark paid, pause/disable, fee
+  - Surfaced by: Section 10 (R3/R4/R5 kept). Verify: statement integration spec (Harare week)
+- [ ] **T8 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md: link the Merchant commission settlement TODO to the fleet fee; mark TODO-3's consent half superseded by Own bikers
+  - Surfaced by: Step 0B. Verify: docs check
+- [ ] **T9 (P1, design gate)**: design handoff export (step 0) incl. E6/E7: run /plan-design-review first
+- [ ] **T10 (P2, human: ~2d / CC: ~2h)**: marketplace fleet-first + Preferred retirement behind PREFERRED_RETIRED (R1, R2)
+
+Approval readiness: PASS. Checked rows: R1–R5 (D2 answer, Keep), R6 (D3 answer), C1 (D4 answer). E1–E10 stay
+pending, owned by /plan-eng-review or /plan-design-review, and are not applied as accepted work.
+
+### Completion Summary
+```
+  +====================================================================+
+  |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
+  +====================================================================+
+  | Mode selected        | SCOPE REDUCTION (all deferrals declined)     |
+  | System Audit         | E3 weekly statement exists; settlement TODO  |
+  |                      | tripped; TODO-3 superseded; adapter is       |
+  |                      | multi-instance; status is z.string on wire   |
+  | Step 0               | R1-R5 kept, R6 owner fleets added            |
+  | Section 1  (Arch)    | 2 issues found                              |
+  | Section 2  (Errors)  | 10 error paths mapped, 2 GAPS               |
+  | Section 3  (Security)| 4 issues found, 1 High severity (IDOR, E4)  |
+  | Section 4  (Data/UX) | 5 edge cases mapped, 2 unhandled (E8, E6)   |
+  | Section 5  (Quality) | 2 issues found                              |
+  | Section 6  (Tests)   | Diagram produced, 0 gaps (all in tasks)      |
+  | Section 7  (Perf)    | 2 issues found                              |
+  | Section 8  (Observ)  | 1 gap found (E5)                            |
+  | Section 9  (Deploy)  | 2 risks flagged (enum migration, flags order)|
+  | Section 10 (Future)  | Reversibility: 3/5, debt items: 3           |
+  | Section 11 (Design)  | 2 issues (E6, E7)                           |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (0 items)                           |
+  | What already exists  | written                                     |
+  | Dream state delta    | written                                     |
+  | Error/rescue registry| 10 rows, 0 CRITICAL GAPS                    |
+  | Failure modes        | 8 total, 0 CRITICAL GAPS                    |
+  | TODOS.md updates     | 0 items proposed (T8 is a doc correction)   |
+  | Scope proposals      | 5 cuts proposed, 0 accepted; 1 addition (R6) |
+  | CEO plan             | skipped by mode                             |
+  | Outside voice        | see report                                  |
+  | Lake Score           | 1/1 recommendations chose complete option   |
+  | Diagrams produced    | 6 (architecture, data flow, async ordering, |
+  |                      | error map, deployment, UI flow)             |
+  | Stale diagrams found | 0                                           |
+  | Unresolved decisions | 10 (E1-E10, owned by eng/design review)     |
+  | Reality rows         | 7/7 rows, 3 unverified                      |
+  +====================================================================+
+```
