@@ -796,4 +796,21 @@ describe("MatchingService.selectOffer — U62 + MJ-RL2 (C10): every 409 says why
     });
     expect(await reasonOf(service.selectOffer(orderId, offerId, "cust"))).toBe("rider_taken");
   });
+
+  // Own bikers (D-117): a biker who joined a fleet after bidding can't be picked for a public parcel.
+  it("an Own biker's offer is refused rider_unavailable before any claim", async () => {
+    const claim = vi.fn(async () => ({ count: 1 }));
+    expect(await reasonOf(sel({ rider: { fleetOwnerProfileId: "owner-1" }, claim }).selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("the database guard refusing the claim at commit (a Join raced the pick) reads as rider_unavailable, not a 500", async () => {
+    const raced = new Error('fleet_scope: rider r1 is outside the scope of order o1');
+    const service = sel({
+      claim: async () => {
+        throw raced;
+      },
+    });
+    expect(await reasonOf(service.selectOffer(orderId, offerId, "cust"))).toBe("rider_unavailable");
+  });
 });

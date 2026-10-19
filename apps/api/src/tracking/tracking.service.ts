@@ -297,9 +297,11 @@ export class TrackingService implements OnModuleDestroy {
   async isBoardEligible(riderId: string): Promise<boolean> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
-      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true, fleetOwnerProfileId: true },
     });
-    return !!rider && onlineRefusalReason(rider) === null && rider.isOnline === true;
+    // Own bikers (D-117): a fleet biker only ever carries their owner's jobs, so the public board, its
+    // socket room and the demand map are closed to them (GET /orders/open, /orders/demand, boardSubscribe).
+    return !!rider && onlineRefusalReason(rider) === null && rider.isOnline === true && rider.fleetOwnerProfileId == null;
   }
 
   /**
@@ -491,6 +493,9 @@ export class TrackingService implements OnModuleDestroy {
     // inflate supply and spam riders who can't act. The kyc_status clause is the Class-B sibling fix —
     // this filter previously reimplemented onlineRefusalReason's standing predicate MINUS its kyc check,
     // so a rider verified+online at the moment their KYC lapsed still counted as supply.
+    // Own bikers (D-117): both legs also drop fleet bikers. This is the PUBLIC supply: every caller (new-order
+    // and expand pushes, food dispatch candidates, ridersNearby, the no-supply expiry, notify-me waiters) is
+    // about public jobs, which a fleet biker can never take. Fleet rounds read the owner's bikers directly.
     const hbCutoff = new Date(Date.now() - maxAgeMs);
     const redis = this.getRedis();
     if (redis) {
@@ -512,6 +517,7 @@ export class TrackingService implements OnModuleDestroy {
             AND account_status = 'active'
             AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
             AND kyc_status = 'verified'
+            AND fleet_owner_profile_id IS NULL
             AND geog IS NOT NULL
             AND last_heartbeat_at IS NOT NULL
             AND last_heartbeat_at >= ${hbCutoff}`;
@@ -532,6 +538,7 @@ export class TrackingService implements OnModuleDestroy {
         AND account_status = 'active'
         AND (on_hold = false OR ${penaltiesSuspended()}::boolean)
         AND kyc_status = 'verified'
+        AND fleet_owner_profile_id IS NULL
         AND geog IS NOT NULL
         AND last_heartbeat_at IS NOT NULL
         AND last_heartbeat_at >= ${hbCutoff}
@@ -618,6 +625,8 @@ export class TrackingService implements OnModuleDestroy {
         AND on_hold = false
         AND kyc_status = 'verified'
         AND (cooldown_until IS NULL OR cooldown_until < now())
+        -- Own bikers (D-117): the nudge is about public jobs; a fleet biker can't take them.
+        AND fleet_owner_profile_id IS NULL
         AND geog IS NOT NULL
         AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
       ORDER BY ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) ASC

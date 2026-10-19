@@ -1422,6 +1422,26 @@ describe("OrderLifecycleService.cancel", () => {
     expect(rebroadcasts).toEqual([["o1", "rebroadcast-1"]]);
   });
 
+  // Own bikers (D-117, F2): a fleet job never re-auctions to the public board. The fleet drop path re-rings the
+  // owner's bikers in place (T3), so a clone of one is a bug and fails loudly, before anything is announced.
+  it("never clones a fleet job onto the public board", async () => {
+    const { svc, orders } = build(
+      cancellable({
+        order: {
+          findUnique: async () => ({ ...order(), fleetMerchantId: "branch-1" }),
+          updateMany: async () => ({ count: 1 }),
+          create: async () => ({ id: "rebroadcast-1" }),
+        },
+        rider: {
+          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
+          update: async () => ({}),
+        },
+      }),
+    );
+    await expect(svc.cancel("o1", "r1")).rejects.toThrow(/never re-broadcast to the public board/);
+    expect(orders.announceOpenOrder).not.toHaveBeenCalled();
+  });
+
   it("tells the customer, in the after-send v2 copy, that other bikers are being asked at the same price", async () => {
     const notifyProfiles = vi.spyOn(noopNotifications, "notifyProfiles");
     try {

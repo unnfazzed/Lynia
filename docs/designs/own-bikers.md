@@ -1898,6 +1898,17 @@ the handoff wins for screens and copy, and these product changes apply:
 6. **Privacy notice (T1):** the notice gained "Riding as a business's Own biker" and its date moved to
    19 October 2026. The notice promises material changes are announced in the app first, so the
    `FLEET_UI_LIVE` launch sends that announcement (owner's call on wording), as the Azure move did (CEO-6).
+7. **T2 notes (doors):** two choke points carry most of it. `TrackingService.isBoardEligible` is false for an Own
+   biker, which closes the public board, `GET /orders/open`, `GET /orders/demand` and the board socket room. And
+   `TrackingService.nearbyRiders` / `offlineRidersNear` return public bikers only, which covers new-order and expand
+   pushes, food-dispatch candidates, supply counts and the offline nudge. The bid and accept doors refuse in
+   place: `makeOffer` (403 `fleet_scope`; a fleet job takes no bids), `listForOrder` (an Own biker's old offer
+   leaves the list), `selectOffer` and `acceptDispatch`. Each maps the database guard's commit-time refusal (a
+   Join racing the pick) to a 409. `acceptDispatch` also gained the merchant-debt soft-lock it was missing. The
+   public board, open-jobs and demand queries and the nudge count skip fleet-tagged orders.
+   `cloneForRebroadcast` refuses a fleet source (F2). There is **no admin manual assign** in the code today, so
+   there is no door to guard there. Hand-offs: **T3** Join must call `kickRiderFromBoard` and withdraw the biker's
+   pending public offers. **T9** replaces "fleet bikers never get food dispatch" with own-shop-first.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -1908,7 +1919,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
   orders/riders/merchants triggers)
   - Surfaced by: E2, E11, OV1, OV-F4, OV-F6, F9. Files: apps/api/prisma/schema.prisma, apps/api/prisma/migrations/*
   - Verify: trigger int specs (all forbidden writes) + hot-path-indexes.spec + online-safe guard
-- [ ] **T2 (P1, human: ~3d / CC: ~3h)**: api: common/fleet-scope.ts + the 8 doors + admin assign + parity spec
+- [x] **T2 (P1, human: ~3d / CC: ~3h)**: DONE 2026-10-19 (`common/fleet-scope.ts`, `fleet-doors.int.spec.ts`). api: common/fleet-scope.ts + the 8 doors + admin assign + parity spec
   - Surfaced by: CEO T2/T6, E14. Files: apps/api/src/common, orders, offers, matching, merchant, tracking, admin
   - Verify: hostile-QA int table (each door refuses)
 - [ ] **T3 (P1, human: ~5d / CC: ~5h)**: api: merchant/fleet.service.ts: invite by phone-bound link (one at a time,

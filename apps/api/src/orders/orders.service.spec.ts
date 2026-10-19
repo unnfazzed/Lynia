@@ -1131,8 +1131,8 @@ describe("OrdersService.listOpen", () => {
     };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
     const rows = await svc.listOpen();
-    // A-3 (status-keyed-query-audit): the board is now parcel-only.
-    expect(where).toEqual({ status: "open_for_offers", orderType: "parcel" });
+    // A-3 (status-keyed-query-audit): the board is now parcel-only. Own bikers (D-117): and never a fleet job.
+    expect(where).toEqual({ status: "open_for_offers", orderType: "parcel", fleetMerchantId: null });
     expect(rows[0]).toMatchObject({ id: "o1", itemDesc: "Documents", suggestedFare: "2.40", proposedFare: "2.50", distanceKm: 1.5 });
   });
 

@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundExce
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, estimatePickupEtaMinutes, type MakeOfferRequest, offerWindowEndsAt, roundFare } from "@lynia/shared";
 import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
+import { FLEET_SCOPE_REFUSAL } from "../common/fleet-scope";
 import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -49,7 +50,7 @@ export class OffersService {
     const done = this.metrics.startTimer();
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
-      select: { status: true, customerId: true, proposedFare: true, suggestedFare: true, orderType: true, createdAt: true, offerWindowEndsAt: true },
+      select: { status: true, customerId: true, proposedFare: true, suggestedFare: true, orderType: true, createdAt: true, offerWindowEndsAt: true, fleetMerchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     if (order.status !== "open_for_offers") {
@@ -66,6 +67,10 @@ export class OffersService {
     // A-2 (status-keyed-query-audit): an Express bid is a parcel-only mechanism — a merchant order's
     // rider is C3's dispatch decision, never an offer a rider posts themselves.
     if (order.orderType !== "parcel") {
+      throw new ConflictException(NOT_OPEN);
+    }
+    // Own bikers (D-117): a fleet job rings the owner's own bikers and never takes bids.
+    if (order.fleetMerchantId != null) {
       throw new ConflictException(NOT_OPEN);
     }
     // No self-bidding: order-create carries no role gate, so a rider-role profile can post its own
@@ -97,7 +102,7 @@ export class OffersService {
     // forbidden outcome for the offers-made counter (no latency histogram — it never reached create).
     const rider = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
-      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      select: { kycStatus: true, isOnline: true, accountStatus: true, onHold: true, cooldownUntil: true, fleetOwnerProfileId: true },
     });
     const refusal = rider ? onlineRefusalReason(rider) : null;
     if (!rider || refusal || !rider.isOnline) {
@@ -115,6 +120,12 @@ export class OffersService {
       // Enforce the online invariant the gating comment claims (was selected but never checked) — an
       // offline rider's offer is un-selectable anyway and just pollutes the customer's list.
       throw new ForbiddenException({ reason: "offline", message: "Go online to make offers" });
+    }
+
+    // Own bikers (D-117): an Own biker only carries their owner's jobs, and a public parcel is never one.
+    if (rider.fleetOwnerProfileId != null) {
+      this.metrics.incOffersMade("forbidden");
+      throw new ForbiddenException(FLEET_SCOPE_REFUSAL);
     }
 
     // C4 soft-lock: a rider owing a merchant collect-and-return cash debt, or mid-doorstep handshake,
@@ -340,7 +351,14 @@ export class OffersService {
     const blockedRiderIds = blocks.map((b) => (b.blockerProfileId === order.customerId ? b.blockedProfileId : b.blockerProfileId));
 
     const offers = await this.prisma.offer.findMany({
-      where: { orderId, status: "pending", ...(blockedRiderIds.length > 0 ? { riderId: { notIn: blockedRiderIds } } : {}) },
+      where: {
+        orderId,
+        status: "pending",
+        ...(blockedRiderIds.length > 0 ? { riderId: { notIn: blockedRiderIds } } : {}),
+        // Own bikers (D-117): a biker who joined a fleet after bidding can't be picked for a public job
+        // (selectOffer refuses), so their offer leaves the list.
+        rider: { fleetOwnerProfileId: null },
+      },
       select: {
         id: true,
         type: true,

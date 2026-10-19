@@ -720,7 +720,8 @@ export class OrdersService {
     const orders = await this.prisma.order.findMany({
       // A-3 (status-keyed-query-audit): the Express bid board is a parcel-only surface — a merchant
       // order's rider comes from C3's dispatch decision, never a rider browsing this board.
-      where: { status: "open_for_offers", orderType: "parcel" },
+      // Own bikers (D-117): a fleet job is never public work.
+      where: { status: "open_for_offers", orderType: "parcel", fleetMerchantId: null },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: {
@@ -801,6 +802,7 @@ export class OrdersService {
       FROM orders
       WHERE status = 'open_for_offers'
         AND order_type = 'parcel'
+        AND fleet_merchant_id IS NULL
         AND pickup_geog IS NOT NULL
         AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${scanRadiusM})
       ORDER BY pickup_distance_m ASC
@@ -841,6 +843,8 @@ export class OrdersService {
       FROM orders
       WHERE pickup_geog IS NOT NULL
         AND status IN ('requested', 'open_for_offers', 'assigned', 'confirmed', 'en_route_pickup', 'picked_up', 'en_route_dropoff')
+        -- Own bikers (D-117): a fleet job is the owner's own demand, not work for the public board.
+        AND fleet_merchant_id IS NULL
         AND updated_at >= ${since}
         AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusM})
       GROUP BY round(ST_Y(pickup_geog::geometry)::numeric, 2), round(ST_X(pickup_geog::geometry)::numeric, 2)

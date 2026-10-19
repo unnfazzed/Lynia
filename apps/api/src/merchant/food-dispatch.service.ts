@@ -12,6 +12,8 @@ import {
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
+import { FLEET_SCOPE_REFUSAL, rethrowFleetScope } from "../common/fleet-scope";
+import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
@@ -674,11 +676,19 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // parcel offer path uses (standing only — the commission check below is its own gate).
     const standing = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
-      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, fleetOwnerProfileId: true },
     });
     if (!standing) throw new ForbiddenException("Not a biker");
     const refusal = onlineRefusalReason(standing);
     if (refusal) throw new ForbiddenException({ reason: refusal, message: REFUSAL_MESSAGE[refusal] });
+    // Own bikers (D-117): the round only rings public bikers (TrackingService.nearbyRiders), but a biker who
+    // joined a fleet after the ring only carries their owner's jobs now.
+    if (standing.fleetOwnerProfileId != null) throw new ForbiddenException(FLEET_SCOPE_REFUSAL);
+    // C4 soft-lock, the same as the parcel bid and pick: a rider owing a venue cash, or mid-doorstep
+    // handshake, takes no new job. The round already leaves them out; a debt can open between ring and tap.
+    if (await hasOpenMerchantObligation(this.prisma, riderId)) {
+      throw new ForbiddenException("You have a food order still settling with a restaurant — finish that first");
+    }
     // Owner 2026-10-12: the rider's wallet must cover this job's commission (the round only rang riders
     // who could, but a balance can move between the ring and the tap).
     await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee }));
@@ -726,7 +736,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         throw new ConflictException({ reason: "one_active_ride", message: "You're already on another active job" });
       }
-      throw err;
+      // The database guard (migration 0108) refused it: a Join landed between the check above and the claim.
+      rethrowFleetScope(err);
     }
     await this.prisma.foodDispatchAttempt.updateMany({
       where: { orderId, riderId, outcome: "pending" },
