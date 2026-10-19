@@ -43,7 +43,7 @@
  */
 
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
-export const LEGAL_LAST_UPDATED = "29 September 2026";
+export const LEGAL_LAST_UPDATED = "19 October 2026";
 
 /** Stamped on the terms page. Bump when the terms materially change, and tell users in the app. */
 export const TERMS_LAST_UPDATED = "12 October 2026";
@@ -265,6 +265,18 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
     retention:
       "Kept while you are on the team. It is deleted when you leave, when the owner removes you, or when you delete your LyniaGo account; an unanswered invite is deleted when you say Not me or after 14 days.",
     manifestKeys: ["merchant_member_name", "merchant_invite_store", "merchant_invite_name"],
+  },
+  {
+    label: "Riding as a business's Own biker",
+    collected:
+      "If a business invites you to be one of its own bikers, the name it gave you, the mobile number it invited, when the invite link was opened, and, once you join, which business you ride for, the branch you work from and when you joined.",
+    purpose:
+      "To let only you join with that link (it works only for the number it was made for), to send you that business's jobs and no one else's, and to bill the business for its rides.",
+    basis:
+      "Performance of your contract with us, which you accept when you join. The business sees your name, your number, whether you are online or on one of its jobs and the cash you are holding for it, never your other orders or your account history.",
+    retention:
+      "An invite link nobody opens is deleted when it expires after 7 days. A used or cancelled invite, and your place in the business's fleet, are kept until you leave, the business removes you or you delete your LyniaGo account; deleting your account deletes every invite to your number. The business's bills keep only an anonymous reference to you.",
+    manifestKeys: ["fleet_invite_store", "fleet_invite_name"],
   },
   {
     label: "Device identifiers and diagnostics",

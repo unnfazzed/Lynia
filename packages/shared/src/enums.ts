@@ -39,6 +39,9 @@ export const OrderStatus = {
    *  (`undeliveredReason`) + attempt count are recorded on the order and shown verbatim to the
    *  customer. No return obligation on Lynia; the call-rider action stays available. */
   UNDELIVERED: "undelivered",
+  /** Own bikers (docs/designs/own-bikers.md, D-117): a merchant's "My bikers" booking while it rings the
+   *  owner's own bikers. Not on the public board and not the kitchen's `requested`. Mirrors the Prisma enum. */
+  FLEET_SEARCHING: "fleet_searching",
 } as const;
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
 

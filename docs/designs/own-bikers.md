@@ -1890,12 +1890,20 @@ the handoff wins for screens and copy, and these product changes apply:
 2. **Kitchens get Book a biker** when Own bikers is on (card inside the mint top card).
 3. **Staff see Money · Fleet rides rows** for their branch; the fleet bill card is owner-only.
 4. Remove-biker confirm warns when the biker holds cash (`m.removeCashB`).
+5. **Implementation note (T1):** fleet invites live in their own table, `fleet_invites`, not `MerchantInvite` with a
+   `kind`. Staff invites are deleted on Join and read by about fifteen Team and admin queries that would all need a
+   kind filter, while a link invite is owner-level, has a token and keeps its state (opened, joined, revoked) for
+   the roster. Erasure deletes every fleet invite to the person's number; the retention sweep deletes links that
+   expired unopened.
+6. **Privacy notice (T1):** the notice gained "Riding as a business's Own biker" and its date moved to
+   19 October 2026. The notice promises material changes are announced in the app first, so the
+   `FLEET_UI_LIVE` launch sends that announcement (owner's call on wording), as the Azure move did (CEO-6).
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
 Assumption: features ~30x, tests ~50x human÷CC.
 
-- [ ] **T1 (P1, human: ~4d / CC: ~4h)**: api/prisma: schema (OwnerFleet, rider link, order fleet cols, ledger
+- [x] **T1 (P1, human: ~4d / CC: ~4h)**: DONE 2026-10-19 (migrations 0107–0111, `fleet-guards.int.spec.ts`). api/prisma: schema (OwnerFleet, rider link, order fleet cols, ledger
   with partial unique, statement), migration A (enum `fleet_searching` alone), migration B (tables, indexes,
   orders/riders/merchants triggers)
   - Surfaced by: E2, E11, OV1, OV-F4, OV-F6, F9. Files: apps/api/prisma/schema.prisma, apps/api/prisma/migrations/*

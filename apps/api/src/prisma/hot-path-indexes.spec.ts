@@ -39,6 +39,10 @@ const HOT_PATH_INDEXES = [
   { model: "CommissionLedger", attr: "@@index([createdAt])", table: "commission_ledger", columns: `"created_at"` },
   // Admin console v2 §4: the funnels pick each cohort by sign-up time (0103).
   { model: "Profile", attr: "@@index([createdAt])", table: "profiles", columns: `"created_at"` },
+  // Own bikers E2: the roster and fleet rounds read riders by owner (0110); a branch's live fleet jobs and
+  // weekly fleet rides read orders by fleet branch + status (0111).
+  { model: "Rider", attr: "@@index([fleetOwnerProfileId])", table: "riders", columns: `"fleet_owner_profile_id"` },
+  { model: "Order", attr: "@@index([fleetMerchantId, status])", table: "orders", columns: `"fleet_merchant_id", "status"` },
 ];
 
 describe("hot-path indexes", () => {
