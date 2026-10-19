@@ -59,6 +59,10 @@ export const WS_EVENTS = {
    *  other way. Mirrors `bid:expired`/`order:taken` closing the parcel board card; the client clears
    *  or refetches its offer state. */
   foodOfferClosed: "food:offer-closed",
+  /** server→client: an Own biker's job offer from their own business (D-117, OB-R5). Pushed to the one biker. */
+  fleetOffer: "fleet:offer",
+  /** server→client: that offer is no longer live (taken, declined, ran out, cancelled or sent to any biker). */
+  fleetOfferClosed: "fleet:offer-closed",
   /** client→server: a merchant's kitchen tablet joins its own queue's live channel (C5 "kitchen
    *  socket queue"). Self-driven and carries no body — mirrors `board:subscribe`'s shape, but the
    *  merchant's own JWT (role="merchant") is enough for the server to resolve which merchantId to

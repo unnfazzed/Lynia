@@ -22,6 +22,9 @@ export const FLEET_SCOPE_REFUSAL = {
   message: "This job isn't one you can take.",
 } as const;
 
+/** Audit action for an Own biker giving a "My bikers" booking back before pickup (OrderLifecycleService.cancel). */
+export const FLEET_DROP_ACTION = "merchant.fleet.drop";
+
 /** Whether a biker whose fleet owner is `riderOwner` may serve a job whose fleet owner is `orderOwner`. */
 export function inFleetScope(riderOwner: string | null, orderOwner: string | null): boolean {
   return riderOwner === orderOwner;

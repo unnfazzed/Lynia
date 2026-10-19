@@ -16,6 +16,8 @@ import {
   type BidExpiredEvent,
   type BoardNewOrderEvent,
   BoardSubscribeEvent,
+  type FleetJobOffer,
+  type FleetOfferClosedEvent,
   type FoodOfferClosedEvent,
   type FoodOfferEvent,
   type FoodQueueChangedEvent,
@@ -526,6 +528,17 @@ export class TrackingGateway
   async emitFoodOfferClosed(riderId: string, orderId: string): Promise<void> {
     const payload: FoodOfferClosedEvent = { orderId, at: new Date().toISOString() };
     await this.emitToRider(riderId, WS_EVENTS.foodOfferClosed, payload);
+  }
+
+  /** Own bikers (D-117, OB-R5): a job offer from the biker's own business. Best-effort; never throws. */
+  async emitFleetOffer(riderId: string, payload: FleetJobOffer): Promise<void> {
+    await this.emitToRider(riderId, WS_EVENTS.fleetOffer, payload);
+  }
+
+  /** The close-out for {@link emitFleetOffer}: the offer stopped being live. Best-effort; never throws. */
+  async emitFleetOfferClosed(riderId: string, orderId: string): Promise<void> {
+    const payload: FleetOfferClosedEvent = { orderId, at: new Date().toISOString() };
+    await this.emitToRider(riderId, WS_EVENTS.fleetOfferClosed, payload);
   }
 
   /**

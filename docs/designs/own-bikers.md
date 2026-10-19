@@ -1919,7 +1919,31 @@ the handoff wins for screens and copy, and these product changes apply:
    - Everything sits behind `RESTAURANTS_ENABLED` and the new `FLEET_UI_LIVE` (off; a GitHub Variable on release).
    - Left for later PRs: the OB-M7 inbox row (merchant screens), the deep link that opens `lyniago.com/j/<code>`
      in the app (Android intent filter + website route), cash held and cancels on the roster (T3b/T4).
-   **T3b (next):** "Ring my bikers" bookings, rounds, accept, convert to Any biker, the drop path, no-strike cancels.
+   **T3b (done 2026-10-19):** `merchant/fleet-dispatch.service.ts`, `MerchantBookingService.createFleet`, the drop
+   branch in `OrderLifecycleService.cancel`; spec `fleet-dispatch.int.spec.ts`.
+   - `POST /merchant/fleet/bookings` (any member) writes the order and its `merchant_bookings` row in one transaction:
+     `fleet_searching`, `fleetMerchantId` = the branch, `fleetFee` = the owner's `rideFee` (snapshot), `proposedFare`
+     0. Refused while paused (`fleet_paused`, OB-M12) or off (`fleet_off`). The delivery code is minted then and
+     returned once, so the business can send it while it rings; `fleet_searching` counts for reveal and rotate.
+   - Rounds (`FLEET_DISPATCH`: 3 × 40 s, "We rang them 3 times over 2 minutes"): each rings every online, free,
+     in-standing biker of the owner at once, home branch first, then nearest, no radius. They reuse
+     `FoodDispatchAttempt` rows, never the food sweeps (those now read `orderType = merchant` only). Nobody online
+     as a search starts holds at once (OB-M11, `none_online`); rounds running out hold as `none_took` (OB-M10). The
+     booker is pushed both times. The booking response gains `fleet: { state, rung, endsAt }` for OB-M9–M11.
+   - E8: a hold nobody acts on ends as `expired` after 30 minutes, with a push; "Try again" works from it.
+   - Biker: `GET /fleet/jobs/offers`, `POST /fleet/jobs/:id/accept` (CAS on searching + unassigned + branch +
+     round; the 0108 trigger re-checks at commit) and `/decline` (not rung again this search; the last to pass
+     starts the next round). Socket events `fleet:offer` / `fleet:offer-closed`.
+   - Business: `POST …/bookings/:id/retry` ("Try my bikers again": passes forgiven, drops stay out) and
+     `…/any-biker` (the same order, same code, joins the public auction at the fare given; one CAS against the
+     accept, proven both ways; audit `merchant.fleet.any_biker`). Cancel while ringing closes the offers.
+   - Drop: a rider cancel on a fleet job is no longer a cancel. It goes back to `fleet_searching` on the same order
+     (tag, fee and code kept, biker excluded, no strike, no clone), audit `merchant.fleet.drop`.
+   - Left for later PRs: pause cancelling pending fleet bookings (T7's pause action), commission and cash gates on a
+     fleet job (T4), the ledger row (T5).
+   - **Copy to settle in lane C:** `b.expB` says "Chicken Inn jobs hold for 60 seconds", but `m.noneTookB` ("3 times
+     over 2 minutes") fixes a round at 40 s. The server follows the merchant copy; the biker string needs the
+     owner's call (a ledger line) before the biker screens ship.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -1933,7 +1957,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [x] **T2 (P1, human: ~3d / CC: ~3h)**: DONE 2026-10-19 (`common/fleet-scope.ts`, `fleet-doors.int.spec.ts`). api: common/fleet-scope.ts + the 8 doors + admin assign + parity spec
   - Surfaced by: CEO T2/T6, E14. Files: apps/api/src/common, orders, offers, matching, merchant, tracking, admin
   - Verify: hostile-QA int table (each door refuses)
-- [ ] **T3 (P1, human: ~5d / CC: ~5h)**: api: merchant/fleet.service.ts: invite by phone-bound link (one at a time,
+- [x] **T3 (P1, human: ~5d / CC: ~5h)**: DONE 2026-10-19 as T3a + T3b (see amendment 8). api: merchant/fleet.service.ts: invite by phone-bound link (one at a time,
   D-117: no SMS; link + sign-up deep link), Join/Leave/Remove
   with locks, fleet booking in one txn, its own sweeper (expiry + push, E8), convert CAS, drop path, no-strike
   cancels

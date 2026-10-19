@@ -39,6 +39,9 @@ function build(methods: Record<string, unknown>, opts: { verify?: (key: string, 
     kickRiderFromBoard: async (id: string) => { kickedFromBoard.push(id); },
     // DS17-02: cancel() funnels a 3rd-strike (forced-offline) rider through the standing-demotion funnel.
     evictRiderFromSupply: async (id: string) => { evictedFromSupply.push(id); },
+    // Own bikers: a biker giving back a fleet job leaves the order's room, and the business's board refreshes.
+    evictFromOrderRoom: async () => {},
+    emitFoodQueueChanged: () => undefined,
   };
   // F-01 re-broadcast announce is best-effort push — spy so tests can assert it fired without a socket.
   const orders = { announceOpenOrder: vi.fn(async () => {}) };
@@ -1424,22 +1427,34 @@ describe("OrderLifecycleService.cancel", () => {
 
   // Own bikers (D-117, F2): a fleet job never re-auctions to the public board. The fleet drop path re-rings the
   // owner's bikers in place (T3), so a clone of one is a bug and fails loudly, before anything is announced.
-  it("never clones a fleet job onto the public board", async () => {
-    const { svc, orders } = build(
+  it("a biker giving back a fleet job puts it back to the business's bikers: no clone, no strike, code kept (D-117)", async () => {
+    const updateMany = vi.fn(async (_args: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: 1 }));
+    const create = vi.fn(async () => ({ id: "rebroadcast-1" }));
+    const riderUpdate = vi.fn(async () => ({}));
+    const audit = vi.fn(async () => ({}));
+    const { svc, orders, emits } = build(
       cancellable({
         order: {
-          findUnique: async () => ({ ...order(), fleetMerchantId: "branch-1" }),
-          updateMany: async () => ({ count: 1 }),
-          create: async () => ({ id: "rebroadcast-1" }),
+          findUnique: async () => ({ ...order(), fleetMerchantId: "branch-1", dispatchExcludedRiderIds: ["r0"], otpHash: "h" }),
+          updateMany,
+          create,
         },
-        rider: {
-          findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }),
-          update: async () => ({}),
-        },
+        rider: { findUnique: async () => ({ cancelStrikes: 0, reliabilityScore: 80, onHold: false, heldReason: null }), update: riderUpdate },
+        auditLog: { create: audit },
       }),
     );
-    await expect(svc.cancel("o1", "r1")).rejects.toThrow(/never re-broadcast to the public board/);
+    const res = await svc.cancel("o1", "r1", "Puncture");
+    expect(res).toEqual({ orderId: "o1", status: "fleet_searching", cancelledBy: "rider", cooldownUntil: null });
+    const write = updateMany.mock.calls[0][0];
+    expect(write.where).toMatchObject({ id: "o1", status: "assigned", riderId: "r1", fleetMerchantId: "branch-1" });
+    expect(write.data).toMatchObject({ status: "fleet_searching", riderId: null, dispatchExcludedRiderIds: ["r0", "r1"], dispatchAttempt: 0 });
+    expect(write.data).not.toHaveProperty("otpHash");
+    expect(write.data).not.toHaveProperty("fleetMerchantId");
+    expect(audit).toHaveBeenCalledWith({ data: { actor: "r1", action: "merchant.fleet.drop", target: "o1", note: "Puncture" } });
+    expect(create).not.toHaveBeenCalled();
+    expect(riderUpdate).not.toHaveBeenCalled();
     expect(orders.announceOpenOrder).not.toHaveBeenCalled();
+    expect(emits).toEqual([["o1", "fleet_searching"]]);
   });
 
   it("tells the customer, in the after-send v2 copy, that other bikers are being asked at the same price", async () => {

@@ -193,7 +193,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
    */
   async sweepOrphanedOffers(now: Date = new Date()): Promise<{ expired: number }> {
     const rows = await this.prisma.foodDispatchAttempt.findMany({
-      where: { outcome: "pending", expiresAt: { lt: now }, order: { status: { not: "open_for_offers" } } },
+      // Food orders only: an Own bikers booking's rows (a parcel order) are FleetDispatchService.sweepOrphanedOffers'.
+      where: { outcome: "pending", expiresAt: { lt: now }, order: { orderType: "merchant", status: { not: "open_for_offers" } } },
       select: { id: true, orderId: true, riderId: true, order: { select: { riderId: true } } },
       take: 200,
     });

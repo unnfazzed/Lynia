@@ -37,6 +37,14 @@ describe("Own bikers routes", () => {
     expect(throttleOf(RiderFleetController.prototype.join)?.keyPrefix).toBe("fleet-invite-join");
   });
 
+  it("let any member book, retry and send to any biker (bookings are the team's, plan D3), throttling the creates", () => {
+    const p = MerchantFleetController.prototype;
+    for (const fn of [p.book, p.retry, p.anyBiker]) expect(ownerOnly(fn)).toBe(false);
+    expect(throttleOf(p.book)?.keyPrefix).toBe("merchant-booking-create");
+    expect(throttleOf(p.anyBiker)?.keyPrefix).toBe("merchant-booking-create");
+    expect(throttleOf(RiderFleetController.prototype.accept)?.keyPrefix).toBe("fleet-job-accept");
+  });
+
   it("503 every route while FLEET_UI_LIVE is off, and let them through when it is on", () => {
     const ctx = {} as never;
     expect(() => new FleetEnabledGuard({ FLEET_UI_LIVE: "false" } as Env).canActivate(ctx)).toThrow(ServiceUnavailableException);

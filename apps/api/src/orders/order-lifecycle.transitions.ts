@@ -34,7 +34,7 @@
  */
 
 /**
- * The twelve OrderStatus values (Prisma schema `enum OrderStatus`, `packages/shared` `OrderStatus`).
+ * The thirteen OrderStatus values (Prisma schema `enum OrderStatus`, `packages/shared` `OrderStatus`).
  * NOTE: `requested` is defined in the enum but the running code NEVER writes it — `create()` mints an
  * order directly at `open_for_offers`. It therefore never appears as a `to` below. See the
  * diagram-vs-code divergence recorded in the spec and in `docs/ARCHITECTURE.md §7`.
@@ -52,6 +52,8 @@ export const ORDER_STATES = [
   "cancelled",
   "expired",
   "undelivered",
+  // Own bikers (D-117): a "My bikers" booking while it rings the business's own bikers.
+  "fleet_searching",
 ] as const;
 export type OrderState = (typeof ORDER_STATES)[number];
 
@@ -114,6 +116,15 @@ export const ORDER_EVENTS = [
   "dispatch_resume", // FoodDispatchService.resumeSearch (self-loop: D-34 merchant "keep searching")
   "dispatch_cancel_no_rider", // FoodDispatchService.cancelFromHold (D-34 merchant "cancel", D-13 apology)
   "dispatch_drop", // FoodDispatchService.dropDispatch (D-33, pre-pickup only — re-dispatch in place)
+  // ── Own bikers (D-117): "My bikers" phone bookings ──────────────────────────────────────────────────
+  "fleet_book", // MerchantBookingService.createFleet — born at `fleet_searching`, never on the public board
+  "fleet_round", // FleetDispatchService.tick (self-loop: a round rings the owner's online bikers, or none is online)
+  "fleet_none_took", // FleetDispatchService.tick (self-loop: every round ran out — OB-M10/M11 hold)
+  "fleet_retry", // FleetDispatchService.retry (self-loop: "Try my bikers again")
+  "fleet_expire", // FleetDispatchService.sweepStaleHolds (E8: a hold nobody acted on ends)
+  "fleet_accept", // FleetDispatchService.accept (an Own biker takes it)
+  "fleet_convert", // FleetDispatchService.convert ("Send to any biker": the same order joins the public auction)
+  "fleet_drop", // OrderLifecycleService.cancel, rider branch on a fleet order (back to the owner's bikers)
 ] as const;
 export type OrderEvent = (typeof ORDER_EVENTS)[number];
 
@@ -592,6 +603,98 @@ export const TRANSITIONS: readonly OrderTransition[] = [
         "re-enter dispatch on the SAME order: merchantPhase restored to ready_for_pickup (kept `preparing` when the kitchen is still cooking, MJ-RM1), riderId/otpHash cleared, the rider's counter state (riderArrivedAt, riderEtaAt, pickup photo + seal) cleared (MJ-RM2), dispatchAttempt reset to 0 (fresh NO_RIDER budget) with the dropped rider added to dispatchExcludedRiderIds; OrderEvent(requested); reliability penalty IDENTICAL to order-lifecycle.service.ts:cancel's rider branch (prePickupCancel, cancelStrikes+=1, CANCEL_STRIKE_LIMIT→cooldown+offline+evictRiderFromSupply — the SAME axis, not a second counter, so \"three drops in a week pauses offers\" (D-33) composes with a rider's parcel cancel strikes); customer notified (no charge, re-dispatching)",
       source: "merchant/food-dispatch.service.ts:dropDispatch",
       orderType: "merchant",
+    }),
+  ),
+
+  // ── Own bikers (D-117): a "My bikers" booking is a parcel booking (orderType=parcel) that rings only the
+  // business's own bikers. It sits at `fleet_searching` until one accepts, so the public board, the auction and
+  // the offer window never see it. The orders fleet-scope trigger (migration 0108) refuses any other biker.
+  {
+    from: INITIAL,
+    event: "fleet_book",
+    to: "fleet_searching",
+    actor: "merchant",
+    guard: "member of the branch; the owner's OwnerFleet enabled, rideFee set and not paused; the branch has a pin; the business isn't on hold",
+    sideEffect:
+      "order + merchant_bookings row in ONE transaction: fleetMerchantId=branch, fleetFee=OwnerFleet.rideFee (snapshot), proposedFare=0, suggestedFare from quoteFare; the delivery code minted and sealed now (the business reads it at once); OrderEvent(fleet_searching); the first round runs at once",
+    source: "merchant/merchant-booking.service.ts:createFleet",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_round",
+    to: "fleet_searching",
+    actor: "system",
+    guard: "riderId IS NULL; noRiderHoldAt IS NULL; no live round; dispatchAttempt < FLEET_DISPATCH.rounds; guarded CAS on dispatchAttempt",
+    sideEffect:
+      "ring every online, free, in-standing biker of the owner (nearest first, no radius) except those who dropped it or passed this search: FoodDispatchAttempt rows, dispatchOfferExpiresAt=round end, FCM push + fleet:offer socket. No biker online on the first round → straight to the none_online hold",
+    source: "merchant/fleet-dispatch.service.ts:tick",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_none_took",
+    to: "fleet_searching",
+    actor: "system",
+    guard: "dispatchAttempt = FLEET_DISPATCH.rounds and the last round ran out; guarded CAS",
+    sideEffect: "noRiderHoldAt=now (OB-M10 \"None of your bikers took it\" / OB-M11 when nobody was online); the team is pushed and the queue refreshed",
+    source: "merchant/fleet-dispatch.service.ts:tick",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_retry",
+    to: "fleet_searching",
+    actor: "merchant",
+    guard: "riderId IS NULL; guarded CAS on status=fleet_searching",
+    sideEffect: "clear noRiderHoldAt, reset dispatchAttempt=0; bikers who passed are asked again; bikers who dropped it stay out; a round runs at once",
+    source: "merchant/fleet-dispatch.service.ts:retry",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_expire",
+    to: "expired",
+    actor: "system",
+    guard: "riderId IS NULL; noRiderHoldAt older than FLEET_DISPATCH.holdExpireMs; guarded CAS",
+    sideEffect: "E8: OrderEvent(expired); the booker is pushed; the business's \"Try again\" works from it like any expired booking",
+    source: "merchant/fleet-dispatch.service.ts:sweepStaleHolds",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_accept",
+    to: "assigned",
+    actor: "rider",
+    guard:
+      "the biker's own pending, unexpired attempt; standing (onlineRefusalReason), in the owner's fleet, the debt lock; CAS status=fleet_searching AND riderId IS NULL AND fleetMerchantId=<branch> AND dispatchOfferExpiresAt=<round>; one_active_ride; the 0108 trigger at commit",
+    sideEffect: "riderId, assignedAt; the delivery code minted at booking is kept; attempt accepted, the round's other rows expired and their alarms closed; OrderEvent(assigned)",
+    source: "merchant/fleet-dispatch.service.ts:accept",
+  },
+  {
+    from: "fleet_searching",
+    event: "fleet_convert",
+    to: "open_for_offers",
+    actor: "merchant",
+    guard: "CAS status=fleet_searching AND riderId IS NULL AND fleetMerchantId=<branch> (an accept and a conversion race on the same row; one wins)",
+    sideEffect:
+      "SAME order (same id, same code): fleetMerchantId/fleetFee cleared, proposedFare=<the fare offered>, a fresh offer window; every pending attempt closed; OrderEvent(open_for_offers); announced to the public board — an ordinary booking from here (commission, no fleet ledger row)",
+    source: "merchant/fleet-dispatch.service.ts:convert",
+  },
+  {
+    from: "fleet_searching",
+    event: "cancel_customer",
+    to: "cancelled",
+    actor: "customer",
+    guard: "caller === order.customerId (the business's booking account); status ∈ CUSTOMER_CANCELLABLE_STATUSES; guarded CAS on the observed status",
+    sideEffect: "as cancel_customer; no biker holds it, and every pending attempt is closed",
+    source: "order-lifecycle.service.ts:cancel",
+  },
+  ...(["assigned", "confirmed", "en_route_pickup"] as const).map(
+    (from): OrderTransition => ({
+      from,
+      event: "fleet_drop",
+      to: "fleet_searching",
+      actor: "rider",
+      guard: `caller === order.riderId; status=${from}; fleetMerchantId IS NOT NULL; guarded CAS on the observed status`,
+      sideEffect:
+        "back to the owner's bikers on the SAME order: riderId/assignedAt cleared, fleetMerchantId/fleetFee and the delivery code KEPT, the biker added to dispatchExcludedRiderIds, a fresh search (dispatchAttempt=0); OrderEvent(fleet_searching); audit merchant.fleet.drop. NO strike and no reliability penalty: an Own biker answers to their business, not to LyniaGo",
+      source: "order-lifecycle.service.ts:cancel",
     }),
   ),
 ];
