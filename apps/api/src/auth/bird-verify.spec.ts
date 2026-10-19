@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
-import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart, verifyChannelsFor } from "./bird-verify";
+import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart, WHATSAPP_UNAVAILABLE } from "./bird-verify";
 
 describe("birdVerifyBaseUrl", () => {
   it("derives the region-scoped host from the key prefix", () => {
@@ -55,15 +55,11 @@ describe("birdVerifyStart", () => {
     expect(res).toEqual({ channel: "whatsapp" });
   });
 
-  it("D-116: asks for SMS where Bird's shared WhatsApp sender refuses passcodes (South Africa), and reports SMS", async () => {
-    let sent: { options?: unknown } | undefined;
-    const fetchMock = (async (_url: string, init: RequestInit) => {
-      sent = JSON.parse(init.body as string);
-      return new Response(JSON.stringify({ id: "vrf_za" }), { status: 200 });
-    }) as unknown as typeof fetch;
-    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567"));
-    expect(sent?.options).toEqual({ code_length: 6, channels: ["sms"] });
-    expect(res).toEqual({ channel: "sms" });
+  it("D-116: a 422 (no WhatsApp route, e.g. South Africa on Bird's shared sender) is a clear 422, not 'try again'", async () => {
+    const fetchMock = (async () => new Response('{"code":"no_channels"}', { status: 422 })) as unknown as typeof fetch;
+    const err = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567")).catch((e: unknown) => e);
+    expect((err as { getStatus(): number }).getStatus()).toBe(422);
+    expect((err as { getResponse(): unknown }).getResponse()).toEqual({ reason: "whatsapp_unavailable", message: WHATSAPP_UNAVAILABLE });
   });
 
   it("falls back to 'sms' for an unrecognized last_channel — defensive display mapping only; Bird was never asked to send SMS", async () => {
@@ -83,7 +79,7 @@ describe("birdVerifyStart", () => {
 
   it("throws when Bird rejects the create call (so requestOtp errors, not a silent non-delivery)", async () => {
     const fetchMock = (async () =>
-      new Response('{"error":"no eligible channel"}', { status: 422 })) as unknown as typeof fetch;
+      new Response('{"error":"internal"}', { status: 500 })) as unknown as typeof fetch;
     await expect(withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263770000001"))).rejects.toThrow(/couldn't send/i);
   });
 
@@ -170,23 +166,5 @@ describe("birdVerifyCheck", () => {
     await withFetch(fetchMock, () => birdVerifyCheck(cfg(), "+263771234567", "999888"));
     expect(called!.url).not.toContain("999888");
     expect(JSON.stringify(called!.init.headers)).not.toContain("999888");
-  });
-});
-
-describe("verifyChannelsFor (D-116)", () => {
-  it("is WhatsApp only for Zimbabwe and the diaspora countries Bird's WhatsApp sender serves", () => {
-    for (const phone of ["+263771234567", "+447911123456", "+12025550123", "+61412345678", "+26771234567"]) {
-      expect(verifyChannelsFor(phone)).toEqual(["whatsapp"]);
-    }
-  });
-
-  it("is SMS for the countries where Bird's WhatsApp sender refuses passcodes", () => {
-    for (const phone of ["+27821234567", "+2348012345678", "+971501234567", "+919812345678", "+77011234567", "+380501234567"]) {
-      expect(verifyChannelsFor(phone)).toEqual(["sms"]);
-    }
-  });
-
-  it("keeps Russia (+7 9…) on WhatsApp — only Kazakhstan's +76/+77 share the restriction", () => {
-    expect(verifyChannelsFor("+79161234567")).toEqual(["whatsapp"]);
   });
 });

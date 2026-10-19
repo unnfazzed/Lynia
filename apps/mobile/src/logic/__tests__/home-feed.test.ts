@@ -107,7 +107,7 @@ describe("liveOrderCardModel (RC.home per-service card copy)", () => {
 
 describe("restaurantCardStatus", () => {
   // Wednesday 2026-07-29, noon — matches packages/shared/src/restaurant-hours.test.ts's fixture.
-  const now = new Date(2026, 6, 29, 12, 0);
+  const now = new Date(Date.UTC(2026, 6, 29, 10, 0)); // Wednesday noon on Harare's clock (D-116: hours read Harare time)
   // MerchantHours' zod-inferred type wants every day key even though a merchant only ever sets the
   // ones it trades on (z.record over an enum key infers a full Record<K,V>, not a partial one) —
   // packages/shared's own restaurant-hours.test.ts hits the same gap; a plain cast is the pragmatic

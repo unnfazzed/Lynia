@@ -1,4 +1,4 @@
-import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Logger, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { maskPhone } from "../common/phone-mask";
 import type { Env } from "../config/env";
 import type { OtpDeliveryChannel } from "./otp-sender";
@@ -21,21 +21,8 @@ const BIRD_VERIFY_TIMEOUT_MS = 10_000;
  */
 const CHANNELS = ["whatsapp"] as const;
 
-/**
- * Calling-code prefixes where Bird's shared WhatsApp sender refuses passcodes (docs.bird.com
- * guides/verify/countries, "Where WhatsApp cannot carry a passcode", read 2026-10-19): Bangladesh, Egypt,
- * India, Indonesia, Iraq, Kazakhstan (+76/+77), Kuwait, Malaysia, Morocco, Nepal, Nigeria, Oman, Pakistan,
- * Saudi Arabia, South Africa, Sri Lanka, Ukraine, UAE. A WhatsApp-only verification there fails creation
- * with 422, so since diaspora sign-up (D-116, owner 2026-10-19) these numbers get the code by SMS — South
- * Africa is the largest Zimbabwean diaspora. Everywhere else stays WhatsApp only, as above.
- */
-const WHATSAPP_RESTRICTED_PREFIXES = ["880", "20", "91", "62", "964", "76", "77", "965", "60", "212", "977", "234", "968", "92", "966", "27", "94", "380", "971"];
-
-/** The channels to ask Bird for: WhatsApp, or SMS where Bird's WhatsApp sender can't deliver a passcode. */
-export function verifyChannelsFor(phone: string): readonly ("whatsapp" | "sms")[] {
-  const digits = phone.replace(/\D/g, "");
-  return WHATSAPP_RESTRICTED_PREFIXES.some((p) => digits.startsWith(p)) ? ["sms"] : CHANNELS;
-}
+/** Shown when Bird can't carry a WhatsApp code to this number at all (a 422 on create, D-116). */
+export const WHATSAPP_UNAVAILABLE = "We can’t send a WhatsApp code to this number yet. Try a number from another country that’s on WhatsApp.";
 
 export interface BirdVerifyCheckResult {
   success: boolean;
@@ -59,7 +46,7 @@ export function birdVerifyBaseUrl(apiKey: string): string {
 }
 
 /** Bird's own channel vocabulary (whatsapp | sms | email | telegram) narrowed to what the UI can say.
- *  Only whatsapp/sms are ever requested (`verifyChannelsFor`), but this stays defensive — an unrecognized
+ *  Only whatsapp/sms are ever requested (CHANNELS above), but this stays defensive — an unrecognized
  *  value falls back to "sms" rather than crashing a real sign-in over a vendor response shape this app
  *  didn't anticipate. */
 function toDeliveryChannel(birdChannel: string | undefined): OtpDeliveryChannel {
@@ -87,7 +74,6 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
     logger.error("Bird Verify not configured — set BIRD_VERIFY_API_KEY (or change OTP_CHANNEL).");
     throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
   }
-  const channels = verifyChannelsFor(phone);
   let res: Response;
   try {
     res = await call(env, key, "/v1/verify/verifications", {
@@ -95,7 +81,7 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
       // code_length pinned to 6: the app's code field, the API's zod schema (auth.controller.ts
       // VerifyOtp) and the mobile UI are all hardcoded to 6 digits, so this must never drift from
       // Bird's own default (documented as configurable 4-8, not stated as 6).
-      options: { code_length: 6, channels },
+      options: { code_length: 6, channels: CHANNELS },
     });
   } catch (err) {
     logger.error(`Bird Verify create network error: ${err instanceof Error ? err.message : String(err)}`);
@@ -104,13 +90,20 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     logger.error(`Bird Verify create failed: ${res.status} ${detail.slice(0, 300)}`);
+    // 422: Bird has no channel for this number. WhatsApp is the only one asked for (owner: no SMS, not even
+    // as a fallback), and Bird's shared WhatsApp sender refuses passcodes to some countries (South Africa,
+    // Nigeria, UAE, India…; docs.bird.com guides/verify/countries). Since diaspora sign-up (D-116) that is a
+    // standing answer, not an outage, so it says so instead of "try again in a moment".
+    if (res.status === 422) {
+      throw new UnprocessableEntityException({ reason: "whatsapp_unavailable", message: WHATSAPP_UNAVAILABLE });
+    }
     throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
   }
   const body = (await res.json().catch(() => ({}))) as { id?: string; last_channel?: string };
   logger.log(`Bird Verify sent → ${maskPhone(phone)} (verification_id=${body.id ?? "?"}, channel=${body.last_channel ?? "?"})`);
   // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the channel we
   // asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
-  return { channel: toDeliveryChannel(body.last_channel ?? channels[0]) };
+  return { channel: toDeliveryChannel(body.last_channel ?? CHANNELS[0]) };
 }
 
 /**

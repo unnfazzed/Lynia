@@ -430,8 +430,10 @@ async function detect(face: Face, store: Store): Promise<void> {
   publish(store, { locating: true });
 
   if (!store.snap.place) {
-    const stored = await loadStoredLocation();
+    let stored = await loadStoredLocation();
     if (store.gen !== gen) return;
+    // A GPS fix saved before D-116 could be abroad (London); the customer face never paints one.
+    if (stored && !stored.manual && face === "customer" && !isDeliverablePoint(stored.place)) stored = null;
     if (stored) {
       // A stored MANUAL pick belongs to the customer face. Detect-only paints it as a last-known
       // label (better than an empty row for the beat before the fix lands) but never adopts it as
@@ -479,6 +481,9 @@ async function detect(face: Face, store: Store): Promise<void> {
   if (stale) live = await cachedPoint(STALE_FIX_MAX_AGE_MS);
   if (!current()) return;
   if (!adoptable(live)) {
+    // A good fix outside the service area (D-116: a customer abroad) is still an answer: stamp it so
+    // every mount and resume doesn't run the whole chain again and flicker Home through "locating".
+    if (isUsablePoint(live)) store.detectedAt = Date.now();
     publish(store, { locating: false });
     if (!(await readGps()) && current()) watchForSwitch(face, store);
     return;

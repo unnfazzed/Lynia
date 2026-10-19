@@ -9,7 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { BackHandler } from "react-native";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
-let mockParams: { intent?: string } = {};
+let mockParams: { intent?: string; phone?: string } = {};
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
@@ -137,6 +137,46 @@ describe("C2 · the country segment (D-116)", () => {
     const rows = t.root.findAll((n) => typeof n.props?.accessibilityLabel === "string" && /^[^,]+, \+\d+$/.test(n.props.accessibilityLabel) && typeof n.props?.onPress === "function");
     const labels = [...new Set(rows.map((r) => r.props.accessibilityLabel as string))];
     expect(labels.slice(0, 3)).toEqual(["Zimbabwe, +263", "South Africa, +27", "United Kingdom, +44"]);
+  });
+
+  it("a UK number typed under the Zimbabwe flag is refused as too long, and no code is sent", async () => {
+    const t = mount();
+    act(() => {
+      fieldFor(t, "263").props.onChangeText("07711 123456");
+    });
+    await act(async () => {
+      fieldFor(t, "263").props.onSubmitEditing();
+    });
+    expect(mockRequestOtp).not.toHaveBeenCalled();
+    expect(text(t)).toContain("That’s too long for a Zimbabwe number. Tap the flag to choose your country.");
+  });
+
+  it("a + typed by hand stays in the field and switches the country once the code names one", () => {
+    const t = mount();
+    act(() => {
+      fieldFor(t, "263").props.onChangeText("+");
+    });
+    expect(fieldFor(t, "263").props.value).toBe("+");
+    act(() => {
+      fieldFor(t, "263").props.onChangeText("+4");
+    });
+    expect(fieldFor(t, "263").props.value).toBe("+4");
+    act(() => {
+      fieldFor(t, "263").props.onChangeText("+44");
+    });
+    expect(segment(t)!.props.accessibilityLabel).toBe("Country: United Kingdom, +44. Change");
+    expect(fieldFor(t, "44").props.value).toBe("");
+  });
+
+  it("Change number after a restart brings the UK number back with its country", () => {
+    mockParams = { phone: "+447911123456" };
+    try {
+      const t = mount();
+      expect(segment(t)!.props.accessibilityLabel).toBe("Country: United Kingdom, +44. Change");
+      expect(fieldFor(t, "44").props.value).toBe("7911123456");
+    } finally {
+      mockParams = {};
+    }
   });
 
   it("reopens the list on the chosen country when it sits below the pinned group", () => {

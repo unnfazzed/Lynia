@@ -30,6 +30,8 @@ export const OB = {
   countryNoMatch: (q: string): string => `No country matches “${q}”`,
   phonePlaceholderIntl: "Mobile number",
   phoneHelpIntl: "Your number without the country code.",
+  /** D-116: a number from abroad typed under the default Zimbabwe flag. */
+  phoneLongZw: "That’s too long for a Zimbabwe number. Tap the flag to choose your country.",
   phoneShortIntl: "That number looks short. Check it and try again.",
   sendCode: "Send code",
   agreePrefix: "By continuing you agree to the ",

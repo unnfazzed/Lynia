@@ -36,3 +36,12 @@ describe("zw-mobile (Calm Mint v2 C2)", () => {
     expect(zwE164("772451180")).toBe("+263772451180");
   });
 });
+
+describe("a number from abroad under the Zimbabwe flag (D-116)", () => {
+  it("keeps a tenth digit at sign-in so a UK 07711 123456 reads as too long, never as +263 77…", () => {
+    const d = zwNationalDigits("07711 123456", 10);
+    expect(d).toBe("7711123456");
+    expect(zwMobileProblem(d)).toBe("long");
+    expect(formatZwNational(d)).toBe("77 111 23456");
+  });
+});

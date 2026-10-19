@@ -282,7 +282,8 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
 
   const back = (): void => {
     if (router.canGoBack()) router.back();
-    else router.replace("/phone");
+    // After a restart there is no history: bring the number (and its country, D-116) back with it.
+    else router.replace({ pathname: "/phone", params: { ...(phone ? { phone } : {}), ...(paramIntent ? { intent: paramIntent } : {}) } });
   };
 
   const shown = phone ? formatPhoneDisplay(phone) : "";

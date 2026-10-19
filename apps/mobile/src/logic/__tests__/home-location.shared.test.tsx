@@ -285,3 +285,39 @@ describe("useHomeLocation · one detection per session (P06)", () => {
     expect(apis.home!.label).toBe("12 Lanark Rd");
   });
 });
+
+describe("useHomeLocation · a customer abroad (D-116)", () => {
+  const LONDON = { coords: { latitude: 51.5, longitude: -0.12 } };
+
+  it("a London fix is no deliver-to, and a later mount doesn't run the whole chain again (no Home flicker)", async () => {
+    lastKnown.mockResolvedValue(LONDON);
+    current.mockResolvedValue(LONDON);
+    await mount("home");
+    await settle();
+    expect(apis.home!.point).toBeNull();
+    expect(apis.home!.locating).toBe(false);
+    expect(current).toHaveBeenCalledTimes(1);
+
+    await mount("food");
+    await settle();
+    expect(current).toHaveBeenCalledTimes(1);
+    expect(apis.food!.locating).toBe(false);
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it("a London GPS fix saved before D-116 is not painted as the deliver-to", async () => {
+    getItem.mockResolvedValue(JSON.stringify({ label: "10 Downing St", lat: 51.5, lng: -0.12, manual: false }));
+    lastKnown.mockResolvedValue(LONDON);
+    current.mockResolvedValue(LONDON);
+    const seen: (string | null)[] = [];
+    function Watch(): null {
+      seen.push(useHomeLocation().label ?? null);
+      return null;
+    }
+    await act(async () => {
+      trees.push(create(<Watch />));
+    });
+    await settle();
+    expect(seen).not.toContain("10 Downing St");
+  });
+});

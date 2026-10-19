@@ -62,7 +62,8 @@ describe("browseList", () => {
 });
 
 describe("category serving windows", () => {
-  const at = (h: number, m = 0): Date => new Date(2026, 9, 1, h, m);
+  // An instant at h:m on Harare's clock: windows read Harare time whatever the phone's zone (D-116).
+  const at = (h: number, m = 0): Date => new Date(Date.UTC(2026, 9, 1, h - 2, m));
   it("serves inside the window, not outside it; no window means always", () => {
     expect(categoryServedNow("07:00", "11:00", at(8))).toBe(true);
     expect(categoryServedNow("07:00", "11:00", at(11))).toBe(false);
@@ -96,5 +97,17 @@ describe("restaurantVenue / shopVenue — D-71 free delivery", () => {
     expect(restaurantVenue(item({ freeDelivery: true }), null, now).freeDelivery).toBe(true);
     expect(restaurantVenue(item(), null, now).freeDelivery).toBe(false);
     expect(shopVenue({ ...item({ freeDelivery: true }), shopKind: "grocery" } as Parameters<typeof shopVenue>[0], null, now).freeDelivery).toBe(true);
+  });
+});
+
+describe("open now reads Harare's clock, not the phone's (D-116: customers abroad)", () => {
+  const venue = (hours: unknown) =>
+    ({ id: "r1", name: "Golden Bao", coverPhotoUrl: null, logoUrl: null, cuisineTags: [], priceLevel: null, hours, location: null, ratingAvg: null, ratingCount: 0, prepBaselineMinutes: null }) as unknown as Parameters<typeof restaurantVenue>[0];
+  const week = Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: "08:00", close: "22:00" }]));
+
+  it("21:30 in Harare is open and 22:30 is closed, whatever zone the instant is read in", () => {
+    // 19:30 UTC = 21:30 Harare = 20:30 London: open. 20:30 UTC = 22:30 Harare = 15:30 Dallas: closed.
+    expect(restaurantVenue(venue(week), null, new Date(Date.UTC(2026, 9, 1, 19, 30))).open).toBe(true);
+    expect(restaurantVenue(venue(week), null, new Date(Date.UTC(2026, 9, 1, 20, 30))).open).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { isMerchantOpenNow, normalizePhone } from "@lynia/shared";
+import { harareWallClock, isMerchantOpenNow, normalizePhone } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
@@ -14,6 +14,7 @@ import { addLine, cartService, foodOrderIdempotencyKey, MAX_ITEM_QTY, removeLine
 import { estimateDeliveryFee, goToPlacedFoodOrder } from "../../src/logic/food-checkout";
 import { deliverToLabel, etaRange, restaurantMeta } from "../../src/logic/food-list";
 import { isWithinServiceCorridor } from "../../src/logic/gates";
+import { SEND_COPY } from "../../src/ui/send/kit";
 import { landmarkFromAddress } from "../../src/logic/geocode";
 import { useHomeLocation } from "../../src/logic/home-location";
 import {
@@ -330,7 +331,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   const deliveryFee = drop && restaurant ? estimateDeliveryFee(restaurant.location, drop) : null;
   const money = reviewBreakdown(cart.cart.lines, deliveryFee, owed, restaurant?.freeDelivery === true);
   const eta = drop && restaurant ? arrivalWindow(etaRange([restaurantMeta(restaurant, drop)]), now) : null;
-  const closed = restaurant != null && !isMerchantOpenNow(restaurant.hours, now);
+  const closed = restaurant != null && !isMerchantOpenNow(restaurant.hours, harareWallClock(now));
   const phoneOk = normalizePhone(phone) !== null;
   const first = slots ? firstSlot(slots) : null;
   const dayWord = (c: ChosenSlot): string => (c.day === "today" ? O.r.today : O.r.tomorrow);
@@ -392,6 +393,11 @@ export default function FoodReviewScreen(): React.ReactElement {
       }
       const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
       const p = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      // D-116: a customer abroad is ordering for someone at home; their own fix is no drop-off.
+      if (!isWithinServiceCorridor(p)) {
+        setToast({ text: SEND_COPY.outArea, retry: false });
+        return;
+      }
       // U27: the pin's coordinates until (unless) the reverse geocode names it — never the old address.
       setDraft({ ...p, label: coordName(p.lat, p.lng) });
       const res = await withTimeout(Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng }), LOCATE_TIMEOUT_MS).catch(() => []);

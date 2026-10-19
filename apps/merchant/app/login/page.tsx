@@ -15,7 +15,7 @@ import { otpErrorMessage } from "../lib/otp-message";
 import { takeSignOutNotice } from "../lib/session";
 import { noBusinessPath } from "../lib/team-api";
 import { useStepBack } from "../lib/use-step-back";
-import { formatLocalDigits, localDigits, RESEND_AFTER_S, toE164 } from "../lib/phone-input";
+import { formatLocalDigits, LOCAL_DIGITS, localDigits, RESEND_AFTER_S, toE164 } from "../lib/phone-input";
 
 type Step = { kind: "phone" } | { kind: "code"; phone: string; deliveryChannel?: "whatsapp" | "sms" };
 
@@ -36,6 +36,9 @@ const ENTRY = {
   busy: "Checking…",
 } as const;
 
+/** D-116: a number from abroad typed under the default Zimbabwe flag. */
+const TOO_LONG_FOR_ZW = "That’s too long for a Zimbabwe number. Tap the flag to choose your country.";
+
 /**
  * A1 · Sign in and A2 · Code (packages/design/handoff/merchant-mobile). "LyniaGo Merchant" lockup, a
  * phone field with a fixed +263, "Send code" pinned at the bottom and the privacy line — the notice is
@@ -45,7 +48,8 @@ const ENTRY = {
  *
  * D-116 (owner 2026-10-19): the fixed "+263" is now the country's flag and code, and tapping it picks
  * another country (Zimbabwe, the top-10 diaspora countries, then A–Z), so an owner abroad signs in on
- * their own number. Zimbabwe keeps the 9-digit field; a pasted "+44 …" switches the country.
+ * their own number. Zimbabwe keeps the 9-digit field; a pasted or typed "+44 …" switches the country. A
+ * tenth digit under Zimbabwe is a number from abroad: it says so instead of being cut to nine that pass.
  */
 export default function LoginPage() {
   const router = useRouter();
@@ -54,6 +58,9 @@ export default function LoginPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const isHome = country.iso === HOME_COUNTRY.iso;
   const [digits, setDigits] = useState("");
+  // "+4" typed by hand, before the code after it names a country.
+  const [draft, setDraft] = useState<string | null>(null);
+  const tooLong = isHome && digits.length > LOCAL_DIGITS;
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +84,9 @@ export default function LoginPage() {
     inputRef.current?.focus();
     // Keystrokes typed before hydration land in the DOM but not in state; pull them in once.
     const domValue = inputRef.current?.value ?? "";
-    if (step.kind === "phone" && domValue && localDigits(domValue) !== digits) setDigits(localDigits(domValue));
+    // Read as the chosen country's number: back from the code step, a UK number must not be cut to nine.
+    const fromDom = isHome ? localDigits(domValue, LOCAL_DIGITS + 1) : nationalDigits(domValue, country);
+    if (step.kind === "phone" && domValue && !draft && fromDom !== digits) setDigits(fromDom);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate one-shot-per-step reconcile
   }, [step.kind]);
 
@@ -133,10 +142,17 @@ export default function LoginPage() {
 
   /** Typed or pasted: a pasted international number ("+44 7911 …") names its own country. */
   function onPhoneChange(raw: string) {
-    const pasted = /^\s*(\+|00)/.test(raw) ? countryForE164(raw.replace(/^\s*(\+|00)/, "")) : undefined;
+    const intl = /^\s*(\+|00)/.test(raw);
+    const pasted = intl ? countryForE164(raw.replace(/^\s*(\+|00)/, "")) : undefined;
+    if (intl && !pasted && /^\s*\+\d{0,3}$/.test(raw)) {
+      setDraft(raw.trim());
+      setDigits("");
+      return;
+    }
+    setDraft(null);
     const target = pasted ?? country;
     if (pasted && pasted.iso !== country.iso) setCountry(pasted);
-    setDigits(target.iso === HOME_COUNTRY.iso ? localDigits(raw) : nationalDigits(raw, target));
+    setDigits(target.iso === HOME_COUNTRY.iso ? localDigits(raw, LOCAL_DIGITS + 1) : nationalDigits(raw, target));
   }
 
   function onCodeChange(raw: string) {
@@ -190,18 +206,18 @@ export default function LoginPage() {
                 autoComplete="tel-national"
                 aria-label="Phone number"
                 placeholder={isHome ? "77 123 4567" : "Mobile number"}
-                value={isHome ? formatLocalDigits(digits) : digits}
+                value={draft ?? (isHome ? formatLocalDigits(digits) : digits)}
                 onChange={(e) => onPhoneChange(e.target.value)}
               />
             </div>
           </div>
-          {error && (
+          {(error || tooLong) && (
             <div className="m-alert" role="alert">
-              {error}
+              {error ?? TOO_LONG_FOR_ZW}
             </div>
           )}
           <div style={{ flex: 1 }} />
-          <button type="submit" className="m-btn" disabled={busy || (isHome ? digits.length < 9 : intlPhoneProblem(digits, country) !== null)}>
+          <button type="submit" className="m-btn" disabled={busy || (isHome ? digits.length !== LOCAL_DIGITS : intlPhoneProblem(digits, country) !== null)}>
             {busy ? "Sending…" : "Send code"}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
@@ -228,7 +244,8 @@ export default function LoginPage() {
               setPickerOpen(false);
               if (c.iso !== country.iso) {
                 setCountry(c);
-                setDigits((d) => (c.iso === HOME_COUNTRY.iso ? localDigits(d) : nationalDigits(d, c)));
+                setDraft(null);
+                setDigits((d) => (c.iso === HOME_COUNTRY.iso ? localDigits(d, LOCAL_DIGITS + 1) : nationalDigits(d, c)));
               }
               inputRef.current?.focus();
             }}

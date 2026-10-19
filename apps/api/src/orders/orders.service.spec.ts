@@ -728,6 +728,15 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263773333333");
   });
 
+  it("D-116: a customer abroad — the biker calls the number on the order, not the +44 account phone", async () => {
+    const parcel = row({ customer: { phone: "+447911123456" } });
+    expect((await svc(parcel).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+263771111111");
+    const food = row({ orderType: "merchant", customer: { phone: "+447911123456" } });
+    expect((await svc(food).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+263772222222");
+    const bare = row({ customer: { phone: "+447911123456" }, pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" } });
+    expect((await svc(bare).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+447911123456");
+  });
+
   it("reveals the waypoint contactPhones to the ASSIGNED biker inside the reveal window (E1)", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "rider-1");
     expect(snap.pickup).toEqual({ point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate", contactPhone: "+263771111111" });

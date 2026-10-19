@@ -416,6 +416,19 @@ describe("send.tsx — step 1 · Where", () => {
     expect(has(active, `${PICKUP.lat.toFixed(5)}, ${PICKUP.lng.toFixed(5)}`)).toBe(true);
   });
 
+  it("D-116: Use my location from abroad pins nothing (the toast says we don't cover it)", async () => {
+    active = render();
+    await settle();
+    mockCurrent.mockImplementation(async () => ({ coords: { latitude: 51.5, longitude: -0.12 } }));
+    const pill = active.root.findAll((n) => typeof n.props.onUseMyLocation === "function")[0]!;
+    await act(async () => {
+      pill.props.onUseMyLocation();
+    });
+    await settle();
+    expect(has(active, "51.50000, -0.12000")).toBe(false);
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
   it("flags a stop outside the service area and keeps Next disabled", async () => {
     active = render();
     await settle();

@@ -251,7 +251,7 @@ export default function RestaurantListScreen(): React.ReactElement {
             ) : null}
             {filterBar}
             {total > 0 ? <ListHeading count={count} range={right} /> : null}
-            {!hasLocation && total > 0 ? <NoAddressRow onSet={() => void location.useCurrentLocation()} /> : null}
+            {!hasLocation && total > 0 ? <NoAddressRow onSet={locationAsk.start} /> : null}
             {total === 0 ? (
               // B6 — the filters leave nothing; the way out is to clear them.
               <EmptyState

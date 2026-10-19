@@ -1,5 +1,5 @@
 import type { LatLng, MerchantShopKind, RestaurantListItem, ShopListItem } from "@lynia/shared";
-import { closingTimeToday, isMerchantOpenNow, minutesUntilClose, nextOpening } from "@lynia/shared";
+import { categoryServedNow as sharedCategoryServedNow, closingTimeToday, harareWallClock, isMerchantOpenNow, minutesUntilClose, nextOpening } from "@lynia/shared";
 import { DEFAULT_PREP_MINUTES } from "./home-feed";
 import { ETA_BAND_MINUTES, restaurantMeta } from "./food-list";
 import { comparePopularity, NO_POPULARITY, type PopularityIndex } from "./popularity";
@@ -71,7 +71,9 @@ export interface VenueView {
 /** A restaurant from `GET /restaurants` → the browse view model. */
 export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, now: Date): VenueView {
   const meta = restaurantMeta(r, customer);
-  const open = isMerchantOpenNow(r.hours, now);
+  // Hours are Harare's, whatever the phone's zone (D-116: customers abroad).
+  const harare = harareWallClock(now);
+  const open = isMerchantOpenNow(r.hours, harare);
   const price = r.priceLevel ? "$".repeat(r.priceLevel) : null;
   return {
     id: r.id,
@@ -92,9 +94,9 @@ export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, 
     // D-71: "Free delivery" only when the venue funds it (browse-v2 README §7).
     freeDelivery: r.freeDelivery === true,
     open,
-    closesInMin: open ? minutesUntilClose(r.hours, now) : null,
-    closeTime: closingTimeToday(r.hours, now),
-    opens: open ? null : nextOpening(r.hours, now),
+    closesInMin: open ? minutesUntilClose(r.hours, harare) : null,
+    closeTime: closingTimeToday(r.hours, harare),
+    opens: open ? null : nextOpening(r.hours, harare),
     prepMinutes: r.prepBaselineMinutes ?? DEFAULT_PREP_MINUTES,
   };
 }
@@ -191,12 +193,15 @@ export function anyFreeDelivery(venues: readonly VenueView[]): boolean {
 }
 
 /** Whether `now` falls inside a category's serving window. Null bounds = always served. Lives in
- *  `@lynia/shared` (MJ-RM12 / U25) so the API refuses the same dishes at placement; re-exported here
- *  so the storefronts keep their import. */
-export { categoryServedNow } from "@lynia/shared";
+ *  `@lynia/shared` (MJ-RM12 / U25) so the API refuses the same dishes at placement; wrapped here so the
+ *  storefronts keep their import and read the window on Harare's clock, as the API does (D-116). */
+export function categoryServedNow(from: string | null | undefined, to: string | null | undefined, now: Date): boolean {
+  return sharedCategoryServedNow(from, to, harareWallClock(now));
+}
 
 /** Whether a category's window is still ahead today (else it next opens tomorrow). */
 export function windowLaterToday(from: string, now: Date): boolean {
   const [fh, fm] = from.split(":");
-  return now.getHours() * 60 + now.getMinutes() < Number(fh) * 60 + Number(fm);
+  const harare = harareWallClock(now);
+  return harare.getHours() * 60 + harare.getMinutes() < Number(fh) * 60 + Number(fm);
 }

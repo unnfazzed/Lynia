@@ -13,7 +13,7 @@ import { routeAfterOrderPlaced } from "../src/push/ask-in-context";
 import type { ResolvedPlace } from "../src/api/places";
 import { fareBand, isBelowBand, isFarAboveBand } from "../src/logic/fare-band";
 import { landmarkFromAddress } from "../src/logic/geocode";
-import { isOutOfServiceArea } from "../src/logic/gates";
+import { isOutOfServiceArea, isWithinServiceCorridor } from "../src/logic/gates";
 import { draftFromParams, emptyItem, first, type ItemRow, MAX_ITEMS, type RebroadcastParams } from "../src/logic/order-draft";
 import { loadMyPickupPhone, loadRecipients, type Recipient, rememberRecipient, saveMyPickupPhone } from "../src/logic/saved-recipients";
 import { clearSendDraft, loadSendDraft, SEND_DRAFT_DEBOUNCE_MS, type SendDraft, saveSendDraft } from "../src/logic/send-draft";
@@ -347,6 +347,12 @@ export default function SendScreen(): React.ReactElement {
         }
         const loc = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATE_TIMEOUT_MS);
         const { latitude: lat, longitude: lng } = loc.coords;
+        // D-116: a customer abroad is not standing at a pickup we serve; say so instead of pinning London
+        // (and framing a map from London to Harare).
+        if (!isWithinServiceCorridor({ lat, lng })) {
+          setError(SEND_COPY.outArea);
+          return;
+        }
         setStop(slot, { lat, lng, name: coordName(lat, lng), source: slot === "pickup" ? "gps" : "map" });
         try {
           const results = await withTimeout(Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }), LOCATE_TIMEOUT_MS);
