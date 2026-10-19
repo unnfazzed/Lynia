@@ -1959,6 +1959,19 @@ the handoff wins for screens and copy, and these product changes apply:
    - OV-F5: `FoodDebtService.openDebtIfNeeded` opens a fleet-tagged venue order's cash-back at everything the
      customer paid, the delivery fee included (`customerTotal`; on free delivery the venue's share is netted).
      It is dormant until T9 tags marketplace orders for Own bikers.
+10. **T5 (done 2026-10-19): the fleet bill.**
+   - `common/fleet-ledger.ts` `recordFleetRide(tx, orderId)` writes the ride's `merchant_fleet_ledger` row inside
+     the transaction that ends the order. It uses the order's snapshotted `fleet_fee`: a booking is
+     `booking`, the business's own app order `marketplace`. It is idempotent on the partial unique index
+     (ON CONFLICT DO NOTHING).
+   - It is called from completion (rate and auto-close), `markUndelivered`, the cancel after pickup (lifecycle and
+     admin) and the admin adjudication. Not billed: a cancel before pickup, a booking converted to Any biker (its
+     tag is gone), a public biker's ride.
+   - A `delivered` ride is billed when it completes, which happens within the rating window.
+   - `FleetLedgerService.reconcile` runs every 6 hours over the last 8 days. It bills any billable fleet ride with
+     no row and sends a Telegram alert, because a miss is a path that forgot to bill.
+   - `FleetLedgerService.adjust` writes the append-only corrections (E3/OV-F6): an admin, a reason, the open week,
+     and an optional ride that must be on the branch's bill. The admin route is T7's.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -1981,7 +1994,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
   OV-F5 cash-back incl. delivery fee
   - Surfaced by: OV-F3, OV-F5. Files: common/commission-cover.ts, common/merchant-debt-lock.ts,
     merchant/dispatch-strategy.ts, food-debt/booking cash paths. Verify: specs incl. free-delivery (D-71)
-- [ ] **T5 (P1, human: ~2d / CC: ~2h)**: api: ledger write in terminal txns (wallet.service charge sites 893/1512/
+- [x] **T5 (P1, human: ~2d / CC: ~2h)**: DONE 2026-10-19 (see amendment 10). api: ledger write in terminal txns (wallet.service charge sites 893/1512/
   admin 324 + cancel/undelivered), reconciliation on the lifecycle sweep, adjustments
   - Surfaced by: C1, E3, OV-F6. Verify: chaos spec (kill mid-txn) + reconciliation alert spec
 - [ ] **T6 (P1, human: ~1d / CC: ~1h)**: api: E1 409 mapping at commit, E4 owner-only + rate limit + IDOR, E6 role

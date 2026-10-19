@@ -6,6 +6,7 @@
 import { FLEET_DISPATCH, type CreateFleetBookingRequest } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
+import { recordFleetRide } from "../common/fleet-ledger";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
 import type { MatchingService } from "../matching/matching.service";
@@ -20,6 +21,7 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { WalletService } from "../wallet/wallet.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
+import { FleetLedgerService } from "./fleet-ledger.service";
 import { FleetService } from "./fleet.service";
 import type { MerchantAccess } from "./merchant-access";
 import { MerchantBookingService } from "./merchant-booking.service";
@@ -58,6 +60,8 @@ const lifecycle = new OrderLifecycleService(
   codeCrypto,
 );
 const dispatch = new FleetDispatchService(prisma, notifications as unknown as NotificationsService, gateway as unknown as TrackingGateway, orders);
+const alerts = { notify: vi.fn() };
+const ledger = new FleetLedgerService(prisma, alerts as never);
 const fleetSvc = new FleetService(prisma, gateway as unknown as TrackingGateway, notifications as unknown as NotificationsService);
 const bookings = new MerchantBookingService(
   prisma,
@@ -90,6 +94,7 @@ const book = (over: Partial<CreateFleetBookingRequest> = {}): CreateFleetBooking
 async function clean(): Promise<void> {
   await prisma.auditLog.deleteMany({ where: { action: { startsWith: "merchant.fleet." } } });
   await prisma.foodDispatchAttempt.deleteMany({});
+  await prisma.merchantFleetLedger.deleteMany({});
   await prisma.commissionLedger.deleteMany({});
   await prisma.commissionAccount.deleteMany({});
   await prisma.merchantBooking.deleteMany({});
@@ -489,5 +494,98 @@ describe("T4 gates", () => {
     expect(await prisma.commissionLedger.count({ where: { riderId: fleetBiker } })).toBe(0);
     expect((await prisma.rider.findUniqueOrThrow({ where: { profileId: publicBiker } })).tripsCount).toBe(1);
     expect(await prisma.commissionLedger.count({ where: { riderId: publicBiker, type: "free_job" } })).toBe(1);
+  });
+});
+
+describe("T5 the fleet bill", () => {
+  const rows = (orderId: string) => prisma.merchantFleetLedger.findMany({ where: { orderId } });
+
+  /** A "My bikers" booking taken by one of the owner's bikers. */
+  async function takenBooking(): Promise<{ f: Fleet; rider: string; orderId: string; accountId: string }> {
+    const f = await fleetOwner();
+    const rider = await biker({ fleet: f });
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await dispatch.accept(booking.id, rider);
+    const { customerId } = await prisma.order.findUniqueOrThrow({ where: { id: booking.id }, select: { customerId: true } });
+    return { f, rider, orderId: booking.id, accountId: customerId };
+  }
+
+  it("a completed ride is billed once, at the fee snapshotted on the order, to its branch and owner", async () => {
+    const { f, rider, orderId } = await takenBooking();
+    // The owner raises the fee afterwards: the ride keeps the fee it was booked at.
+    await prisma.ownerFleet.update({ where: { ownerProfileId: f.ownerId }, data: { rideFee: 3 } });
+    await prisma.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+    await lifecycle.completeOrder(orderId);
+    await lifecycle.completeOrder(orderId);
+    const billed = await rows(orderId);
+    expect(billed).toHaveLength(1);
+    expect(billed[0]).toMatchObject({ kind: "booking", merchantId: f.branchId, ownerProfileId: f.ownerId, riderId: rider, statementId: null });
+    expect(Number(billed[0].fee)).toBe(1.5);
+  });
+
+  it("an undelivered ride is billed (the ride happened)", async () => {
+    const { rider, orderId } = await takenBooking();
+    await prisma.order.update({ where: { id: orderId }, data: { status: "en_route_dropoff", collectedAt: new Date() } });
+    await lifecycle.markUndelivered(orderId, rider, "recipient_unreachable");
+    expect(await rows(orderId)).toHaveLength(1);
+  });
+
+  it("cancelled after pickup is billed; cancelled before pickup is not", async () => {
+    const after = await takenBooking();
+    await prisma.order.update({ where: { id: after.orderId }, data: { status: "picked_up", collectedAt: new Date() } });
+    await lifecycle.cancel(after.orderId, after.accountId, "Buyer cancelled");
+    expect(await rows(after.orderId)).toHaveLength(1);
+
+    const before = await takenBooking();
+    await bookings.cancel(before.f.access, before.f.ownerId, before.orderId);
+    expect(await rows(before.orderId)).toHaveLength(0);
+  });
+
+  it("the bill rule itself (paths like the admin cancel call it unguarded): a cancel bills only once the biker collected", async () => {
+    const before = await takenBooking();
+    await prisma.order.update({ where: { id: before.orderId }, data: { status: "cancelled", cancelledAt: new Date() } });
+    expect(await recordFleetRide(prisma, before.orderId)).toBe(false);
+    const after = await takenBooking();
+    await prisma.order.update({ where: { id: after.orderId }, data: { status: "cancelled", cancelledAt: new Date(), collectedAt: new Date() } });
+    expect(await recordFleetRide(prisma, after.orderId)).toBe(true);
+    expect(await recordFleetRide(prisma, after.orderId)).toBe(false); // idempotent
+  });
+
+  it("a booking sent to any biker and delivered by a public biker is never on the fleet bill", async () => {
+    const f = await fleetOwner();
+    await biker({ fleet: f });
+    const publicBiker = await biker();
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await bookings.fleetConvert(f.access, f.ownerId, booking.id, 2.5);
+    await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", riderId: publicBiker, agreedFare: 2.5, deliveredAt: new Date() } });
+    await lifecycle.completeOrder(booking.id);
+    expect(await rows(booking.id)).toHaveLength(0);
+  });
+
+  it("the reconciliation bills a ride a path forgot, says so on Telegram, and finds nothing the second time", async () => {
+    const { orderId } = await takenBooking();
+    // A path that ends orders without billing (here: a raw write).
+    await prisma.order.update({ where: { id: orderId }, data: { status: "completed", completedAt: new Date(), collectedAt: new Date() } });
+    expect(await ledger.reconcile()).toEqual({ repaired: [orderId] });
+    expect(await rows(orderId)).toHaveLength(1);
+    expect(alerts.notify).toHaveBeenCalledTimes(1);
+    expect(await ledger.reconcile()).toEqual({ repaired: [] });
+    expect(alerts.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("an adjustment is its own append-only row on the open week, with the admin and a reason", async () => {
+    const { f, orderId } = await takenBooking();
+    await prisma.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+    await lifecycle.completeOrder(orderId);
+    const admin = await profile("customer");
+    await ledger.adjust(admin, { merchantId: f.branchId, orderId, fee: -1.5, reason: "wrong fee" });
+    const all = await rows(orderId);
+    expect(all.map((r) => r.kind).sort()).toEqual(["adjustment", "booking"]);
+    expect(all.find((r) => r.kind === "adjustment")).toMatchObject({ actorProfileId: admin, reason: "wrong fee", statementId: null });
+    await expect(ledger.adjust(admin, { merchantId: f.branchId, fee: -1, reason: "" })).rejects.toMatchObject({ response: { reason: "reason_required" } });
+    const elsewhere = await fleetOwner();
+    await expect(ledger.adjust(admin, { merchantId: elsewhere.branchId, orderId, fee: -1, reason: "wrong branch" })).rejects.toMatchObject({
+      response: { reason: "ride_not_found" },
+    });
   });
 });
