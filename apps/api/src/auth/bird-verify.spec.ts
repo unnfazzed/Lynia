@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
-import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart, WHATSAPP_UNAVAILABLE } from "./bird-verify";
+import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart, verifyChannelsFor, WHATSAPP_UNAVAILABLE } from "./bird-verify";
 
 describe("birdVerifyBaseUrl", () => {
   it("derives the region-scoped host from the key prefix", () => {
@@ -60,6 +60,17 @@ describe("birdVerifyStart", () => {
     const err = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567")).catch((e: unknown) => e);
     expect((err as { getStatus(): number }).getStatus()).toBe(422);
     expect((err as { getResponse(): unknown }).getResponse()).toEqual({ reason: "whatsapp_unavailable", message: WHATSAPP_UNAVAILABLE });
+  });
+
+  it("D-116: South Africa gets WhatsApp then SMS (Bird's shared WhatsApp sender can't reach it), and reports SMS", async () => {
+    let sent: { options?: unknown } | undefined;
+    const fetchMock = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: "vrf_za" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567"));
+    expect(sent?.options).toEqual({ code_length: 6, channels: ["whatsapp", "sms"] });
+    expect(res).toEqual({ channel: "sms" });
   });
 
   it("falls back to 'sms' for an unrecognized last_channel — defensive display mapping only; Bird was never asked to send SMS", async () => {
@@ -166,5 +177,19 @@ describe("birdVerifyCheck", () => {
     await withFetch(fetchMock, () => birdVerifyCheck(cfg(), "+263771234567", "999888"));
     expect(called!.url).not.toContain("999888");
     expect(JSON.stringify(called!.init.headers)).not.toContain("999888");
+  });
+});
+
+describe("verifyChannelsFor (D-116: SMS fallback only where WhatsApp can't carry a passcode)", () => {
+  it("is WhatsApp only for Zimbabwe and the countries Bird's WhatsApp sender serves", () => {
+    for (const phone of ["+263771234567", "+447911123456", "+12025550123", "+61412345678", "+26771234567", "+79161234567"]) {
+      expect(verifyChannelsFor(phone)).toEqual(["whatsapp"]);
+    }
+  });
+
+  it("adds SMS after WhatsApp for the 18 countries Bird's shared WhatsApp sender refuses", () => {
+    for (const phone of ["+27821234567", "+2348012345678", "+971501234567", "+919812345678", "+77011234567", "+380501234567", "+201001234567"]) {
+      expect(verifyChannelsFor(phone)).toEqual(["whatsapp", "sms"]);
+    }
   });
 });
