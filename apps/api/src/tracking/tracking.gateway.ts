@@ -530,6 +530,16 @@ export class TrackingGateway
     await this.emitToRider(riderId, WS_EVENTS.foodOfferClosed, payload);
   }
 
+  /**
+   * A food round's offer closed, on whichever channel rang the rider: `food:offer-closed` for a public biker's food
+   * offer, `fleet:offer-closed` for an Own biker rung for their own business's app order (T9). The round doesn't
+   * keep who was rung on which channel, so both go; a client ignores the event it doesn't listen for. Best-effort.
+   */
+  async emitDispatchOfferClosed(riderId: string, orderId: string): Promise<void> {
+    const payload: FoodOfferClosedEvent & FleetOfferClosedEvent = { orderId, at: new Date().toISOString() };
+    await this.emitToRider(riderId, [WS_EVENTS.foodOfferClosed, WS_EVENTS.fleetOfferClosed], payload);
+  }
+
   /** Own bikers (D-117, OB-R5): a job offer from the biker's own business. Best-effort; never throws. */
   async emitFleetOffer(riderId: string, payload: FleetJobOffer): Promise<void> {
     await this.emitToRider(riderId, WS_EVENTS.fleetOffer, payload);
@@ -621,14 +631,17 @@ export class TrackingGateway
   /** Cluster-wide direct-to-rider emit (same socket lookup as `kickRiderFromBoard`/
    *  `evictRiderFromSupply`): find every socket authenticated as `riderId` on ANY instance via the
    *  Redis-backed `fetchSockets`, and emit straight to each — no room, since these are single-
-   *  recipient signals. Swallows its own errors so a gateway hiccup never surfaces to the caller. */
-  private async emitToRider(riderId: string, event: string, payload: unknown): Promise<void> {
+   *  recipient signals. Swallows its own errors so a gateway hiccup never surfaces to the caller. Several events
+   *  with the same payload go in one socket fetch. */
+  private async emitToRider(riderId: string, events: string | readonly string[], payload: unknown): Promise<void> {
     if (!this.server) return;
+    const names = typeof events === "string" ? [events] : events;
+    const event = names.join("+");
     try {
       const sockets = await this.server.fetchSockets();
       for (const s of sockets) {
         const sub = (s.data as { user?: SocketUser } | undefined)?.user?.sub;
-        if (sub === riderId) s.emit(event, payload);
+        if (sub === riderId) for (const name of names) s.emit(name, payload);
       }
     } catch (err) {
       this.logger.warn(`emitToRider(${event}) failed for biker ${riderId}: ${(err as Error).message}`);

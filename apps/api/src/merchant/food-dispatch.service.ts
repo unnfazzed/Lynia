@@ -12,10 +12,11 @@ import {
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
 import { assertRiderCoversCommission, jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
-import { FLEET_SCOPE_REFUSAL, rethrowFleetScope } from "../common/fleet-scope";
+import { FLEET_DROP_ACTION, FLEET_SCOPE_REFUSAL, rethrowFleetScope } from "../common/fleet-scope";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
+import { preferredRetired } from "../common/preferred-retired";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
@@ -28,6 +29,7 @@ import { applyReliabilityDelta } from "../riders/reliability";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { appFleetOffer, businessFleet, marketplaceFleetFee, ownBikersFor } from "./fleet-candidates";
 import { preferredRiderIds } from "./preferred-riders";
 import { cancelAttribution } from "../common/cancel-attribution";
 import { domainEvents } from "../common/domain-events";
@@ -204,7 +206,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: orphaned.map((r) => r.id) }, outcome: "pending" },
       data: { outcome: "expired", respondedAt: now },
     });
-    for (const r of orphaned) void this.gateway.emitFoodOfferClosed(r.riderId, r.orderId);
+    for (const r of orphaned) void this.gateway.emitDispatchOfferClosed(r.riderId, r.orderId);
     return { expired: res.count };
   }
 
@@ -354,7 +356,12 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // code themselves and, on collect-and-return, settle their own cash debt). Not persisted in
     // dispatchExcludedRiderIds: membership is re-read every round, so a later leave/join applies.
     const teamIds = await this.teamProfileIds(order.merchantId);
-    const preferred = await this.preferredFor(order.merchantId);
+    // Own bikers T9: a business whose owner runs Own bikers rings them first. Not best effort, like the team: an
+    // offer must never go out on a wrong reading of who may take it.
+    const fleet = await businessFleet(this.prisma, order.merchantId);
+    // Preferred riders (L3) is retired by Own bikers: a business with a fleet skips it now, every business once
+    // PREFERRED_RETIRED is on.
+    const preferred = fleet?.enabled || preferredRetired() ? [] : await this.preferredFor(order.merchantId);
     const limit = dispatchRoundSize(attempt);
     // Owner 2026-10-12: a rider whose wallet doesn't cover this job's commission (10% of the delivery fee,
     // once their free jobs are used) isn't offered it. They're dropped from this round only — a top-up
@@ -363,12 +370,29 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const skipped = new Set<string>();
     // Riders who passed on this order in the last declineCooldownMs sit this round out (coolingDownRiderIds).
     const cooling = await this.coolingDownRiderIds(orderId, nowMs);
+    // T9 (own-bikers.md "Marketplace orders at a fleet merchant"): the business's own bikers within the same reach,
+    // with no slack. The first round of a search rings only them when any is free; every round after rings them
+    // first, then the public. A paused or switched-off fleet's bikers are rung for nothing (they stay exclusive).
+    // They owe LyniaGo no commission on their business's jobs, so the cover check below is not theirs.
+    const own = fleet?.active
+      ? (
+          await ownBikersFor(this.prisma, {
+            owner: fleet.owner,
+            homeMerchantId: order.merchantId!,
+            point,
+            radiusM,
+            excluded: [...order.dispatchExcludedRiderIds, order.customerId, ...teamIds, ...cooling],
+          })
+        ).map((c) => c.riderId)
+      : [];
+    const fleetOnly = own.length > 0 && attempt === 1;
+    const publicLimit = limit == null ? null : Math.max(0, limit - own.length);
     let candidates: Awaited<ReturnType<DispatchStrategy["pickCandidates"]>> = [];
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 3 && !fleetOnly && publicLimit !== 0; pass++) {
       // A biker who ordered this food themselves is never offered the job of delivering it to themselves
       // (the parcel twin is selectOffer's self-offer refusal).
       const excluded = [...new Set([...order.dispatchExcludedRiderIds, order.customerId, ...teamIds, ...cooling, ...skipped])];
-      const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit });
+      const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit: publicLimit });
       const covering = await ridersWhoCoverCommission(this.prisma, picked.map((c) => c.riderId), commission);
       candidates = picked.filter((c) => covering.has(c.riderId));
       for (const c of picked) if (!covering.has(c.riderId)) skipped.add(c.riderId);
@@ -395,7 +419,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       noRiderHoldAt: null,
       ...(phase === "preparing" ? { substitutionRounds: { none: { status: "open" } } } : {}),
     };
-    if (candidates.length === 0) {
+    if (own.length > 0) this.logger.log(`merchant.dispatch.fleet order=${orderId} own=${own.length} public=${candidates.length} round=${attempt}`);
+    if (candidates.length === 0 && own.length === 0) {
       const claimed = await this.prisma.order.updateMany({
         where: guard,
         data: {
@@ -426,7 +451,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (attempt === 1) await this.prisma.orderEvent.create({ data: { orderId, status: "open_for_offers" } });
     // One row per (order, rider): a rider who let an earlier round run out is offered again on the same
     // row, reset to pending with this round's expiry. Riders who passed never get here (excluded above).
-    const riderIds = candidates.map((c) => c.riderId);
+    const publicIds = candidates.map((c) => c.riderId);
+    const riderIds = [...own, ...publicIds];
     try {
       await this.prisma.$transaction(async (tx) => {
         for (const riderId of riderIds) {
@@ -454,7 +480,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // accept." — a shop job asks for the sealed-bag photo instead. The fare is the delivery fee the rider
     // keeps; the place is the drop-off landmark the offer card already shows.
     const dropLandmark = (order.dropoff as Waypoint | null)?.landmark?.trim() || null;
-    void this.notifications.notifyProfiles(riderIds, {
+    if (own.length > 0) this.ringOwnBikers(orderId, own, order, merchant?.name, dropLandmark, expiresAt);
+    if (publicIds.length === 0) return "offered";
+    void this.notifications.notifyProfiles(publicIds, {
       ...pushCopy(
         riderJobTemplate(merchant?.businessType),
         { f: order.deliveryFee == null ? null : pushMoney(order.deliveryFee), v: merchant?.name ?? null, a: dropLandmark },
@@ -467,11 +495,39 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // that just committed above.
     try {
       const event = this.buildFoodOfferEvent(orderId, order.merchantId!, order, expiresAt);
-      for (const riderId of riderIds) void this.gateway.emitFoodOffer(riderId, event);
+      for (const riderId of publicIds) void this.gateway.emitFoodOffer(riderId, event);
     } catch (err) {
       this.logger.warn(`food:offer build failed for order ${orderId}: ${(err as Error).message}`);
     }
     return "offered";
+  }
+
+  /**
+   * T9: ring the business's Own bikers on their own channel (the fleet board, OB-R4/R5), with no fare: the fleet
+   * push (handoff own-bikers-v1 `b.offerT`, as a booking's) and `fleet:offer` with `kind: "app"`. They accept at
+   * `/fleet/jobs/:id/accept`, which comes back to {@link acceptDispatch}. Post-commit and best effort.
+   */
+  private ringOwnBikers(
+    orderId: string,
+    riderIds: string[],
+    order: Omit<Parameters<typeof appFleetOffer>[0], "id">,
+    merchantName: string | null | undefined,
+    dropLandmark: string | null,
+    expiresAt: Date,
+  ): void {
+    const shop = merchantName?.trim() || "Your shop";
+    void this.notifications.notifyProfiles(riderIds, {
+      title: `New ${shop} job`,
+      body: dropLandmark ? `To ${dropLandmark}. Accept it in LyniaGo.` : "Accept it in LyniaGo.",
+      data: { orderId, kind: "fleet_offer" },
+      collapseKey: `fleet_offer:${orderId}`,
+    });
+    try {
+      const event = appFleetOffer({ ...order, id: orderId }, shop, expiresAt);
+      for (const riderId of riderIds) void this.gateway.emitFleetOffer(riderId, event);
+    } catch (err) {
+      this.logger.warn(`fleet:offer build failed for order ${orderId}: ${(err as Error).message}`);
+    }
   }
 
   /** The restaurant's own riders (L3), read once per tick. Best effort: a failed read logs and dispatch
@@ -569,7 +625,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
     if (open.length === 0) return;
     await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
-    for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    for (const { riderId } of open) void this.gateway.emitDispatchOfferClosed(riderId, orderId);
   }
 
   /** Mark every still-pending row on the order expired (but `exceptRiderId`'s) and close those riders'
@@ -579,7 +635,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
     if (open.length === 0) return;
     await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
-    for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    for (const { riderId } of open) void this.gateway.emitDispatchOfferClosed(riderId, orderId);
   }
 
   /** The order behind the rider's live offer, or the reason they have none: not offered it at all
@@ -682,17 +738,28 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (!standing) throw new ForbiddenException("Not a biker");
     const refusal = onlineRefusalReason(standing);
     if (refusal) throw new ForbiddenException({ reason: refusal, message: REFUSAL_MESSAGE[refusal] });
-    // Own bikers (D-117): the round only rings public bikers (TrackingService.nearbyRiders), but a biker who
-    // joined a fleet after the ring only carries their owner's jobs now.
-    if (standing.fleetOwnerProfileId != null) throw new ForbiddenException(FLEET_SCOPE_REFUSAL);
+    // Own bikers (D-117, T9): an Own biker takes only their own business's orders, and only while its fleet is on
+    // and not paused (a pause landing inside the round stops them here). They carry it as a fleet ride: the order is
+    // tagged to the branch in the same write that assigns them, with OV5's fee snapshot, and the 0108 trigger checks
+    // the pair at commit. A biker who joined a fleet after a public ring lands here too, and is refused.
+    const owner = standing.fleetOwnerProfileId;
+    let fleetFee: number | null = null;
+    if (owner != null) {
+      const fleet = await businessFleet(this.prisma, order.merchantId);
+      if (!fleet?.active || fleet.owner !== owner) throw new ForbiddenException(FLEET_SCOPE_REFUSAL);
+      fleetFee = marketplaceFleetFee(order.deliveryFee);
+    }
     // C4 soft-lock, the same as the parcel bid and pick: a rider owing a venue cash, or mid-doorstep
     // handshake, takes no new job. The round already leaves them out; a debt can open between ring and tap.
-    if (await hasOpenMerchantObligation(this.prisma, riderId)) {
+    // OV-F3: cash an Own biker owes their own business doesn't count against its jobs.
+    if (await hasOpenMerchantObligation(this.prisma, riderId, { exemptOwner: owner })) {
       throw new ForbiddenException("You have a food order still settling with a restaurant — finish that first");
     }
     // Owner 2026-10-12: the rider's wallet must cover this job's commission (the round only rang riders
-    // who could, but a balance can move between the ring and the tap).
-    await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee }));
+    // who could, but a balance can move between the ring and the tap). An Own biker owes none on it.
+    if (owner == null) {
+      await assertRiderCoversCommission(this.prisma, riderId, jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee }));
+    }
     // MJ-RM18 backstop (the round already leaves the team out): someone on the business's own team never
     // takes its order — same guard as MerchantBookingService.pick.
     if (order.merchantId && (await this.prisma.merchantMember.findFirst({ where: { merchantId: order.merchantId, profileId: riderId }, select: { id: true } }))) {
@@ -718,6 +785,9 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       dispatchOfferedRiderId: null,
       dispatchOfferExpiresAt: null,
       dispatchNextCheckAt: null,
+      // T9: the fleet tag and fee snapshot ride in the assigning write (both null for a public biker).
+      fleetMerchantId: fleetFee == null ? null : order.merchantId,
+      fleetFee,
     });
     try {
       // First writer wins. The CAS is on the round itself, so a rider whose round closed (and maybe
@@ -754,7 +824,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       subjectType: "order",
       subjectId: orderId,
       orderId,
-      data: { riderId, orderType: "merchant", merchantId: order.merchantId ?? null },
+      data: { riderId, orderType: "merchant", merchantId: order.merchantId ?? null, ...(fleetFee != null ? { fleetMerchantId: order.merchantId } : {}) },
     });
 
     // D-04: "rider secured" is a first-class, pushed event for all three actors. Customer + rider both
@@ -802,7 +872,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       data: { outcome: "declined", respondedAt: new Date() },
     });
     if (marked.count === 0) throw new ConflictException("This offer is no longer live");
-    void this.gateway.emitFoodOfferClosed(riderId, orderId);
+    void this.gateway.emitDispatchOfferClosed(riderId, orderId);
     const deciding = await this.prisma.foodDispatchAttempt.count({ where: { orderId, outcome: "pending", expiresAt: { gt: new Date() } } });
     if (deciding === 0 && order.roundExpiresAt) await this.closeRound(orderId, order.roundExpiresAt);
     return { orderId, declined: true };
@@ -825,9 +895,12 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   async dropDispatch(orderId: string, riderId: string): Promise<{ orderId: string; status: "requested" }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant", riderId },
-      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true, pickupCodeAttempts: true },
+      select: { status: true, merchantPhase: true, dispatchExcludedRiderIds: true, merchantId: true, pickupCodeAttempts: true, fleetMerchantId: true },
     });
     if (!order) throw new NotFoundException("Order not found");
+    // T9: an Own biker giving back their own business's order. It answers to the business (who sees it on its
+    // roster, OV-F2), so no strike and no reliability penalty, as with a booking.
+    const fleetDrop = order.fleetMerchantId != null;
     // D2 second review F2: a rider who spent tries on the pickup code and then drops must not hand the next
     // rider fresh guesses at the SAME code (colluding accounts: 15 + 5×N). So if any try was spent, the drop
     // mints a NEW pickup code (hash + AAD-bound ciphertext) with the tries at 0 — not a lockout re-issue, so
@@ -848,9 +921,21 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         // Guarded on the phase read above too: a kitchen marking a still-cooking order ready in between
         // must not be overwritten back to `preparing`.
         // …and on the pickup tries read with it, so a guess landing in between isn't carried or lost.
-        where: { id: orderId, status: order.status, riderId, merchantPhase: order.merchantPhase, pickupCodeAttempts: order.pickupCodeAttempts },
+        where: {
+          id: orderId,
+          status: order.status,
+          riderId,
+          merchantPhase: order.merchantPhase,
+          pickupCodeAttempts: order.pickupCodeAttempts,
+          fleetMerchantId: order.fleetMerchantId,
+        },
         data: {
           status: "requested",
+          // T9 (own-bikers.md "Unassigning an Own biker before pickup"): the fleet tag and fee go in the same write
+          // as the rider, so the search can carry on to public bikers (the 0108 trigger checks the pair at commit).
+          // The next search rings the business's own bikers first again.
+          fleetMerchantId: null,
+          fleetFee: null,
           // MJ-RM1: a rider found early drops while the kitchen is still cooking — it keeps cooking, and
           // the early search picks it up again. Otherwise the food is ready and waiting.
           merchantPhase: order.merchantPhase === "preparing" ? "preparing" : "ready_for_pickup",
@@ -882,6 +967,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "requested" } });
+      if (fleetDrop) {
+        await tx.auditLog.create({ data: { actor: riderId, action: FLEET_DROP_ACTION, target: orderId } });
+        return;
+      }
 
       const rider = await tx.rider.findUnique({
         where: { profileId: riderId },

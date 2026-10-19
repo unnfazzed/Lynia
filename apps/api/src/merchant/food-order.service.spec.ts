@@ -1808,7 +1808,7 @@ describe("FoodOrderService.cancelPreparing — B3 'Can't finish this order' (D-4
         },
         orderEvent: { create: async () => ({}) },
       },
-      fakeGateway({ emitFoodOfferClosed: async (riderId: string, orderId: string) => void closed.push([riderId, orderId]) }),
+      fakeGateway({ emitDispatchOfferClosed: async (riderId: string, orderId: string) => void closed.push([riderId, orderId]) }),
     );
     await svc.cancelPreparing("p1", "o1", "kitchen_problem");
     expect(data).toMatchObject({ status: "cancelled", dispatchOfferExpiresAt: null, dispatchNextCheckAt: null });

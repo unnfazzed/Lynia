@@ -1,11 +1,11 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, codAmount, FLEET_DISPATCH, FleetJobOffer, OFFER_WINDOW_MS, type OrderItem, type Waypoint } from "@lynia/shared";
-import { heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { domainEvents } from "../common/domain-events";
 import { FLEET_SCOPE_REFUSAL, isFleetScopeViolation, orderFleetOwner, rethrowFleetScope } from "../common/fleet-scope";
-import { hasOpenMerchantObligation, notOwedToOwner, openMerchantObligationOr } from "../common/merchant-debt-lock";
-import { penaltiesSuspended } from "../common/penalties";
+import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
+import { appFleetOffer, ownBikersFor } from "./fleet-candidates";
+import { FoodDispatchService } from "./food-dispatch.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrdersService } from "../orders/orders.service";
 import { publicWaypoint } from "../orders/waypoints";
@@ -75,6 +75,9 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
     // "Send to any biker" announces the converted booking to the public board. Always provided; optional only for
     // the positional unit harnesses.
     @Optional() private readonly orders?: OrdersService,
+    // T9: an Own biker's offer for their business's app order is a food round's; accept and decline go there.
+    // Always provided; optional only for the positional unit harnesses.
+    @Optional() private readonly food?: FoodDispatchService,
   ) {}
 
   onModuleInit(): void {
@@ -346,35 +349,8 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
    */
   private async candidates(order: RoundOrder, owner: string, branchId: string, point: { lat: number; lng: number }): Promise<Array<{ riderId: string }>> {
     const passed = await this.prisma.foodDispatchAttempt.findMany({ where: { orderId: order.id, outcome: "declined" }, select: { riderId: true } });
-    const excluded = [...new Set([...order.dispatchExcludedRiderIds, ...passed.map((p) => p.riderId), order.customerId])];
-    const cutoff = new Date(Date.now() - heartbeatMaxAgeMsForPush());
-    const rows = await this.prisma.$queryRaw<Array<{ profile_id: string; home: boolean }>>`
-      SELECT profile_id, (fleet_home_merchant_id = ${branchId}::uuid) AS home
-      FROM riders
-      WHERE fleet_owner_profile_id = ${owner}::uuid
-        AND is_online = true
-        AND account_status = 'active'
-        AND kyc_status = 'verified'
-        AND (${penaltiesSuspended()}::boolean OR (on_hold = false AND (cooldown_until IS NULL OR cooldown_until <= now())))
-        AND last_heartbeat_at IS NOT NULL
-        AND last_heartbeat_at >= ${cutoff}
-        AND NOT (profile_id = ANY(${excluded}::uuid[]))
-      ORDER BY (fleet_home_merchant_id = ${branchId}::uuid) DESC,
-               CASE WHEN geog IS NULL THEN NULL
-                    ELSE ST_Distance(geog, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography) END ASC NULLS LAST
-      LIMIT ${FLEET_DISPATCH.maxRung}`;
-    if (rows.length === 0) return [];
-    const ids = rows.map((r) => r.profile_id);
-    const obligations = openMerchantObligationOr();
-    const [busy, owing] = await Promise.all([
-      this.prisma.order.findMany({ where: { riderId: { in: ids }, status: { in: ACTIVE_RIDE_STATUSES } }, select: { riderId: true } }),
-      // OV-F3: cash owed to this owner's own branches doesn't keep their biker off this owner's job.
-      obligations.length > 0
-        ? this.prisma.order.findMany({ where: { riderId: { in: ids }, OR: obligations, AND: [notOwedToOwner(owner)] }, select: { riderId: true } })
-        : Promise.resolve([]),
-    ]);
-    const out = new Set([...busy, ...owing].map((o) => o.riderId));
-    return ids.filter((id) => !out.has(id)).map((riderId) => ({ riderId }));
+    const excluded = [...order.dispatchExcludedRiderIds, ...passed.map((p) => p.riderId), order.customerId];
+    return ownBikersFor(this.prisma, { owner, homeMerchantId: branchId, point, radiusM: null, excluded });
   }
 
   /** Hold for the business's decision (OB-M10 / OB-M11) and tell the booker. */
@@ -440,15 +416,49 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
   /** `GET /fleet/jobs/offers` (OB-R4/R5): the biker's live offers, the one running out first first. */
   async offersFor(riderId: string): Promise<FleetJobOffer[]> {
     const rows = await this.prisma.foodDispatchAttempt.findMany({
-      where: { riderId, outcome: "pending", expiresAt: { gt: new Date() }, order: { status: "fleet_searching", riderId: null } },
+      where: {
+        riderId,
+        outcome: "pending",
+        expiresAt: { gt: new Date() },
+        // A booking still ringing, or (T9) one of the business's own app orders on a live round.
+        order: { OR: [{ status: "fleet_searching", riderId: null }, { orderType: "merchant", status: "open_for_offers" }] },
+      },
       orderBy: { expiresAt: "asc" },
       take: FLEET_DISPATCH.maxRung,
       select: {
         expiresAt: true,
-        order: { select: { id: true, pickup: true, dropoff: true, itemDesc: true, items: true, distanceKm: true, fleetMerchant: { select: { name: true } } } },
+        order: {
+          select: {
+            id: true,
+            orderType: true,
+            pickup: true,
+            dropoff: true,
+            itemDesc: true,
+            items: true,
+            distanceKm: true,
+            merchantGoodsTotal: true,
+            deliveryFee: true,
+            merchantDeliveryShare: true,
+            merchantPaymentMethod: true,
+            fleetMerchant: { select: { name: true } },
+            merchant: { select: { name: true } },
+          },
+        },
       },
     });
-    return rows.map((r) => this.offerEvent(r.order, r.order.fleetMerchant?.name?.trim() || "Your shop", r.expiresAt));
+    return rows.map((r) =>
+      r.order.orderType === "merchant"
+        ? appFleetOffer(r.order, r.order.merchant?.name?.trim() || "Your shop", r.expiresAt)
+        : this.offerEvent(r.order, r.order.fleetMerchant?.name?.trim() || "Your shop", r.expiresAt),
+    );
+  }
+
+  /** T9: whether `orderId` is an app order (its offer is a food round's), so accept and decline go there. */
+  private async foodRound(orderId: string): Promise<FoodDispatchService | null> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { orderType: true } });
+    if (order?.orderType !== "merchant") return null;
+    if (!this.food) throw new ConflictException({ reason: "offer_gone", message: "That one went to another biker" });
+    return this.food;
   }
 
   /** The booking behind the biker's live offer, or why they have none: not theirs (403) or no longer live (409). */
@@ -476,6 +486,8 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
    * commit. The delivery code was minted at booking, so the business already holds it.
    */
   async accept(orderId: string, riderId: string): Promise<{ orderId: string; status: "assigned" }> {
+    const food = await this.foodRound(orderId);
+    if (food) return food.acceptDispatch(orderId, riderId);
     const live = await this.liveOffer(orderId, riderId);
     const standing = await this.prisma.rider.findUnique({
       where: { profileId: riderId },
@@ -532,6 +544,8 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
    * this search. When they were the last of the round still deciding, the next round starts now.
    */
   async decline(orderId: string, riderId: string): Promise<{ orderId: string; declined: true }> {
+    const food = await this.foodRound(orderId);
+    if (food) return food.declineDispatch(orderId, riderId);
     const live = await this.liveOffer(orderId, riderId);
     const marked = await this.prisma.foodDispatchAttempt.updateMany({
       where: { orderId, riderId, outcome: "pending" },

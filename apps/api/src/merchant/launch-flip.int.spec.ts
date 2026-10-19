@@ -90,6 +90,7 @@ const gateway = {
   emitFoodQueueChanged: () => undefined,
   emitFoodOffer: async () => undefined,
   emitFoodOfferClosed: async () => undefined,
+  emitDispatchOfferClosed: async () => undefined,
   isMerchantOnline: async () => true,
   evictRiderFromGeo: async () => undefined,
   evictRiderFromSupply: async () => undefined,

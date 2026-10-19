@@ -175,6 +175,19 @@ describe("MerchantRidersService.add (owner only; the controller's @OwnerOnly)", 
     expect(w.prisma.$executeRaw).toHaveBeenCalled();
   });
 
+  it("Own bikers T9: adds nobody once PREFERRED_RETIRED is on (410), and the list and Remove still work", async () => {
+    const kept = await w.svc.add(OWNER, "owner", { label: "Blessing", phone: "0772223333" });
+    vi.stubEnv("PREFERRED_RETIRED", "true");
+    try {
+      await expect(w.svc.add(OWNER, "owner", { label: "Tino", phone: "0772224444" })).rejects.toMatchObject({ status: 410, response: { reason: "preferred_retired" } });
+      expect((await w.svc.list(OWNER)).riders).toHaveLength(1);
+      await w.svc.remove(OWNER, "owner", kept.id);
+      expect(w.rows).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("refuses a number that isn't a phone number", async () => {
     await expect(w.svc.add(OWNER, "owner", { label: "X", phone: "12ab" })).rejects.toMatchObject({ status: 400, response: { reason: "bad_phone" } });
   });

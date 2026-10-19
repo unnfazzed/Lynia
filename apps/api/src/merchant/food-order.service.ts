@@ -1082,7 +1082,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
       if (open.length === 0) return;
       await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
-      for (const { riderId } of open) void this.gateway.emitFoodOfferClosed(riderId, orderId);
+      for (const { riderId } of open) void this.gateway.emitDispatchOfferClosed(riderId, orderId);
     } catch (err) {
       this.logger.warn(`closing open offers failed for order ${orderId}: ${(err as Error).message}`);
     }

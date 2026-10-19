@@ -176,6 +176,7 @@ export class FleetAdminService {
       await tx.auditLog.create({ data: { actor, action: FLEET_PAUSE_ACTION, target: ownerProfileId, reasonCode: body.reasonCode, note: body.note ?? null } });
     });
     await this.cancelRingingBookings(ownerProfileId, "fleet_paused");
+    await this.closeAppOffers(ownerProfileId);
     return this.detail(ownerProfileId);
   }
 
@@ -200,6 +201,7 @@ export class FleetAdminService {
       await tx.auditLog.create({ data: { actor, action: FLEET_DISABLE_ACTION, target: ownerProfileId, reasonCode: body.reasonCode, note: body.note ?? null } });
     });
     await this.cancelRingingBookings(ownerProfileId, "fleet_disabled");
+    await this.closeAppOffers(ownerProfileId);
     await this.dispatch.dissolveDisabledFleets();
     return this.detail(ownerProfileId);
   }
@@ -230,6 +232,24 @@ export class FleetAdminService {
   }
 
   // ── Effects ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * T9, pause/disable: the owner's bikers stop being rung for the business's app orders. Their offers still live on
+   * a round are closed (the accept would refuse them now); the round carries on with any public bikers on it and the
+   * next one rings only the public.
+   */
+  private async closeAppOffers(ownerProfileId: string): Promise<number> {
+    const where = {
+      outcome: "pending" as const,
+      rider: { fleetOwnerProfileId: ownerProfileId },
+      order: { orderType: "merchant" as const, status: "open_for_offers" as const },
+    };
+    const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { id: true, orderId: true, riderId: true } });
+    if (open.length === 0) return 0;
+    await this.prisma.foodDispatchAttempt.updateMany({ where: { id: { in: open.map((o) => o.id) }, outcome: "pending" }, data: { outcome: "expired", respondedAt: new Date() } });
+    for (const o of open) void this.gateway.emitDispatchOfferClosed(o.riderId, o.orderId);
+    return open.length;
+  }
 
   /**
    * Pause/disable: every "My bikers" booking of the owner that no biker has accepted is cancelled, on the same

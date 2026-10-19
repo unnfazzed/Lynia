@@ -447,6 +447,9 @@ export const envSchema = z.object({
   // the biker's invites, Join and Leave). Fail-safe OFF like the verticals above: while off, those routes 503 and
   // nobody can join a fleet, so the T1/T2 guards stay inert. Fleets also need admin to enable an owner (T7).
   FLEET_UI_LIVE: z.enum(["true", "false"]).default("false"),
+  // Retiring Preferred riders (own-bikers.md "Distribution Plan", T9): "true" once the release is live. Read at
+  // point of use via common/preferred-retired.ts; unset keeps Preferred for businesses without Own bikers.
+  PREFERRED_RETIRED: z.enum(["true", "false"]).default("false"),
   // Penalty suspension (owner 2026-10-12, see common/penalties.ts): unset means SUSPENDED — no
   // automatic holds, strike cooldowns, merchant cash-debt job lock or customer cash ban, and existing ones
   // are ignored. "false" switches penalties back on. Read at point of use via penaltiesSuspended().

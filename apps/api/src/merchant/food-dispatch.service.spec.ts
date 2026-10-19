@@ -27,14 +27,14 @@ function fakeGateway() {
     evictRiderFromSupply: vi.fn(async () => {}),
     evictFromOrderRoom: vi.fn(async () => {}),
     emitFoodOffer: vi.fn(async () => {}),
-    emitFoodOfferClosed: vi.fn(async () => {}),
+    emitDispatchOfferClosed: vi.fn(async () => {}),
     emitFoodQueueChanged: vi.fn(),
   } as unknown as TrackingGateway & {
     emitOrderStatus: ReturnType<typeof vi.fn>;
     evictRiderFromSupply: ReturnType<typeof vi.fn>;
     evictFromOrderRoom: ReturnType<typeof vi.fn>;
     emitFoodOffer: ReturnType<typeof vi.fn>;
-    emitFoodOfferClosed: ReturnType<typeof vi.fn>;
+    emitDispatchOfferClosed: ReturnType<typeof vi.fn>;
     emitFoodQueueChanged: ReturnType<typeof vi.fn>;
   };
 }
@@ -100,12 +100,15 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
 const NONE: DispatchStrategy = { pickCandidates: async () => [] };
 
 describe("FoodDispatchService.sweepSearch — the restaurant's own bikers (merchant web upgrade L3)", () => {
-  function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }) {
+  function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }, opts: { fleet?: { enabled: boolean; pausedAt: Date | null } } = {}) {
     const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "mine", distanceM: 900, preferred: true }]) };
     const { svc } = build(
       {
         order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: vi.fn(async () => ({ count: 1 })) },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD } }) },
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD }, ownerProfileId: opts.fleet ? "owner-1" : null }) },
+        ownerFleet: { findUnique: async () => opts.fleet ?? null },
+        // A fleet's own bikers: none online here, so only the Preferred handling is under test.
+        $queryRaw: async () => [],
         merchantPreferredRider: preferred,
         profile: {
           findMany: async () => [
@@ -126,6 +129,31 @@ describe("FoodDispatchService.sweepSearch — the restaurant's own bikers (merch
     const { svc, strategy } = world({ findMany: async () => [{ phone: "+263771230000" }, { phone: "+263771239999" }] });
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
     expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
+  });
+
+  // Own bikers T9: Preferred riders is retired by Own bikers.
+  it.each([
+    ["a business with Own bikers", { enabled: true, pausedAt: null }],
+    ["a business whose Own bikers are paused", { enabled: true, pausedAt: new Date() }],
+  ])("skips the preferred-first order for %s, even with PREFERRED_RETIRED unset", async (_label, fleet) => {
+    const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
+    const { svc, strategy } = world(preferred, { fleet });
+    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
+    expect(preferred.findMany).not.toHaveBeenCalled();
+  });
+
+  it("skips it for every business once PREFERRED_RETIRED is on", async () => {
+    vi.stubEnv("PREFERRED_RETIRED", "true");
+    try {
+      const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
+      const { svc, strategy } = world(preferred);
+      expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
+      expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
+      expect(preferred.findMany).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("carries on nearest-first when the lookup fails", async () => {
@@ -405,8 +433,8 @@ describe("FoodDispatchService.sweepExpiredOffers — N-08 60s round", () => {
       data: expect.objectContaining({ outcome: "expired" }),
     });
     // C5: the ONLY signal a still-ringing rider gets besides their next poll.
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r2", orderId);
   });
 
   it("does nothing when the round was already accepted or closed (lost CAS)", async () => {
@@ -420,7 +448,7 @@ describe("FoodDispatchService.sweepExpiredOffers — N-08 60s round", () => {
     );
     expect(await svc.sweepExpiredOffers()).toEqual({ expired: 0 });
     expect(attemptUpdateMany).not.toHaveBeenCalled();
-    expect(gateway.emitFoodOfferClosed).not.toHaveBeenCalled();
+    expect(gateway.emitDispatchOfferClosed).not.toHaveBeenCalled();
   });
 });
 
@@ -455,9 +483,9 @@ describe("FoodDispatchService.acceptDispatch — D-04 biker secured, first to ac
       where: { orderId, outcome: "pending", riderId: { not: "r1" } },
       data: expect.objectContaining({ outcome: "expired" }),
     });
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r3", orderId);
-    expect(gateway.emitFoodOfferClosed).not.toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r2", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r3", orderId);
+    expect(gateway.emitDispatchOfferClosed).not.toHaveBeenCalledWith("r1", orderId);
     expect(gateway.emitOrderStatus).toHaveBeenCalledWith(orderId, "assigned");
     expect(gateway.emitFoodQueueChanged).toHaveBeenCalledWith(MERCHANT_ID, orderId);
     expect(notified.map((n) => n.profileIds)).toEqual([["r1"], ["cust-1"]]);
@@ -590,7 +618,7 @@ describe("FoodDispatchService.declineDispatch — \"Not this one\"", () => {
     // Not pushed into dispatchExcludedRiderIds (that list is for drops): the declined row is the cooldown.
     expect(orderUpdate).not.toHaveBeenCalled();
     expect(orderUpdateMany).not.toHaveBeenCalled();
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 
   it("closes the round at once when the last biker still deciding passes", async () => {
@@ -998,8 +1026,8 @@ describe("FoodDispatchService — a round cancelled while its offers were being 
       where: { orderId, outcome: "pending", expiresAt: expect.any(Date) },
       data: expect.objectContaining({ outcome: "expired" }),
     });
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r2", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r2", orderId);
     expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
     expect(notified).toEqual([]);
   });
@@ -1017,8 +1045,8 @@ describe("FoodDispatchService — a round cancelled while its offers were being 
       expect.objectContaining({ where: { outcome: "pending", expiresAt: { lt: now }, order: { orderType: "merchant", status: { not: "open_for_offers" } } } }),
     );
     expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { id: { in: ["a1"] }, outcome: "pending" }, data: { outcome: "expired", respondedAt: now } });
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledTimes(1);
-    expect(gateway.emitFoodOfferClosed).toHaveBeenCalledWith("r1", orderId);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledTimes(1);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith("r1", orderId);
   });
 });
 
@@ -1192,12 +1220,19 @@ describe("FoodDispatchService — MJ-RM18 (C16): never the business's own team",
   });
 
   // Own bikers (D-117): the round rings public bikers only, but a biker can join a fleet between ring and tap.
-  it("acceptDispatch refuses 403 fleet_scope a biker who is now an Own biker, and nothing is written", async () => {
+  // T9: an Own biker takes only their own business's app orders, and only while its fleet is on and not paused.
+  it.each([
+    ["another owner's business", { ownerProfileId: "owner-2" }, { enabled: true, pausedAt: null }],
+    ["their business, fleet paused", { ownerProfileId: "owner-1" }, { enabled: true, pausedAt: new Date() }],
+    ["their business, fleet switched off", { ownerProfileId: "owner-1" }, { enabled: false, pausedAt: null }],
+  ])("acceptDispatch refuses 403 fleet_scope an Own biker on %s, and nothing is written", async (_label, merchant, fleet) => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const { svc } = build(
       {
         order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany },
         foodDispatchAttempt: { findUnique: async () => pendingRow },
+        merchant: { findUnique: async () => merchant },
+        ownerFleet: { findUnique: async () => fleet },
         rider: {
           findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, fleetOwnerProfileId: "owner-1" }),
         },

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, GoneException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   type AddMerchantRiderRequest,
@@ -10,9 +10,11 @@ import {
   normalizePhone,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
+import { preferredRetired } from "../common/preferred-retired";
 import { PrismaService } from "../prisma/prisma.service";
 import { findBookingAccountId } from "./booking-account";
 import type { MerchantAccess } from "./merchant-access";
+import { PREFERRED_RETIRED_NOTE } from "./preferred-retirement.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** D-48 E4: a rider reads Online only while their app still heartbeats (matching's own TTL is 60s;
@@ -92,6 +94,11 @@ export class MerchantRidersService {
   }
 
   async add(access: MerchantAccess, profileId: string, body: AddMerchantRiderRequest): Promise<MerchantPreferredRiderResponse> {
+    // Own bikers T9: Preferred riders is retired once PREFERRED_RETIRED is on. The list and Remove keep working
+    // (the data stays for a rollback); nobody new is added.
+    if (preferredRetired()) {
+      throw new GoneException({ reason: "preferred_retired", message: PREFERRED_RETIRED_NOTE.body });
+    }
     const phone = normalizePhone(body.phone);
     if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the number the biker signs in with, like 0771234567." });
     const onTeam = await this.prisma.merchantMember.count({ where: { merchantId: access.merchantId, profile: { phone } } });
