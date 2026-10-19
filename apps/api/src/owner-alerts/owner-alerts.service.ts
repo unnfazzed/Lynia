@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { isBusinessBookingAccountPhone, OFFER_WINDOW_POLICY, RESTAURANTS_TIMING } from "@lynia/shared";
+import { setFleetScopeAlertSink } from "../common/fleet-scope";
 import { maskPhone } from "../common/phone-mask";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -133,7 +134,10 @@ export const ownerAlertText = {
 export class OwnerAlertsService {
   private readonly logger = new Logger(OwnerAlertsService.name);
 
-  constructor(@Inject(ENV) private readonly env: Env) {}
+  constructor(@Inject(ENV) private readonly env: Env) {
+    // Own bikers E1: a database fleet-scope refusal reaches the owner on Telegram (common/fleet-scope.ts).
+    setFleetScopeAlertSink((text) => this.notify(text));
+  }
 
   get enabled(): boolean {
     return !!this.env.TELEGRAM_BOT_TOKEN && !!this.env.TELEGRAM_CHAT_ID;

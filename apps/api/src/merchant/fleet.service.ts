@@ -21,7 +21,7 @@ import {
   type OwnerFleetResponse,
   REFERRAL_CODE_ALPHABET,
 } from "@lynia/shared";
-import { FLEET_DROP_ACTION, isFleetScopeViolation } from "../common/fleet-scope";
+import { FLEET_DROP_ACTION, isFleetScopeViolation, reportFleetScopeViolation } from "../common/fleet-scope";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -168,6 +168,7 @@ export class FleetService {
       });
     } catch (err) {
       if (isFleetScopeViolation(err)) {
+        reportFleetScopeViolation(err, { path: "fleet.remove", riderId });
         throw refuse(409, "on_a_job", "You can remove them after this delivery.");
       }
       throw err;
@@ -290,7 +291,10 @@ export class FleetService {
       });
     } catch (err) {
       // The database guard: they took a public job between the checks above and this commit.
-      if (isFleetScopeViolation(err)) throw refuse(409, "on_a_job", "Finish this delivery, then join.");
+      if (isFleetScopeViolation(err)) {
+        reportFleetScopeViolation(err, { path: "fleet.join", riderId: profileId });
+        throw refuse(409, "on_a_job", "Finish this delivery, then join.");
+      }
       throw err;
     }
 
@@ -317,7 +321,10 @@ export class FleetService {
         await tx.auditLog.create({ data: { actor: profileId, action: FLEET_LEAVE_ACTION, target: rider.fleetOwnerProfileId, note: profileId } });
       });
     } catch (err) {
-      if (isFleetScopeViolation(err)) throw refuse(409, "on_a_job", "You can leave after this delivery.");
+      if (isFleetScopeViolation(err)) {
+        reportFleetScopeViolation(err, { path: "fleet.leave", riderId: profileId });
+        throw refuse(409, "on_a_job", "You can leave after this delivery.");
+      }
       throw err;
     }
     return { ok: true };

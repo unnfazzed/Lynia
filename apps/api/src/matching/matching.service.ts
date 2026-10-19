@@ -5,7 +5,7 @@ import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
-import { isFleetScopeViolation } from "../common/fleet-scope";
+import { isFleetScopeViolation, reportFleetScopeViolation } from "../common/fleet-scope";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { offerWindowEndedBy, offerWindowOpenAt } from "../common/offer-window";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
@@ -221,6 +221,7 @@ export class MatchingService {
       // Own bikers (D-117): the database guard refused the assignment at commit — the biker joined a fleet
       // between the check above and the commit (OV1). Same "pick another" shape as any lost rider.
       if (isFleetScopeViolation(err)) {
+        reportFleetScopeViolation(err, { path: "matching.selectOffer", orderId });
         this.metrics.recordMatchSelect(done(), "unavailable");
         throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
       }

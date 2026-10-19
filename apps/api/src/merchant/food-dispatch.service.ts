@@ -738,7 +738,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException({ reason: "one_active_ride", message: "You're already on another active job" });
       }
       // The database guard (migration 0108) refused it: a Join landed between the check above and the claim.
-      rethrowFleetScope(err);
+      rethrowFleetScope(err, { path: "food.acceptDispatch", orderId, riderId });
     }
     await this.prisma.foodDispatchAttempt.updateMany({
       where: { orderId, riderId, outcome: "pending" },

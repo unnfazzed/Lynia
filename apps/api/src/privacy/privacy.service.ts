@@ -292,6 +292,10 @@ export class PrivacyService {
         currentLat: null,
         currentLng: null,
         isOnline: false,
+        // Own bikers (D-117, E10): the fleet link goes (the business's past bills keep a plain rider id).
+        fleetOwnerProfileId: null,
+        fleetHomeMerchantId: null,
+        fleetJoinedAt: null,
       },
     });
     if (isRider && riderScrub.count === 0) {

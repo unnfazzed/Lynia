@@ -1,5 +1,6 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import { captureException } from "../observability/sentry";
 import type { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -70,8 +71,31 @@ export function isFleetScopeViolation(err: unknown): boolean {
   return /\bfleet_scope\b|\bfleet_link\b/.test(message);
 }
 
-/** Re-throw a database fleet-scope refusal as a 409 the apps can read; anything else unchanged. */
-export function rethrowFleetScope(err: unknown): never {
-  if (isFleetScopeViolation(err)) throw new ConflictException(FLEET_SCOPE_REFUSAL);
+const logger = new Logger("FleetScope");
+let alertSink: ((text: string) => void) | null = null;
+
+/** OwnerAlertsService registers its Telegram send here at construction (common/ takes no Nest dependencies). */
+export function setFleetScopeAlertSink(sink: ((text: string) => void) | null): void {
+  alertSink = sink;
+}
+
+/**
+ * E1: the database refused an out-of-scope write. Every door checks first, so this means a door was missed or
+ * lost a race (a Join between its check and its commit). Either way someone should look: a structured log line,
+ * a Sentry error and a Telegram alert. The caller still answers the user with its own 409.
+ */
+export function reportFleetScopeViolation(err: unknown, ctx: { path: string; orderId?: string | null; riderId?: string | null }): void {
+  const detail = { path: ctx.path, orderId: ctx.orderId ?? null, riderId: ctx.riderId ?? null };
+  logger.error(`fleet_scope_violation ${JSON.stringify(detail)}`);
+  captureException(err, { fleetScopeViolation: detail });
+  alertSink?.(`⚠️ Own bikers: the database refused an out-of-scope write at ${detail.path} (order ${detail.orderId ?? "-"}, biker ${detail.riderId ?? "-"}). A check was missed or raced.`);
+}
+
+/** Re-throw a database fleet-scope refusal as a 409 the apps can read (reported, E1); anything else unchanged. */
+export function rethrowFleetScope(err: unknown, ctx: { path: string; orderId?: string | null; riderId?: string | null }): never {
+  if (isFleetScopeViolation(err)) {
+    reportFleetScopeViolation(err, ctx);
+    throw new ConflictException(FLEET_SCOPE_REFUSAL);
+  }
   throw err;
 }
