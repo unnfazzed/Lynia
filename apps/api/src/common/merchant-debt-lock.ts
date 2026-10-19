@@ -32,11 +32,34 @@ export function openMerchantObligationOr(): Prisma.OrderWhereInput[] {
   return penaltiesSuspended() ? [] : OPEN_MERCHANT_OBLIGATION_OR;
 }
 
-export async function hasOpenMerchantObligation(prisma: PrismaService | Prisma.TransactionClient, riderId: string): Promise<boolean> {
+/**
+ * Own bikers (D-117, OV-F3, owner D12): cash an Own biker owes their OWN business never blocks that business's
+ * next fleet job. The shop and the biker are one business, so the shop settles at shift end (the roster shows
+ * the cash held), and at rush hour its bikers aren't stood at the door waiting on a counter tap. Cash owed to
+ * any other business still blocks. The business a debt is owed to is the order's venue (a restaurant, shop or
+ * pharmacy order) or the business that booked it (a booking's cash on delivery).
+ */
+export function notOwedToOwner(ownerProfileId: string): Prisma.OrderWhereInput {
+  return {
+    NOT: {
+      OR: [{ merchant: { is: { ownerProfileId } } }, { merchantBooking: { is: { merchant: { ownerProfileId } } } }],
+    },
+  };
+}
+
+/**
+ * Whether the rider has an open obligation that keeps them off new jobs. `exemptOwner`: the job is one of this
+ * owner's fleet jobs, so debts owed to the owner's own branches don't count ({@link notOwedToOwner}).
+ */
+export async function hasOpenMerchantObligation(
+  prisma: PrismaService | Prisma.TransactionClient,
+  riderId: string,
+  opts: { exemptOwner?: string | null } = {},
+): Promise<boolean> {
   // Penalty suspension: the job lock blocks nothing; the debt itself is still tracked and settled.
   if (penaltiesSuspended()) return false;
   const stuck = await prisma.order.findFirst({
-    where: { riderId, OR: OPEN_MERCHANT_OBLIGATION_OR },
+    where: { riderId, OR: OPEN_MERCHANT_OBLIGATION_OR, ...(opts.exemptOwner ? { AND: [notOwedToOwner(opts.exemptOwner)] } : {}) },
     select: { id: true },
   });
   return stuck !== null;

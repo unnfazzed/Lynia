@@ -304,10 +304,19 @@ export class WalletService {
       agreedFare: Prisma.Decimal | number | null;
       suggestedFare?: Prisma.Decimal | number | null;
       deliveryFee?: Prisma.Decimal | number | null;
+      /** Own bikers (D-117): the order's fleet branch; set = a fleet job, which carries no commission. */
+      fleetMerchantId: string | null;
     },
   ): Promise<void> {
     const { orderId, riderId } = args;
     const orderType = args.orderType ?? "parcel";
+    // Own bikers (D-117, plan "Commission and billing"): a fleet job carries no biker commission at all, no
+    // ride_commission and no free_job row (the business is billed per ride instead, T5). A required argument,
+    // so no completion path can leave it out. A booking converted to Any biker has no tag by then: normal.
+    if (args.fleetMerchantId != null) {
+      this.logger.log(`commission_skip_fleet orderId=${orderId} riderId=${riderId} fleetMerchantId=${args.fleetMerchantId}`);
+      return;
+    }
     // Every completion path increments `tripsCount` for THIS order earlier in the same transaction, under
     // the rider row lock, so the value read here is this job's ordinal (see the free-jobs note below). Read
     // once: the biker funnel's first-job / 10th-job steps (admin console v2 §3) and the free-job check.

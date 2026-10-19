@@ -248,7 +248,7 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 0 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(create).not.toHaveBeenCalled();
     expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
@@ -265,11 +265,29 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
       $queryRaw: vi.fn(async () => [{ balance: "20" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 10 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 8 });
     expect(create).toHaveBeenCalledWith({
       data: { riderId: "r1", orderId: "o1", type: "ride_commission", amount: -0.8, balanceAfter: 19.2, ratePct: 10, fare: 8, actor: "system" },
     });
     expect(update).toHaveBeenCalledWith({ where: { riderId: "r1" }, data: { balance: 19.2 } });
+  });
+
+  it("Own bikers (D-117): a fleet job is never charged — no ride_commission, no free_job row, no account touched", async () => {
+    const create = vi.fn();
+    const update = vi.fn();
+    const executeRaw = vi.fn();
+    const tx = {
+      commissionLedger: { create, findFirst: async () => null },
+      rider: PAST_FREE_JOBS,
+      commissionAccount: { update },
+      $executeRaw: executeRaw,
+      $queryRaw: vi.fn(async () => [{ balance: "20" }]),
+    };
+    const svc = build({ COMMISSION_RATE_PCT: 10 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: "branch-1", orderId: "o1", riderId: "r1", agreedFare: 0, suggestedFare: 3 });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it("is idempotent under a replayed completion — a second call for the same order is a no-op (design 1A)", async () => {
@@ -283,7 +301,7 @@ describe("WalletService.chargeCommission (0% is a no-op; shadow accrual still fi
       $queryRaw: vi.fn(async () => [{ balance: "20" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 10 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 8 });
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -302,7 +320,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     // agreedFare $1 vs suggestedFare $10 → floor = 0.5 × 10 = $5; commission is 10% of $5 = $0.50, not of $1
     // — a colluding pair lowballing offeredFare to $1 can't evade commission down to $0.10.
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
     expect(create).toHaveBeenCalledWith({
       // LC-B-SIB-3: `fare` stores the $5 basis actually billed, not the raw $1 — it is the receipt's math.
       data: { riderId: "r1", orderId: "o1", type: "ride_commission", amount: -0.5, balanceAfter: -0.5, ratePct: 10, fare: 5, actor: "system" },
@@ -319,7 +337,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 10 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: 10 });
     // Round-trip the written row through getLedger → toEntry exactly as the DB would hand it back.
     const data = create.mock.calls[0]![0].data as Record<string, unknown>;
     const row = {
@@ -350,7 +368,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 10 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 8, suggestedFare: 10 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 8, suggestedFare: 10 });
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.8, fare: 8 }) }));
   });
 
@@ -365,7 +383,7 @@ describe("WalletService.chargeCommission — WD-012 commission-basis floor (DOC-
       $queryRaw: vi.fn(async () => [{ balance: "0" }]),
     };
     const svc = build({ COMMISSION_RATE_PCT: 10 });
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: null });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 1, suggestedFare: null });
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.1 }) }));
   });
 });
@@ -391,7 +409,7 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     for (let job = 1; job <= COMMISSION.freeFirstJobs; job++) {
       const tx = txFor(job);
-      await svc.chargeCommission(tx as never, { orderId: `o${job}`, riderId: "r1", agreedFare: 8 });
+      await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: `o${job}`, riderId: "r1", agreedFare: 8 });
       // Admin console v2 §3: the receipt records the waived charge (rate% of fare) and moves nothing.
       expect(tx.commissionLedger.create).toHaveBeenCalledOnce();
       expect(tx.commissionLedger.create).toHaveBeenCalledWith({
@@ -415,7 +433,7 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
   it("the free_job receipt carries the locked balance through unchanged (a biker who already topped up)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = { ...txFor(3), $queryRaw: vi.fn(async () => [{ balance: "12.50" }]) };
-    await svc.chargeCommission(tx as never, { orderId: "o3", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o3", riderId: "r1", agreedFare: 8 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ type: "free_job", amount: 0, balanceAfter: 12.5 }) }),
     );
@@ -426,7 +444,7 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const findFirst = vi.fn(async () => ({ id: "existing" }));
     const tx = { ...txFor(2), commissionLedger: { create: vi.fn(), findFirst } };
-    await svc.chargeCommission(tx as never, { orderId: "o2", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o2", riderId: "r1", agreedFare: 8 });
     expect(findFirst).toHaveBeenCalledWith({ where: { riderId: "r1", orderId: "o2", type: "free_job" }, select: { id: true } });
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
   });
@@ -439,20 +457,20 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
     ] as const) {
       const domainEvent = { create: vi.fn() };
       const tx = { ...txFor(job), domainEvent };
-      await svc.chargeCommission(tx as never, { orderId: `o${job}`, riderId: "r1", agreedFare: 3 });
+      await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: `o${job}`, riderId: "r1", agreedFare: 3 });
       expect(domainEvent.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ type: "rider.onboarding_step", subjectId: "r1", orderId: `o${job}`, data: { step, orderType: "parcel" } }),
       });
     }
     const domainEvent = { create: vi.fn() };
-    await svc.chargeCommission({ ...txFor(2), domainEvent } as never, { orderId: "o2", riderId: "r1", agreedFare: 3 });
+    await svc.chargeCommission({ ...txFor(2), domainEvent } as never, { fleetMerchantId: null, orderId: "o2", riderId: "r1", agreedFare: 3 });
     expect(domainEvent.create).not.toHaveBeenCalled();
   });
 
   it("the 11th completed job is charged normally — the allowance is spent", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(COMMISSION.freeFirstJobs + 1);
-    await svc.chargeCommission(tx as never, { orderId: "o11", riderId: "r1", agreedFare: 8 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o11", riderId: "r1", agreedFare: 8 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith({
       data: { riderId: "r1", orderId: "o11", type: "ride_commission", amount: -0.8, balanceAfter: -0.8, ratePct: 10, fare: 8, actor: "system" },
     });
@@ -461,21 +479,21 @@ describe("WalletService.chargeCommission — D-70 commission-free first jobs", (
   it("an existing biker past the allowance is unaffected — charged exactly as before", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(240);
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: -0.3 }) }));
   });
 
   it("a missing biker row falls back to the pre-D-70 charge (never silently free)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 10 });
     const tx = txFor(null);
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.commissionLedger.create).toHaveBeenCalled();
   });
 
   it("at a 0% rate nothing changes — no ledger row, not even a free_job receipt (the job ordinal is still read, for the funnel)", async () => {
     const svc = build({ COMMISSION_RATE_PCT: 0 });
     const tx = txFor(1);
-    await svc.chargeCommission(tx as never, { orderId: "o1", riderId: "r1", agreedFare: 3 });
+    await svc.chargeCommission(tx as never, { fleetMerchantId: null, orderId: "o1", riderId: "r1", agreedFare: 3 });
     expect(tx.rider.findUnique).toHaveBeenCalledOnce();
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
     expect(tx.$executeRaw).not.toHaveBeenCalled();
@@ -494,14 +512,14 @@ describe("WalletService.chargeCommission — every job type (owner 2026-10-12)",
   }
   it("charges a restaurant/shop/pharmacy job 10% of its delivery fee, never its goods+delivery agreedFare", async () => {
     const tx = txPast();
-    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: 3.5 });
+    await build().chargeCommission(tx as never, { fleetMerchantId: null, orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: 3.5 });
     expect(tx.commissionLedger.create).toHaveBeenCalledWith({
       data: { riderId: "r1", orderId: "m1", type: "ride_commission", amount: -0.35, balanceAfter: 4.65, ratePct: 10, fare: 3.5, actor: "system" },
     });
   });
   it("skips (never throws) a merchant job with no delivery fee", async () => {
     const tx = txPast();
-    await build().chargeCommission(tx as never, { orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: null });
+    await build().chargeCommission(tx as never, { fleetMerchantId: null, orderId: "m1", riderId: "r1", orderType: "merchant", agreedFare: 23.5, deliveryFee: null });
     expect(tx.commissionLedger.create).not.toHaveBeenCalled();
   });
 });

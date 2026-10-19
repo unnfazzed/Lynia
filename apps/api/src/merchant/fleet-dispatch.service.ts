@@ -4,7 +4,7 @@ import { ACTIVE_RIDE_STATUSES, codAmount, FLEET_DISPATCH, FleetJobOffer, OFFER_W
 import { heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { domainEvents } from "../common/domain-events";
 import { FLEET_SCOPE_REFUSAL, orderFleetOwner, rethrowFleetScope } from "../common/fleet-scope";
-import { hasOpenMerchantObligation, openMerchantObligationOr } from "../common/merchant-debt-lock";
+import { hasOpenMerchantObligation, notOwedToOwner, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { penaltiesSuspended } from "../common/penalties";
 import { NotificationsService } from "../notifications/notifications.service";
 import { OrdersService } from "../orders/orders.service";
@@ -288,8 +288,8 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Who this round rings: the owner's bikers who are online (fresh heartbeat at the push cutoff, like every
-   * dispatch), in good standing, not on another job, not owing a business cash, and not out of this search.
-   * Home branch first, then nearest; a biker with no fix yet goes last.
+   * dispatch), in good standing, not on another job, not owing ANOTHER business cash (OV-F3: cash for their own
+   * goes back at shift end), and not out of this search. Home branch first, then nearest; no fix yet goes last.
    */
   private async candidates(order: RoundOrder, owner: string, branchId: string, point: { lat: number; lng: number }): Promise<Array<{ riderId: string }>> {
     const passed = await this.prisma.foodDispatchAttempt.findMany({ where: { orderId: order.id, outcome: "declined" }, select: { riderId: true } });
@@ -315,7 +315,10 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
     const obligations = openMerchantObligationOr();
     const [busy, owing] = await Promise.all([
       this.prisma.order.findMany({ where: { riderId: { in: ids }, status: { in: ACTIVE_RIDE_STATUSES } }, select: { riderId: true } }),
-      obligations.length > 0 ? this.prisma.order.findMany({ where: { riderId: { in: ids }, OR: obligations }, select: { riderId: true } }) : Promise.resolve([]),
+      // OV-F3: cash owed to this owner's own branches doesn't keep their biker off this owner's job.
+      obligations.length > 0
+        ? this.prisma.order.findMany({ where: { riderId: { in: ids }, OR: obligations, AND: [notOwedToOwner(owner)] }, select: { riderId: true } })
+        : Promise.resolve([]),
     ]);
     const out = new Set([...busy, ...owing].map((o) => o.riderId));
     return ids.filter((id) => !out.has(id)).map((riderId) => ({ riderId }));
@@ -432,7 +435,8 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
     if (standing.fleetOwnerProfileId == null || standing.fleetOwnerProfileId !== (await orderFleetOwner(this.prisma, live.fleetMerchantId))) {
       throw new ForbiddenException(FLEET_SCOPE_REFUSAL);
     }
-    if (await hasOpenMerchantObligation(this.prisma, riderId)) {
+    // OV-F3: cash owed to their own business doesn't block; cash owed to anyone else does.
+    if (await hasOpenMerchantObligation(this.prisma, riderId, { exemptOwner: standing.fleetOwnerProfileId })) {
       throw new ForbiddenException("You have a food order still settling with a restaurant — finish that first");
     }
     try {

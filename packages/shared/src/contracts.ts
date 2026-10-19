@@ -2648,6 +2648,10 @@ export const FleetBikerRow = z.object({
   homeBranch: z.string(),
   state: FleetBikerState,
   joinedAt: z.string().datetime(),
+  /** OV-F3 (`m.cashWith`): cash on delivery they hold that is owed to this owner's branches; null = none. */
+  cashHeld: z.string().nullable(),
+  /** OV-F2 (`m.cancels`): fleet jobs they gave back this week (Harare, Monday to Sunday). */
+  cancelsThisWeek: z.number().int(),
 });
 export type FleetBikerRow = z.infer<typeof FleetBikerRow>;
 

@@ -274,7 +274,7 @@ export class AdminOrdersService {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { status: true, riderId: true, customerId: true, agreedFare: true, suggestedFare: true, orderType: true },
+        select: { status: true, riderId: true, customerId: true, agreedFare: true, suggestedFare: true, orderType: true, fleetMerchantId: true },
       });
       if (!order) throw new NotFoundException("Order not found");
       // Only a rider-raised failed hand-off is adjudicable — this is not a way to complete an arbitrary
@@ -303,9 +303,11 @@ export class AdminOrdersService {
       const reliability = rider
         ? applyReliabilityDelta({ ...rider, heldReason: rider.heldReason as HeldReason }, RELIABILITY.RECOVER_PER_COMPLETION)
         : {};
-      await tx.rider.update({ where: { profileId: order.riderId }, data: { tripsCount: { increment: 1 }, ...reliability } });
+      // Own bikers (D-117): a fleet job isn't counted toward the free-jobs allowance (OrderLifecycleService.rate).
+      const counted = order.fleetMerchantId == null;
+      await tx.rider.update({ where: { profileId: order.riderId }, data: { ...(counted ? { tripsCount: { increment: 1 } } : {}), ...reliability } });
       // D-79: the free-jobs reminder, after the increment (pushed below, after commit).
-      const freeJobs = (await this.wallet?.noteFreeJobsMilestone(tx, order.riderId)) ?? null;
+      const freeJobs = counted ? ((await this.wallet?.noteFreeJobsMilestone(tx, order.riderId)) ?? null) : null;
 
       // WD-021: `order.agreedFare`/`suggestedFare` above is a PRE-CAS snapshot — the status CAS above
       // guards only on `status`, not on the fare, so a concurrent `adjustFare` landing in the gap between
@@ -328,6 +330,7 @@ export class AdminOrdersService {
           agreedFare: freshFare?.agreedFare ?? order.agreedFare,
           suggestedFare: freshFare?.suggestedFare ?? order.suggestedFare,
           deliveryFee: freshFare?.deliveryFee ?? null,
+          fleetMerchantId: order.fleetMerchantId,
         });
       }
 
