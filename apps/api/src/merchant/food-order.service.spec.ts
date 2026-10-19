@@ -841,6 +841,7 @@ describe("FoodOrderService.confirmPickup — N-16, mirrors confirmDelivery one h
       merchantGoodsTotal: 13,
       deliveryFee: 2.5,
       merchantDeliveryShare: 2.5,
+      fleetMerchantId: null,
     });
     expect(queueChanges).toEqual([{ merchantId: "m1", orderId: "o1" }]);
   });

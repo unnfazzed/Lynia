@@ -698,6 +698,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
             suggestedFare: true,
             deliveryFee: true,
             orderType: true,
+            // Own bikers (D-117): a fleet job doesn't count toward the free-jobs allowance (see the tripsCount write).
+            fleetMerchantId: true,
             deliveredAt: true,
             completedAt: true,
             autoCloseCredit: true,
@@ -871,15 +873,17 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
               data: {
                 ratingAvg,
                 ratingCount,
-                // Late path: the auto-close already counted this trip.
-                tripsCount: late ? rider.tripsCount : rider.tripsCount + 1,
+                // Late path: the auto-close already counted this trip. Own bikers (D-117): a fleet job isn't
+                // counted either: tripsCount is the free-jobs count (D-70), and a biker paid by their business
+                // keeps their 10 free jobs for when they ride for the public.
+                tripsCount: late || order.fleetMerchantId != null ? rider.tripsCount : rider.tripsCount + 1,
                 ...reliability,
                 ...(newlyHeld ? { isOnline: false } : {}),
               },
             });
             if (newlyHeld) await domainEvents.riderOffline(tx, order.riderId, "reliability_hold", { orderId });
             // D-79: after the increment, under the rider row lock (the late path counted nothing new).
-            if (!late) {
+            if (!late && order.fleetMerchantId == null) {
               const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
               if (milestone) freeJobs = { riderId: order.riderId, milestone };
             }
@@ -898,6 +902,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
               agreedFare,
               suggestedFare: order.suggestedFare,
               deliveryFee: order.deliveryFee,
+              fleetMerchantId: order.fleetMerchantId,
             });
           }
         }
@@ -1537,9 +1542,11 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       await tx.orderEvent.create({ data: { orderId, status: "completed" } });
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        select: { riderId: true, agreedFare: true, suggestedFare: true, deliveryFee: true, orderType: true },
+        select: { riderId: true, agreedFare: true, suggestedFare: true, deliveryFee: true, orderType: true, fleetMerchantId: true },
       });
       if (order?.riderId) {
+        // Own bikers (D-117): a fleet job isn't counted toward the free-jobs allowance (see rate()).
+        const counted = order.fleetMerchantId == null;
         // A delivered order that auto-closes with no complaint is a clean completion → slow
         // reliability recovery (Q2). NOTE(Q2): RECOVER_PER_COMPLETION in policy.ts. This is the
         // unrated counterpart to rate()'s recovery — the two completion edges are mutually exclusive
@@ -1556,9 +1563,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           : null;
         await tx.rider.update({
           where: { profileId: order.riderId },
-          data: { tripsCount: { increment: 1 }, ...next },
+          data: { ...(counted ? { tripsCount: { increment: 1 } } : {}), ...next },
         });
-        const milestone = await this.wallet.noteFreeJobsMilestone(tx, order.riderId);
+        const milestone = counted ? await this.wallet.noteFreeJobsMilestone(tx, order.riderId) : null;
         if (milestone) freeJobs = { riderId: order.riderId, milestone };
         // Owner 2026-10-02: a late rating REPLACES this credit, so record what it actually was — the
         // post-clamp delta (0 at MAX), never the nominal +RECOVER_PER_COMPLETION — for rate() to reverse.
@@ -1576,6 +1583,7 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           agreedFare: order.agreedFare,
           suggestedFare: order.suggestedFare,
           deliveryFee: order.deliveryFee,
+          fleetMerchantId: order.fleetMerchantId,
         });
       }
       return true;

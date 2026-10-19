@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException, HttpException, Injectable, NotFo
 import { Prisma } from "@prisma/client";
 import {
   ACTIVE_RIDE_STATUSES,
+  addMoney,
   type CreateFleetInviteRequest,
   FLEET_INVITE_CODE_LENGTH,
   FLEET_INVITE_LINK_BASE,
@@ -20,15 +21,22 @@ import {
   type OwnerFleetResponse,
   REFERRAL_CODE_ALPHABET,
 } from "@lynia/shared";
-import { isFleetScopeViolation } from "../common/fleet-scope";
+import { FLEET_DROP_ACTION, isFleetScopeViolation } from "../common/fleet-scope";
 import { maskPhone } from "../common/phone-mask";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { onlineRefusalReason } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
+import { addDaysToKey, daysSinceMonday, harareDayBounds, harareDayKey } from "./harare-clock";
 import type { MerchantAccess } from "./merchant-access";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Monday 00:00 in Harare of the week `now` falls in (the roster's "this week"). */
+function harareWeekStart(now: Date): Date {
+  const today = harareDayKey(now);
+  return harareDayBounds(addDaysToKey(today, -daysSinceMonday(today)))?.start ?? new Date(now.getTime() - 7 * DAY_MS);
+}
 
 /** Audit actions. The daily invite limit counts the first, per owner. */
 export const FLEET_INVITE_ACTION = "merchant.fleet.invite";
@@ -398,11 +406,27 @@ export class FleetService {
       },
     });
     if (riders.length === 0) return [];
-    const busy = await this.prisma.order.findMany({
-      where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } },
-      select: { riderId: true },
-    });
+    const ids = riders.map((r) => r.profileId);
+    const weekStart = harareWeekStart(new Date());
+    const [busy, owed, drops] = await Promise.all([
+      this.prisma.order.findMany({ where: { riderId: { in: ids }, status: { in: ACTIVE_RIDE_STATUSES } }, select: { riderId: true } }),
+      // OV-F3: open cash debts owed to THIS owner's branches (a venue order's, or a booking's cash on delivery).
+      this.prisma.order.findMany({
+        where: {
+          riderId: { in: ids },
+          debtStatus: "open",
+          merchantClosedAt: null,
+          OR: [{ merchant: { is: { ownerProfileId: owner } } }, { merchantBooking: { is: { merchant: { ownerProfileId: owner } } } }],
+        },
+        select: { riderId: true, debtAmount: true },
+      }),
+      // OV-F2: a fleet drop adds no strike; the owner sees it here instead.
+      this.prisma.auditLog.groupBy({ by: ["actor"], where: { action: FLEET_DROP_ACTION, actor: { in: ids }, createdAt: { gte: weekStart } }, _count: { _all: true } }),
+    ]);
     const onJob = new Set(busy.map((b) => b.riderId));
+    const cash = new Map<string, number>();
+    for (const o of owed) if (o.riderId) cash.set(o.riderId, addMoney(cash.get(o.riderId) ?? 0, Number(o.debtAmount ?? 0)));
+    const cancels = new Map(drops.map((d) => [d.actor, d._count._all]));
     const rank: Record<FleetBikerState, number> = { on_a_job: 0, online: 1, offline: 2 };
     return riders
       .map((r) => {
@@ -414,6 +438,8 @@ export class FleetService {
           homeBranch: r.fleetHomeMerchant?.name ?? "",
           state,
           joinedAt: (r.fleetJoinedAt ?? new Date(0)).toISOString(),
+          cashHeld: (cash.get(r.profileId) ?? 0) > 0 ? cash.get(r.profileId)!.toFixed(2) : null,
+          cancelsThisWeek: cancels.get(r.profileId) ?? 0,
         };
       })
       .sort((a, b) => rank[a.state] - rank[b.state] || a.name.localeCompare(b.name));

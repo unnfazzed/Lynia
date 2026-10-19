@@ -1489,7 +1489,11 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     // order found early, "Collected" before anyone tapped "Food is ready") leaves the kitchen's machine
     // here, so the board moves it to ON THE WAY instead of keeping a cooking ticket (MJ-RM1).
     // D2: the code has done its job — its ciphertext goes, so it can never be shown again.
-    await tx.order.update({ where: { id: orderId }, data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null, pickupCodeCipher: null } });
+    const picked = await tx.order.update({
+      where: { id: orderId },
+      data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null, pickupCodeCipher: null },
+      select: { fleetMerchantId: true },
+    });
     await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
     await this.debt.openDebtIfNeeded(tx, {
       id: orderId,
@@ -1501,6 +1505,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       // D-71: the debt is the venue's net (goods less its delivery share), never the goods alone.
       deliveryFee: o.delivery_fee ?? null,
       merchantDeliveryShare: o.merchant_delivery_share ?? null,
+      // OV-F5: an Own biker of this venue's owner brings the delivery fee back too.
+      fleetMerchantId: picked?.fleetMerchantId ?? null,
     });
   }
 

@@ -99,6 +99,35 @@ describe("FoodDebtService.openDebtIfNeeded — R-01", () => {
     });
   });
 
+  // OV-F5 (owner D14): an Own biker is paid by the business, so the customer's whole payment comes back.
+  it.each([
+    { name: "paid delivery: goods $13 + fee $2.50", share: null, owed: 15.5 },
+    { name: "free delivery (D-71): goods $13, the venue's $2.50 share netted", share: 2.5, owed: 13 },
+  ])("OV-F5: an Own biker brings everything the customer paid back, the delivery fee included — $name", async ({ share, owed }) => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const ledgerCreate = vi.fn(async () => ({}));
+    const { svc } = build({});
+    await svc.openDebtIfNeeded(
+      { order: { updateMany: orderUpdateMany }, merchantDebtLedger: { create: ledgerCreate } } as unknown as Parameters<typeof svc.openDebtIfNeeded>[0],
+      {
+        id: orderId,
+        merchantId: "m1",
+        riderId: "r1",
+        merchantPaymentMethod: "cash",
+        merchantCashRule: "collect_and_return",
+        merchantGoodsTotal: 13,
+        deliveryFee: 2.5,
+        merchantDeliveryShare: share,
+        fleetMerchantId: "m1",
+      },
+    );
+    expect(orderUpdateMany).toHaveBeenCalledWith({
+      where: { id: orderId, debtStatus: null },
+      data: { debtStatus: "open", debtAmount: owed, debtOpenedAt: expect.any(Date) },
+    });
+    expect(ledgerCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ type: "opened", amount: owed }) });
+  });
+
   it("D-71: an unfunded order (share null) still owes the full goods total", async () => {
     const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const ledgerCreate = vi.fn(async () => ({}));

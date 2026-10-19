@@ -1944,6 +1944,21 @@ the handoff wins for screens and copy, and these product changes apply:
    - **Copy to settle in lane C:** `b.expB` says "Chicken Inn jobs hold for 60 seconds", but `m.noneTookB` ("3 times
      over 2 minutes") fixes a round at 40 s. The server follows the merchant copy; the biker string needs the
      owner's call (a ledger line) before the biker screens ship.
+9. **T4 (done 2026-10-19): the gates.**
+   - Commission: `WalletService.chargeCommission` takes the order's `fleetMerchantId` as a required argument and
+     writes nothing for a fleet job (no `ride_commission`, no `free_job`). The three completion paths (rate,
+     auto-close, admin adjudicate) also skip the `tripsCount` increment and the free-jobs reminder for a fleet
+     job. `tripsCount` is the free-jobs count (D-70), so an Own biker keeps their 10 free jobs for when they ride
+     for the public. Eng-review question settled: fleet jobs don't count in `tripsCount`, display included.
+   - OV-F3: `hasOpenMerchantObligation(…, { exemptOwner })` and `notOwedToOwner(owner)` in
+     `common/merchant-debt-lock.ts`. Cash owed to the biker's own owner (a venue order of one of the owner's
+     branches, or one of their bookings' cash on delivery) no longer blocks that owner's fleet jobs, in the
+     ring and at accept. Cash owed to anyone else still does.
+   - The roster's biker rows gain `cashHeld` (open cash owed to this owner, `m.cashWith`) and `cancelsThisWeek`
+     (fleet give-backs since Monday in Harare, `m.cancels`, OV-F2).
+   - OV-F5: `FoodDebtService.openDebtIfNeeded` opens a fleet-tagged venue order's cash-back at everything the
+     customer paid, the delivery fee included (`customerTotal`; on free delivery the venue's share is netted).
+     It is dormant until T9 tags marketplace orders for Own bikers.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -1962,7 +1977,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
   with locks, fleet booking in one txn, its own sweeper (expiry + push, E8), convert CAS, drop path, no-strike
   cancels
   - Surfaced by: F1, F2, OV-F2, OV-F8, E8, E9, E13. Verify: race specs (convert vs accept, Join vs accept, stale tap)
-- [ ] **T4 (P1, human: ~2d / CC: ~2h)**: api: gates: commission-cover skip for fleet jobs, own-owner cash exemption,
+- [x] **T4 (P1, human: ~2d / CC: ~2h)**: DONE 2026-10-19 (see amendment 9). api: gates: commission-cover skip for fleet jobs, own-owner cash exemption,
   OV-F5 cash-back incl. delivery fee
   - Surfaced by: OV-F3, OV-F5. Files: common/commission-cover.ts, common/merchant-debt-lock.ts,
     merchant/dispatch-strategy.ts, food-debt/booking cash paths. Verify: specs incl. free-delivery (D-71)

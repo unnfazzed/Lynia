@@ -127,15 +127,18 @@ export class FoodDebtService implements OnModuleInit, OnModuleDestroy {
       merchantGoodsTotal: Prisma.Decimal | number | null;
       deliveryFee?: Prisma.Decimal | number | null;
       merchantDeliveryShare?: Prisma.Decimal | number | null;
+      /** Own bikers (D-117): set when one of the venue owner's Own bikers carries it (the fleet tag). */
+      fleetMerchantId?: string | null;
     },
   ): Promise<void> {
     if (order.merchantPaymentMethod !== "cash" || order.merchantCashRule !== "collect_and_return") return;
     if (!order.merchantId || !order.riderId) return;
     // D-71: on a free-delivery order the rider keeps the fee out of the goods money the customer paid, so
     // what comes back to the venue is the goods total less the venue's delivery share.
-    const amount = roundToCents(
-      foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).merchantNet,
-    );
+    // OV-F5 (owner D14): an Own biker is paid by the business, so they keep nothing: everything the customer
+    // paid for this order comes back, the delivery fee included (on free delivery that's goods + fee − share).
+    const money = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
+    const amount = roundToCents(order.fleetMerchantId != null ? money.customerTotal : money.merchantNet);
     if (amount <= 0) return;
     const claimed = await tx.order.updateMany({
       where: { id: order.id, debtStatus: null },

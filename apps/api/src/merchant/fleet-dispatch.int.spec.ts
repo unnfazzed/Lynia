@@ -20,6 +20,7 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { WalletService } from "../wallet/wallet.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
+import { FleetService } from "./fleet.service";
 import type { MerchantAccess } from "./merchant-access";
 import { MerchantBookingService } from "./merchant-booking.service";
 
@@ -57,6 +58,7 @@ const lifecycle = new OrderLifecycleService(
   codeCrypto,
 );
 const dispatch = new FleetDispatchService(prisma, notifications as unknown as NotificationsService, gateway as unknown as TrackingGateway, orders);
+const fleetSvc = new FleetService(prisma, gateway as unknown as TrackingGateway, notifications as unknown as NotificationsService);
 const bookings = new MerchantBookingService(
   prisma,
   orders,
@@ -88,6 +90,8 @@ const book = (over: Partial<CreateFleetBookingRequest> = {}): CreateFleetBooking
 async function clean(): Promise<void> {
   await prisma.auditLog.deleteMany({ where: { action: { startsWith: "merchant.fleet." } } });
   await prisma.foodDispatchAttempt.deleteMany({});
+  await prisma.commissionLedger.deleteMany({});
+  await prisma.commissionAccount.deleteMany({});
   await prisma.merchantBooking.deleteMany({});
   await prisma.orderEvent.deleteMany({});
   await prisma.offer.deleteMany({});
@@ -374,5 +378,116 @@ describe("giving it back and cancelling", () => {
     expect(gateway.emitFleetOfferClosed).toHaveBeenCalledWith(a, booking.id);
     // Nothing left to resurrect.
     await expect(bookings.fleetConvert(f.access, f.ownerId, booking.id, 2.5)).rejects.toMatchObject({ response: { reason: "already_taken" } });
+  });
+});
+
+describe("T4 gates", () => {
+  const SHOP = { point: AVONDALE, landmark: "Shop", contactPhone: "+263770000001" };
+  const BUYER = { point: AVONDALE, landmark: "Buyer", contactPhone: "+263770000002" };
+
+  /**
+   * A fleet booking order for `branchId`, created with its merchant_bookings row in one transaction like a real
+   * booking (the 0108 trigger checks at commit that the tag matches the booking).
+   */
+  async function fleetOrder(branchId: string, data: { riderId: string; status: "completed" | "delivered"; debtAmount?: number }): Promise<string> {
+    const customerId = await profile("customer");
+    return prisma.$transaction(async (tx) => {
+      const o = await tx.order.create({
+        data: {
+          customerId,
+          riderId: data.riderId,
+          fleetMerchantId: branchId,
+          fleetFee: 1.5,
+          pickup: SHOP,
+          dropoff: BUYER,
+          itemDesc: "meal",
+          suggestedFare: 2,
+          proposedFare: 0,
+          status: data.status,
+          ...(data.status === "delivered" ? { deliveredAt: new Date() } : {}),
+          ...(data.debtAmount ? { debtStatus: "open" as const, debtAmount: data.debtAmount } : {}),
+        },
+        select: { id: true },
+      });
+      await tx.merchantBooking.create({ data: { orderId: o.id, merchantId: branchId, bookedByProfileId: customerId } });
+      return o.id;
+    });
+  }
+
+  it("OV-F3: cash owed to their own business doesn't keep a biker off its jobs; cash owed to another business does", async () => {
+    const f = await fleetOwner();
+    const ownCash = await biker({ fleet: f });
+    await fleetOrder(f.branchId, { riderId: ownCash, status: "completed", debtAmount: 14 });
+
+    // Owes a different business (a venue order's cash): made while public, then joined the fleet.
+    const otherCash = await biker();
+    const elsewhere = await fleetOwner();
+    await prisma.order.create({
+      data: {
+        customerId: await profile("customer"),
+        riderId: otherCash,
+        orderType: "merchant",
+        merchantId: elsewhere.branchId,
+        pickup: SHOP,
+        dropoff: BUYER,
+        itemDesc: "meal",
+        suggestedFare: 2,
+        proposedFare: 2,
+        status: "completed",
+        debtStatus: "open",
+        debtAmount: 9,
+      },
+    });
+    await prisma.rider.update({ where: { profileId: otherCash }, data: { fleetOwnerProfileId: f.ownerId, fleetHomeMerchantId: f.branchId, fleetJoinedAt: new Date() } });
+
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    expect(await pendingFor(booking.id)).toEqual([ownCash]);
+    await dispatch.accept(booking.id, ownCash);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: booking.id } })).riderId).toBe(ownCash);
+
+    // The roster shows what each holds for THIS owner only.
+    const roster = await fleetSvc.roster(f.access);
+    const row = (id: string) => roster.bikers.find((b) => b.riderId === id)!;
+    expect(row(ownCash).cashHeld).toBe("14.00");
+    expect(row(otherCash).cashHeld).toBeNull();
+  });
+
+  it("OV-F2: the roster counts this week's give-backs per biker", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await dispatch.accept(booking.id, a);
+    await lifecycle.cancel(booking.id, a);
+    const roster = await fleetSvc.roster(f.access);
+    expect(roster.bikers.find((b) => b.riderId === a)).toMatchObject({ cancelsThisWeek: 1, cashHeld: null });
+  });
+
+  it("a completed fleet job leaves the free-jobs count alone; a public one counts", async () => {
+    const f = await fleetOwner();
+    const fleetBiker = await biker({ fleet: f });
+    const publicBiker = await biker();
+    const fleetJob = await fleetOrder(f.branchId, { riderId: fleetBiker, status: "delivered" });
+    const publicJob = await prisma.order.create({
+      data: {
+        customerId: await profile("customer"),
+        riderId: publicBiker,
+        pickup: SHOP,
+        dropoff: BUYER,
+        itemDesc: "parcel",
+        suggestedFare: 2,
+        proposedFare: 2,
+        agreedFare: 2,
+        status: "delivered",
+        deliveredAt: new Date(),
+      },
+      select: { id: true },
+    });
+    await lifecycle.completeOrder(fleetJob);
+    await lifecycle.completeOrder(publicJob.id);
+
+    expect((await prisma.rider.findUniqueOrThrow({ where: { profileId: fleetBiker } })).tripsCount).toBe(0);
+    expect(await prisma.commissionLedger.count({ where: { riderId: fleetBiker } })).toBe(0);
+    expect((await prisma.rider.findUniqueOrThrow({ where: { profileId: publicBiker } })).tripsCount).toBe(1);
+    expect(await prisma.commissionLedger.count({ where: { riderId: publicBiker, type: "free_job" } })).toBe(1);
   });
 });
