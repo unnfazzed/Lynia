@@ -1,7 +1,7 @@
 import type { MerchantDishResponse, MerchantProfileResponse } from "@lynia/shared";
 import { type PartialMerchantHours } from "./hours";
 import { nextOpenTime } from "./orders-view";
-import { startOfNextDay } from "@lynia/shared";
+import { harareWallClock, startOfNextDay } from "@lynia/shared";
 
 /**
  * C1 Menu and C2 Out-of-stock sheet (packages/design/handoff/merchant-mobile, ledger D-48), kept pure
@@ -27,20 +27,23 @@ export function offLabel(
   business: Pick<MerchantProfileResponse, "hours"> | null = null,
 ): string | null {
   if (!dish.outOfStock) return null;
+  // Harare's clock: the kitchen's day and times, wherever the owner's browser is (D-116 review).
+  const wallNow = harareWallClock(now);
   const tomorrow = () => {
-    const next = nextOpenTime((business?.hours ?? null) as PartialMerchantHours | null, startOfNextDay(now));
+    const next = nextOpenTime((business?.hours ?? null) as PartialMerchantHours | null, startOfNextDay(wallNow));
     return next ? `Off until ${next} tomorrow` : "Off until tomorrow";
   };
   if (!dish.outOfStockUntil) return tomorrow();
-  const until = new Date(dish.outOfStockUntil);
-  if (until.getFullYear() >= UNTIL_BACK_YEAR) return "Off until you turn it back on";
-  const sameDay = until.toDateString() === now.toDateString();
+  const untilAt = new Date(dish.outOfStockUntil);
+  if (untilAt.getUTCFullYear() >= UNTIL_BACK_YEAR) return "Off until you turn it back on";
+  const until = harareWallClock(untilAt);
+  const sameDay = until.toDateString() === wallNow.toDateString();
   return sameDay && until.getHours() < 23 ? `Off until ${hm(until)}` : tomorrow();
 }
 
 /** C2 "Rest of today"'s sub-line: "Back on automatically at 08:00", tomorrow's opening time. */
 export function backOnLine(business: Pick<MerchantProfileResponse, "hours"> | null, now: Date): string {
-  const next = nextOpenTime((business?.hours ?? null) as PartialMerchantHours | null, startOfNextDay(now));
+  const next = nextOpenTime((business?.hours ?? null) as PartialMerchantHours | null, startOfNextDay(harareWallClock(now)));
   return next ? `Back on automatically at ${next}` : "Back on automatically tomorrow";
 }
 

@@ -458,6 +458,13 @@ jobs:
           RECOMMENDED_APP_VERSION_IOS: ${{ vars.RECOMMENDED_APP_VERSION_IOS }}
           APP_WHATS_NEW: ${{ vars.APP_WHATS_NEW }}
           REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
+          # D-116 incident levers: narrow the sign-in countries ("263" or "263,27,44") or tighten the OTP
+          # caps without shipping code. Unset = the API defaults (any country; config/env.ts).
+          OTP_ALLOWED_COUNTRY_CODES: ${{ vars.OTP_ALLOWED_COUNTRY_CODES }}
+          OTP_RL_PHONE_MAX: ${{ vars.OTP_RL_PHONE_MAX }}
+          OTP_RL_IP_MAX: ${{ vars.OTP_RL_IP_MAX }}
+          OTP_RL_GLOBAL_MAX: ${{ vars.OTP_RL_GLOBAL_MAX }}
+          OTP_RL_SMS_GLOBAL_MAX: ${{ vars.OTP_RL_SMS_GLOBAL_MAX }}
           RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
           MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
           MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
@@ -526,9 +533,12 @@ jobs:
 
           case "$KYC_MODE" in auto|manual) ;; *) echo "::error::KYC_MODE must be auto or manual (got '$KYC_MODE')"; exit 1 ;; esac
           # Login OTPs are WhatsApp ONLY (owner decision 2026-09-25, restating the 2026-09-01 product
-          # decision): no SMS, no fallback. bird-verify requests channels=["whatsapp"] only
-          # (auth/bird-verify.ts) and whatsapp is Meta's Cloud API; every other channel (bird, local-sms,
-          # sms) delivers by SMS and console is dev-only. A Variable flip must not be able to reroute login.
+          # decision): no SMS as a channel. bird-verify requests channels=["whatsapp"], with the one
+          # owner-approved exception of D-116 (2026-10-19): SMS after WhatsApp for the 18 countries Bird's
+          # shared WhatsApp sender can't reach (auth/bird-verify.ts verifyChannelsFor), on its own daily
+          # budget (OTP_RL_SMS_GLOBAL_MAX). whatsapp is Meta's Cloud API; every other channel (bird,
+          # local-sms, sms) delivers by SMS and console is dev-only. A Variable flip must not be able to
+          # reroute login.
           case "$OTP_CHANNEL" in
             bird-verify|whatsapp) ;;
             *) echo "::error::OTP_CHANNEL must be bird-verify or whatsapp — login OTPs are WhatsApp-only, no SMS (got '$OTP_CHANNEL')."; exit 1 ;;
@@ -558,6 +568,11 @@ jobs:
           opt RECOMMENDED_APP_VERSION_IOS "$RECOMMENDED_APP_VERSION_IOS"
           opt APP_WHATS_NEW "$APP_WHATS_NEW"
           opt REFRESH_TTL_SECONDS "$REFRESH_TTL_SECONDS"
+          opt OTP_ALLOWED_COUNTRY_CODES "$OTP_ALLOWED_COUNTRY_CODES"
+          opt OTP_RL_PHONE_MAX "$OTP_RL_PHONE_MAX"
+          opt OTP_RL_IP_MAX "$OTP_RL_IP_MAX"
+          opt OTP_RL_GLOBAL_MAX "$OTP_RL_GLOBAL_MAX"
+          opt OTP_RL_SMS_GLOBAL_MAX "$OTP_RL_SMS_GLOBAL_MAX"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.
           for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do

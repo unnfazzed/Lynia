@@ -17,18 +17,24 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush, back: jest.fn(), replace: mockReplace }),
   useLocalSearchParams: () => ({ id: "s-1" }),
 }));
+const mockLoc = {
+  label: "12 Lanark Rd",
+  point: { lat: -17.8, lng: 31.05 } as { lat: number; lng: number } | null,
+  area: "Belgravia" as string | null,
+  source: "gps",
+  locating: false,
+  denied: false,
+  useCurrentLocation: jest.fn(),
+  setManualPlace: jest.fn(),
+};
 jest.mock("../../../logic/home-location", () => ({
   SET_LOCATION_PROMPT: "Set your location",
-  useHomeLocation: () => ({
-    label: "12 Lanark Rd",
-    point: { lat: -17.8, lng: 31.05 },
-    area: "Belgravia",
-    source: "gps",
-    locating: false,
-    denied: false,
-    useCurrentLocation: jest.fn(),
-    setManualPlace: jest.fn(),
-  }),
+  useHomeLocation: () => mockLoc,
+}));
+// "Set" reads the permission first (D-82 location ask); granted with the switch on goes straight to a fix.
+jest.mock("../../../permissions/location", () => ({
+  ...jest.requireActual("../../../permissions/location"),
+  readLocation: async () => ({ loc: "granted", gps: true }),
 }));
 jest.mock("../../../logic/saved-places", () => ({ loadSaved: () => Promise.resolve({ home: null, work: null }) }));
 
@@ -110,6 +116,7 @@ jest.mock("../kit", () => {
   };
 });
 
+import { LocationSheet } from "../../home/LocationSheet";
 import { ShopListScreen } from "../ShopListScreen";
 import { ShopStoreScreen } from "../ShopStoreScreen";
 
@@ -166,6 +173,29 @@ describe("Shops list (B2)", () => {
     mockFlags = { shopsEnabled: false, pharmacyEnabled: true };
     tree = mount(<ShopListScreen service="shops" />);
     expect(texts(tree)).toContain("Shops are coming soon");
+  });
+});
+
+describe("Shops list — B7 Set (D-116: no GPS answer, e.g. a customer abroad)", () => {
+  it("Set no longer dead-ends: with no usable fix it opens the address search", async () => {
+    mockLoc.point = null;
+    mockLoc.label = "Set your location";
+    mockLoc.area = null;
+    mockLoc.useCurrentLocation.mockResolvedValue(null);
+    try {
+      tree = mount(<ShopListScreen service="shops" />);
+      const set = tree.root.findAll((n) => typeof n.props.onPress === "function" && n.findAll((c) => c.props.children === "Set").length > 0).pop()!;
+      await act(async () => {
+        set.props.onPress();
+      });
+      for (let i = 0; i < 6; i++) await act(async () => undefined);
+      expect(mockLoc.useCurrentLocation).toHaveBeenCalled();
+      expect(tree.root.findByType(LocationSheet).props.visible).toBe(true);
+    } finally {
+      mockLoc.point = { lat: -17.8, lng: 31.05 };
+      mockLoc.label = "12 Lanark Rd";
+      mockLoc.area = "Belgravia";
+    }
   });
 });
 

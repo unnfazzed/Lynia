@@ -1,4 +1,4 @@
-import { countryForE164, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164, type Country } from "@lynia/shared";
+import { type Country, countryForE164, deviceCountry, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164 } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -10,15 +10,16 @@ import { loadSignupIntent } from "../src/auth/device-state";
 import { PRIVACY_URL, TERMS_URL } from "../src/config";
 import { replaceClearingStack } from "../src/logic/nav";
 import { otpErrorMessage } from "../src/logic/otp";
-import { formatZwNational, zwE164, zwMobileProblem, zwNationalDigits } from "../src/logic/zw-mobile";
+import { formatZwNational, ZW_SIGNIN_DIGITS, zwE164, zwMobileProblem, zwNationalDigits } from "../src/logic/zw-mobile";
 import { DismissKeyboardArea, useActionError } from "../src/ui";
-import { OB } from "../src/ui/onboarding/copy";
+import { OB, RO } from "../src/ui/onboarding/copy";
 import { CountrySegment, CountrySheet } from "../src/ui/onboarding/CountrySheet";
 import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/onboarding/kit";
 
 /**
  * C2 / C3 · Phone (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger
- * D-55): "What's your number?", a 52px field with a fixed "+263" prefix segment and the nine national
+ * D-55): "What's your number?", a 52px field with the country segment (a fixed "+263" in the handoff; the
+ * D-116 flag-and-code picker, starting on the phone's own country) and, under Zimbabwe, the nine national
  * digits grouped "77 245 1180", the "Starts with 71, 73, 77 or 78." help line (C3: a danger border and
  * the too-short line instead), "Send code", and the Terms / Privacy footer.
  *
@@ -56,14 +57,16 @@ export default function PhoneScreen(): React.ReactElement {
   }, []);
   const intent = params.intent === "rider" || storedIntent === "rider" ? "rider" : undefined;
   // "Change number" from the code screen hands the number back, so its country comes back with it.
-  const [picked, setPicked] = useState<Country>(() => (params.phone?.startsWith("+") && countryForE164(params.phone)) || HOME_COUNTRY);
+  // Otherwise the picker starts on the phone's own country (D-116 review: a South African "071 234 5678"
+  // typed under the Zimbabwe flag passed as a Zimbabwe number), Zimbabwe when it can't tell.
+  const [picked, setPicked] = useState<Country>(() => (params.phone?.startsWith("+") && countryForE164(params.phone)) || deviceCountry() || HOME_COUNTRY);
   const [pickerOpen, setPickerOpen] = useState(false);
   const country = intent === "rider" ? HOME_COUNTRY : picked;
   const isHome = country.iso === HOME_COUNTRY.iso;
   const [digits, setDigits] = useState(() => {
     if (!params.phone?.startsWith("+")) return "";
     const c = (intent !== "rider" && countryForE164(params.phone)) || HOME_COUNTRY;
-    return c.iso === HOME_COUNTRY.iso ? zwNationalDigits(params.phone, 10) : nationalDigits(params.phone, c);
+    return c.iso === HOME_COUNTRY.iso ? zwNationalDigits(params.phone, ZW_SIGNIN_DIGITS) : nationalDigits(params.phone, c);
   });
   // "+4" typed by hand, before the code after it names a country (D-116).
   const [draft, setDraft] = useState<string | null>(null);
@@ -85,7 +88,9 @@ export default function PhoneScreen(): React.ReactElement {
     if (isHome) {
       const problem = zwMobileProblem(digits);
       if (problem) {
-        setError(problem === "short" ? OB.phoneShort : problem === "long" ? OB.phoneLongZw : OB.phoneNotMobile);
+        // A biker can't change the flag, so a number from abroad gets the biking rule rather than "tap the flag".
+        const long = intent === "rider" ? RO.phoneCountry : OB.phoneLongZw;
+        setError(problem === "short" ? OB.phoneShort : problem === "long" ? long : OB.phoneNotMobile);
         return;
       }
     } else if (intlPhoneProblem(digits, country)) {
@@ -195,7 +200,7 @@ export default function PhoneScreen(): React.ReactElement {
                 setDraft(null);
                 const target = pastedCountry ?? country;
                 if (pastedCountry && pastedCountry.iso !== country.iso) setPicked(pastedCountry);
-                setDigits(target.iso === HOME_COUNTRY.iso ? zwNationalDigits(t, 10) : nationalDigits(t, target));
+                setDigits(target.iso === HOME_COUNTRY.iso ? zwNationalDigits(t, ZW_SIGNIN_DIGITS) : nationalDigits(t, target));
               }}
               onSubmitEditing={() => void submit()}
               placeholder={isHome ? "77 245 1180" : OB.phonePlaceholderIntl}
@@ -218,7 +223,6 @@ export default function PhoneScreen(): React.ReactElement {
         {/* Mounted only while open: nothing to build for the 200-row list until it is asked for. */}
         {pickerOpen ? (
           <CountrySheet
-            visible
             selected={country}
             onClose={() => setPickerOpen(false)}
             onSelect={(c) => {
@@ -226,7 +230,7 @@ export default function PhoneScreen(): React.ReactElement {
               if (c.iso === country.iso) return;
               setPicked(c);
               setDraft(null);
-              setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d, 10) : nationalDigits(d, c)));
+              setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d, ZW_SIGNIN_DIGITS) : nationalDigits(d, c)));
               if (error) setError(null);
             }}
           />

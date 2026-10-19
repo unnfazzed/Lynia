@@ -2,6 +2,7 @@
 
 import { COUNTRY_PICKER_ORDER, countryFlag, countryMatches, PINNED_COUNTRY_COUNT, type Country } from "@lynia/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../icons";
 
 /**
  * Choose a country for the sign-in number (ledger D-116, owner 2026-10-19: a business owner abroad signs
@@ -26,7 +27,7 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
     const touch = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
     (touch ? sheetRef.current : searchRef.current)?.focus();
     // Open on the current choice when it sits below the pinned group.
-    listRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView?.({ block: "center" });
+    listRef.current?.querySelector<HTMLElement>('[aria-current="true"]')?.scrollIntoView?.({ block: "center" });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeRef.current();
     };
@@ -60,12 +61,16 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
               const isSelected = c.iso === selected.iso;
               return (
                 <li key={c.iso} className={!searching && i === PINNED_COUNTRY_COUNT - 1 ? "m-country-endpinned" : undefined}>
-                  <button type="button" aria-pressed={isSelected} className={`m-country${isSelected ? " m-on" : ""}`} onClick={() => onSelect(c)}>
+                  <button type="button" aria-current={isSelected ? "true" : undefined} className={`m-country${isSelected ? " m-on" : ""}`} onClick={() => onSelect(c)}>
                     <span className="m-country-flag" aria-hidden="true">
                       {countryFlag(c.iso)}
                     </span>
                     <span className="m-country-name">{c.name}</span>
                     <span className="m-country-dial m-num">+{c.dial}</span>
+                    {/* The chosen row's check, as D-116 and the app's sheet draw it; a same-width gap on the rest. */}
+                    <span className="m-country-check" aria-hidden="true">
+                      {isSelected ? <Icon name="check" size={18} color="var(--accent-text)" /> : null}
+                    </span>
                   </button>
                 </li>
               );

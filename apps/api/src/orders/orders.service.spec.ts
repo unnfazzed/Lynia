@@ -728,13 +728,14 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap.counterpartyPhone).toBe("+263773333333");
   });
 
-  it("D-116: a customer abroad — the biker calls the number on the order, not the +44 account phone", async () => {
-    const parcel = row({ customer: { phone: "+447911123456" } });
-    expect((await svc(parcel).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+263771111111");
-    const food = row({ orderType: "merchant", customer: { phone: "+447911123456" } });
-    expect((await svc(food).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+263772222222");
-    const bare = row({ customer: { phone: "+447911123456" }, pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" } });
-    expect((await svc(bare).getSnapshot("ord-1", "rider-1")).counterpartyPhone).toBe("+447911123456");
+  it("D-116 review: the biker's counterparty stays the account holder, who alone can re-send a locked code", async () => {
+    for (const orderType of [undefined, "merchant"]) {
+      const snap = await svc(row({ orderType, customer: { phone: "+447911123456" } })).getSnapshot("ord-1", "rider-1");
+      expect(snap.counterpartyPhone).toBe("+447911123456");
+      // The door and pickup contacts still reach the rider on the waypoints.
+      expect(snap.dropoff).toMatchObject({ contactPhone: "+263772222222" });
+      expect(snap.pickup).toMatchObject({ contactPhone: "+263771111111" });
+    }
   });
 
   it("reveals the waypoint contactPhones to the ASSIGNED biker inside the reveal window (E1)", async () => {

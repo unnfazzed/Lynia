@@ -412,6 +412,16 @@ describe("phone numbers (safeguard 5)", () => {
     expect((await svc2.getMyOrder("o1", "c1")).restaurantPhone).toBe("+263771234567");
   });
 
+  it("D-116: an owner signed in from abroad is never the shop's number; a Zimbabwe owner still stands in", async () => {
+    const venue = (ownerPhone: string) => ({ location: { point: CBD }, showPhoneToCustomers: true, ownerProfile: { phone: ownerPhone } });
+    const abroad = build({ order: { findFirst: async () => ({ ...base, merchantPaymentMethod: "wallet", merchant: venue("+447911123456") }) } }).svc;
+    const mine = await abroad.getMyOrder("o1", "c1");
+    expect(mine.restaurantPhone ?? null).toBeNull();
+    expect(mine.merchantPaymentPhone).toBeNull();
+    const home = build({ order: { findFirst: async () => ({ ...base, merchantPaymentMethod: "cash", merchant: venue("+263771234567") }) } }).svc;
+    expect((await home.getMyOrder("o1", "c1")).restaurantPhone).toBe("+263771234567");
+  });
+
   it("the restaurant's own queue carries the customer's number; the customer's view doesn't need it", async () => {
     const { svc } = build({
       merchant: { findUnique: async () => ({ id: "m1" }) },

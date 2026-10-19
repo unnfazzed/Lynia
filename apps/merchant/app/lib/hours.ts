@@ -1,4 +1,4 @@
-import type { MerchantHours, MerchantHoursWindow } from "@lynia/shared";
+import { harareWallClock, type MerchantHours, type MerchantHoursWindow } from "@lynia/shared";
 
 export const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export type DayKey = (typeof DAY_KEYS)[number];
@@ -47,9 +47,11 @@ export interface RightNowStatus {
 
 /** M4·4's "RIGHT NOW" panel: what a merchant glancing at the hours page actually wants to know. */
 export function rightNowStatus(hours: PartialMerchantHours | MerchantHours | null, now: Date): RightNowStatus {
-  const today = hours?.[dayKeyFor(now)];
+  // Harare's clock, as the API reads the hours (D-116 review: owners can sign in from abroad).
+  const wall = harareWallClock(now);
+  const today = hours?.[dayKeyFor(wall)];
   if (!today) return { open: false, label: "Closed today" };
-  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const hhmm = `${String(wall.getHours()).padStart(2, "0")}:${String(wall.getMinutes()).padStart(2, "0")}`;
   if (hhmm >= today.open && hhmm < today.close) return { open: true, label: `Open until ${today.close}` };
   if (hhmm < today.open) return { open: false, label: `Opens at ${today.open}` };
   return { open: false, label: "Closed for today" };

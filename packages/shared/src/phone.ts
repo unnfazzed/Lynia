@@ -1,3 +1,5 @@
+import { countryForE164, TRUNK_ZERO_KEPT } from "./countries";
+
 /** Default country calling code for bare/local numbers — Zimbabwe (+263), the launch market. */
 export const DEFAULT_COUNTRY_CODE = "263";
 
@@ -46,6 +48,14 @@ export function normalizePhone(raw: string, countryCode: string = DEFAULT_COUNTR
   // must collapse to the same national number as the trunk-form "0771234567".
   if (digits.startsWith(countryCode) && digits[countryCode.length] === "0") {
     digits = countryCode + digits.slice(countryCode.length + 1);
+  }
+
+  // The same for a number from abroad written with its code AND its trunk 0 ("+44 07911 123456"): one
+  // SIM must be one identity and one rate-limit bucket, whichever way it was typed (D-116 review).
+  const abroad = countryForE164(digits);
+  if (abroad && abroad.dial !== countryCode && !TRUNK_ZERO_KEPT.has(abroad.dial)) {
+    const national = digits.slice(abroad.dial.length).replace(/^0+/, "");
+    digits = abroad.dial + national;
   }
 
   const e164 = `+${digits}`;

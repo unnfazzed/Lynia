@@ -14,6 +14,7 @@ import {
 import { Prisma } from "@prisma/client";
 import {
   addMoney,
+  DEFAULT_COUNTRY_CODE,
   categoryServedNow,
   isInServiceArea,
   serviceTownsLabel,
@@ -2017,7 +2018,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
     const money = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
     const merchantLocation = order.merchant?.location as Waypoint | null;
-    const shopPhone = merchantLocation?.contactPhone ?? order.merchant?.ownerProfile?.phone ?? null;
+    // The owner's sign-in number stands in only when it is a Zimbabwe one: since D-116 an owner can sign
+    // in from abroad, and customers and riders in Zimbabwe must not be sent to pay or call a +44 number.
+    const ownerPhone = order.merchant?.ownerProfile?.phone ?? null;
+    const shopPhone = merchantLocation?.contactPhone ?? (ownerPhone?.startsWith(`+${DEFAULT_COUNTRY_CODE}`) ? ownerPhone : null);
     // Safeguard 5: the shop's number is only for paying it directly (legacy WALLET orders), or when the
     // restaurant agreed to show it to its customers.
     const merchantPaymentPhone = order.merchantPaymentMethod === "wallet" ? shopPhone : null;

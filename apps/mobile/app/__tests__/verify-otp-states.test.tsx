@@ -11,10 +11,11 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 
 let mockLocalSearchParams: { phone: string; deliveryChannel?: string; intent?: string; devCode?: string } = { phone: "+263772451180" };
 const navCalls: string[] = [];
+let mockCanGoBack = true;
 const mockReplace = jest.fn((href: unknown) => navCalls.push(`replace:${typeof href === "string" ? href : (href as { pathname: string }).pathname}`));
 const mockDismissAll = jest.fn(() => navCalls.push("dismissAll"));
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ back: jest.fn(), replace: mockReplace, dismissAll: mockDismissAll, push: jest.fn(), canGoBack: () => true }),
+  useRouter: () => ({ back: jest.fn(), replace: mockReplace, dismissAll: mockDismissAll, push: jest.fn(), canGoBack: () => mockCanGoBack }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 const mockSignIn = jest.fn(async (_s: unknown) => undefined);
@@ -107,6 +108,26 @@ describe("C4 · Code — drawn states", () => {
     expect(out).toContain("That code has expired");
     expect(out).toContain("Send a new code");
     expect(out).not.toContain("0:42");
+  });
+
+  it("D-116: Change after an app restart (no history) hands the number back, so its country comes back too", () => {
+    mockCanGoBack = false;
+    mockLocalSearchParams = { phone: "+447911123456" };
+    try {
+      const t = mount();
+      const change = t.root.find((n) => n.props?.accessibilityRole === "link" && typeof n.props?.onPress === "function");
+      act(() => change.props.onPress());
+      expect(mockReplace).toHaveBeenCalledWith({ pathname: "/phone", params: { phone: "+447911123456" } });
+      mockReplace.mockClear();
+      act(() => live?.unmount());
+      mockLocalSearchParams = { phone: "+263772451180", intent: "rider" };
+      const r = mount();
+      act(() => r.root.find((n) => n.props?.accessibilityRole === "link" && typeof n.props?.onPress === "function").props.onPress());
+      expect(mockReplace).toHaveBeenCalledWith({ pathname: "/phone", params: { phone: "+263772451180", intent: "rider" } });
+    } finally {
+      mockCanGoBack = true;
+      mockLocalSearchParams = { phone: "+263772451180" };
+    }
   });
 
   it("says 'Sent by SMS' when Bird fell back to SMS (D-40)", () => {

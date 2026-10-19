@@ -16,7 +16,6 @@ export const OB = {
   phoneTitle: "What’s your number?",
   phoneSub: "We’ll send a 6-digit code on WhatsApp.",
   phoneLabel: "Phone number",
-  phonePrefix: "+263",
   phoneHelp: "Starts with 71, 73, 77 or 78.",
   phoneShort: "That number looks short. Zimbabwe mobiles have 9 digits after +263.",
   /** D-55: C3 draws only the too-short case; a 9-digit number on the wrong prefix gets this. */
@@ -71,6 +70,8 @@ export const OB = {
  * `OB.verified`), verbatim. D-55 marks what is held back until the backend serves it.
  */
 export const RO = {
+  /** D-116: a "Start ID check" refused because the account's number isn't +263 (API `403 phone_country`). */
+  phoneCountry: "Biking needs a Zimbabwe number (+263). Sign in with one to ride.",
   // R1 · Why ride + what you need
   h1: "Ride with LyniaGo.",
   h1Accent: "Earn on your terms.",

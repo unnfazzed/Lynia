@@ -15,7 +15,8 @@ export interface Country {
   dial: string;
 }
 
-// iso|name|dial, one per line. Shared calling codes (+1, +7, +44, +61, …) list every country that uses
+// iso|name|dial, one per line, A–Z by English name (countries.test.ts holds it there, so the picker needs
+// no sort at start-up). Shared calling codes (+1, +7, +44, +61, …) list every country that uses
 // them; `countryForE164` resolves a pasted number to the preferred one (`PREFERRED_FOR_DIAL`).
 const RAW = `AF|Afghanistan|93
 AL|Albania|355
@@ -64,6 +65,7 @@ CR|Costa Rica|506
 CI|Côte d’Ivoire|225
 HR|Croatia|385
 CU|Cuba|53
+CW|Curaçao|599
 CY|Cyprus|357
 CZ|Czechia|420
 DK|Denmark|45
@@ -78,9 +80,12 @@ ER|Eritrea|291
 EE|Estonia|372
 SZ|Eswatini|268
 ET|Ethiopia|251
+FO|Faroe Islands|298
 FJ|Fiji|679
 FI|Finland|358
 FR|France|33
+GF|French Guiana|594
+PF|French Polynesia|689
 GA|Gabon|241
 GM|Gambia|220
 GE|Georgia|995
@@ -88,7 +93,9 @@ DE|Germany|49
 GH|Ghana|233
 GI|Gibraltar|350
 GR|Greece|30
+GL|Greenland|299
 GD|Grenada|1
+GP|Guadeloupe|590
 GT|Guatemala|502
 GG|Guernsey|44
 GN|Guinea|224
@@ -114,6 +121,7 @@ JO|Jordan|962
 KZ|Kazakhstan|7
 KE|Kenya|254
 KI|Kiribati|686
+XK|Kosovo|383
 KW|Kuwait|965
 KG|Kyrgyzstan|996
 LA|Laos|856
@@ -133,6 +141,7 @@ MV|Maldives|960
 ML|Mali|223
 MT|Malta|356
 MH|Marshall Islands|692
+MQ|Martinique|596
 MR|Mauritania|222
 MU|Mauritius|230
 YT|Mayotte|262
@@ -149,6 +158,7 @@ NA|Namibia|264
 NR|Nauru|674
 NP|Nepal|977
 NL|Netherlands|31
+NC|New Caledonia|687
 NZ|New Zealand|64
 NI|Nicaragua|505
 NE|Niger|227
@@ -253,24 +263,30 @@ export function countryByIso(iso: string): Country | undefined {
 /** The home country (Zimbabwe, +263). */
 export const HOME_COUNTRY: Country = BY_ISO.get(HOME_COUNTRY_ISO) as Country;
 
-/** The picker's list: Zimbabwe, the top-10 diaspora countries, then the rest A–Z (by name). */
+/** The picker's list: Zimbabwe, the top-10 diaspora countries, then the rest A–Z (RAW's own order). */
 export const COUNTRY_PICKER_ORDER: readonly Country[] = (() => {
-  const pinned = [HOME_COUNTRY_ISO, ...DIASPORA_COUNTRY_ISOS];
+  const pinned: readonly string[] = [HOME_COUNTRY_ISO, ...DIASPORA_COUNTRY_ISOS];
   const head = pinned.map((iso) => BY_ISO.get(iso) as Country);
-  const rest = COUNTRIES.filter((c) => !pinned.includes(c.iso)).sort((a, b) => a.name.localeCompare(b.name, "en"));
-  return [...head, ...rest];
+  return [...head, ...COUNTRIES.filter((c) => !pinned.includes(c.iso))];
 })();
 
 /** How many leading rows of `COUNTRY_PICKER_ORDER` are pinned (Zimbabwe + the diaspora ten). */
 export const PINNED_COUNTRY_COUNT = 1 + DIASPORA_COUNTRY_ISOS.length;
 
-/** "ZW" → "🇿🇼" (two regional-indicator symbols). */
+const FLAGS = new Map<string, string>();
+
+/** "ZW" → "🇿🇼" (two regional-indicator symbols). Cached: the picker asks for each flag on every render. */
 export function countryFlag(iso: string): string {
-  return iso
-    .toUpperCase()
-    .replace(/[^A-Z]/g, "")
-    .slice(0, 2)
-    .replace(/[A-Z]/g, (ch) => String.fromCodePoint(0x1f1e6 + ch.charCodeAt(0) - 65));
+  let flag = FLAGS.get(iso);
+  if (flag === undefined) {
+    flag = iso
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .slice(0, 2)
+      .replace(/[A-Z]/g, (ch) => String.fromCodePoint(0x1f1e6 + ch.charCodeAt(0) - 65));
+    FLAGS.set(iso, flag);
+  }
+  return flag;
 }
 
 /**
@@ -297,15 +313,29 @@ export function countryMatches(c: Country, query: string): boolean {
   const digits = q.replace(/^\+/, "");
   if (/^\d+$/.test(digits)) return c.dial.startsWith(digits);
   if (q === "uk" && c.iso === "GB") return true;
-  return fold(c.name).includes(q) || c.iso.toLowerCase() === q;
+  return foldedName(c).includes(q) || c.iso.toLowerCase() === q;
 }
 
 const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// Each name folded once: the search runs over every country on each keystroke.
+const FOLDED = new Map<string, string>();
+const foldedName = (c: Country): string => {
+  let f = FOLDED.get(c.iso);
+  if (f === undefined) FOLDED.set(c.iso, (f = fold(c.name)));
+  return f;
+};
+
+/**
+ * Calling codes whose national numbers really begin with 0 (Italy and the Vatican, Côte d'Ivoire, Gabon,
+ * Congo), so a leading 0 there is part of the number, not a trunk prefix to drop.
+ */
+export const TRUNK_ZERO_KEPT: ReadonlySet<string> = new Set(["39", "225", "241", "242"]);
+
 /**
  * What the person typed in the national field → the national digits for `country`. A pasted
- * "+<code>…" / "00<code>…" drops the code; one trunk "0" is dropped ("07911…" → "7911…") except in Italy,
- * where the 0 is part of the number. Capped so the whole E.164 stays ≤ 15 digits.
+ * "+<code>…" / "00<code>…" drops the code; one trunk "0" is dropped ("07911…" → "7911…") except where
+ * the 0 is part of the number (TRUNK_ZERO_KEPT). Capped so the whole E.164 stays ≤ 15 digits.
  */
 export function nationalDigits(input: string, country: Country): string {
   const intl = /^\s*(\+|00)/.test(input);
@@ -314,7 +344,7 @@ export function nationalDigits(input: string, country: Country): string {
     if (d.startsWith("00")) d = d.slice(2);
     if (d.startsWith(country.dial)) d = d.slice(country.dial.length);
   }
-  if (d.startsWith("0") && country.dial !== "39") d = d.slice(1);
+  if (d.startsWith("0") && !TRUNK_ZERO_KEPT.has(country.dial)) d = d.slice(1);
   return d.slice(0, 15 - country.dial.length);
 }
 
@@ -331,4 +361,74 @@ export function intlPhoneProblem(national: string, country: Country): "short" | 
   const total = country.dial.length + national.length;
   if (national.length < 6 || total < 8) return "short";
   return null;
+}
+
+// The phone's time zone → its country, for the picker's starting flag (D-116 review, owner 2026-10-19). A
+// South African phone typing "071 234 5678" under 🇿🇼 would pass as a Zimbabwe number, so the picker
+// starts on the country the phone is set to. Only zones that name one country unambiguously; anything
+// else (UTC, an unknown zone) starts on Zimbabwe as before.
+const ZONE_COUNTRY: Readonly<Record<string, string>> = {
+  "Africa/Harare": "ZW",
+  "Africa/Johannesburg": "ZA",
+  "Europe/London": "GB",
+  "Europe/Belfast": "GB",
+  "Africa/Gaborone": "BW",
+  "Africa/Maputo": "MZ",
+  "Africa/Blantyre": "MW",
+  "Africa/Lusaka": "ZM",
+  "Pacific/Auckland": "NZ",
+  "Europe/Dublin": "IE",
+  "Africa/Windhoek": "NA",
+  "Africa/Maseru": "LS",
+  "Africa/Mbabane": "SZ",
+  "Africa/Dar_es_Salaam": "TZ",
+  "Africa/Nairobi": "KE",
+  "Africa/Lagos": "NG",
+  "Africa/Accra": "GH",
+  "Africa/Kampala": "UG",
+  "Africa/Kigali": "RW",
+  "Africa/Luanda": "AO",
+  "Africa/Lubumbashi": "CD",
+  "Africa/Kinshasa": "CD",
+  "Asia/Dubai": "AE",
+  "Asia/Qatar": "QA",
+  "Asia/Riyadh": "SA",
+  "Asia/Kuwait": "KW",
+  "Asia/Kolkata": "IN",
+  "Asia/Calcutta": "IN",
+  "Asia/Shanghai": "CN",
+  "Asia/Singapore": "SG",
+  "Europe/Amsterdam": "NL",
+  "Europe/Brussels": "BE",
+  "Europe/Paris": "FR",
+  "Europe/Berlin": "DE",
+  "Europe/Madrid": "ES",
+  "Europe/Lisbon": "PT",
+  "Europe/Rome": "IT",
+  "Europe/Stockholm": "SE",
+  "Europe/Oslo": "NO",
+  "Europe/Copenhagen": "DK",
+  "Europe/Warsaw": "PL",
+  "Europe/Zurich": "CH",
+  "Europe/Vienna": "AT",
+};
+
+/** The country a time zone belongs to, for the zones listed above, plus the US, Canada and Australia. */
+export function countryForTimeZone(zone: string | undefined): Country | undefined {
+  if (!zone) return undefined;
+  const iso =
+    ZONE_COUNTRY[zone] ??
+    (zone.startsWith("Australia/") ? "AU" : undefined) ??
+    (/^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|St_Johns|Regina|Montreal|Moncton|Whitehorse|Yellowknife|Iqaluit)$/.test(zone) ? "CA" : undefined) ??
+    (/^(America\/(New_York|Chicago|Denver|Los_Angeles|Phoenix|Anchorage|Detroit|Boise|Indiana\/.+|Kentucky\/.+)|Pacific\/Honolulu)$/.test(zone) ? "US" : undefined);
+  return iso ? BY_ISO.get(iso) : undefined;
+}
+
+/** The phone's or browser's own country (by its time zone), or undefined when it can't tell. */
+export function deviceCountry(): Country | undefined {
+  try {
+    return countryForTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {
+    return undefined;
+  }
 }
