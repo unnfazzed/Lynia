@@ -14,12 +14,48 @@ const BIRD_VERIFY_TIMEOUT_MS = 10_000;
  * a real +263 handset). Bird's Verify API would otherwise fall back to SMS automatically if channels
  * included "sms"; omitting it means an undeliverable WhatsApp attempt fails the create/check call
  * instead of silently landing as a text. A "retry" is just the existing resend affordance
- * (verify.tsx requestFreshCode → a fresh POST /auth/otp/request) — since every create call only ever
- * asks Bird for "whatsapp", every retry is a WhatsApp retry too, never a silent drop to SMS. Email and
- * Telegram are real Verify channels but are never requested here — this app has no email/Telegram
- * identity to verify against.
+ * (verify.tsx requestFreshCode → a fresh POST /auth/otp/request). Email and Telegram are real Verify
+ * channels but are never requested here — this app has no email/Telegram identity to verify against.
  */
-const CHANNELS = ["whatsapp"] as const;
+const WHATSAPP_ONLY = ["whatsapp"] as const;
+
+/**
+ * The one exception (owner 2026-10-19): Bird's shared WhatsApp sender refuses to carry a passcode to
+ * these countries (docs: guides/verify/countries, "Where WhatsApp cannot carry a passcode"). With
+ * WhatsApp alone the create call answers 422 and nobody there can sign in, so they get SMS after it.
+ * WhatsApp stays first: Bird records the refused attempt as `channel_restricted` and moves on, and a
+ * branded per-country WhatsApp sender, if one is ever pinned in the dashboard, is used without a change
+ * here. Calling-code digits; calling codes are prefix-free, and Kazakhstan shares +7 with Russia, so it
+ * is matched by its 76/77 ranges only.
+ */
+export const SMS_FALLBACK_CALLING_CODES = [
+  "880", // Bangladesh
+  "20", // Egypt
+  "91", // India
+  "62", // Indonesia
+  "964", // Iraq
+  "76", // Kazakhstan (+7 6…)
+  "77", // Kazakhstan (+7 7…)
+  "965", // Kuwait
+  "60", // Malaysia
+  "212", // Morocco
+  "977", // Nepal
+  "234", // Nigeria
+  "968", // Oman
+  "92", // Pakistan
+  "966", // Saudi Arabia
+  "27", // South Africa
+  "94", // Sri Lanka
+  "380", // Ukraine
+  "971", // United Arab Emirates
+] as const;
+const WHATSAPP_THEN_SMS = ["whatsapp", "sms"] as const;
+
+/** The channels Bird Verify may use for `phone` (E.164), in the order it tries them. Exported for tests. */
+export function birdVerifyChannels(phone: string): readonly ("whatsapp" | "sms")[] {
+  const digits = phone.replace(/\D/g, "");
+  return SMS_FALLBACK_CALLING_CODES.some((code) => digits.startsWith(code)) ? WHATSAPP_THEN_SMS : WHATSAPP_ONLY;
+}
 
 export interface BirdVerifyCheckResult {
   success: boolean;
@@ -43,7 +79,7 @@ export function birdVerifyBaseUrl(apiKey: string): string {
 }
 
 /** Bird's own channel vocabulary (whatsapp | sms | email | telegram) narrowed to what the UI can say.
- *  Only whatsapp/sms are ever requested (CHANNELS above), but this stays defensive — an unrecognized
+ *  Only whatsapp/sms are ever requested (birdVerifyChannels above), but this stays defensive — an unrecognized
  *  value falls back to "sms" rather than crashing a real sign-in over a vendor response shape this app
  *  didn't anticipate. */
 function toDeliveryChannel(birdChannel: string | undefined): OtpDeliveryChannel {
@@ -71,6 +107,7 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
     logger.error("Bird Verify not configured — set BIRD_VERIFY_API_KEY (or change OTP_CHANNEL).");
     throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
   }
+  const channels = birdVerifyChannels(phone);
   let res: Response;
   try {
     res = await call(env, key, "/v1/verify/verifications", {
@@ -78,7 +115,7 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
       // code_length pinned to 6: the app's code field, the API's zod schema (auth.controller.ts
       // VerifyOtp) and the mobile UI are all hardcoded to 6 digits, so this must never drift from
       // Bird's own default (documented as configurable 4-8, not stated as 6).
-      options: { code_length: 6, channels: CHANNELS },
+      options: { code_length: 6, channels },
     });
   } catch (err) {
     logger.error(`Bird Verify create network error: ${err instanceof Error ? err.message : String(err)}`);
@@ -91,9 +128,9 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
   }
   const body = (await res.json().catch(() => ({}))) as { id?: string; last_channel?: string };
   logger.log(`Bird Verify sent → ${maskPhone(phone)} (verification_id=${body.id ?? "?"}, channel=${body.last_channel ?? "?"})`);
-  // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the channel we
-  // asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
-  return { channel: toDeliveryChannel(body.last_channel ?? CHANNELS[0]) };
+  // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the first channel
+  // we asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
+  return { channel: toDeliveryChannel(body.last_channel ?? channels[0]) };
 }
 
 /**

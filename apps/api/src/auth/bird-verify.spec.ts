@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
-import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart } from "./bird-verify";
+import { birdVerifyBaseUrl, birdVerifyChannels, birdVerifyCheck, birdVerifyStart } from "./bird-verify";
 
 describe("birdVerifyBaseUrl", () => {
   it("derives the region-scoped host from the key prefix", () => {
@@ -81,6 +81,50 @@ describe("birdVerifyStart", () => {
       throw new Error("ECONNRESET");
     }) as unknown as typeof fetch;
     await expect(withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263770000001"))).rejects.toThrow(/couldn't send/i);
+  });
+
+  it("asks for WhatsApp then SMS where Bird's shared WhatsApp sender won't carry a code, and reports the SMS it fell back to", async () => {
+    let body: { options?: unknown } = {};
+    const fetchMock = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: "vrf_5", last_channel: "sms" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567"));
+    expect(body.options).toEqual({ code_length: 6, channels: ["whatsapp", "sms"] });
+    expect(res).toEqual({ channel: "sms" });
+  });
+});
+
+describe("birdVerifyChannels", () => {
+  it("keeps WhatsApp only for Zimbabwe and the other countries the shared sender serves", () => {
+    for (const phone of ["+263771234567", "+447911123456", "+12025550123", "+26771234567", "+61412345678", "+79161234567"]) {
+      expect(birdVerifyChannels(phone)).toEqual(["whatsapp"]);
+    }
+  });
+
+  it("adds SMS after WhatsApp for every country on Bird's no-WhatsApp-passcode list", () => {
+    const phones = [
+      "+8801712345678", // Bangladesh
+      "+201001234567", // Egypt
+      "+919812345678", // India
+      "+6281234567890", // Indonesia
+      "+9647701234567", // Iraq
+      "+77011234567", // Kazakhstan
+      "+76001234567", // Kazakhstan
+      "+96550012345", // Kuwait
+      "+60123456789", // Malaysia
+      "+212612345678", // Morocco
+      "+9779812345678", // Nepal
+      "+2348012345678", // Nigeria
+      "+96891234567", // Oman
+      "+923001234567", // Pakistan
+      "+966501234567", // Saudi Arabia
+      "+27821234567", // South Africa
+      "+94771234567", // Sri Lanka
+      "+380501234567", // Ukraine
+      "+971501234567", // United Arab Emirates
+    ];
+    for (const phone of phones) expect(birdVerifyChannels(phone)).toEqual(["whatsapp", "sms"]);
   });
 });
 
