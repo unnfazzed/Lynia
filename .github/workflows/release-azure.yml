@@ -477,6 +477,9 @@ jobs:
           RX_ENABLED: ${{ vars.RX_ENABLED || 'true' }}
           # Own bikers (D-117): off until launch; unset means OFF. Set the Variable to "true" to open the routes.
           FLEET_UI_LIVE: ${{ vars.FLEET_UI_LIVE }}
+          # Retiring Preferred riders (own-bikers.md T9): unset means Preferred still runs for businesses without Own
+          # bikers. Set the Variable to "true" once the release is live; unset it to roll back.
+          PREFERRED_RETIRED: ${{ vars.PREFERRED_RETIRED }}
           # Penalty suspension (owner 2026-10-12, apps/api/src/common/penalties.ts): unset means SUSPENDED (no
           # automatic holds, strike cooldowns, cash-debt job lock or cash ban); set the Variable to "false" to
           # switch penalties back on.
@@ -577,7 +580,7 @@ jobs:
           opt OTP_RL_SMS_GLOBAL_MAX "$OTP_RL_SMS_GLOBAL_MAX"
 
           # Merchant-vertical kill switches (plan 2026-07-26 §0b.3), exactly true|false; unset → false.
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED FLEET_UI_LIVE PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED FLEET_UI_LIVE PREFERRED_RETIRED PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

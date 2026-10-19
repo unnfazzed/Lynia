@@ -39,6 +39,7 @@ import { ensureBookingAccount, findBookingAccountId } from "./booking-account";
 import { FleetDispatchService, fleetSearchEndsAt } from "./fleet-dispatch.service";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
+import { preferredRetired } from "../common/preferred-retired";
 import { preferredRiderIds } from "./preferred-riders";
 
 /** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). Own bikers
@@ -503,7 +504,8 @@ export class MerchantBookingService {
     const [offers, members, preferred] = await Promise.all([
       this.offers.listForOrder(orderId, accountId),
       this.prisma.merchantMember.findMany({ where: { merchantId }, select: { profileId: true } }),
-      preferredRiderIds(this.prisma, merchantId),
+      // Preferred riders is retired by Own bikers (T9): once PREFERRED_RETIRED is on, no offer is marked.
+      preferredRetired() ? Promise.resolve<string[]>([]) : preferredRiderIds(this.prisma, merchantId),
     ]);
     const memberIds = new Set(members.map((m) => m.profileId));
     const preferredIds = new Set(preferred);

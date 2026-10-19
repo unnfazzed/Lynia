@@ -737,7 +737,11 @@ export type ServiceFlagsResponse = z.infer<typeof ServiceFlagsResponse>;
  *  flag (BRIEF §13, env `RX_ENABLED`, default off). Its own body, not a key on `ServiceFlagsResponse`:
  *  that body is strict and installed apps parse it strictly, so a third key would fail their parse and
  *  drop them to their defaults. Deliberately NOT strict, so a later switch is an additive key here. */
-export const OrderFlagsResponse = z.object({ rxEnabled: z.boolean() });
+export const OrderFlagsResponse = z.object({
+  rxEnabled: z.boolean(),
+  /** Own bikers T9 (`PREFERRED_RETIRED`): Preferred riders is gone, so the merchant app hides its row and screen. */
+  preferredRetired: z.boolean().optional(),
+});
 export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;
 
 // ---------------------------------------------------------------------------
@@ -2768,6 +2772,9 @@ export const FleetJobOffer = z.object({
   collect: z.string().nullable(),
   distanceKm: z.number().nullable(),
   expiresAt: z.string().datetime(),
+  /** T9: `booking` = a "My bikers" booking (accept at `/fleet/jobs`); `app` = one of the business's own app orders
+   *  (restaurant, shop or pharmacy), rung to its Own bikers first. Absent = `booking`. Both accept at `/fleet/jobs`. */
+  kind: z.enum(["booking", "app"]).optional(),
 });
 export type FleetJobOffer = z.infer<typeof FleetJobOffer>;
 

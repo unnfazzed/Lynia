@@ -6,6 +6,7 @@
 import { FLEET_DISPATCH, type CreateFleetBookingRequest } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
+import { FLEET_DROP_ACTION } from "../common/fleet-scope";
 import { recordFleetRide } from "../common/fleet-ledger";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import type { Env } from "../config/env";
@@ -20,7 +21,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { WalletService } from "../wallet/wallet.service";
+import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
+import { marketplaceFleetFee } from "./fleet-candidates";
 import { FleetDispatchService } from "./fleet-dispatch.service";
+import { FoodDispatchService } from "./food-dispatch.service";
+import { PREFERRED_RETIRED_NOTE, PreferredRetirementService } from "./preferred-retirement.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
 import { FleetService } from "./fleet.service";
@@ -35,6 +40,8 @@ const tracking = new TrackingService({ REDIS_URL: undefined } as Env, prisma, ne
 const gateway = {
   emitFleetOffer: vi.fn(async () => {}),
   emitFleetOfferClosed: vi.fn(async () => {}),
+  emitFoodOffer: vi.fn(async () => {}),
+  emitDispatchOfferClosed: vi.fn(async () => {}),
   emitFoodQueueChanged: vi.fn(),
   emitOrderStatus: vi.fn(),
   emitBidExpired: vi.fn(),
@@ -60,7 +67,16 @@ const lifecycle = new OrderLifecycleService(
   undefined,
   codeCrypto,
 );
-const dispatch = new FleetDispatchService(prisma, notifications as unknown as NotificationsService, gateway as unknown as TrackingGateway, orders);
+// T9: the food rounds, with the real nearest-biker strategy over the real tracking (PG path, public bikers only).
+const food = new FoodDispatchService(
+  prisma,
+  tokens,
+  notifications as unknown as NotificationsService,
+  gateway as unknown as TrackingGateway,
+  new NearestRiderDispatchStrategy(tracking, prisma),
+  codeCrypto,
+);
+const dispatch = new FleetDispatchService(prisma, notifications as unknown as NotificationsService, gateway as unknown as TrackingGateway, orders, food);
 const alerts = { notify: vi.fn() };
 const ledger = new FleetLedgerService(prisma, alerts as never);
 const admin = new FleetAdminService(prisma, notifications as unknown as NotificationsService, gateway as unknown as TrackingGateway, dispatch, ledger);
@@ -95,6 +111,8 @@ const book = (over: Partial<CreateFleetBookingRequest> = {}): CreateFleetBooking
 
 async function clean(): Promise<void> {
   await prisma.auditLog.deleteMany({ where: { action: { startsWith: "merchant.fleet." } } });
+  await prisma.auditLog.deleteMany({ where: { action: { startsWith: "merchant.preferred." } } });
+  await prisma.merchantPreferredRider.deleteMany({});
   await prisma.foodDispatchAttempt.deleteMany({});
   await prisma.merchantFleetLedger.deleteMany({});
   await prisma.merchantFleetStatement.deleteMany({});
@@ -762,5 +780,184 @@ describe("T7b the merchant's fleet money", () => {
     expect(await ledger.alertCancelRates()).toEqual({ alerted: 1 });
     expect(await ledger.alertCancelRates()).toEqual({ alerted: 0 });
     expect(alerts.notify).toHaveBeenCalledWith(expect.stringContaining("cancelled 2 of 5"));
+  });
+});
+
+describe("T9 the business's own app orders", () => {
+  const OPS = "ops@lyniago.com";
+  /** Well beyond `RESTAURANTS_DISPATCH.pickupReachM` (15 km) of Avondale. */
+  const OUT_OF_REACH = { lat: -18.0, lng: 31.25 };
+
+  /** A cash restaurant order of `f`'s branch, ready at the counter and not yet searched for. */
+  async function appOrder(f: Fleet): Promise<string> {
+    const o = await prisma.order.create({
+      data: {
+        customerId: await profile("customer"),
+        orderType: "merchant",
+        merchantId: f.branchId,
+        status: "requested",
+        merchantPhase: "ready_for_pickup",
+        pickup: { point: AVONDALE, landmark: "Chicken Inn Avondale", contactPhone: "+263770000001" },
+        dropoff: BOOK.dropoff,
+        itemDesc: "2 piece meal",
+        suggestedFare: 2,
+        proposedFare: 2,
+        merchantGoodsTotal: 12,
+        deliveryFee: 2,
+        merchantPaymentMethod: "cash",
+        merchantCashRule: "collect_and_return",
+      },
+      select: { id: true },
+    });
+    return o.id;
+  }
+  /** The live round runs out, as the clock would, and the next one is opened. */
+  async function nextRound(orderId: string): Promise<void> {
+    await endRound(orderId);
+    await food.sweepExpiredOffers();
+    await food.sweepSearch();
+  }
+  const row = (id: string) =>
+    prisma.order.findUniqueOrThrow({ where: { id }, select: { status: true, riderId: true, fleetMerchantId: true, fleetFee: true } });
+
+  it("rings only the business's own bikers in reach first, on their own channel; the next round rings them first, then the public", async () => {
+    const f = await fleetOwner();
+    const own = await biker({ fleet: f });
+    await biker({ fleet: f, at: OUT_OF_REACH });
+    await biker({ fleet: await fleetOwner() }); // another business's Own biker, right here
+    const pub = await biker();
+    const orderId = await appOrder(f);
+
+    expect(await food.sweepSearch()).toEqual({ offered: 1, held: 0 });
+    expect(await pendingFor(orderId)).toEqual([own]);
+    expect(gateway.emitFoodOffer).not.toHaveBeenCalled();
+    // No fare on their card: what they collect is everything the customer pays, delivery included (OV-F5).
+    expect(gateway.emitFleetOffer).toHaveBeenCalledWith(own, expect.objectContaining({ orderId, kind: "app", shop: "Chicken Inn Avondale", collect: "14.00" }));
+    expect(await dispatch.offersFor(own)).toEqual([expect.objectContaining({ orderId, kind: "app" })]);
+
+    await nextRound(orderId);
+    expect(await pendingFor(orderId)).toEqual([own, pub].sort());
+    expect(gateway.emitFoodOffer).toHaveBeenCalledTimes(1);
+    expect(gateway.emitFoodOffer).toHaveBeenCalledWith(pub, expect.objectContaining({ orderId }));
+  });
+
+  it("an accept tags the order to the branch with OV5's fee and bills it as a marketplace ride; no commission check", async () => {
+    const f = await fleetOwner();
+    // No wallet and no free jobs left: a public biker like this is never rung (the commission cover), an Own biker is.
+    const own = await biker({ fleet: f });
+    const broke = await biker();
+    await prisma.rider.updateMany({ where: { profileId: { in: [own, broke] } }, data: { tripsCount: 50 } });
+    const orderId = await appOrder(f);
+
+    await food.sweepSearch();
+    await nextRound(orderId);
+    expect(await pendingFor(orderId)).toEqual([own]);
+    await dispatch.accept(orderId, own);
+
+    const fee = marketplaceFleetFee(2);
+    expect(fee).toBeGreaterThan(0);
+    expect(await row(orderId)).toEqual({ status: "assigned", riderId: own, fleetMerchantId: f.branchId, fleetFee: expect.anything() });
+    expect(Number((await row(orderId)).fleetFee)).toBe(fee);
+
+    await prisma.order.update({ where: { id: orderId }, data: { status: "completed" } });
+    await prisma.$transaction((tx) => recordFleetRide(tx, orderId));
+    const bill = await prisma.merchantFleetLedger.findMany({ where: { orderId }, select: { kind: true, fee: true, merchantId: true, riderId: true } });
+    expect(bill.map((b) => ({ ...b, fee: Number(b.fee) }))).toEqual([{ kind: "marketplace", fee, merchantId: f.branchId, riderId: own }]);
+  });
+
+  it("a give-back clears the tag and fee in the same write, costs nothing, and the next search rings the other own bikers first", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    const b = await biker({ fleet: f });
+    const pub = await biker();
+    const orderId = await appOrder(f);
+    await food.sweepSearch();
+    await dispatch.accept(orderId, a);
+    // The one who lost the race is told on both channels' close.
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith(b, orderId);
+
+    await food.dropDispatch(orderId, a);
+    expect(await row(orderId)).toEqual({ status: "requested", riderId: null, fleetMerchantId: null, fleetFee: null });
+    expect((await prisma.rider.findUniqueOrThrow({ where: { profileId: a } })).cancelStrikes).toBe(0);
+    expect(await prisma.auditLog.count({ where: { action: FLEET_DROP_ACTION, target: orderId, actor: a } })).toBe(1);
+    expect((await fleetSvc.roster(f.access)).bikers.find((x) => x.riderId === a)?.cancelsThisWeek).toBe(1);
+
+    await food.sweepSearch();
+    expect(await pendingFor(orderId)).toEqual([b]);
+    expect(await pendingFor(orderId)).not.toContain(pub);
+  });
+
+  it("a public biker who takes it carries no tag; another business's Own biker can't take it", async () => {
+    const f = await fleetOwner();
+    const pub = await biker();
+    const theirs = await biker({ fleet: await fleetOwner() });
+    const orderId = await appOrder(f);
+    await food.sweepSearch(); // nobody of f's online: the first round is the public's
+    expect(await pendingFor(orderId)).toEqual([pub]);
+
+    // Even holding a live offer (a crafted row), the other business's biker is refused, and nothing is written.
+    const round = (await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { dispatchOfferExpiresAt: true } })).dispatchOfferExpiresAt!;
+    await prisma.foodDispatchAttempt.create({ data: { orderId, riderId: theirs, attemptNumber: 1, radiusM: 0, offeredAt: new Date(), expiresAt: round } });
+    await expect(food.acceptDispatch(orderId, theirs)).rejects.toMatchObject({ status: 403, response: { reason: "fleet_scope" } });
+    expect((await row(orderId)).riderId).toBeNull();
+
+    await food.acceptDispatch(orderId, pub);
+    expect(await row(orderId)).toEqual({ status: "assigned", riderId: pub, fleetMerchantId: null, fleetFee: null });
+  });
+
+  it("pause closes the offers the business's bikers hold and rings only the public after; unpause brings them back", async () => {
+    const f = await fleetOwner();
+    const own = await biker({ fleet: f });
+    const pub = await biker();
+    const orderId = await appOrder(f);
+    await food.sweepSearch();
+    expect(await pendingFor(orderId)).toEqual([own]);
+
+    await admin.pause(OPS, f.ownerId, { reasonCode: "NON_PAYMENT" });
+    expect(await pendingFor(orderId)).toEqual([]);
+    expect(gateway.emitDispatchOfferClosed).toHaveBeenCalledWith(own, orderId);
+    await expect(dispatch.accept(orderId, own)).rejects.toMatchObject({ status: 409 });
+
+    await nextRound(orderId);
+    expect(await pendingFor(orderId)).toEqual([pub]);
+
+    await admin.unpause(OPS, f.ownerId, { reasonCode: "OTHER" });
+    await nextRound(orderId);
+    expect(await pendingFor(orderId)).toEqual([own, pub].sort());
+  });
+
+  it("an Own biker can't turn the business's app order into a ringing booking (the parcel cancel refuses it)", async () => {
+    const f = await fleetOwner();
+    const own = await biker({ fleet: f });
+    const orderId = await appOrder(f);
+    await food.sweepSearch();
+    await dispatch.accept(orderId, own);
+    // The parcel cancel route refuses a restaurant order outright: it is never turned into a ringing booking.
+    await expect(lifecycle.cancel(orderId, own)).rejects.toThrow();
+    expect(await row(orderId)).toEqual({ status: "assigned", riderId: own, fleetMerchantId: f.branchId, fleetFee: expect.anything() });
+  });
+});
+
+describe("T9 retiring Preferred riders", () => {
+  const notes = new PreferredRetirementService(prisma, notifications as unknown as NotificationsService);
+
+  it("once PREFERRED_RETIRED is on, each business that kept preferred riders tells its owners, once", async () => {
+    const f = await fleetOwner();
+    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230000", label: "Blessing", addedByProfileId: f.ownerId } });
+    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230001", label: "Tino", addedByProfileId: f.ownerId } });
+    await fleetOwner(); // kept none: not told
+
+    expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 }); // the flag is off
+    vi.stubEnv("PREFERRED_RETIRED", "true");
+    try {
+      expect(await notes.sendNotes()).toEqual({ businesses: 1, owners: 1 });
+      expect(notifications.notifyProfiles).toHaveBeenCalledWith([f.ownerId], expect.objectContaining({ title: PREFERRED_RETIRED_NOTE.title }));
+      expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 });
+      expect(notifications.notifyProfiles).toHaveBeenCalledTimes(1);
+      // The list stays (rollback is unsetting the flag).
+      expect(await prisma.merchantPreferredRider.count({ where: { merchantId: f.branchId } })).toBe(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

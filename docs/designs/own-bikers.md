@@ -2020,6 +2020,37 @@ the handoff wins for screens and copy, and these product changes apply:
    - OB-A4: the console's live alerts gain `ownBikers { fleets, bikersOnline, overdueBills }`.
    - Metrics: the counters are these audit rows and the `fleet_scope_violation` / `fleet_ledger_reconcile_miss`
      log lines (Sentry and Telegram). No new MetricsService instrument is needed for the pilot's volume.
+14. **T9 (done 2026-10-19): the business's own app orders, and retiring Preferred.** `merchant/fleet-candidates.ts`,
+   `FoodDispatchService` (tick, accept, drop), `common/preferred-retired.ts`, `merchant/preferred-retirement.service.ts`;
+   spec `fleet-dispatch.int.spec.ts` "T9".
+   - **Fleet-first (R1).** A restaurant, shop or pharmacy order of a business whose owner's fleet is on and not paused rings
+     that owner's bikers first, within `pickupReachM` of the branch with no slack, home branch first. The first round of
+     a search rings only them when any is free; every later round rings them first, then the public, as before. One
+     query (`ownBikersFor`) now serves both the bookings' rounds (no radius) and this round.
+   - **Their channel.** Own bikers get the job on the fleet board, not the public food alarm: the fleet push, `fleet:offer`
+     with `kind: "app"`, and `GET /fleet/jobs/offers`. `POST /fleet/jobs/:id/accept|decline` passes an app order to the
+     food round. No fare on the card; `collect` is everything the customer pays on a cash order (OV-F5). The strict
+     `food:offer` payload is untouched, so installed public apps parse as before. A food round's close goes out on both
+     channels (`emitDispatchOfferClosed`, one socket fetch).
+   - **Accept.** Only the business's own bikers, only while the fleet is on and not paused; the commission cover is
+     skipped and cash owed to their own business doesn't block (OV-F3). The assigning write tags the order to the branch
+     with **OV5's fee snapshot: the live commission rate × the delivery fee** (`marketplaceFleetFee`); a public biker's
+     write clears both. The 0108 trigger checks the pair at commit. Completion then skips the commission and bills a
+     `marketplace` row at the snapshot (T4/T5 paths, unchanged).
+   - **Give-back before pickup.** `dropDispatch` clears the tag and fee in the same write as the rider, with no strike and
+     an audit `merchant.fleet.drop` (the roster's cancels count). The next search rings the other own bikers first. The
+     parcel cancel's drop branch is now bookings only, so an app order can never become a ringing booking.
+   - **Pause/disable** also close the offers the owner's bikers hold on live app rounds; later rounds ring only the
+     public, and Unpause brings them back.
+   - **Preferred (R2, D6).** `PREFERRED_RETIRED` (a GitHub Variable, `release-azure.yml`, default off). While off, a
+     business with a fleet (paused included) already skips preferred-first; every other business keeps it. Once on: no
+     dispatch or offer list favours a preferred rider, `POST /merchant/riders` answers 410 `preferred_retired` (list and
+     Remove keep working, the data stays for rollback), `GET /app/order-flags` says `preferredRetired: true` for the
+     merchant app, and each business that kept preferred riders tells its owners once (a push, deduplicated per business
+     by an audit marker under an advisory lock). Delete the preferred code two weeks after the flip.
+   - **Copy to settle in lane B:** the handoff draws no retirement note, so the push uses this plan's approved line
+     ("Preferred riders is gone" / "Orders now go to the nearest biker. Running your own bikers? Ask us about Own
+     bikers.") until the owner redraws it.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -2054,7 +2085,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [x] **T8 (P1, gate)**: DONE 2026-10-19, D-117. Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design
   review brief (pack: `docs/designs/own-bikers-claude-design/`), plus owner approval of the deviation draft → then
   the merchant/biker/admin screens (lanes B/C/D)
-- [ ] **T9 (P2, human: ~3d / CC: ~3h)**: api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
+- [x] **T9 (P2, human: ~3d / CC: ~3h)**: DONE 2026-10-19 (see amendment 14). api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
   - Surfaced by: R1, R2, OV5. Verify: preferred specs green with the flag unset; new specs with it set
 - [ ] **T10 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
   DESIGN-DEVIATIONS D-entry draft for owner approval

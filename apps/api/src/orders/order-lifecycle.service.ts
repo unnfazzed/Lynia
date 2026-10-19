@@ -1088,7 +1088,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // the business's own bikers on the SAME order, tag, fee and delivery code kept (the buyer may already hold
       // it), and this biker isn't rung for it again. No strike and no reliability penalty: an Own biker answers
       // to their business, which sees it on its board (handoff `b.cxB` "This tells Chicken Inn Avondale.").
-      if (isRider && order.fleetMerchantId && order.riderId) {
+      // A booking only (a parcel): the business's own app order given back by its Own biker is FoodDispatchService.dropDispatch's.
+      if (isRider && order.fleetMerchantId && order.riderId && order.orderType === "parcel") {
         const back = await tx.order.updateMany({
           where: { id: orderId, status: order.status, riderId: order.riderId, fleetMerchantId: order.fleetMerchantId },
           data: {
