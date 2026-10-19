@@ -86,6 +86,10 @@ starts from reasoning, not archaeology.
   the first merchant order; settlement is the missing half.
 - **Trigger / blocked by:** Any decision to schedule commission rate > 0% — settlement must be
   built BEFORE the rate flips.
+- **Partly real now (2026-10-19):** Own bikers bills merchants for real: a weekly fleet bill per owner
+  (`merchant_fleet_statements`, closed hourly, due the Friday after, marked paid in the console). That is the first
+  merchant charge, and the place merchant commission settlement should grow from (one bill per owner). See
+  `docs/designs/own-bikers.md` amendments 12–13 and `apps/api/src/merchant/fleet-bills.ts`.
 
 ## Merchant web upgrade (from /plan-ceo-review 2026-09-29, `docs/archive/plans/2026-09-29-merchant-web-upgrade-plan.md` §11)
 
@@ -132,6 +136,10 @@ starts from reasoning, not archaeology.
 - **Context:** Design doc L2 "Prohibited goods" and L3 "The rider's side"; CEO review CEO-7.
 - **Effort:** human M / CC M. **Priority:** P2.
 - **Trigger / blocked by:** the next planned rider-app release after L3 ships.
+- **Partly superseded (2026-10-19):** the consent half ("{Business} calls you their rider" with an opt-out) is
+  replaced by Own bikers, where a biker joins a business only by accepting its invite link, and leaves any time
+  (`docs/designs/own-bikers.md`, ledger D-117). Preferred riders itself is retired behind `PREFERRED_RETIRED`. The
+  prohibited-goods refusal and the declared value on the job card are still open.
 
 ### TODO-4 · Web Push for bookings and orders
 
@@ -201,6 +209,19 @@ starts from reasoning, not archaeology.
   go-live card's button and restaurant Help land with L5.
 
 ## Own bikers (from /plan-ceo-review 2026-10-19, `docs/designs/own-bikers.md`)
+
+### Delete the Preferred riders code
+
+- **What:** Remove Preferred riders: `merchant/preferred-riders.ts`, the preferred-first block in
+  `NearestRiderDispatchStrategy`, `PREFERRED_OFFER_BONUS` and the offer `preferred` flag, `merchant-riders.*` and its
+  routes, `PreferredRetirementService`, the `PREFERRED_RETIRED` flag, and the `merchant_preferred_riders` table (a
+  migration; the OB-M5 invite suggestions read it, so move those to their own source or drop them first).
+- **Why:** Own bikers replaces it (owner decision D6). The code stays only so unsetting the flag can roll the
+  retirement back.
+- **Pros:** One way a business has its own bikers; less dispatch code. **Cons:** Rollback is gone after this.
+- **Context:** T9 shipped the retirement behind `PREFERRED_RETIRED` (plan amendment 14, Distribution Plan).
+- **Effort:** human S / CC S. **Priority:** P2.
+- **Trigger / blocked by:** `PREFERRED_RETIRED=true` in production for two weeks with no rollback.
 
 ### Fleet batching: multi-order trips for Own bikers
 

@@ -449,7 +449,14 @@ row, bonus, dispatch reads, suggestions).
 ## Distribution Plan
 
 - **API:** ships on merge via `release-azure.yml`.
-- **Merchant web app:** existing deploy.
+- **Merchant web app:** `deploy-merchant-web.yml` (Cloudflare) on a merge to `main` that touches `apps/merchant/**`
+  or `packages/shared/**`; `workflow_dispatch` redeploys by hand.
+- **Admin console (OB-A1–A4):** `deploy-admin-azure.yml` on a merge to `main` that touches `apps/admin/**` or
+  `packages/shared/**` (production; `workflow_dispatch` takes `environment`, default staging). It stays dormant until
+  `AZ_ADMIN_ENABLED` is armed, and behind Easy Auth with the operator allowlist. The `/admin/fleets…` API routes it
+  calls are not behind `FLEET_UI_LIVE`, so ops can set a fleet up before launch.
+- **Switches (GitHub Variables, read by `release-azure.yml`):** `FLEET_UI_LIVE` opens the merchant and biker routes;
+  `PREFERRED_RETIRED` retires Preferred riders (below). Both are exactly `true`/`false`; unset is off.
 - **Biker app changes:** JS-only, so they go as an OTA to the `production` channel. If a native module
   changes, it needs a `profile: production` build instead.
 - **Fleet features** are gated per merchant by `fleetEnabled` (and by `FLEET_UI_LIVE`). Nothing fleet
@@ -1234,13 +1241,13 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Surfaced by: Section 5. Verify: shared fixtures through both
 - [ ] **T7 (P2, human: ~1d / CC: ~1h)**: api+admin: weekly owner statement per branch, mark paid, pause/disable, fee
   - Surfaced by: Section 10 (R3/R4/R5 kept). Verify: statement integration spec (Harare week)
-- [ ] **T8 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md: link the Merchant commission settlement TODO to the fleet fee; mark TODO-3's consent half superseded by Own bikers
+- [x] **T8 (P2, human: ~30min / CC: ~5min)**: DONE 2026-10-19 as eng T10. docs: TODOS.md: link the Merchant commission settlement TODO to the fleet fee; mark TODO-3's consent half superseded by Own bikers
   - Surfaced by: Step 0B. Verify: docs check
 - [ ] **T9 (P1, design gate)**: design handoff export (step 0) incl. E6/E7: run /plan-design-review first
 - [ ] **T10 (P2, human: ~3d / CC: ~3h)**: marketplace fleet-first + Preferred retirement behind PREFERRED_RETIRED (R1, R2); app-order fee = configured rate x delivery fee, billed to the merchant (OV5)
 - [ ] **T11 (P1, human: ~1d / CC: ~1h)**: api: rider-row `FOR SHARE` in the trigger + riders-side guard trigger + Join/Leave `FOR UPDATE` + both-orders race test (OV1)
 - [ ] **T12 (P1, blocks T1 merge)**: api: E1 violation mapping/alerts, E4 owner-only invites + rate limit + IDOR scoping, E8 stuck-booking push/expiry, E9 Join lock (OV4)
-- [ ] **T13 (P2, human: ~30min / CC: ~5min)**: docs: admin app deploy path in the Distribution Plan; TODOS.md fleet batching entry (OV6)
+- [x] **T13 (P2, human: ~30min / CC: ~5min)**: DONE 2026-10-19 as eng T10 (batching entry was already in TODOS.md). docs: admin app deploy path in the Distribution Plan; TODOS.md fleet batching entry (OV6)
 
 Approval readiness: PASS. Checked rows: R1–R5 (D2, Keep), R6 (D3), C1 (D4), OV1 (D5), OV4 (D6: E1/E4/E8/E9 are now P1), OV5 (D7),
 OV6 (D8, deferred). E2, E3, E5–E7 and E10–E14 stay pending, owned by /plan-eng-review or /plan-design-review.
@@ -2087,8 +2094,11 @@ Assumption: features ~30x, tests ~50x human÷CC.
   the merchant/biker/admin screens (lanes B/C/D)
 - [x] **T9 (P2, human: ~3d / CC: ~3h)**: DONE 2026-10-19 (see amendment 14). api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
   - Surfaced by: R1, R2, OV5. Verify: preferred specs green with the flag unset; new specs with it set
-- [ ] **T10 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
+- [x] **T10 (P2, human: ~30min / CC: ~5min)**: DONE 2026-10-19. docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
   DESIGN-DEVIATIONS D-entry draft for owner approval
+  - The Distribution Plan names the merchant and admin deploy workflows and the two switches. TODOS.md links the
+    settlement TODO to the fleet bill, marks TODO-3's consent half superseded, and adds the Preferred deletion
+    tripwire. The deviation entry is D-117, approved by the owner on 2026-10-19 (T8).
 
 ### Unresolved decisions (eng)
 None. 17 answered.
