@@ -1,4 +1,5 @@
-import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Logger, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { DEFAULT_COUNTRY_CODE } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
 import type { Env } from "../config/env";
 import type { OtpDeliveryChannel } from "./otp-sender";
@@ -14,48 +15,33 @@ const BIRD_VERIFY_TIMEOUT_MS = 10_000;
  * a real +263 handset). Bird's Verify API would otherwise fall back to SMS automatically if channels
  * included "sms"; omitting it means an undeliverable WhatsApp attempt fails the create/check call
  * instead of silently landing as a text. A "retry" is just the existing resend affordance
- * (verify.tsx requestFreshCode → a fresh POST /auth/otp/request). Email and Telegram are real Verify
- * channels but are never requested here — this app has no email/Telegram identity to verify against.
+ * (verify.tsx requestFreshCode → a fresh POST /auth/otp/request) — since every create call only ever
+ * asks Bird for "whatsapp", every retry is a WhatsApp retry too, never a silent drop to SMS. Email and
+ * Telegram are real Verify channels but are never requested here — this app has no email/Telegram
+ * identity to verify against. The one exception is the countries Bird's WhatsApp sender can't reach
+ * (`verifyChannelsFor` below), where SMS follows WhatsApp.
  */
-const WHATSAPP_ONLY = ["whatsapp"] as const;
+const CHANNELS = ["whatsapp"] as const;
 
 /**
- * The one exception (owner 2026-10-19): Bird's shared WhatsApp sender refuses to carry a passcode to
- * these countries (docs: guides/verify/countries, "Where WhatsApp cannot carry a passcode"). With
- * WhatsApp alone the create call answers 422 and nobody there can sign in, so they get SMS after it.
- * WhatsApp stays first: Bird records the refused attempt as `channel_restricted` and moves on, and a
- * branded per-country WhatsApp sender, if one is ever pinned in the dashboard, is used without a change
- * here. Calling-code digits; calling codes are prefix-free, and Kazakhstan shares +7 with Russia, so it
- * is matched by its 76/77 ranges only.
+ * Calling-code prefixes where Bird's shared WhatsApp sender refuses passcodes (docs.bird.com
+ * guides/verify/countries, "Where WhatsApp cannot carry a passcode", read 2026-10-19): Bangladesh, Egypt,
+ * India, Indonesia, Iraq, Kazakhstan (+76/+77), Kuwait, Malaysia, Morocco, Nepal, Nigeria, Oman, Pakistan,
+ * Saudi Arabia, South Africa, Sri Lanka, Ukraine, UAE. Only these get SMS, and only as the fallback after
+ * WhatsApp (owner, 2026-10-19: "put SMS fallback only for these countries"; D-116), on their own daily
+ * budget (OTP_RL_SMS_GLOBAL_MAX, auth.service.ts). WhatsApp stays first so a WhatsApp number of our own
+ * connected in Bird for these countries is tried first (see the last_channel note in birdVerifyStart).
  */
-export const SMS_FALLBACK_CALLING_CODES = [
-  "880", // Bangladesh
-  "20", // Egypt
-  "91", // India
-  "62", // Indonesia
-  "964", // Iraq
-  "76", // Kazakhstan (+7 6…)
-  "77", // Kazakhstan (+7 7…)
-  "965", // Kuwait
-  "60", // Malaysia
-  "212", // Morocco
-  "977", // Nepal
-  "234", // Nigeria
-  "968", // Oman
-  "92", // Pakistan
-  "966", // Saudi Arabia
-  "27", // South Africa
-  "94", // Sri Lanka
-  "380", // Ukraine
-  "971", // United Arab Emirates
-] as const;
-const WHATSAPP_THEN_SMS = ["whatsapp", "sms"] as const;
+const WHATSAPP_RESTRICTED_PREFIXES = ["880", "20", "91", "62", "964", "76", "77", "965", "60", "212", "977", "234", "968", "92", "966", "27", "94", "380", "971"];
 
-/** The channels Bird Verify may use for `phone` (E.164), in the order it tries them. Exported for tests. */
-export function birdVerifyChannels(phone: string): readonly ("whatsapp" | "sms")[] {
+/** The channels to ask Bird for: WhatsApp, plus SMS after it where Bird's shared WhatsApp sender can't deliver. */
+export function verifyChannelsFor(phone: string): readonly ("whatsapp" | "sms")[] {
   const digits = phone.replace(/\D/g, "");
-  return SMS_FALLBACK_CALLING_CODES.some((code) => digits.startsWith(code)) ? WHATSAPP_THEN_SMS : WHATSAPP_ONLY;
+  return WHATSAPP_RESTRICTED_PREFIXES.some((p) => digits.startsWith(p)) ? ["whatsapp", "sms"] : CHANNELS;
 }
+
+/** Shown when Bird can't carry a WhatsApp code to this number at all (a 422 on create, D-116). */
+export const WHATSAPP_UNAVAILABLE = "We can’t send a code to this number. Check it, or use a number that’s on WhatsApp.";
 
 export interface BirdVerifyCheckResult {
   success: boolean;
@@ -79,7 +65,7 @@ export function birdVerifyBaseUrl(apiKey: string): string {
 }
 
 /** Bird's own channel vocabulary (whatsapp | sms | email | telegram) narrowed to what the UI can say.
- *  Only whatsapp/sms are ever requested (birdVerifyChannels above), but this stays defensive — an unrecognized
+ *  Only whatsapp/sms are ever requested (`verifyChannelsFor`), but this stays defensive — an unrecognized
  *  value falls back to "sms" rather than crashing a real sign-in over a vendor response shape this app
  *  didn't anticipate. */
 function toDeliveryChannel(birdChannel: string | undefined): OtpDeliveryChannel {
@@ -107,7 +93,7 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
     logger.error("Bird Verify not configured — set BIRD_VERIFY_API_KEY (or change OTP_CHANNEL).");
     throw new ServiceUnavailableException("Couldn't send the verification code — try again shortly.");
   }
-  const channels = birdVerifyChannels(phone);
+  const channels = verifyChannelsFor(phone);
   let res: Response;
   try {
     res = await call(env, key, "/v1/verify/verifications", {
@@ -124,13 +110,24 @@ export async function birdVerifyStart(env: Env, phone: string): Promise<{ channe
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     logger.error(`Bird Verify create failed: ${res.status} ${detail.slice(0, 300)}`);
+    // 422: Bird can't take this number (a country switched off in Verify, one whose channels can't reach
+    // it, or a number it rejects). Since diaspora sign-up (D-116) that is a standing answer for a number
+    // from abroad, so it says so instead of "try again in a moment". A Zimbabwe number can't change
+    // country (the field is locked for bikers, and old installs only have +263), so for +263 a 422 stays
+    // the outage it would be: the 503 below, and the alarm it raises.
+    if (res.status === 422 && !phone.startsWith(`+${DEFAULT_COUNTRY_CODE}`)) {
+      throw new UnprocessableEntityException({ reason: "whatsapp_unavailable", message: WHATSAPP_UNAVAILABLE });
+    }
     throw new ServiceUnavailableException("Couldn't send the code — try again in a moment.");
   }
   const body = (await res.json().catch(() => ({}))) as { id?: string; last_channel?: string };
   logger.log(`Bird Verify sent → ${maskPhone(phone)} (verification_id=${body.id ?? "?"}, channel=${body.last_channel ?? "?"})`);
-  // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the first channel
-  // we asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
-  return { channel: toDeliveryChannel(body.last_channel ?? channels[0]) };
+  // No `last_channel` in the reply means Bird didn't say, not that it fell back: report the channel we
+  // asked for. Defaulting to "sms" put "Sent by SMS" beside "Resend on WhatsApp" (E2E 2026-10-05 P-8).
+  // Where SMS follows WhatsApp, Bird's shared sender always refuses the WhatsApp step, so a silent reply
+  // means SMS there. If a WhatsApp number of our own is ever connected for those countries, this guess
+  // must go back to channels[0].
+  return { channel: toDeliveryChannel(body.last_channel ?? channels[channels.length - 1]) };
 }
 
 /**

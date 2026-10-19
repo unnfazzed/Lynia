@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
-import { birdVerifyBaseUrl, birdVerifyChannels, birdVerifyCheck, birdVerifyStart } from "./bird-verify";
+import { birdVerifyBaseUrl, birdVerifyCheck, birdVerifyStart, verifyChannelsFor, WHATSAPP_UNAVAILABLE } from "./bird-verify";
 
 describe("birdVerifyBaseUrl", () => {
   it("derives the region-scoped host from the key prefix", () => {
@@ -55,6 +55,24 @@ describe("birdVerifyStart", () => {
     expect(res).toEqual({ channel: "whatsapp" });
   });
 
+  it("D-116: a 422 for a number from abroad is a clear 422, not 'try again'", async () => {
+    const fetchMock = (async () => new Response('{"code":"no_channels"}', { status: 422 })) as unknown as typeof fetch;
+    const err = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567")).catch((e: unknown) => e);
+    expect((err as { getStatus(): number }).getStatus()).toBe(422);
+    expect((err as { getResponse(): unknown }).getResponse()).toEqual({ reason: "whatsapp_unavailable", message: WHATSAPP_UNAVAILABLE });
+  });
+
+  it("D-116: South Africa gets WhatsApp then SMS (Bird's shared WhatsApp sender can't reach it), and reports SMS", async () => {
+    let sent: { options?: unknown } | undefined;
+    const fetchMock = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ id: "vrf_za" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567"));
+    expect(sent?.options).toEqual({ code_length: 6, channels: ["whatsapp", "sms"] });
+    expect(res).toEqual({ channel: "sms" });
+  });
+
   it("falls back to 'sms' for an unrecognized last_channel — defensive display mapping only; Bird was never asked to send SMS", async () => {
     const fetchMock = (async () =>
       new Response(JSON.stringify({ id: "vrf_3", last_channel: "telegram" }), { status: 200 })) as unknown as typeof fetch;
@@ -72,7 +90,7 @@ describe("birdVerifyStart", () => {
 
   it("throws when Bird rejects the create call (so requestOtp errors, not a silent non-delivery)", async () => {
     const fetchMock = (async () =>
-      new Response('{"error":"no eligible channel"}', { status: 422 })) as unknown as typeof fetch;
+      new Response('{"error":"internal"}', { status: 500 })) as unknown as typeof fetch;
     await expect(withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263770000001"))).rejects.toThrow(/couldn't send/i);
   });
 
@@ -81,50 +99,6 @@ describe("birdVerifyStart", () => {
       throw new Error("ECONNRESET");
     }) as unknown as typeof fetch;
     await expect(withFetch(fetchMock, () => birdVerifyStart(cfg(), "+263770000001"))).rejects.toThrow(/couldn't send/i);
-  });
-
-  it("asks for WhatsApp then SMS where Bird's shared WhatsApp sender won't carry a code, and reports the SMS it fell back to", async () => {
-    let body: { options?: unknown } = {};
-    const fetchMock = (async (_url: string, init: RequestInit) => {
-      body = JSON.parse(init.body as string);
-      return new Response(JSON.stringify({ id: "vrf_5", last_channel: "sms" }), { status: 200 });
-    }) as unknown as typeof fetch;
-    const res = await withFetch(fetchMock, () => birdVerifyStart(cfg(), "+27821234567"));
-    expect(body.options).toEqual({ code_length: 6, channels: ["whatsapp", "sms"] });
-    expect(res).toEqual({ channel: "sms" });
-  });
-});
-
-describe("birdVerifyChannels", () => {
-  it("keeps WhatsApp only for Zimbabwe and the other countries the shared sender serves", () => {
-    for (const phone of ["+263771234567", "+447911123456", "+12025550123", "+26771234567", "+61412345678", "+79161234567"]) {
-      expect(birdVerifyChannels(phone)).toEqual(["whatsapp"]);
-    }
-  });
-
-  it("adds SMS after WhatsApp for every country on Bird's no-WhatsApp-passcode list", () => {
-    const phones = [
-      "+8801712345678", // Bangladesh
-      "+201001234567", // Egypt
-      "+919812345678", // India
-      "+6281234567890", // Indonesia
-      "+9647701234567", // Iraq
-      "+77011234567", // Kazakhstan
-      "+76001234567", // Kazakhstan
-      "+96550012345", // Kuwait
-      "+60123456789", // Malaysia
-      "+212612345678", // Morocco
-      "+9779812345678", // Nepal
-      "+2348012345678", // Nigeria
-      "+96891234567", // Oman
-      "+923001234567", // Pakistan
-      "+966501234567", // Saudi Arabia
-      "+27821234567", // South Africa
-      "+94771234567", // Sri Lanka
-      "+380501234567", // Ukraine
-      "+971501234567", // United Arab Emirates
-    ];
-    for (const phone of phones) expect(birdVerifyChannels(phone)).toEqual(["whatsapp", "sms"]);
   });
 });
 
@@ -204,4 +178,43 @@ describe("birdVerifyCheck", () => {
     expect(called!.url).not.toContain("999888");
     expect(JSON.stringify(called!.init.headers)).not.toContain("999888");
   });
+});
+
+describe("verifyChannelsFor (D-116: SMS fallback only where WhatsApp can't carry a passcode)", () => {
+  it("is WhatsApp only for Zimbabwe and the countries Bird's WhatsApp sender serves", () => {
+    for (const phone of ["+263771234567", "+447911123456", "+12025550123", "+61412345678", "+26771234567", "+79161234567"]) {
+      expect(verifyChannelsFor(phone)).toEqual(["whatsapp"]);
+    }
+  });
+
+  it.each([
+    ["Bangladesh", "+8801712345678"],
+    ["Egypt", "+201001234567"],
+    ["India", "+919812345678"],
+    ["Indonesia", "+6281234567890"],
+    ["Iraq", "+9647701234567"],
+    ["Kazakhstan +77", "+77011234567"],
+    ["Kazakhstan +76", "+76012345678"],
+    ["Kuwait", "+96550012345"],
+    ["Malaysia", "+60123456789"],
+    ["Morocco", "+212612345678"],
+    ["Nepal", "+9779812345678"],
+    ["Nigeria", "+2348012345678"],
+    ["Oman", "+96891234567"],
+    ["Pakistan", "+923001234567"],
+    ["Saudi Arabia", "+966501234567"],
+    ["South Africa", "+27821234567"],
+    ["Sri Lanka", "+94771234567"],
+    ["Ukraine", "+380501234567"],
+    ["UAE", "+971501234567"],
+  ])("%s gets WhatsApp then SMS", (_country, phone) => {
+    expect(verifyChannelsFor(phone)).toEqual(["whatsapp", "sms"]);
+  });
+
+  it.each([["Algeria", "+213551234567"], ["Yemen", "+967712345678"], ["Mozambique", "+258841234567"]])(
+    "%s, next to a listed code, stays WhatsApp only",
+    (_country, phone) => {
+      expect(verifyChannelsFor(phone)).toEqual(["whatsapp"]);
+    },
+  );
 });

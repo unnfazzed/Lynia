@@ -49,12 +49,14 @@ Authorization: Bearer {BIRD_VERIFY_API_KEY}
   another WhatsApp attempt. Bird's shared WhatsApp sender refuses passcodes to Bangladesh, Egypt, India,
   Indonesia, Iraq, Kazakhstan, Kuwait, Malaysia, Morocco, Nepal, Nigeria, Oman, Pakistan, Saudi Arabia,
   South Africa, Sri Lanka, Ukraine and the UAE ([Bird: country configuration](https://bird.com/docs/guides/verify/countries)),
-  so numbers there get `["whatsapp", "sms"]` (owner 2026-10-19; `SMS_FALLBACK_CALLING_CODES` in
+  so numbers there get `["whatsapp", "sms"]` (owner 2026-10-19, D-116; `verifyChannelsFor` in
   `bird-verify.ts`). Bird logs the refused WhatsApp attempt as `channel_restricted` and sends the SMS; the
-  app then says "Sent by SMS". Keep SMS switched on for those countries under Verify → Countries in the
-  dashboard, or their sign-ins fail with `422`.
+  app then says "Sent by SMS". Those sends also spend their own daily budget, `OTP_RL_SMS_GLOBAL_MAX`
+  (default 100), so SMS pumping can't use up Zimbabwe's share of `OTP_RL_GLOBAL_MAX`.
 - **Countries.** Every country is enabled for Verify by default (dashboard: Verify → Countries); this API
-  narrows it with `OTP_ALLOWED_COUNTRY_CODES` (default `*`).
+  narrows it with `OTP_ALLOWED_COUNTRY_CODES` (default `*`). Keep SMS switched on for the 18 countries
+  above. A `422` from Bird (a country switched off, or no channel that reaches it) tells a number from
+  abroad to use another number (`whatsapp_unavailable`); for +263 it stays the 503 outage answer.
 - **Region** comes from the key's own prefix (`bk_eu1_…` → `eu1`). A key that doesn't match
   `bk_<region>_` fails at first use. There is no base-URL variable for Verify.
 - `code_length` is pinned to 6 to match the app's code field.
