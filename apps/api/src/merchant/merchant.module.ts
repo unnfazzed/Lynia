@@ -1,5 +1,7 @@
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { FleetEnabledGuard } from "./fleet-enabled.guard";
+import { AdminFleetsController } from "./admin-fleets.controller";
+import { FleetAdminService } from "./fleet-admin.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
 import { FleetService } from "./fleet.service";
@@ -99,6 +101,7 @@ import { PrescriptionService } from "./prescription.service";
     OrderFlowMerchantController,
     HandoverLinkController,
     MerchantFleetController,
+    AdminFleetsController,
     RiderFleetController,
   ],
   providers: [
@@ -112,6 +115,7 @@ import { PrescriptionService } from "./prescription.service";
     FleetService,
     FleetDispatchService,
     FleetLedgerService,
+    FleetAdminService,
     FleetEnabledGuard,
     MerchantGuard,
     RestaurantsEnabledGuard,

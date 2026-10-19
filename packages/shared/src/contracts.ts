@@ -2762,6 +2762,92 @@ export type FleetJobOffer = z.infer<typeof FleetJobOffer>;
 export const FleetJobOffersResponse = z.object({ offers: z.array(FleetJobOffer) });
 export type FleetJobOffersResponse = z.infer<typeof FleetJobOffersResponse>;
 
+// ── Own bikers: the admin console (handoff own-bikers-v1 OB-A1–A4, T7) ────────────────────────────────────────
+
+/** OB-A3: why ops paused or disabled a fleet (the kit's reason-code pattern; the note goes on the audit row). */
+export const FLEET_ADMIN_REASON_CODES = ["NON_PAYMENT", "MERCHANT_REQUEST", "ABUSE_REPORT", "OTHER"] as const;
+export const FleetAdminReasonCode = z.enum(FLEET_ADMIN_REASON_CODES);
+export type FleetAdminReasonCode = z.infer<typeof FleetAdminReasonCode>;
+
+/** A weekly fleet bill's state: `unpaid` (not yet due), `overdue` (past its Friday), `paid`. */
+export const FleetBillState = z.enum(["unpaid", "overdue", "paid"]);
+export type FleetBillState = z.infer<typeof FleetBillState>;
+
+/** OB-A1 status column: the worst of the fleet's state and its bills. */
+export const AdminFleetStatus = z.enum(["paused", "disabled", "overdue", "unpaid", "paid"]);
+export type AdminFleetStatus = z.infer<typeof AdminFleetStatus>;
+
+/** `GET /admin/fleets`: one row per owner (OB-A1: Owner · Branches · Bikers · This week · Unpaid · Days overdue · Status). */
+export const AdminFleetRow = z.object({
+  ownerProfileId: z.string().uuid(),
+  owner: z.string(),
+  branches: z.number().int(),
+  bikers: z.number().int(),
+  thisWeek: z.string(),
+  unpaid: z.string(),
+  daysOverdue: z.number().int(),
+  status: AdminFleetStatus,
+  rideFee: z.string().nullable(),
+});
+export type AdminFleetRow = z.infer<typeof AdminFleetRow>;
+
+/** One closed week's bill, with a line per branch (E7). Dates are Harare calendar days. */
+export const AdminFleetBill = z.object({
+  id: z.string().uuid(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  dueOn: z.string().nullable(),
+  total: z.string(),
+  state: FleetBillState,
+  daysOverdue: z.number().int(),
+  paidAt: z.string().datetime().nullable(),
+  branches: z.array(z.object({ merchantId: z.string().uuid(), name: z.string(), rides: z.number().int(), total: z.string() })),
+});
+export type AdminFleetBill = z.infer<typeof AdminFleetBill>;
+
+/** `GET /admin/fleets/:ownerId` (OB-A2 side panel). */
+export const AdminFleetDetail = z.object({
+  ownerProfileId: z.string().uuid(),
+  owner: z.string(),
+  phone: z.string().nullable(),
+  enabled: z.boolean(),
+  paused: z.boolean(),
+  rideFee: z.string().nullable(),
+  branches: z.array(z.object({ merchantId: z.string().uuid(), name: z.string() })),
+  bikers: z.array(z.object({ riderId: z.string().uuid(), name: z.string(), homeBranch: z.string(), state: FleetBikerState })),
+  /** The open week so far: rides and total, adjustments included. */
+  thisWeek: z.object({ rides: z.number().int(), total: z.string() }),
+  bills: z.array(AdminFleetBill),
+});
+export type AdminFleetDetail = z.infer<typeof AdminFleetDetail>;
+
+/** `POST /admin/merchants/:id/fleet`: switch Own bikers on for the branch's owner. A fee is required (OV-F4). */
+export const EnableFleetRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01), note: z.string().trim().max(2000).optional() }).strict();
+export type EnableFleetRequest = z.infer<typeof EnableFleetRequest>;
+
+/** `POST /admin/fleets/:ownerId/fee`: the per-ride fee for new phone bookings (rides already booked keep theirs). */
+export const SetFleetFeeRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01), note: z.string().trim().min(3).max(2000) }).strict();
+export type SetFleetFeeRequest = z.infer<typeof SetFleetFeeRequest>;
+
+/** `POST /admin/fleets/:ownerId/{pause,unpause,disable}` (OB-A3): a reason code, and a note for the audit row. */
+export const FleetAdminActionRequest = z.object({ reasonCode: FleetAdminReasonCode, note: z.string().trim().max(2000).optional() }).strict();
+export type FleetAdminActionRequest = z.infer<typeof FleetAdminActionRequest>;
+
+/** `POST /admin/fleets/:ownerId/adjust` (OB-A2 "Adjust"): a correction on the open week, usually negative. */
+export const FleetAdjustRequest = z
+  .object({
+    merchantId: z.string().uuid(),
+    amount: z.number().min(-1000).max(1000).multipleOf(0.01),
+    reason: z.string().trim().min(3).max(500),
+    orderId: z.string().uuid().optional(),
+  })
+  .strict();
+export type FleetAdjustRequest = z.infer<typeof FleetAdjustRequest>;
+
+/** `POST /admin/fleets/bills/:id/paid` (OB-A2 "Mark paid"). */
+export const MarkFleetBillPaidRequest = z.object({ note: z.string().trim().max(2000).optional() }).strict();
+export type MarkFleetBillPaidRequest = z.infer<typeof MarkFleetBillPaidRequest>;
+
 /** `fleet:offer-closed`: the offer stopped being live (taken, declined, ran out, cancelled or sent to any biker). */
 export const FleetOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
 export type FleetOfferClosedEvent = z.infer<typeof FleetOfferClosedEvent>;

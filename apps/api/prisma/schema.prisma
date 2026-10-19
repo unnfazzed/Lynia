@@ -1504,6 +1504,8 @@ model MerchantFleetLedger {
   fee            Decimal         @db.Decimal(10, 2)
   /// Adjustments only: who wrote it and why.
   actorProfileId String?         @map("actor_profile_id") @db.Uuid
+  /// Adjustments written from the console: the operator (an email), which isn't a profile (migration 0112).
+  actor          String?
   reason         String?
   /// The week's statement once it is closed; null while the ride sits in the open week.
   statementId    String?         @map("statement_id") @db.Uuid

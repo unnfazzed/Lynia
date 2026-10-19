@@ -9,6 +9,9 @@ import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { THROTTLE_KEY, type ThrottleOptions } from "../common/throttle.guard";
+import { AdminGuard } from "../auth/admin.guard";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AdminFleetsController } from "./admin-fleets.controller";
 import { FleetEnabledGuard } from "./fleet-enabled.guard";
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
@@ -43,6 +46,10 @@ describe("Own bikers routes", () => {
     expect(throttleOf(p.book)?.keyPrefix).toBe("merchant-booking-create");
     expect(throttleOf(p.anyBiker)?.keyPrefix).toBe("merchant-booking-create");
     expect(throttleOf(RiderFleetController.prototype.accept)?.keyPrefix).toBe("fleet-job-accept");
+  });
+
+  it("put the console's fleet routes behind the admin role (and not behind FLEET_UI_LIVE: ops set fleets up first)", () => {
+    expect(guardsOf(AdminFleetsController)).toEqual([JwtAuthGuard, AdminGuard]);
   });
 
   it("503 every route while FLEET_UI_LIVE is off, and let them through when it is on", () => {

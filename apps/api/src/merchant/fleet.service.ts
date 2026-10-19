@@ -27,16 +27,11 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { onlineRefusalReason } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
-import { addDaysToKey, daysSinceMonday, harareDayBounds, harareDayKey } from "./harare-clock";
+import { harareWeekStart } from "./harare-clock";
 import type { MerchantAccess } from "./merchant-access";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Monday 00:00 in Harare of the week `now` falls in (the roster's "this week"). */
-function harareWeekStart(now: Date): Date {
-  const today = harareDayKey(now);
-  return harareDayBounds(addDaysToKey(today, -daysSinceMonday(today)))?.start ?? new Date(now.getTime() - 7 * DAY_MS);
-}
 
 /** Audit actions. The daily invite limit counts the first, per owner. */
 export const FLEET_INVITE_ACTION = "merchant.fleet.invite";
