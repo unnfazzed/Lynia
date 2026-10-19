@@ -44,6 +44,10 @@ enum OrderStatus {
   // Terminal: rider could not complete the hand-off (INTERFACE-AUDIT C6 / F-02). Reason + attempt
   // count recorded on the order; shown verbatim to the customer.
   undelivered
+  // Own bikers (docs/designs/own-bikers.md, D-117): a merchant's "My bikers" booking while it rings the
+  // owner's own bikers. Never `requested` (the kitchen phase) and never the public board's
+  // `open_for_offers`. Added alone in migration 0107 (ADD VALUE can't be used in its own transaction).
+  fleet_searching
 }
 
 enum OfferType {
@@ -440,6 +444,15 @@ model Rider {
   // rows from profiles.created_at — APPROXIMATE for those (sign-up, not become-biker); exact from then on.
   createdAt         DateTime                               @default(now()) @map("created_at")
   updatedAt         DateTime                               @updatedAt @map("updated_at")
+  // Own bikers (D-117): the owner whose fleet this biker belongs to. Null = a public biker. The one source of
+  // truth for exclusivity: the orders constraint trigger (migration 0108) refuses any rider on an order outside
+  // this scope, and the riders trigger refuses changing it while the biker has a live order outside the new
+  // scope. Links are owner-level; the home branch only orders who is rung first.
+  fleetOwnerProfileId String?                              @map("fleet_owner_profile_id") @db.Uuid
+  fleetOwner          OwnerFleet?                          @relation(fields: [fleetOwnerProfileId], references: [ownerProfileId])
+  fleetHomeMerchantId String?                              @map("fleet_home_merchant_id") @db.Uuid
+  fleetHomeMerchant   Merchant?                            @relation("riderFleetHome", fields: [fleetHomeMerchantId], references: [id])
+  fleetJoinedAt       DateTime?                            @map("fleet_joined_at")
 
   orders               Order[]               @relation("riderOrders")
   dispatchOffers       Order[]               @relation("orderDispatchOffer")
@@ -454,6 +467,8 @@ model Rider {
 
   // #1216: every Didit webhook asks whether its session is a selfie re-check (migration 0105, built concurrently).
   @@index([selfieRecheckRef])
+  // Own bikers E2: the roster and every fleet round read an owner's bikers (migration 0110, concurrently).
+  @@index([fleetOwnerProfileId])
   @@map("riders")
 }
 
@@ -596,7 +611,7 @@ model Order {
   riderId               String?                                @map("rider_id") @db.Uuid
   rider                 Rider?                                 @relation("riderOrders", fields: [riderId], references: [profileId])
   merchantId            String?                                @map("merchant_id") @db.Uuid
-  merchant              Merchant?                              @relation(fields: [merchantId], references: [id])
+  merchant              Merchant?                              @relation("orderMerchant", fields: [merchantId], references: [id])
   pickup                Json
   // Generated (STORED) geography point derived from pickup.point (managed via raw SQL migration
   // 0006). Indexed with GiST for the nearby-order board (ST_DWithin). Read-through only — Prisma
@@ -902,6 +917,15 @@ model Order {
   // BRIEF D3f: what this order left owed (cancelled after collection) / earlier balance it carries.
   owedBalance      CustomerBalanceEntry?  @relation("balanceSource")
   carriedBalance   CustomerBalanceEntry[] @relation("balanceCarried")
+  // Own bikers (D-117): the branch this ride is billed to when an Own biker carries it (set on a "My bikers"
+  // booking at creation, or on the merchant's own app order when an Own biker is assigned). Null = a public
+  // ride. Must be the order's own merchant (or its booking's), and the rider must belong to that branch's
+  // owner: both enforced at commit by the orders constraint trigger (migration 0108).
+  fleetMerchantId  String?                @map("fleet_merchant_id") @db.Uuid
+  fleetMerchant    Merchant?              @relation("orderFleetMerchant", fields: [fleetMerchantId], references: [id])
+  // The owner's per-ride fee, snapshotted with fleetMerchantId so a mid-week fee change never re-prices rides
+  // already made. Null on public rides.
+  fleetFee         Decimal?               @map("fleet_fee") @db.Decimal(10, 2)
 
   @@index([status])
   @@index([rebroadcastOfId])
@@ -919,6 +943,8 @@ model Order {
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([orderType, createdAt])
+  // Own bikers E2: a branch's live fleet jobs and its weekly fleet rides (migration 0111, concurrently).
+  @@index([fleetMerchantId, status])
   @@map("orders")
 }
 
@@ -1228,7 +1254,9 @@ model Merchant {
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
-  orders          Order[]
+  orders          Order[]            @relation("orderMerchant")
+  fleetOrders     Order[]            @relation("orderFleetMerchant")
+  fleetHomeRiders Rider[]            @relation("riderFleetHome")
   categories      MerchantCategory[]
   debtLedger      MerchantDebtLedger[]
   reopenReminders RestaurantReopenReminder[]
@@ -1400,6 +1428,117 @@ model MerchantInvite {
   @@unique([merchantId, phone])
   @@index([phone])
   @@map("merchant_invites")
+}
+
+/// Own bikers (docs/designs/own-bikers.md, ledger D-117): a merchant owner's fleet settings. One row per owner
+/// (OV-F4): every branch of the owner follows it, and the bill, the pause and the fee are per owner. Created by
+/// admin when the owner is enabled; never deleted (disabling sets `enabled = false` and dissolves the links).
+/// The owner key is a plain id like MerchantInvite's, so an erased profile never removes billing history.
+model OwnerFleet {
+  ownerProfileId         String    @id @map("owner_profile_id") @db.Uuid
+  enabled                Boolean   @default(false)
+  /// Flat fee LyniaGo bills per phone-booking ride. App orders carried by an Own biker bill the commission
+  /// rate × the delivery fee instead (OV5). Null until admin sets it; enable requires it.
+  rideFee                Decimal?  @map("ride_fee") @db.Decimal(10, 2)
+  /// Admin pause for non-payment: "My bikers" is refused while set; links stay.
+  pausedAt               DateTime? @map("paused_at")
+  /// OB-M5: the owner dismissed the one-time "From your Preferred riders" suggestions.
+  suggestionsDismissedAt DateTime? @map("suggestions_dismissed_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  riders Rider[]
+
+  @@map("owner_fleets")
+}
+
+/// Own bikers invite (D-117): a link bound to one phone number that the owner shares on WhatsApp or copies.
+/// LyniaGo sends nothing. Its own table, not MerchantInvite: staff invites are deleted on Join and read by
+/// the Team screens, while a fleet invite is owner-level, has a link token and keeps its state (opened,
+/// joined, revoked) for the roster. Plain ids, so an erased profile never removes the row.
+model FleetInvite {
+  id                 String    @id @default(uuid()) @db.Uuid
+  ownerProfileId     String    @map("owner_profile_id") @db.Uuid
+  /// The branch the biker works from (their home branch once they join).
+  homeMerchantId     String    @map("home_merchant_id") @db.Uuid
+  /// E.164 (`+263…`), as `profiles.phone` stores it. Only the account with this number can redeem the link.
+  phone              String
+  displayName        String    @map("display_name")
+  /// The link's secret (`lyniago.com/j/<token>`). Kept so "Share again" reopens the same link; useless
+  /// without signing in as `phone`.
+  token              String    @unique
+  invitedByProfileId String    @map("invited_by_profile_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+  expiresAt          DateTime  @map("expires_at")
+  openedAt           DateTime? @map("opened_at")
+  revokedAt          DateTime? @map("revoked_at")
+  joinedAt           DateTime? @map("joined_at")
+
+  // One live invite per owner and phone (a re-invite returns it): a partial unique index in migration 0108,
+  // WHERE revoked_at IS NULL AND joined_at IS NULL. Prisma can't declare a partial index.
+  @@index([ownerProfileId, createdAt])
+  @@index([phone])
+  @@map("fleet_invites")
+}
+
+enum FleetLedgerKind {
+  /// A "My bikers" phone booking: the owner's flat ride fee.
+  booking
+  /// The merchant's own app order carried by an Own biker: commission rate × delivery fee (OV5).
+  marketplace
+  /// Admin correction (E3): append-only, usually negative, with actor and reason; lands on the open week (OV-F6).
+  adjustment
+}
+
+/// Own bikers billing ledger (C1, E3): one row per fleet ride, written in the ride's terminal transaction, and
+/// append-only adjustment rows. Never mutated. At most one non-adjustment row per order: a partial unique
+/// index in migration 0108 (WHERE kind <> 'adjustment'). Plain ids (E10): erasure never changes past bills.
+model MerchantFleetLedger {
+  id             String          @id @default(uuid()) @db.Uuid
+  ownerProfileId String          @map("owner_profile_id") @db.Uuid
+  /// The branch the ride is billed to (the order's fleet_merchant_id).
+  merchantId     String          @map("merchant_id") @db.Uuid
+  orderId        String?         @map("order_id") @db.Uuid
+  riderId        String?         @map("rider_id") @db.Uuid
+  kind           FleetLedgerKind
+  fee            Decimal         @db.Decimal(10, 2)
+  /// Adjustments only: who wrote it and why.
+  actorProfileId String?         @map("actor_profile_id") @db.Uuid
+  reason         String?
+  /// The week's statement once it is closed; null while the ride sits in the open week.
+  statementId    String?         @map("statement_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@index([merchantId, createdAt])
+  @@index([ownerProfileId, createdAt])
+  @@index([statementId])
+  @@map("merchant_fleet_ledger")
+}
+
+enum FleetStatementStatus {
+  open
+  sent
+  paid
+}
+
+/// One fleet bill per owner per Harare week (Mon–Sun), with a line per branch read from the ledger (E7).
+model MerchantFleetStatement {
+  id                  String               @id @default(uuid()) @db.Uuid
+  ownerProfileId      String               @map("owner_profile_id") @db.Uuid
+  periodStart         DateTime             @map("period_start") @db.Date
+  periodEnd           DateTime             @map("period_end") @db.Date
+  total               Decimal              @default(0) @db.Decimal(10, 2)
+  status              FleetStatementStatus @default(open)
+  /// Due the Friday after the week ends (handoff OB-M14 / OB-A1).
+  dueOn               DateTime?            @map("due_on") @db.Date
+  paidAt              DateTime?            @map("paid_at")
+  recordedByProfileId String?              @map("recorded_by_profile_id") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  @@unique([ownerProfileId, periodStart])
+  @@index([status, dueOn])
+  @@map("merchant_fleet_statements")
 }
 
 /// Biker referrals (owner 2026-10-18, ledger D-112): a biker's share code for `lyniago.com/r/<code>`, minted

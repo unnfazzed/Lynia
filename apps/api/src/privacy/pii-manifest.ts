@@ -291,6 +291,20 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
     disposition: "delete-row",
     note: "Merchant web upgrade L4: the name an owner typed on an invite. Goes with the invite row (merchant_invite_store).",
   },
+  fleet_invite_store: {
+    column: "phone",
+    where: "fleet_invites",
+    tables: ["fleet_invites"],
+    disposition: "delete-row",
+    note: "Own bikers (D-117): an owner's invite link is bound to the biker's number. The number is the person's, so every fleet invite to it is deleted on erase (by the pre-tombstone phone), joined ones included.",
+  },
+  fleet_invite_name: {
+    column: "display_name",
+    where: "fleet_invites",
+    tables: ["fleet_invites"],
+    disposition: "delete-row",
+    note: "Own bikers (D-117): the name an owner typed on a fleet invite. Goes with the invite row (fleet_invite_store).",
+  },
   merchant_member_name: {
     column: "display_name",
     where: "merchant_members",

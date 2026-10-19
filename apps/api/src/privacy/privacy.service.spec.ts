@@ -104,6 +104,8 @@ function eraseHarness(
     // L4 (Team): an owner is refused; invites to the number and a staff member's team row are deleted.
     merchant: { findFirst: vi.fn(async (a: unknown) => ((calls.ownerCheck = a), extras.ownsBusiness ? { name: extras.ownsBusiness } : null)) },
     merchantInvite: { deleteMany: vi.fn(async (a: unknown) => ((calls.inviteDel = a), { count: 1 })) },
+    // Own bikers (D-117): fleet invite links to the number are deleted too.
+    fleetInvite: { deleteMany: vi.fn(async (a: unknown) => ((calls.fleetInviteDel = a), { count: 1 })) },
     merchantMember: {
       findMany: vi.fn(async () => (extras.staffAt ? [{ merchantId: extras.staffAt }] : [])),
       deleteMany: vi.fn(async (a: unknown) => ((calls.memberDel = a), { count: extras.staffAt ? 1 : 0 })),
@@ -389,6 +391,12 @@ describe("PrivacyService.eraseAccount", () => {
     expect(gateway.evictFromMerchantQueue).not.toHaveBeenCalled();
   });
 
+  it("Own bikers (D-117): deletes every fleet invite link to the number", async () => {
+    const { svc, calls } = eraseHarness({ phone: "+263771234567" }, false, [], false, {});
+    await svc.eraseAccount("p1");
+    expect(calls.fleetInviteDel).toEqual({ where: { phone: "+263771234567" } });
+  });
+
   it("re-checks the active-ride guard inside the tx and aborts if a ride appeared mid-erase (DS-10)", async () => {
     // Pre-flight read sees no ride (activeRide=false) but one exists by the time the tx runs.
     const { svc, tx } = eraseHarness({ phone: "+263771234567" }, false, [], true);
@@ -643,6 +651,7 @@ describe("PrivacyService.purgeExpiredData", () => {
     let sosWhere: { createdAt: { lt: Date } } | undefined;
     let sessWhere: { OR: [{ expiresAt: { lt: Date } }, { revokedAt: { lt: Date } }] } | undefined;
     let inviteWhere: { expiresAt: { lt: Date } } | undefined;
+    let fleetInviteWhere: unknown;
     const prisma = {
       orderEvent: {
         updateMany: async (a: { where: { createdAt: { lt: Date } }; data: unknown }) => {
@@ -666,15 +675,23 @@ describe("PrivacyService.purgeExpiredData", () => {
       },
       // Merchant web upgrade L4: invites nobody answered in their 14 days.
       merchantInvite: { deleteMany: async (a: { where: { expiresAt: { lt: Date } } }) => ((inviteWhere = a.where), { count: 4 }) },
+      // Own bikers (D-117): fleet links nobody opened before they expired.
+      fleetInvite: {
+        deleteMany: async (a: { where: { expiresAt: { lt: Date }; joinedAt: null; revokedAt: null } }) => (
+          (fleetInviteWhere = a.where), { count: 2 }
+        ),
+      },
     } as unknown as PrismaService;
     const svc = new PrivacyService(prisma, env);
 
     const now = new Date("2026-07-06T00:00:00Z");
     const res = await svc.purgeExpiredData(now);
     // gpsScrubbed now folds in the SOS coords (5 + 2).
-    expect(res).toEqual({ gpsScrubbed: 7, sessionsPurged: 7, invitesPurged: 4 });
+    expect(res).toEqual({ gpsScrubbed: 7, sessionsPurged: 7, invitesPurged: 6 });
     // An invite goes the moment it expires; its 14 days are the retention.
     expect(inviteWhere!.expiresAt.lt.toISOString()).toBe(now.toISOString());
+    // A fleet link goes when it expires unused; joined and revoked ones stay for the roster.
+    expect(fleetInviteWhere).toEqual({ expiresAt: { lt: now }, joinedAt: null, revokedAt: null });
     // 90-day GPS cutoff (shared by order + SOS coords), 30-day session cutoff, measured back from `now`.
     expect(gpsWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
     expect(sosWhere!.createdAt.lt.toISOString()).toBe(new Date("2026-04-07T00:00:00Z").toISOString());
@@ -696,6 +713,7 @@ describe("PrivacyService.purgeExpiredData", () => {
         }) => ((sessWhere = a.where), { count: 3 }),
       },
       merchantInvite: { deleteMany: async () => ({ count: 0 }) },
+      fleetInvite: { deleteMany: async () => ({ count: 0 }) },
     } as unknown as PrismaService;
 
     const res = await new PrivacyService(prisma, env).purgeExpiredData(new Date("2026-07-06T00:00:00Z"));

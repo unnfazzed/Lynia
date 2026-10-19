@@ -131,6 +131,8 @@ describe("PII erasure manifest — eraseAccount references every scrub (reverse 
     merchant_invite_store: "merchantInvite.deleteMany",
     merchant_invite_name: "merchantInvite.deleteMany",
     merchant_member_name: "merchantMember.deleteMany",
+    fleet_invite_store: "fleetInvite.deleteMany",
+    fleet_invite_name: "fleetInvite.deleteMany",
     "kyc-object": "deleteObject",
     "kyc-vendor-session": "deleteSession",
     rx_photo_keys: "orderPrescription.deleteMany",

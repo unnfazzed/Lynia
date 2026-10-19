@@ -561,6 +561,8 @@ export class PrivacyService {
       // L4 (Team): every invite to this number goes the same way, and so does a staff member's place on
       // a team, which holds the name the business knew them by.
       await tx.merchantInvite.deleteMany({ where: { phone: profile.phone } });
+      // Own bikers (D-117, E10): fleet invite links to this number go too. Billing rows keep only plain ids.
+      await tx.fleetInvite.deleteMany({ where: { phone: profile.phone } });
       const memberships = await tx.merchantMember.findMany({ where: { profileId, role: "staff" }, select: { merchantId: true } });
       if (memberships.length > 0) {
         await tx.merchantMember.deleteMany({ where: { profileId, role: "staff" } });
@@ -612,10 +614,15 @@ export class PrivacyService {
     // Merchant web upgrade L4: an invite nobody answered in its 14 days holds a name and a number for no
     // purpose (the reads already ignore it), so it goes on the next sweep, as the privacy notice says.
     const invites = await this.prisma.merchantInvite.deleteMany({ where: { expiresAt: { lt: now } } });
+    // Own bikers (D-117): a fleet link nobody opened before it expired goes the same way. Joined and revoked
+    // invites stay for the roster until the person erases their account.
+    const fleetInvites = await this.prisma.fleetInvite.deleteMany({
+      where: { expiresAt: { lt: now }, joinedAt: null, revokedAt: null },
+    });
 
     this.logger.log(
-      `Retention sweep: scrubbed ${gps.count} GPS events + ${sosGps.count} SOS coords, purged ${sessions.count} expired sessions + ${invites.count} expired invites`,
+      `Retention sweep: scrubbed ${gps.count} GPS events + ${sosGps.count} SOS coords, purged ${sessions.count} expired sessions + ${invites.count + fleetInvites.count} expired invites`,
     );
-    return { gpsScrubbed: gps.count + sosGps.count, sessionsPurged: sessions.count, invitesPurged: invites.count };
+    return { gpsScrubbed: gps.count + sosGps.count, sessionsPurged: sessions.count, invitesPurged: invites.count + fleetInvites.count };
   }
 }
