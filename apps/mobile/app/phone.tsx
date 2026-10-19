@@ -199,18 +199,21 @@ export default function PhoneScreen(): React.ReactElement {
             <Text style={{ marginTop: 8, fontSize: 13, color: tokens.color.muted }}>{isHome ? OB.phoneHelp : OB.phoneHelpIntl}</Text>
           )}
         </Pad>
-        <CountrySheet
-          visible={pickerOpen}
-          selected={country}
-          onClose={() => setPickerOpen(false)}
-          onSelect={(c) => {
-            setPickerOpen(false);
-            if (c.iso === country.iso) return;
-            setPicked(c);
-            setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d) : nationalDigits(d, c)));
-            if (error) setError(null);
-          }}
-        />
+        {/* Mounted only while open: nothing to build for the 200-row list until it is asked for. */}
+        {pickerOpen ? (
+          <CountrySheet
+            visible
+            selected={country}
+            onClose={() => setPickerOpen(false)}
+            onSelect={(c) => {
+              setPickerOpen(false);
+              if (c.iso === country.iso) return;
+              setPicked(c);
+              setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d) : nationalDigits(d, c)));
+              if (error) setError(null);
+            }}
+          />
+        ) : null}
       </OnbScreen>
     </DismissKeyboardArea>
   );
