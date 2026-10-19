@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.56.0](https://github.com/unnfazzed/Lynia/compare/v0.55.0...v0.56.0) (2026-10-19)
+
+
+### Features
+
+* biker referrals — tracked from a share link, paid in cash by ops (D-112) ([#1228](https://github.com/unnfazzed/Lynia/issues/1228)) ([cd289e6](https://github.com/unnfazzed/Lynia/commit/cd289e6c3e4a00c1392a295b338feff23dd3ac57))
+* sign up from any country — flag + code picker for customers and merchants, bikers stay +263 (D-116) ([#1247](https://github.com/unnfazzed/Lynia/issues/1247)) ([bbe4465](https://github.com/unnfazzed/Lynia/commit/bbe44656f8c623aee8ad614d592604ac8c34d5bb))
+
+
+### Bug Fixes
+
+* **D-116:** diaspora sign-up review — no stranger's code, SMS fallback only where WhatsApp can't reach, Harare hours, biker calls the order's number ([#1248](https://github.com/unnfazzed/Lynia/issues/1248)) ([1ddf965](https://github.com/unnfazzed/Lynia/commit/1ddf965010a429aa29897292de817b467087c527))
+* **D-116:** final review — SMS budget, flag from the phone's country, biker calls the account holder, Harare hours on merchant ([#1250](https://github.com/unnfazzed/Lynia/issues/1250)) ([a803694](https://github.com/unnfazzed/Lynia/commit/a803694d053a03d57bf720446ecf7ed04a9fa8d5))
+
 ## [0.55.0](https://github.com/unnfazzed/Lynia/compare/v0.54.0...v0.55.0) (2026-10-17)
 
 
