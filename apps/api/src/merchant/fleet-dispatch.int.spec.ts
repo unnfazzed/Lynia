@@ -249,6 +249,8 @@ describe("accept, decline and the rounds", () => {
     const order = await prisma.order.findUniqueOrThrow({ where: { id: booking.id } });
     expect(order).toMatchObject({ status: "assigned", riderId: a, fleetMerchantId: f.branchId });
     expect(await pendingFor(booking.id)).toEqual([]);
+    // OB-M13: the business reads it as carried by its own biker; a public biker's booking never is.
+    expect((await bookings.detail(f.access, booking.id)).ownBiker).toBe(true);
     expect(gateway.emitFleetOfferClosed).toHaveBeenCalledWith(b, booking.id);
     await expect(dispatch.accept(booking.id, b)).rejects.toMatchObject({ response: { reason: "offer_gone" } });
   });
@@ -326,6 +328,7 @@ describe("Send to any biker", () => {
     expect(Number(order.proposedFare)).toBe(2.5);
     expect(order.offerWindowEndsAt!.getTime()).toBeGreaterThan(Date.now());
     expect(res.fleet).toBeUndefined();
+    expect(res.ownBiker).toBeUndefined();
     expect(await pendingFor(booking.id)).toEqual([]);
     await expect(dispatch.accept(booking.id, a)).rejects.toMatchObject({ response: { reason: "offer_gone" } });
     expect(await prisma.auditLog.count({ where: { action: "merchant.fleet.any_biker", target: booking.id } })).toBe(1);
@@ -756,7 +759,34 @@ describe("T7b the merchant's fleet money", () => {
     const res = await fleetSvc.bills(f.access);
     expect(res.bills).toHaveLength(1);
     expect(res.bills[0]).toMatchObject({ periodStart: "2026-10-05", total: "4.00" });
-    expect(res.thisWeek).toEqual({ rides: 0, total: "0.00" });
+    expect(res.thisWeek).toEqual({ rides: 0, total: "0.00", branches: [] });
+  });
+
+  it("OB-M13/M14: a ride credited back to nothing isn't a billed ride, each ride names its biker, and the week is split per branch", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+      await dispatch.accept(booking.id, a);
+      await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+      await lifecycle.completeOrder(booking.id);
+      ids.push(booking.id);
+    }
+    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, orderId: ids[0], fee: -1.5, reason: "wrong fee" });
+
+    const rides = await fleetSvc.rides(f.access);
+    expect(rides).toMatchObject({ rides: 1, total: "1.50" });
+    const { firstName } = await prisma.profile.findUniqueOrThrow({ where: { id: a }, select: { firstName: true } });
+    expect(rides.lines.filter((l) => l.kind === "booking").map((l) => l.biker)).toEqual([firstName, firstName]);
+    expect(rides.lines.find((l) => l.kind === "adjustment")).toMatchObject({ biker: null, reason: "wrong fee" });
+
+    const bills = await fleetSvc.bills(f.access);
+    expect(bills.thisWeek).toMatchObject({ rides: 1, total: "1.50", branches: [{ merchantId: f.branchId, rides: 1, total: "1.50" }] });
+    // The closed bill counts the same way.
+    await ledger.closeWeeks(new Date(Date.now() + 8 * 24 * 60 * 60 * 1000));
+    const closed = await fleetSvc.bills(f.access);
+    expect(closed.bills[0]).toMatchObject({ total: "1.50", branches: [{ merchantId: f.branchId, rides: 1, total: "1.50" }] });
   });
 
   it("alerts: a bill over 7 days overdue tells the owner once a day; a business cancelling most accepted bookings is flagged once", async () => {

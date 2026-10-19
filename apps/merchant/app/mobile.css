@@ -2670,6 +2670,14 @@
   color: var(--highlight-ink);
   font-weight: 600;
 }
+/* Own bikers (OB-M13): one 14/600 sentence in place of the Food / Delivery split. */
+.m-cashcard > .m-cashsum {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
 .m-cta-pin {
   margin-top: auto;
   position: sticky;
@@ -5373,4 +5381,121 @@ button.m-ob-row {
 }
 .m-ob-seg > button[aria-checked="true"]:disabled {
   color: var(--on-accent);
+}
+
+/* ── Own bikers v1 · OB-M14 Money · This week, FLEET RIDES (ledger D-117) ─────────────────────────────────── */
+.m-fr {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+.m-fr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.m-fr-body[data-cached] {
+  opacity: 0.85;
+}
+.m-fr-bill {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.m-fr-bill[data-state="overdue"] {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}
+.m-fr-bill-ic {
+  display: flex;
+  padding-top: 2px;
+  color: var(--accent-text);
+}
+.m-fr-bill[data-state="overdue"] .m-fr-bill-ic,
+.m-fr-bill[data-state="overdue"] > div {
+  color: var(--danger-ink);
+}
+.m-fr-bill > div {
+  flex: 1;
+  min-width: 0;
+}
+.m-fr-bill > div > b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.m-fr-bill > div > span {
+  display: block;
+  font-size: 13px;
+  margin-top: 2px;
+}
+.m-fr-pill {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  background: var(--surface);
+  color: var(--ink);
+}
+.m-fr-pill[data-state="paid"] {
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+.m-fr-pill[data-state="overdue"] {
+  background: var(--bg);
+  color: var(--danger-ink);
+}
+.m-fr-branch {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.m-fr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target-min);
+  font-size: 14px;
+}
+.m-fr-row > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.m-fr-rides > .m-fr-row + .m-fr-row {
+  border-top: 1px solid var(--line);
+}
+.m-fr-row[data-muted] {
+  color: var(--muted);
+}
+.m-fr-row > b[data-credit] {
+  color: var(--accent-text);
+}
+.m-fr-zero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--target-min);
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-fr-zero > span {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }

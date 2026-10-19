@@ -633,6 +633,7 @@ export class MerchantBookingService {
       proposedFare: r.proposedFare.toString(),
       agreedFare: r.agreedFare?.toString() ?? null,
       bookedBy: extra.bookedBy,
+      ...(r.fleetMerchantId && r.riderId ? { ownBiker: true as const } : {}),
       rider: r.rider
         ? {
             name: fullName(r.rider.profile) ?? "Biker",

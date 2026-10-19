@@ -5823,3 +5823,20 @@ admin), each behind `FLEET_UI_LIVE`. Strings come from the handoff's `copy.ts`, 
 - "Going to" reads "Pin the buyer sent" without the area where no address lookup key is configured (unchanged).
 - The loading toggle is drawn only for a business this tab last saw with Own bikers, so a business without them never
   sees it flash.
+
+**Evidence, PR 2b (board, K5 and Money · Fleet rides, OB-M13–M14):** `docs/parity/OWN-BIKERS-V1-MERCHANT-MONEY-2026-10-19.png`
+(`tools/parity/shoot-own-bikers-v1.mjs --set merchant-money`), 10 frames. What still differs, and why:
+- Board and K5 keep merchant-v2's shipped cards around the new parts (the kitchen's Book card in the top card, the APP
+  card's chevron, K5's biker and code cards, the title without the tag); the handoff changes only the names and the
+  cash sentence there. The board's "Brings you $12.00 by 13:10" gets its time once the booking is delivered (the API
+  sets when the cash is due then), and K5's gold line keeps merchant-v2's "brings it back after delivery".
+- K5's sentence says "goods" instead of "food" for a shop, matching merchant-v2's Food / Goods label on the same card.
+- Money · This week keeps T2b's bars above the day rows (the handoff leaves them out of these frames). The due day reads
+  "Fri" only when it falls in the coming week, else "Fri 30 Oct", so the shots, taken on a Monday, show the date.
+- A closed bill shows on its own card above the running week's card (the drawing's paid frame shows one card); the
+  running week can't be paid yet.
+- The bill card uses Lucide `receipt` as the handoff names it, added as `receipt-dollar`; the kitchen nav's `receipt`
+  is Lucide `receipt-text` and is unchanged.
+- "1 day overdue" in the singular: `billOverdueSub` is a template, so its count agrees like the roster's counts.
+- The offline frame also shows the app's "Back online" toast: the shot cuts only the Fleet rides call, and the
+  connection probe then finds the server.

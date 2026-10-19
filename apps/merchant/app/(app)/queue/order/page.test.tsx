@@ -274,6 +274,15 @@ describe("K5 · on the way + cash back, one screen (Merchant v2, D-77)", () => {
     expect((screen.getByRole("button", { name: "I got $12.00 · after delivery" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("OB-M13 (Own bikers, D-117): the shop's own biker brings the delivery fee back too — one sentence, the sum", async () => {
+    show(
+      merchantOrder({ id: ID, ...CASH, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER, ownBiker: true, debtStatus: "open", debtAmount: 14, deliveryFee: 2 }),
+    );
+    expect(await screen.findByText("Cash back from Blessing: food $12.00 + delivery $2.00 = $14.00")).toBeTruthy();
+    expect(screen.queryByText("Delivery $2.00 · biker's")).toBeNull();
+    expect((screen.getByRole("button", { name: "I got $14.00 · after delivery" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("an order with no cash to bring back can be marked completed after a neutral confirm", async () => {
     show(merchantOrder({ id: ID, merchantPhase: null, status: "en_route_dropoff", riderId: RIDER.profileId, rider: RIDER }));
     fireEvent.click(await screen.findByRole("button", { name: "Mark ride completed" }));

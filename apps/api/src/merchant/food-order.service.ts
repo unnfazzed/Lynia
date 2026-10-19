@@ -1969,6 +1969,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       customerPhone: dropoff?.contactPhone ?? null,
       ...(firstName ? { customerFirstName: firstName } : {}),
       ...(riderPhone ? { riderPhone } : {}),
+      // Own bikers (D-117, OB-M13): the shop's own biker carries it and brings the delivery fee back too.
+      ...(order.fleetMerchantId && order.riderId ? { ownBiker: true as const } : {}),
       // Merchant v2 (D-77): "at your counter" and "arrives 07:38", from the rider's location pings.
       ...(order.riderArrivedAt ? { riderArrivedAt: order.riderArrivedAt.toISOString() } : {}),
       ...(order.riderEtaAt ? { riderEtaAt: order.riderEtaAt.toISOString() } : {}),

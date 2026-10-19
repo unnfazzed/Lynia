@@ -2058,6 +2058,15 @@ the handoff wins for screens and copy, and these product changes apply:
    - **Copy to settle in lane B:** the handoff draws no retirement note, so the push uses this plan's approved line
      ("Preferred riders is gone" / "Orders now go to the nearest biker. Running your own bikers? Ask us about Own
      bikers.") until the owner redraws it.
+15. **Lane B PR 2b (2026-10-19): what the merchant reads off the bill.** `merchant/fleet-bills.ts`; spec
+   `fleet-dispatch.int.spec.ts` "T7b".
+   - **A billed ride** is a ride row whose ride is still billed within the same set of rows: one credited back to nothing
+     (OB-M14's "#B190 was charged, then credited, so Avondale is 15 rides") is not counted. Rides and totals are summed in
+     the database (`tally`, a window over the order's rows), so a busy branch is never cut off at the 500-line list. The
+     owner's bill card, the branch's ride list, the console and the weekly statement all count this way.
+   - **Additive reads:** `FleetRideLine.biker` (first name), `FleetBillsResponse.thisWeek.branches` (OB-M14's branch
+     lines), and `ownBiker: true` on the merchant's order and booking reads when its own biker carries it (the order's
+     fleet tag and a rider), which switches K5's cash card to one sentence with food + delivery.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
