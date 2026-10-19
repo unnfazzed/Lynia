@@ -1278,6 +1278,33 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
     expect(res.foodSalesTotal).toBe(16.5);
   });
 
+  it("Own bikers (E7): adds the branch's fleet rides this week and what the owner still owes; nothing without a fleet", async () => {
+    const fleetRows = [
+      { orderId: "11111111-2222-4333-8444-555555555555", createdAt: new Date(), kind: "booking", fee: 1.5, reason: null },
+      { orderId: null, createdAt: new Date(), kind: "adjustment", fee: -0.5, reason: "wrong fee" },
+    ];
+    const statements = [
+      { id: "b1", status: "sent", total: 36, dueOn: new Date("2026-01-02T00:00:00.000Z"), periodStart: new Date("2025-12-22T00:00:00.000Z"), periodEnd: new Date("2025-12-28T00:00:00.000Z"), paidAt: null },
+      { id: "b0", status: "paid", total: 20, dueOn: new Date("2025-12-26T00:00:00.000Z"), periodStart: new Date("2025-12-15T00:00:00.000Z"), periodEnd: new Date("2025-12-21T00:00:00.000Z"), paidAt: new Date() },
+    ];
+    const s = svc({
+      merchant: { findUnique: async () => ({ id: "m1", ownerProfileId: "owner-1" }), findMany: async () => [{ id: "m1", name: "Chicken Inn Avondale" }] },
+      ownerFleet: { findUnique: async () => ({ ownerProfileId: "owner-1" }) },
+      merchantFleetLedger: { findMany: async () => fleetRows, groupBy: async () => [] },
+      merchantFleetStatement: { findMany: async () => statements },
+      order: { findMany: async () => [], aggregate: async () => ({ _sum: { merchantGoodsTotal: null } }) },
+    });
+    const res = await s.getWeeklyStatement("p1");
+    expect(res.fleet).toMatchObject({ rides: { rides: 1, total: "1.00" }, unpaid: "36.00", overdueBills: 1 });
+
+    const none = svc({
+      merchant: { findUnique: async () => ({ id: "m1", ownerProfileId: "owner-1" }) },
+      ownerFleet: { findUnique: async () => null },
+      order: { findMany: async () => [], aggregate: async () => ({ _sum: { merchantGoodsTotal: null } }) },
+    });
+    expect((await none.getWeeklyStatement("p1")).fleet).toBeUndefined();
+  });
+
   it("returns zeros with no delivered orders", async () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1" }) },

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { recordFleetRide } from "../common/fleet-ledger";
-import { addDaysToKey, harareWeekKey, harareWeekStart } from "./harare-clock";
+import { addDaysToKey, harareDayKey, harareWeekKey, harareWeekStart } from "./harare-clock";
 import { OwnerAlertsService } from "../owner-alerts/owner-alerts.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -8,6 +8,10 @@ import { PrismaService } from "../prisma/prisma.service";
 export const FLEET_RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** How far back it looks: a little over a week, so a ride missed late in a week is caught before that bill closes. */
 export const FLEET_RECONCILE_LOOKBACK_MS = 8 * 24 * 60 * 60 * 1000;
+/** Alert thresholds (E5, OV-F7): bills this many days past due; cancel-after-accept above this share of at least N rides. */
+export const FLEET_ALERTS = { overdueDays: 7, cancelAfterAcceptRate: 0.2, cancelRateMinRides: 5 } as const;
+export const FLEET_OVERDUE_ALERT_ACTION = "merchant.fleet.alert_overdue";
+export const FLEET_CANCEL_ALERT_ACTION = "merchant.fleet.alert_cancels";
 /** Audit action for an admin correction to a fleet bill. */
 export const FLEET_ADJUST_ACTION = "merchant.fleet.adjust";
 /** How often closed weeks are turned into bills (hourly: a Monday-morning bill appears within the hour). */
@@ -68,6 +72,79 @@ export class FleetLedgerService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.error(`fleet bill close failed: ${(err as Error).message}`);
     }
+    try {
+      await this.alertOverdueBills();
+      await this.alertCancelRates();
+    } catch (err) {
+      this.logger.error(`fleet alerts failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * E5: a fleet bill more than `FLEET_ALERTS.overdueDays` past its due day tells the owner (of LyniaGo) on Telegram,
+   * at most once a day per bill (an audit marker), until it is paid or the fleet is paused.
+   */
+  async alertOverdueBills(now: Date = new Date()): Promise<{ alerted: number }> {
+    const cutoff = dayDate(addDaysToKey(harareDayKey(now), -FLEET_ALERTS.overdueDays));
+    const bills = await this.prisma.merchantFleetStatement.findMany({
+      where: { status: { not: "paid" }, dueOn: { lt: cutoff } },
+      select: { id: true, ownerProfileId: true, total: true, dueOn: true },
+      take: 100,
+    });
+    const lines: string[] = [];
+    for (const b of bills) {
+      if (await this.markedWithin(FLEET_OVERDUE_ALERT_ACTION, b.id, now, 24)) continue;
+      await this.prisma.auditLog.create({ data: { actor: "system", action: FLEET_OVERDUE_ALERT_ACTION, target: b.id, note: b.ownerProfileId } });
+      const days = Math.round((dayDate(harareDayKey(now)).getTime() - (b.dueOn?.getTime() ?? 0)) / 86_400_000);
+      lines.push(`${await this.ownerName(b.ownerProfileId)} · $${Number(b.total).toFixed(2)} · ${days} days overdue`);
+    }
+    if (lines.length > 0) this.alerts?.notify(`💸 Own bikers: ${lines.length} fleet bill(s) over ${FLEET_ALERTS.overdueDays} days overdue.\n${lines.join("\n")}`);
+    return { alerted: lines.length };
+  }
+
+  /**
+   * OV-F7 (owner D16): a business cancelling its "My bikers" bookings after a biker accepted (before pickup, so
+   * unbilled) more than `FLEET_ALERTS.cancelAfterAcceptRate` of the time over 7 days could be using the dispatch
+   * for free. Watched, not charged: Telegram, at most once a week per owner.
+   */
+  async alertCancelRates(now: Date = new Date()): Promise<{ alerted: number }> {
+    const since = new Date(now.getTime() - 7 * 86_400_000);
+    const rows = await this.prisma.$queryRaw<Array<{ owner: string; accepted: bigint; cancelled: bigint }>>`
+      SELECT m.owner_profile_id AS owner,
+             count(*) AS accepted,
+             count(*) FILTER (WHERE o.status = 'cancelled' AND o.collected_at IS NULL AND o.cancelled_by_role = 'customer') AS cancelled
+      FROM orders o
+      JOIN merchants m ON m.id = o.fleet_merchant_id
+      WHERE o.fleet_merchant_id IS NOT NULL
+        AND o.rider_id IS NOT NULL
+        AND o.created_at >= ${since}
+        AND m.owner_profile_id IS NOT NULL
+      GROUP BY m.owner_profile_id`;
+    let alerted = 0;
+    for (const r of rows) {
+      const accepted = Number(r.accepted);
+      const cancelled = Number(r.cancelled);
+      if (accepted < FLEET_ALERTS.cancelRateMinRides || cancelled / accepted <= FLEET_ALERTS.cancelAfterAcceptRate) continue;
+      if (await this.markedWithin(FLEET_CANCEL_ALERT_ACTION, r.owner, now, 24 * 7)) continue;
+      await this.prisma.auditLog.create({ data: { actor: "system", action: FLEET_CANCEL_ALERT_ACTION, target: r.owner, note: `${cancelled}/${accepted}` } });
+      this.alerts?.notify(
+        `👀 Own bikers: ${await this.ownerName(r.owner)} cancelled ${cancelled} of ${accepted} accepted bookings before pickup this week ` +
+          `(${Math.round((cancelled / accepted) * 100)}%). Unbilled, so worth a look (OV-F7).`,
+      );
+      alerted++;
+    }
+    return { alerted };
+  }
+
+  private async markedWithin(action: string, target: string, now: Date, hours: number): Promise<boolean> {
+    const found = await this.prisma.auditLog.findFirst({ where: { action, target, createdAt: { gte: new Date(now.getTime() - hours * 3_600_000) } }, select: { id: true } });
+    return found !== null;
+  }
+
+  private async ownerName(ownerProfileId: string): Promise<string> {
+    const p = await this.prisma.profile.findUnique({ where: { id: ownerProfileId }, select: { firstName: true, lastName: true } });
+    const branch = await this.prisma.merchant.findFirst({ where: { ownerProfileId }, select: { name: true }, orderBy: { createdAt: "asc" } });
+    return [branch?.name, p ? `${p.firstName} ${p.lastName}`.trim() : null].filter(Boolean).join(" · ") || ownerProfileId;
   }
 
   /**

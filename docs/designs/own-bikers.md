@@ -2004,6 +2004,22 @@ the handoff wins for screens and copy, and these product changes apply:
      profile. The charge-shape check accepts either the operator or a profile, and is validated online.
    - Left for T7b: the merchant's weekly-statement "Fleet rides" section and owner bill (E7), the alerts
      (unpaid more than 7 days, cancel-after-accept above 20%), metrics and the OB-A4 live tile.
+13. **T7b (done 2026-10-19): the merchant's fleet money, the alerts, the tile.**
+   - `merchant/fleet-bills.ts` is the one place the bill is computed, for the console (OB-A2), the owner's bill
+     card, the branch's rides and the statement.
+   - `GET /merchant/fleet/rides?week=` (owner and staff, E6; OB-M13) lists the branch's rides and corrections for
+     one Harare week, with `#ref`, kind and fee. `GET /merchant/fleet/bills` (owner only; OB-M14) gives this week so
+     far plus the last 8 bills, each with a line per branch.
+   - The weekly statement (owner only) gains `fleet`: the branch's rides this week, what is unpaid, and how many
+     bills are overdue (E7, one statement area).
+   - Alerts (hourly, with the bill close) send a Telegram message for:
+     - a bill more than 7 days past due, once a day per bill;
+     - an owner who cancelled more than 20% of at least 5 accepted bookings before pickup in 7 days, once a week
+       per owner (OV-F7: watched, not charged).
+     Audit markers deduplicate them across instances.
+   - OB-A4: the console's live alerts gain `ownBikers { fleets, bikersOnline, overdueBills }`.
+   - Metrics: the counters are these audit rows and the `fleet_scope_violation` / `fleet_ledger_reconcile_miss`
+     log lines (Sentry and Telegram). No new MetricsService instrument is needed for the pilot's volume.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
@@ -2032,7 +2048,7 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [x] **T6 (P1, human: ~1d / CC: ~1h)**: DONE 2026-10-19 (see amendment 11). api: E1 409 mapping at commit, E4 owner-only + rate limit + IDOR, E6 role
   checks, E10 erasure
   - Surfaced by: OV4, E6, E10. Verify: IDOR and role specs; privacy spec
-- [ ] **T7 (P2, human: ~2d / CC: ~2h)**: api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,
+- [x] **T7 (P2, human: ~2d / CC: ~2h)**: DONE 2026-10-19 as T7a + T7b (amendments 12–13), API side. api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,
   owner bill, getWeeklyStatement fleet section, metrics + Telegram alerts + admin live tile
   - Surfaced by: E5, E7, OV-F4, OV-F7. Verify: statement specs (Harare week), alert threshold specs
 - [x] **T8 (P1, gate)**: DONE 2026-10-19, D-117. Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design

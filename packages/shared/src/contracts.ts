@@ -2107,6 +2107,19 @@ export const MerchantWeeklyStatementResponse = z
     illustrativeCommission: z.number(),
     cookedFoodLossTotal: z.number(),
     lineItems: z.array(MerchantStatementLineItem),
+    /**
+     * Own bikers (D-117, E7): the branch's fleet rides this week and the owner's fleet bills, in the same
+     * statement area. Absent for a business without Own bikers (and on older servers). Inlined, as the Own
+     * bikers schemas are declared further down this file.
+     */
+    fleet: z
+      .object({
+        rides: z.object({ weekStart: z.string(), weekEnd: z.string(), rides: z.number().int(), total: z.string() }),
+        unpaid: z.string(),
+        overdueBills: z.number().int(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type MerchantWeeklyStatementResponse = z.infer<typeof MerchantWeeklyStatementResponse>;
@@ -2820,6 +2833,39 @@ export const AdminFleetDetail = z.object({
   bills: z.array(AdminFleetBill),
 });
 export type AdminFleetDetail = z.infer<typeof AdminFleetDetail>;
+
+/** The merchant app's name for a weekly bill (the same shape the console shows). */
+export const FleetBill = AdminFleetBill;
+export type FleetBill = AdminFleetBill;
+
+/** One row of a branch's fleet rides (OB-M13 "FLEET RIDES"): a ride's fee, or a correction ("Credit · #B190 · wrong fee"). */
+export const FleetRideLine = z.object({
+  orderId: z.string().uuid().nullable(),
+  /** "#B204" (`orderShortId`); null for a correction not tied to a ride. */
+  ref: z.string().nullable(),
+  at: z.string().datetime(),
+  kind: z.enum(["booking", "marketplace", "adjustment"]),
+  fee: z.string(),
+  reason: z.string().nullable(),
+});
+export type FleetRideLine = z.infer<typeof FleetRideLine>;
+
+/** `GET /merchant/fleet/rides` (owner and staff, OB-M13): the branch's fleet rides for one Harare week (Mon–Sun). */
+export const FleetRidesResponse = z.object({
+  weekStart: z.string(),
+  weekEnd: z.string(),
+  rides: z.number().int(),
+  total: z.string(),
+  lines: z.array(FleetRideLine),
+});
+export type FleetRidesResponse = z.infer<typeof FleetRidesResponse>;
+
+/** `GET /merchant/fleet/bills` (owner only, OB-M14): this week so far across branches, and the closed weekly bills. */
+export const FleetBillsResponse = z.object({
+  thisWeek: z.object({ rides: z.number().int(), total: z.string() }),
+  bills: z.array(AdminFleetBill),
+});
+export type FleetBillsResponse = z.infer<typeof FleetBillsResponse>;
 
 /** `POST /admin/merchants/:id/fleet`: switch Own bikers on for the branch's owner. A fee is required (OV-F4). */
 export const EnableFleetRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01), note: z.string().trim().max(2000).optional() }).strict();
