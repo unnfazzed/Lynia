@@ -1907,8 +1907,8 @@ Assumption: features ~30x, tests ~50x human÷CC.
 - [ ] **T7 (P2, human: ~2d / CC: ~2h)**: api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,
   owner bill, getWeeklyStatement fleet section, metrics + Telegram alerts + admin live tile
   - Surfaced by: E5, E7, OV-F4, OV-F7. Verify: statement specs (Harare week), alert threshold specs
-- [ ] **T8 (P1, gate)**: design handoff export for all fleet surfaces → then the merchant/biker/admin screens
-  (lanes B/C/D)
+- [ ] **T8 (P1, gate)**: Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design
+  review brief, plus owner approval of the deviation draft → then the merchant/biker/admin screens (lanes B/C/D)
 - [ ] **T9 (P2, human: ~3d / CC: ~3h)**: api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
   - Surfaced by: R1, R2, OV5. Verify: preferred specs green with the flag unset; new specs with it set
 - [ ] **T10 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
@@ -1948,9 +1948,9 @@ Outside voice: native Claude subagent (Codex not installed). Its gaps were folde
 | 2 | Interaction states | 2 | 9 | 4A, 5A, 6A, 7A, 8A |
 | 3 | User journey | 3 | 9 | 9A, 10A |
 | 4 | Specificity (no "the designer decides") | 6 | 9 | 11A |
-| 5 | Design-system fit | 4 | 8 | 12A, 13A (defaulted, see below) |
-| 6 | Responsive and accessibility | 5 | 8 | requirements R-A1–R-A6 (DESIGN.md, pending owner confirmation) |
-| 7 | Unresolved decisions | 3 decisions open | 3 proposed | P7-1–P7-3 (pending owner confirmation) |
+| 5 | Design-system fit | 4 | 8 | 12A, 13A |
+| 6 | Responsive and accessibility | 5 | 8 | R-A1–R-A6 (R-A2 approved by owner) |
+| 7 | Unresolved decisions | 3 decisions open | 0 open | P7-1–P7-3 approved by owner |
 
 ### Decisions (owner, 2026-10-19)
 
@@ -1968,12 +1968,13 @@ Outside voice: native Claude subagent (Codex not installed). Its gaps were folde
 | 10 | **10A Push + book nudge** | Each Join pushes the owner "<Name> joined your bikers". On the first Join only, the roster shows the banner "<Name> is ready · Book your first delivery", which opens Book with My bikers selected. The Notifications feed gets the same item. |
 | 11 | **11A Map to drawn parts** | See the component map below. New components only where the map says "new". |
 | 12 | **12A Fleet variants (biker)** | Offer card and pins: "<Owner> job" tag, distance + drop-off, no fare. Done: leads with "Return $X to <Owner>" (or "Nothing to return"). Money hero for fleet bikers: "Cash with you · owed to <Owner> $X"; no Earnings, commission or top-up. Cancel sheet: no strike line; "This tells <Owner>". Logged as D-ledger rows against rider-v2. |
-| 13 | **13A Zero-fare + cash card (merchant)**, *defaulted* | Book: segmented My bikers \| Any biker at the top. My bikers hides the fare stepper; the button reads "Ring my bikers". "Send to any biker" brings the stepper back, prefilled. Order cash card for Own-biker app orders: "Cash back from <Biker>: food $X + delivery $Y = $Z" (OV-F5). Logged as D-ledger rows against merchant-v2 §6/§7. |
+| 13 | **13A Zero-fare + cash card (merchant)** | Book: segmented My bikers \| Any biker at the top. My bikers hides the fare stepper; the button reads "Ring my bikers". "Send to any biker" brings the stepper back, prefilled. Order cash card for Own-biker app orders: "Cash back from <Biker>: food $X + delivery $Y = $Z" (OV-F5). Logged as D-ledger rows against merchant-v2 §6/§7. |
 
-**Issue 13 was not answered.** The session's context ran out while it was open, and 13A (the recommended option) was
-written in so the brief is complete. It is the only one of the 13 not chosen by the owner. If the owner picks 13B
-(keep the stepper disabled at $0 and the existing cash card copy), delete the two merchant-v2 rows in the deviation
-draft below and the §6 cash card line. Nothing else depends on it.
+Issue 13, R-A2 and P7-1–P7-3 were confirmed by the owner in a second round (2026-10-19), all as recommended.
+
+**Who draws it:** the handoff (T8) is produced in **Claude Design** from this brief and exported to
+`packages/design/handoff/own-bikers-v1/` (README + prototype + `copy.ts`), like the other v2 handoffs. Implementers
+align to that export, not to this text, and copy comes from its `copy.ts` verbatim (with D-101 "biker").
 
 ### Journey storyboards
 
@@ -2028,8 +2029,7 @@ draft below and the §6 cash card line. Nothing else depends on it.
 | **New** | countdown bar (Book searching); state chip on roster rows (if the Team list has none) |
 
 ### Pass 6: responsive and accessibility (R-A1–R-A6, from DESIGN.md § Responsive & accessibility)
-These restate DESIGN.md rules for the new surfaces. They need the owner's confirmation only where they change a
-drawn layout (R-A2).
+These restate DESIGN.md rules for the new surfaces. R-A2 changes a drawn layout and was approved by the owner.
 - **R-A1** State is never colour-only: chips carry text ("On a job", "Online", "Offline"); the cash line is text
   plus the Cash-due colour; overdue admin rows also say "N days overdue".
 - **R-A2** At 320 px the segmented toggle keeps "My bikers | Any biker" on one line and moves "4 online" under it;
@@ -2042,7 +2042,7 @@ drawn layout (R-A2).
   not yellow text on white.
 - **R-A6** Screen-reader order on the roster row: name, state, cash, cancels, actions.
 
-### Pass 7: open decisions (proposed, owner to confirm)
+### Pass 7: decisions (approved by owner, 2026-10-19)
 - **P7-1 "<Owner>" in biker copy** is the biker's home branch's merchant name (the name on the shop they work at),
   not the owner's person name. Chains with one brand get the same word across branches anyway.
 - **P7-2 Join card copy and refusals:** card "<Owner> wants you on their bikers · Jobs from <Owner> only, no fare,
@@ -2062,14 +2062,13 @@ drawn layout (R-A2).
 - merchant-v2 Account: "Preferred riders" row replaced by "Own bikers" for fleet merchants, removed otherwise (2A).
 
 ### Unresolved decisions (design)
-- Issue 13: 13A written in by default, not chosen by the owner.
-- R-A2 (the 320 px layout change) and P7-1–P7-3: proposed, owner to confirm.
+None. 13 issues, R-A2 and P7-1–P7-3 all decided by the owner.
 
 ### Completion summary (design)
-- Passes: 7 of 7 evaluated. Issues decided by the owner: 12 (1–12, all option A). Defaulted: 1 (13A).
+- Passes: 7 of 7 evaluated. Decided by the owner: issues 1–13 (all option A), R-A2, P7-1–P7-3.
 - Mockups: none (designer tool had no OpenAI key).
 - Outside voice: native Claude subagent, findings folded into issues 4–10.
-- Next gate: T8, the design handoff export for these surfaces, then lanes B/C/D. The API lane (T1–T7) does not wait.
+- Next gate: T8, the Claude Design handoff export for these surfaces, then lanes B/C/D. The API lane (T1–T7) does not wait.
 
 ## GSTACK REVIEW REPORT
 
@@ -2078,7 +2077,7 @@ drawn layout (R-A2).
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: SCOPE_REDUCTION, 0 critical gaps |
 | Outside Review | native Plan subagent, CEO + Eng (codex not installed) | Independent 2nd opinion | 2 | unavailable (external); native completed both times | CEO: 10 findings, all dispositioned. Eng: 10 findings; 3 corrected, 7 decided by owner (D11–D17). No completed external review |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 41 issues, 0 critical gaps (all mapped to approved tasks T1–T10; 0 unresolved) |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 | ISSUES OPEN | 7 passes; 12 decided by owner, 1 defaulted (13A); R-A2 + P7-1–P7-3 proposed. Ratings now 8–9/10 |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR | 7 passes; 13 issues + R-A2 + P7-1–P7-3 decided by owner, 0 unresolved. Ratings now 8–9/10 |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 - **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable in both the CEO and the Eng review (CLI not
@@ -2086,8 +2085,8 @@ drawn layout (R-A2).
 - **VERDICT:** No review is CLEAR. Eng is ISSUES OPEN because it mapped 41 items of planned work; it has 0
   unresolved decisions and 0 critical gaps. Eng review required. Implementation can start on the API-only lane
   (T1–T7); the screens wait on the design handoff (T8). The design review wrote the handoff brief (decisions 1–13,
-  storyboards, state table, component map, deviation draft); the handoff export and the D-ledger approval are next.
+  storyboards, state table, component map, deviation draft); Claude Design draws the handoff from it, then the
+  D-ledger approval.
 
 **UNRESOLVED DECISIONS:**
 - + 10 unresolved from prior reviews (the CEO review's E-rows; all 10 were since answered in eng D1–D10, see Decision ledger)
-- Design: issue 13 defaulted to 13A (not answered); R-A2 and P7-1–P7-3 proposed, owner to confirm.
