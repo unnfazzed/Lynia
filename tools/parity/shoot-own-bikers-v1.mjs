@@ -4,7 +4,8 @@
  * (packages/design/handoff/own-bikers-v1/Own bikers v1 - all screens.html, one `data-screen-label` per frame) beside
  * the app in the same state, at 360×720 (and 320×640 where the handoff draws it). `--set merchant-roster` (default):
  * OB-M1–M7, the invite sheet and the roster's states (lane B, PR 1). `--set merchant-book`: OB-M8–M12, Book a biker
- * with My bikers, the ringing sheet and its outcomes, and the kitchen's Book card (lane B, PR 2a).
+ * with My bikers, the ringing sheet and its outcomes, and the kitchen's Book card (lane B, PR 2a). `--set merchant-money`:
+ * OB-M13–M14, the board's fleet jobs, K5's cash card for an Own biker, and Money · This week's FLEET RIDES (PR 2b).
  *
  * The merchant API is stubbed in the browser (every call to `<origin>/__api/**`), so no seeded backend is needed:
  *
@@ -85,6 +86,121 @@ const fleetBooking = (state) => ({ id: "00000000-0000-4000-8000-00000000fb01", s
 const ALL_OFFLINE = BIKERS.map((b) => ({ ...b, state: "offline" }));
 const BILLS = { thisWeek: { rides: 23, total: "34.50" }, bills: [{ id: "b1", periodStart: "2026-09-21", periodEnd: "2026-09-27", dueOn: "2026-10-02", total: "36.00", state: "overdue", daysOverdue: 2, paidAt: null, branches: [] }] };
 
+// OB-M13/M14: one cooking order, Tendai's app order (#A311, $12.00 food + $2.00 delivery back) and Nyasha's phone booking.
+const rider = (firstName, lastName, id) => ({ profileId: `00000000-0000-4000-8000-00000000000${id}`, firstName, lastName, photoUrl: null, ratingAvg: 4.9, ratingCount: 31, tripsCount: 120, vehicleInfo: null, plate: "AFG 2231", kycVerified: true });
+const order = (over) => ({
+  merchantId: "m-parity",
+  note: null,
+  paymentMethod: "cash",
+  merchantCashRule: "collect_and_return",
+  merchantPaymentPhone: null,
+  acceptDeadlineAt: null,
+  itemApprovalDeadlineAt: null,
+  rejectionReason: null,
+  paymentCallLoggedAt: null,
+  paymentRequestedAt: null,
+  merchantPaymentReference: null,
+  merchantPaymentConfirmedAt: null,
+  dispatchAttempt: 1,
+  dispatchOfferExpiresAt: null,
+  noRiderHoldAt: null,
+  pickupCodeAttempts: 0,
+  noShowCallTimestamps: [],
+  createdAt: ago(0.4 * H),
+  ...over,
+});
+const COOKING = order({
+  id: "a3180000-0000-4000-8000-000000000318",
+  status: "assigned",
+  merchantPhase: "preparing",
+  items: [{ dishId: "d1", name: "Quarter chicken", priceUsd: 4.5, quantity: 2, note: null, available: null }],
+  merchantGoodsTotal: 9,
+  deliveryFee: 2,
+  total: 11,
+  prepMinutes: 15,
+  prepStartedAt: ago(9 * 60_000),
+  readyAt: null,
+  riderId: rider("Farai", "K.", 2).profileId,
+  rider: rider("Farai", "K.", 2),
+});
+const A311 = order({
+  id: "a3110000-0000-4000-8000-000000000311",
+  status: "en_route_dropoff",
+  merchantPhase: null,
+  items: [
+    { dishId: "d1", name: "Quarter chicken", priceUsd: 4.5, quantity: 2, note: null, available: null },
+    { dishId: "d2", name: "Chips", priceUsd: 3, quantity: 1, note: null, available: null },
+  ],
+  merchantGoodsTotal: 12,
+  deliveryFee: 2,
+  total: 14,
+  prepMinutes: 15,
+  prepStartedAt: ago(0.4 * H),
+  readyAt: ago(0.2 * H),
+  riderId: rider("Tendai", "M.", 1).profileId,
+  rider: rider("Tendai", "M.", 1),
+  ownBiker: true,
+  debtStatus: "open",
+  debtAmount: 14,
+  riderEtaAt: new Date(now + 6 * 60_000).toISOString(),
+});
+const NYASHA_BOOKING = {
+  id: "00000000-0000-4000-8000-00000000fb02",
+  state: "picked_up",
+  status: "en_route_dropoff",
+  createdAt: ago(0.3 * H),
+  expiresAt: null,
+  dropoff: { point: { lat: -17.81, lng: 31.05 }, landmark: "Blue gate opposite the church", contactPhone: "+263779982210" },
+  itemsSummary: "Chicken & chips",
+  declaredValue: "12.00",
+  proposedFare: "0.00",
+  agreedFare: null,
+  bookedBy: "Rumbi",
+  ownBiker: true,
+  rider: { name: "Nyasha T.", phone: "+263774102290", bikeReg: "AFG 2231" },
+  offerCount: 0,
+  undeliveredReason: null,
+  cancelledBy: null,
+  cancelReason: null,
+  rebroadcastedToId: null,
+  rebroadcastOfId: null,
+  codeIssuedAt: ago(0.3 * H),
+  offers: [],
+  cashOnDelivery: { amount: "12.00", status: "awaiting_delivery", dueAt: null },
+  riderEtaAt: new Date(now + 10 * 60_000).toISOString(),
+};
+const keyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const TODAY = keyOf(new Date(now));
+const MONDAY = (() => {
+  const d = new Date(now);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return keyOf(d);
+})();
+const addDays = (key, n) => {
+  const d = new Date(`${key}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return keyOf(d);
+};
+const at = (h, m) => {
+  const d = new Date(now);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+};
+const SUMMARY_TODAY = { date: TODAY, dateKey: TODAY, delivered: 7, cashTaken: 61, walletTaken: 0, rejected: 0, averagePrepMinutes: 12, orders: 7, sales: 61, cashDue: 0, cashOverdue: 0, overdue: [], lines: [] };
+const SUMMARY_WEEK = { start: `${MONDAY}T00:00:00+02:00`, startKey: MONDAY, orders: 41, sales: 386, days: [{ date: TODAY, orders: 7, sales: 61, cashLate: 0, cashDue: 0, rejected: 0 }] };
+const ride = (ref, biker, h, m, kind = "booking", fee = "1.50", reason = null) => ({ orderId: `00000000-0000-4000-8000-000000${ref.slice(1).toLowerCase()}00`, ref, at: at(h, m), kind, fee, reason, biker });
+const RIDES = {
+  weekStart: MONDAY,
+  weekEnd: addDays(MONDAY, 6),
+  rides: 15,
+  total: "22.50",
+  lines: [ride("#B204", "Tendai", 12, 40), ride("#B201", "Farai", 11, 55, "marketplace"), ride("#B198", "Tendai", 11, 20), ride("#B190", "Tendai", 10, 5), ride("#B190", null, 10, 30, "adjustment", "-1.50", "wrong fee")],
+};
+const WEEK_BRANCHES = { rides: 23, total: "34.50", branches: [{ merchantId: "m-parity", name: "Avondale", rides: 15, total: "22.50" }, { merchantId: "m-bo", name: "Borrowdale", rides: 8, total: "12.00" }] };
+const OVERDUE = { id: "b-overdue", periodStart: addDays(MONDAY, -14), periodEnd: addDays(MONDAY, -8), dueOn: addDays(MONDAY, -3), total: "36.00", state: "overdue", daysOverdue: 2, paidAt: null, branches: [] };
+const PAID = { id: "b-paid", periodStart: addDays(MONDAY, -7), periodEnd: addDays(MONDAY, -1), dueOn: addDays(MONDAY, 4), total: "34.50", state: "paid", daysOverdue: 0, paidAt: ago(H), branches: [] };
+const MONEY_CACHE = { merchantId: "m-parity", at: at(12, 40), data: { rides: RIDES, bills: { thisWeek: WEEK_BRANCHES, bills: [] } } };
+
 function apiRoute(route, sc) {
   const req = route.request();
   const path = new URL(req.url()).pathname.replace(/^\/__api/, "");
@@ -97,6 +213,18 @@ function apiRoute(route, sc) {
     return sc.fleet ? json(200, sc.fleet) : json(503, { message: "Own bikers isn't available yet." });
   }
   if (path === "/merchant/fleet/bills") return json(200, sc.bills ?? BILLS);
+  if (path === "/merchant/fleet/rides") {
+    if (sc.rides === "hang") return undefined;
+    if (sc.rides === "fail") return json(500, { message: "" });
+    if (sc.rides === "net") return route.abort();
+    return json(200, sc.rides ?? RIDES);
+  }
+  if (path === "/merchant/orders" && sc.orders) return json(200, sc.orders);
+  if (path.startsWith("/merchant/orders/") && sc.orders) return json(200, sc.orders.find((o) => path.endsWith(o.id)) ?? sc.orders[0]);
+  if (path === "/merchant/bookings" && sc.booking) return json(200, [sc.booking]);
+  if (path.startsWith("/merchant/bookings/") && sc.booking) return json(200, sc.booking);
+  if (path === "/merchant/summary/week") return json(200, SUMMARY_WEEK);
+  if (path === "/merchant/summary/today" && sc.money) return json(200, { ...SUMMARY_TODAY, orders: 9, sales: 86, cashDue: 26 });
   if (path === "/merchant/fleet/invites" && req.method() === "POST") {
     if (sc.invite === "hang") return undefined;
     if (sc.invite === "fail") return json(500, {});
@@ -118,13 +246,15 @@ function apiRoute(route, sc) {
   return json(200, []);
 }
 
-async function shootApp(browser, { name, w = 360, path = "/own-bikers", scenario, before, knownFleet = false }) {
+async function shootApp(browser, { name, w = 360, path = "/own-bikers", scenario, before, knownFleet = false, moneyCache = false }) {
   const ctx = await browser.newContext(contextDefaults({ viewport: { width: w, height: w === 320 ? 640 : 720 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }));
   await ctx.addCookies([{ name: "lynia_merchant_session", value: encodeURIComponent(JSON.stringify(SESSION)), url: ORIGIN }]);
   await ctx.route("**/__api/**", (route) => apiRoute(route, scenario));
   await ctx.route("**/socket.io/**", (route) => route.abort());
   // A tab that last saw the business with Own bikers (lib/use-fleet.ts `likelyFleet`).
   if (knownFleet) await ctx.addInitScript(() => window.sessionStorage.setItem("lynia.merchant.fleet", "1"));
+  // The last good Fleet rides read (lib/fleet-money.ts), for the offline frame.
+  if (moneyCache) await ctx.addInitScript((c) => window.localStorage.setItem("lynia.merchant.fleetMoney", c), JSON.stringify(MONEY_CACHE));
   const page = await ctx.newPage();
   try {
     await page.goto(`${ORIGIN}${path}`, { waitUntil: scenario.load === "hang" ? "domcontentloaded" : "networkidle", timeout: 90000 });
@@ -196,6 +326,28 @@ const BOOK_ROWS = [
   ["OB-M12 Paused", { path: "/deliveries/new", scenario: { fleet: fleet({ paused: true }) }, before: fillBook }],
 ];
 
+const week = (wait = "FLEET RIDES") => async (p) => {
+  await p.getByRole("tab", { name: "This week" }).click();
+  await p.getByText(wait).first().waitFor();
+  await p.waitForTimeout(400);
+};
+const MONEY = (bills, over = {}) => ({ money: true, fleet: fleet(), bills: { thisWeek: WEEK_BRANCHES, bills }, ...over });
+const MONEY_ROWS = [
+  ["OB-M13 Board · fleet jobs", { path: "/queue", scenario: { me: RESTAURANT_ME, fleet: fleet(), money: true, orders: [COOKING, A311], booking: NYASHA_BOOKING } }],
+  ["OB-M13 K5 · app order, Own biker", { path: `/queue/order?id=${A311.id}`, scenario: { money: true, orders: [A311] } }],
+  ["OB-M13 K5 · phone booking", { path: `/deliveries/booking?id=${NYASHA_BOOKING.id}`, scenario: { money: true, booking: NYASHA_BOOKING } }],
+  ["OB-M14 Money · fleet rides · unpaid", { path: "/statement", scenario: MONEY([]), before: week() }],
+  ["OB-M14 Money · overdue", { path: "/statement", scenario: MONEY([OVERDUE]), before: week() }],
+  ["OB-M14 Money · paid", { path: "/statement", scenario: MONEY([PAID]), before: week() }],
+  [
+    "OB-M14 Money · no fleet rides",
+    { path: "/statement", scenario: MONEY([], { rides: { ...RIDES, rides: 0, total: "0.00", lines: [] }, bills: { thisWeek: { rides: 0, total: "0.00", branches: [] }, bills: [] } }), before: week("No fleet rides this week") },
+  ],
+  ["Fleet rides · loading", { path: "/statement", scenario: MONEY([], { rides: "hang" }), before: week() }],
+  ["Fleet rides · couldn't load", { path: "/statement", scenario: MONEY([], { rides: "fail" }), before: week("Couldn't load fleet rides") }],
+  ["Fleet rides · offline", { path: "/statement", moneyCache: true, scenario: MONEY([], { rides: "net" }), before: week("as of") }],
+];
+
 const ROWS = [
   ["OB-M1 Account · owner", { path: "/account", scenario: { fleet: fleet() } }],
   ["OB-M1 Account · paused", { path: "/account", scenario: { fleet: fleet({ paused: true }) } }],
@@ -255,7 +407,7 @@ const mpage = await mctx.newPage();
 await mpage.goto(MOCKS, { waitUntil: "load" });
 await mpage.waitForTimeout(1500);
 const rows = [];
-for (const [label, app] of SET === "merchant-book" ? BOOK_ROWS : ROWS) {
+for (const [label, app] of SET === "merchant-book" ? BOOK_ROWS : SET === "merchant-money" ? MONEY_ROWS : ROWS) {
   let mock = null;
   try {
     mock = join(SHOTS, `mock-${rows.length}.png`);

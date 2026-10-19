@@ -1290,8 +1290,10 @@ describe("MerchantService.getWeeklyStatement (E3, N-13)", () => {
     const s = svc({
       merchant: { findUnique: async () => ({ id: "m1", ownerProfileId: "owner-1" }), findMany: async () => [{ id: "m1", name: "Chicken Inn Avondale" }] },
       ownerFleet: { findUnique: async () => ({ ownerProfileId: "owner-1" }) },
-      merchantFleetLedger: { findMany: async () => fleetRows, groupBy: async () => [] },
+      merchantFleetLedger: { findMany: async () => fleetRows },
       merchantFleetStatement: { findMany: async () => statements },
+      // The rides and totals are summed in the database (fleet-bills `tally`): the open week's one row.
+      $queryRaw: async () => [{ statement_id: null, merchant_id: "m1", rides: 1, total: "1.00" }],
       order: { findMany: async () => [], aggregate: async () => ({ _sum: { merchantGoodsTotal: null } }) },
     });
     const res = await s.getWeeklyStatement("p1");

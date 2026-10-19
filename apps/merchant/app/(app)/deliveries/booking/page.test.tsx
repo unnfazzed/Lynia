@@ -215,6 +215,13 @@ describe("D7 · cash back to you (D-48 PR 4b)", () => {
       cashOnDelivery: { amount: "51.00", status: "due", dueAt: new Date(Date.now() + 22 * 60_000).toISOString() },
     });
 
+  it("OB-M13 (Own bikers, D-117): a phone booking carried by the shop's own biker reads 'Cash back from Blessing: $51.00'", async () => {
+    vi.mocked(getBooking).mockResolvedValue({ ...due(), ownBiker: true });
+    render(<Page />);
+    expect(await screen.findByText("Cash back from Blessing: $51.00")).toBeTruthy();
+    expect(screen.queryByText("Delivery $3.50 · biker's")).toBeNull();
+  });
+
   it("says who is bringing how much and by when; 'I got $51.00' closes it", async () => {
     vi.mocked(getBooking).mockResolvedValue(due());
     vi.mocked(closeBookingCash).mockResolvedValue(merchantBooking({ state: "delivered", expiresAt: null, rider: RIDER, cashOnDelivery: { amount: "51.00", status: "returned", dueAt: null } }));

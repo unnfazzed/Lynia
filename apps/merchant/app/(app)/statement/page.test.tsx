@@ -8,7 +8,9 @@ import { ApiError } from "../../lib/api-client";
 import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
 import { loadBusiness } from "../../lib/business";
 import { merchantProfile } from "../../testing/fixtures";
+import { getFleetBills, getFleetRides } from "../../lib/fleet-api";
 
+vi.mock("../../lib/fleet-api", () => ({ getFleetRides: vi.fn(), getFleetBills: vi.fn() }));
 vi.mock("../../lib/orders-api", () => ({
   getTodaySummary: vi.fn(),
   getWeekSummary: vi.fn(),
@@ -230,5 +232,106 @@ describe("MJ-RL9: a day of This week that fails to load", () => {
     fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
     expect(await screen.findByText("SALES · 6 ORDERS")).toBeTruthy();
     expect(getTodaySummary).toHaveBeenLastCalledWith(key(daysAgo(2)));
+  });
+});
+
+describe("OB-M14 (Own bikers, D-117): FLEET RIDES under This week", () => {
+  const AV = merchantProfile().id;
+  const owner = () => vi.mocked(loadBusiness).mockResolvedValue({ ...merchantProfile(), name: "Avondale", myRole: "owner" } as never);
+  const ready = () => {
+    vi.mocked(getTodaySummary).mockResolvedValue(today());
+    vi.mocked(getWeekSummary).mockResolvedValue(statement());
+  };
+  const rides = {
+    weekStart: key(daysAgo(3)),
+    weekEnd: key(daysAgo(-3)),
+    rides: 1,
+    total: "1.50",
+    lines: [
+      { orderId: "a3110000-0000-4000-8000-000000000000", ref: "#B204", at: new Date().toISOString(), kind: "booking" as const, fee: "1.50", reason: null, biker: "Tendai" },
+      { orderId: "a1900000-0000-4000-8000-000000000000", ref: "#B190", at: new Date().toISOString(), kind: "booking" as const, fee: "1.50", reason: null, biker: "Tendai" },
+      { orderId: "a1900000-0000-4000-8000-000000000000", ref: "#B190", at: new Date().toISOString(), kind: "adjustment" as const, fee: "-1.50", reason: "wrong fee", biker: null },
+    ],
+  };
+  const bills = {
+    thisWeek: { rides: 9, total: "13.50", branches: [{ merchantId: AV, name: "Avondale", rides: 1, total: "1.50" }, { merchantId: "b0000000-0000-4000-8000-000000000000", name: "Borrowdale", rides: 8, total: "12.00" }] },
+    bills: [],
+  };
+  afterEach(() => {
+    vi.mocked(loadBusiness).mockReset();
+    vi.mocked(loadBusiness).mockResolvedValue(null);
+    window.localStorage.clear();
+  });
+
+  it("the running bill, this branch's rides by biker with the credit, the other branch's line; only once This week opens", async () => {
+    owner();
+    ready();
+    vi.mocked(getFleetRides).mockResolvedValue(rides);
+    vi.mocked(getFleetBills).mockResolvedValue(bills);
+    render(<MoneyPage />);
+    await screen.findByText("SALES · 7 ORDERS");
+    expect(getFleetRides).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "This week" }));
+    expect(await screen.findByText(/^Fleet bill · .* · \$13\.50 · Due /)).toBeTruthy();
+    expect(screen.getByText("Unpaid")).toBeTruthy();
+    expect(screen.getByText("FLEET RIDES")).toBeTruthy();
+    expect(screen.getByText("Avondale · 1 ride · $1.50")).toBeTruthy();
+    expect(screen.getByText("Borrowdale · 8 rides · $12.00")).toBeTruthy();
+    expect(screen.getByText(/^#B204 · Tendai · \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText("Credit · #B190 · wrong fee")).toBeTruthy();
+    expect(screen.getByText("−$1.50").closest("[data-muted]")).toBeTruthy();
+  });
+
+  it("an overdue bill says how many days in words, in danger; no rides anywhere is one 'No fleet rides this week' row", async () => {
+    owner();
+    ready();
+    vi.mocked(getFleetRides).mockResolvedValue({ ...rides, rides: 0, total: "0.00", lines: [] });
+    vi.mocked(getFleetBills).mockResolvedValue({
+      thisWeek: { rides: 0, total: "0.00", branches: [] },
+      bills: [{ id: "c0000000-0000-4000-8000-000000000000", periodStart: "2026-09-21", periodEnd: "2026-09-27", dueOn: "2026-10-02", total: "36.00", state: "overdue", daysOverdue: 2, paidAt: null, branches: [] }],
+    });
+    render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    expect(await screen.findByText("Fleet bill · 21–27 Sep · $36.00 · Due Fri 2 Oct")).toBeTruthy();
+    expect(screen.getByText("2 days overdue · Talk to LyniaGo to pay")).toBeTruthy();
+    expect(screen.getByText("Overdue").closest("[data-state='overdue']")).toBeTruthy();
+    expect(screen.getByText("No fleet rides this week")).toBeTruthy();
+  });
+
+  it("a business without Own bikers gets no section; a failed read gets Try again; offline shows the last read 'as of'", async () => {
+    owner();
+    ready();
+    vi.mocked(getFleetRides).mockRejectedValue(new ApiError(409, "Own bikers isn't on for this business."));
+    vi.mocked(getFleetBills).mockRejectedValue(new ApiError(409, "Own bikers isn't on for this business."));
+    const { unmount } = render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    await vi.waitFor(() => expect(getFleetRides).toHaveBeenCalled());
+    await screen.findByText(/· today/);
+    expect(screen.queryByText("FLEET RIDES")).toBeNull();
+    unmount();
+
+    // A first good read is remembered for this branch…
+    vi.mocked(getFleetRides).mockResolvedValue(rides);
+    vi.mocked(getFleetBills).mockResolvedValue(bills);
+    const second = render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    await screen.findByText("Avondale · 1 ride · $1.50");
+    second.unmount();
+
+    // …then offline it is shown under the strip; a server error with nothing usable is the red strip.
+    vi.mocked(getFleetRides).mockRejectedValue(new ApiError(0, "offline"));
+    const third = render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    expect(await screen.findByText(/^Offline · showing this week as of \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText("Avondale · 1 ride · $1.50")).toBeTruthy();
+    third.unmount();
+
+    vi.mocked(getFleetRides).mockRejectedValue(new ApiError(500, "boom"));
+    render(<MoneyPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "This week" }));
+    expect(await screen.findByText("Couldn't load fleet rides")).toBeTruthy();
+    vi.mocked(getFleetRides).mockResolvedValue(rides);
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    expect(await screen.findByText("Avondale · 1 ride · $1.50")).toBeTruthy();
   });
 });

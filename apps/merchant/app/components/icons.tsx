@@ -14,6 +14,7 @@ export type IconName =
   | "store"
   | "clock"
   | "receipt"
+  | "receipt-dollar"
   | "volume-2"
   | "ban"
   | "wifi-off"
@@ -98,6 +99,8 @@ const PATHS: Record<IconName, string[]> = {
   ],
   clock: ["M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0", "M12 6v6l4 2"],
   receipt: ["M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z", "M8 7h8", "M8 11h8", "M8 15h5"],
+  // Lucide `receipt` (the bill card, Own bikers OB-M14); the kitchen nav's `receipt` above is Lucide `receipt-text`.
+  "receipt-dollar": ["M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z", "M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8", "M12 17.5v-11"],
   "volume-2": ["M11 5 6 9H2v6h4l5 4V5z", "M15.54 8.46a5 5 0 0 1 0 7.07", "M19.07 4.93a10 10 0 0 1 0 14.14"],
   ban: ["M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0", "m4.9 4.9 14.2 14.2"],
   check: ["M20 6 9 17l-5-5"],

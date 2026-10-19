@@ -1750,6 +1750,9 @@ export const MerchantOrderResponse = z
     // food live tracker's "rider secured" card. Omitted until a rider is assigned (see A-O14 omit
     // note below); optional so an OLD client that never reads it is unaffected (additive contract).
     rider: FoodOrderRiderIdentity.nullable().optional(),
+    /** Own bikers (D-117): one of the business's own bikers carries it, so the delivery fee comes back to the
+     *  shop with the food (OB-M13 K5 "food $12.00 + delivery $2.00"). Merchant view only; omitted otherwise. */
+    ownBiker: z.literal(true).optional(),
     dispatchAttempt: z.number().int(),
     dispatchOfferExpiresAt: z.string().nullable(),
     noRiderHoldAt: z.string().nullable(),
@@ -2341,6 +2344,8 @@ export const MerchantBookingResponse = z
     agreedFare: z.string().nullable(),
     /** "Booked by Tendai"; null when the booker has left the team and has no name. */
     bookedBy: z.string().nullable(),
+    /** Own bikers (D-117): one of the business's own bikers carries it (OB-M13's board and K5). Omitted otherwise. */
+    ownBiker: z.literal(true).optional(),
     rider: z
       .object({
         name: z.string(),
@@ -2854,10 +2859,13 @@ export const FleetRideLine = z.object({
   kind: z.enum(["booking", "marketplace", "adjustment"]),
   fee: z.string(),
   reason: z.string().nullable(),
+  /** The Own biker's first name ("#B204 · Tendai · 12:40"); null on a correction. Older APIs leave it out. */
+  biker: z.string().nullable().optional(),
 });
 export type FleetRideLine = z.infer<typeof FleetRideLine>;
 
-/** `GET /merchant/fleet/rides` (owner and staff, OB-M13): the branch's fleet rides for one Harare week (Mon–Sun). */
+/** `GET /merchant/fleet/rides` (owner and staff, OB-M13): the branch's fleet rides for one Harare week (Mon–Sun).
+ *  `rides` counts billed rides: one credited back to nothing that week doesn't count. */
 export const FleetRidesResponse = z.object({
   weekStart: z.string(),
   weekEnd: z.string(),
@@ -2869,7 +2877,12 @@ export type FleetRidesResponse = z.infer<typeof FleetRidesResponse>;
 
 /** `GET /merchant/fleet/bills` (owner only, OB-M14): this week so far across branches, and the closed weekly bills. */
 export const FleetBillsResponse = z.object({
-  thisWeek: z.object({ rides: z.number().int(), total: z.string() }),
+  thisWeek: z.object({
+    rides: z.number().int(),
+    total: z.string(),
+    /** OB-M14's branch lines ("Avondale · 15 rides · $22.50"): the branches with rides or corrections this week. */
+    branches: z.array(z.object({ merchantId: z.string().uuid(), name: z.string(), rides: z.number().int(), total: z.string() })).optional(),
+  }),
   bills: z.array(AdminFleetBill),
 });
 export type FleetBillsResponse = z.infer<typeof FleetBillsResponse>;

@@ -450,6 +450,17 @@ describe("phone numbers (safeguard 5)", () => {
     expect(mine.riderPhone).toBeUndefined();
     expect(JSON.stringify(mine)).not.toContain("+263772222222");
   });
+
+  it("Own bikers (D-117, OB-M13): the merchant's view says when its own biker carries the order; a public biker's doesn't", async () => {
+    const rider = { profileId: "r1", bikeReg: "AFG 2231", vehicleInfo: null, ratingAvg: 4.9, ratingCount: 3, tripsCount: 9, kycStatus: "verified", photoUrl: null, profile: { firstName: "Tendai", lastName: "Moyo", phone: "+263772222222" } };
+    const own = { ...base, riderId: "r1", rider, fleetMerchantId: "m1", merchant: shop(false) };
+    const pub = { ...base, id: "o2", riderId: "r1", rider, fleetMerchantId: null, merchant: shop(false) };
+    const { svc } = build({ merchant: { findUnique: async () => ({ id: "m1" }) }, order: { findMany: async () => [own, pub], findFirst: async () => own } });
+    const [a, b] = await svc.listQueue("owner-1");
+    expect(a!.ownBiker).toBe(true);
+    expect(b!.ownBiker).toBeUndefined();
+    expect((await svc.getMyOrder("o1", "c1")).ownBiker).toBeUndefined();
+  });
 });
 
 describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 4)", () => {
