@@ -1908,7 +1908,8 @@ Assumption: features ~30x, tests ~50x human÷CC.
   owner bill, getWeeklyStatement fleet section, metrics + Telegram alerts + admin live tile
   - Surfaced by: E5, E7, OV-F4, OV-F7. Verify: statement specs (Harare week), alert threshold specs
 - [ ] **T8 (P1, gate)**: Claude Design handoff export (`packages/design/handoff/own-bikers-v1/`) from the design
-  review brief, plus owner approval of the deviation draft → then the merchant/biker/admin screens (lanes B/C/D)
+  review brief (pack: `docs/designs/own-bikers-claude-design/`), plus owner approval of the deviation draft → then
+  the merchant/biker/admin screens (lanes B/C/D)
 - [ ] **T9 (P2, human: ~3d / CC: ~3h)**: api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
   - Surfaced by: R1, R2, OV5. Verify: preferred specs green with the flag unset; new specs with it set
 - [ ] **T10 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
@@ -2006,9 +2007,9 @@ align to that export, not to this text, and copy comes from its `copy.ts` verbat
 | Roster (merchant) | skeleton rows | D-78 EmptyState "Invite your bikers" + Invite pill (owner); staff: no pill | couldn't-load EmptyState + Retry | last list + offline toast | invites only: pending group alone + 10A banner when the first one joins |
 | Invite sheet | button spinner | — | inline "Couldn't send · Try again"; SMS failed → danger row (7A) | "Can't reach Lynia · Retry" | duplicate phone: "Already invited" with Resend |
 | Book › My bikers | count shimmer under the toggle | 0 online → 4A skip | "Can't reach Lynia · Retry" | same | paused → 6A banner; searching → 4A card |
-| Biker fleet Jobs | board skeleton | EmptyState "No <Owner> jobs right now" | couldn't-load + Retry | rider-v2 offline banner | paused → 6A EmptyState |
-| Join card | — | — | Join tap fails → toast + Retry | toast + Retry | refusals per P7-2 |
-| Leave | button spinner | — | toast + Retry | toast | mid-delivery → "You can leave after this delivery" |
+| Biker fleet Jobs | board skeleton | EmptyState "No <Owner> jobs right now" | J7 calm notice, auto-retry (rider-v2: no Retry buttons) | J6 reconnecting | paused → 6A EmptyState |
+| Join card | — | — | Join tap fails → toast; the card stays to tap again | toast | refusals per P7-2 |
+| Leave | button spinner | — | toast; tap again | toast | mid-delivery → "You can leave after this delivery" |
 | Statement › Fleet rides | rows shimmer | "No fleet rides this week" one line | couldn't-load + Retry | cached week | adjustment rows show the reason and the original ride |
 | Admin fleet table | table skeleton | "No fleets yet" | inline error + Retry | — | overdue rows in danger (3A) |
 
