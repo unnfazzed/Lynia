@@ -172,3 +172,10 @@ describe("HealthController — app/version-gate soft update (First Run v2 U1/U4,
   });
 });
 
+
+describe("HealthController — app/order-flags", () => {
+  it("Own bikers' fleetLive follows FLEET_UI_LIVE, off by default (D-117)", () => {
+    expect(controllerWith(okReport).orderFlags()).toMatchObject({ preferredRetired: false, fleetLive: false });
+    expect(controllerWith(okReport, { ...baseSource, FLEET_UI_LIVE: "true" }).orderFlags().fleetLive).toBe(true);
+  });
+});

@@ -39,6 +39,7 @@ import MapPin from "lucide-react-native/dist/cjs/icons/map-pin";
 import Minus from "lucide-react-native/dist/cjs/icons/minus";
 import Navigation from "lucide-react-native/dist/cjs/icons/navigation";
 import Package from "lucide-react-native/dist/cjs/icons/package";
+import Pause from "lucide-react-native/dist/cjs/icons/pause";
 import Pencil from "lucide-react-native/dist/cjs/icons/pencil";
 import Phone from "lucide-react-native/dist/cjs/icons/phone";
 import Plus from "lucide-react-native/dist/cjs/icons/plus";
@@ -154,6 +155,7 @@ const ICONS = {
   power: Power,
   timer: Timer,
   "volume-2": Volume2,
+  pause: Pause, // Own bikers OB-R6: the owner paused their deliveries
   // The After Send order screen (ledger D-53): Call / WhatsApp, the Verified tag, Share code / receipt /
   // trip, the pickup-photo View button and the rating Undo.
   camera: Camera,

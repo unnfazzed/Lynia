@@ -2205,6 +2205,7 @@ export class RiderService {
    * their outcome is visible. Resolves to whether it was delivered (for tests; callers don't wait).
    */
   private notifyKycDecision(profileId: string, variant: KycPushVariant): Promise<boolean> {
+    if (variant === "verified") void this.notifyFleetInviteWaiting(profileId);
     return this.notifications
       .notifyProfiles([profileId], { ...KYC_PUSH_COPY[variant], data: { kind: "account", kyc: variant } })
       .then((delivered) => {
@@ -2214,6 +2215,29 @@ export class RiderService {
         return false;
       })
       .catch(() => false);
+  }
+
+  /**
+   * Own bikers OB-R2 (D-117): an invited biker whose ID check just passed can join now — "Chicken Inn Avondale is
+   * waiting for you" (the drawn notification has no second line), opening the board where the Join card is. One
+   * push for the newest live invite to their number. Best-effort, like the KYC push it follows.
+   */
+  private async notifyFleetInviteWaiting(profileId: string): Promise<void> {
+    try {
+      const profile = await this.prisma.profile.findUnique({ where: { id: profileId }, select: { phone: true } });
+      if (!profile?.phone) return;
+      const invite = await this.prisma.fleetInvite.findFirst({
+        where: { phone: profile.phone, revokedAt: null, joinedAt: null, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: "desc" },
+        select: { homeMerchantId: true },
+      });
+      if (!invite) return;
+      const shop = await this.prisma.merchant.findUnique({ where: { id: invite.homeMerchantId }, select: { name: true } });
+      if (!shop) return;
+      await this.notifications.notifyProfiles([profileId], { title: `${shop.name} is waiting for you`, body: "", data: { kind: "fleet_invite" } });
+    } catch {
+      /* best-effort */
+    }
   }
 
   /** A biker who just went online with no registered push token will never hear a job ping: counted

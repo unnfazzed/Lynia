@@ -89,6 +89,10 @@ export class HealthController {
   @Get("app/order-flags")
   @Header("Cache-Control", "public, max-age=60")
   orderFlags(): OrderFlagsResponse {
-    return { rxEnabled: this.env.RX_ENABLED === "true", preferredRetired: this.env.PREFERRED_RETIRED === "true" };
+    return {
+      rxEnabled: this.env.RX_ENABLED === "true",
+      preferredRetired: this.env.PREFERRED_RETIRED === "true",
+      fleetLive: this.env.FLEET_UI_LIVE === "true",
+    };
   }
 }

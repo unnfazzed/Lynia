@@ -71,6 +71,11 @@ describe("pushDestination", () => {
     expect(pushDestination({ orderId: "o1", kind: "food_offer" }, true)).toBe("/rider/food-offer?orderId=o1");
     // No orderId (an older push): the offer running out first, as before.
     expect(pushDestination({ kind: "food_offer" }, true)).toBe("/rider/food-offer");
+    // Own bikers (D-117): a fleet ring opens the fleet offer, never the customer's order screen; the shop
+    // waiting for a new biker and the fleet ending open the board.
+    expect(pushDestination({ orderId: "o1", kind: "fleet_offer" }, true)).toBe("/rider/fleet-offer?orderId=o1");
+    expect(pushDestination({ kind: "fleet_invite" }, true)).toBe("/rider");
+    expect(pushDestination({ kind: "fleet_dissolved" }, true)).toBe("/rider");
   });
 
   it("routes the auto-accept 'restaurant changed your order' push to the food tracker", () => {

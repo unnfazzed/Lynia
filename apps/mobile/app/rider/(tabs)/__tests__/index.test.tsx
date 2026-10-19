@@ -158,6 +158,17 @@ jest.mock("../../../../src/logic/use-keep-screen-on", () => ({ useKeepScreenOn: 
 jest.mock("../../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ merchantDispatchAutoEnabled: mockFoodOn }),
 }));
+// Own bikers (D-117): off unless a test switches it on — then `GET /fleet/me` and the fleet offers are these.
+let mockFleetLive = false;
+const mockGetMyFleet = jest.fn(async () => ({ fleet: null, invites: [] }) as unknown);
+const mockGetFleetOffers = jest.fn(async () => [] as unknown[]);
+const mockJoinFleet = jest.fn(async (_id: string) => ({ fleet: null, invites: [] }) as unknown);
+jest.mock("../../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: false, fleetLive: mockFleetLive }) }));
+jest.mock("../../../../src/api/fleet", () => ({
+  getMyFleet: () => mockGetMyFleet(),
+  getFleetOffers: () => mockGetFleetOffers(),
+  joinFleet: (id: string) => mockJoinFleet(id),
+}));
 
 import RiderHome from "../index";
 import { ApiError } from "../../../../src/api/client";
@@ -314,6 +325,9 @@ afterEach(() => {
   mockBooting = false;
   mockNotifGranted = true;
   mockFoodOn = false;
+  mockFleetLive = false;
+  mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [] }));
+  mockGetFleetOffers.mockImplementation(async () => []);
   mockGetDemandZones.mockImplementation(async () => []);
   mockGetFoodOffers.mockImplementation(async () => []);
   mockPathname = "/rider";
@@ -2595,5 +2609,119 @@ describe("biker board — getting online (2026-10-12)", () => {
     await settle();
     expect(mockTrack).toHaveBeenCalledWith("rider_screen_shown", { screen: "board" });
     expect(mockTrack).toHaveBeenCalledWith("rider_go_online", { ok: true, with_position: true });
+  });
+});
+
+describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite waiting on the ID check", () => {
+  const SHOP = "Chicken Inn Avondale";
+  const fleetOffer = (orderId: string, landmark: string, collect: string | null) => ({
+    orderId,
+    shop: SHOP,
+    pickup: { point: { lat: -17.83, lng: 31.05 }, landmark },
+    dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "22 King George Rd, Avondale" },
+    itemsSummary: "2 items",
+    collect,
+    distanceKm: 3.2,
+    expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    kind: "app",
+  });
+  const inFleet = (paused = false) => {
+    mockFleetLive = true;
+    mockGetMyFleet.mockImplementation(async () => ({ fleet: { shop: SHOP, paused, joinedAt: "2026-10-01T10:00:00Z" }, invites: [] }));
+  };
+
+  it("OB-R4: a fleet biker sees the business's jobs as previews — count, ring hint, the tag, no fare and no button — never the public board", async () => {
+    inFleet();
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetFleetOffers.mockImplementation(async () => [fleetOffer("f1", SHOP, "14.00"), fleetOffer("f2", "Chicken Inn Borrowdale", null)]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const text = treeText(activeTree);
+    expect(text).toContain(`${SHOP} jobs`);
+    expect(text).toContain(`${SHOP} jobs ring full screen. Keep LyniaGo open.`);
+    expect(text).toContain(`${SHOP} job`);
+    expect(text).toContain("3.2 km trip · Collect $14.00");
+    expect(text).toContain("3.2 km trip · Paid already");
+    expect(cardIds(activeTree)).toEqual(expect.arrayContaining(["fleet:f1", "fleet:f2"]));
+    expect(cards(activeTree).every((n) => n.props.onOffer == null)).toBe(true);
+    expect(text).not.toContain("Make an offer");
+    expect(text).not.toContain("$14.00 asking");
+    // The public reads never run for a fleet biker (they refuse one).
+    expect(mockGetOpenOrders).not.toHaveBeenCalled();
+    expect(mockGetDemandZones).not.toHaveBeenCalled();
+  });
+
+  it("OB-R5/R6: empty says so with a zero count; couldn't load says it retries itself; paused says ask the shop", async () => {
+    inFleet();
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain(`No ${SHOP} jobs right now`);
+    act(() => activeTree!.unmount());
+
+    mockGetFleetOffers.mockImplementation(async () => {
+      throw new ApiError(500, "boom");
+    });
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).toContain(`Couldn't load ${SHOP} jobs. Trying again in 10 s.`);
+    act(() => activeTree!.unmount());
+
+    inFleet(true);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const paused = treeText(activeTree);
+    expect(paused).toContain(`${SHOP}'s deliveries are paused`);
+    expect(paused).toContain(`Ask ${SHOP} for details.`);
+    expect(mockGetFleetOffers).toHaveBeenCalledTimes(2); // not asked while paused
+  });
+
+  it("OB-R2/R3: an invited, verified biker gets the Join card on the public board; a refusal shows the server's sentence", async () => {
+    mockFleetLive = true;
+    mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [{ id: "inv-1", shop: SHOP, canJoin: true, expiresAt: "2026-10-26T10:00:00Z" }] }));
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([openOrderFixture("p1")]);
+    mockJoinFleet.mockImplementation(async () => {
+      throw new ApiError(409, "Leave Pizza Inn first.", "in_another_fleet");
+    });
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    let text = treeText(activeTree);
+    expect(text).toContain(`${SHOP} wants you on their bikers`);
+    expect(text).toContain(`Jobs from ${SHOP} only. No fare, no top-up.`);
+    const join = activeTree.root.findAll((n) => n.props.accessibilityRole === "button" && n.props.accessibilityLabel === "Join");
+    expect(join.length).toBeGreaterThan(0);
+    await act(async () => join[0]!.props.onPress());
+    await settle();
+    expect(mockJoinFleet).toHaveBeenCalledWith("inv-1");
+    text = treeText(activeTree);
+    expect(text).toContain("Leave Pizza Inn first.");
+    expect(activeTree.root.findAll((n) => n.props.accessibilityRole === "button" && n.props.accessibilityLabel === "Join")).toHaveLength(0);
+    // Not now sets it aside.
+    const notNow = activeTree.root.findAll((n) => n.props.accessibilityRole === "button" && n.props.accessibilityLabel === "Not now");
+    await act(async () => notNow[0]!.props.onPress());
+    expect(treeText(activeTree)).not.toContain(`${SHOP} wants you on their bikers`);
+  });
+
+  it("OB-R1: an invited biker still in the ID check sees the invite above 'Your ID is under review'", async () => {
+    mockFleetLive = true;
+    mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [{ id: "inv-1", shop: SHOP, canJoin: false, expiresAt: "2026-10-26T10:00:00Z" }] }));
+    // The automated check is with the vendor (R2's state).
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const text = treeText(activeTree);
+    expect(text).toContain(`${SHOP} invited you · finish your ID check to join`);
+    expect(text).toContain("Your ID is under review");
   });
 });

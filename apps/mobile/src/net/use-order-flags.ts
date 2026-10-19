@@ -5,9 +5,9 @@ import { fetchSignal } from "./fetch-signal";
 import { createSharedFlags, isBooleanRecord } from "./shared-flags";
 
 /**
- * Order flow v2's switches (`GET /app/order-flags`, ledger D-59) — today only `rxEnabled`, the
- * prescription flow (BRIEF §13). Its own endpoint because the service-flags body is strict on installed
- * apps.
+ * Order flow v2's switches (`GET /app/order-flags`, ledger D-59): `rxEnabled`, the prescription flow (BRIEF
+ * §13), and Own bikers' `fleetLive` (D-117). Its own endpoint because the service-flags body is strict on
+ * installed apps.
  *
  * FAILS CLOSED, unlike the section flags: the server has Rx on by default (D-76), but the boot frame and
  * any network error / timeout / non-200 / shape mismatch keep every Rx part unrendered (and the server
@@ -25,7 +25,8 @@ async function tryFetchOrderFlags(fetchImpl: typeof fetch = fetch, timeoutMs = B
     // Lazy, like use-service-flags: the contracts load on the first fetch, not on the launch path.
     const { OrderFlagsResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());
-    return parsed.success ? { rxEnabled: parsed.data.rxEnabled } : null;
+    // Own bikers (D-117): `fleetLive` (FLEET_UI_LIVE) says the `/fleet` routes answer; absent = off.
+    return parsed.success ? { rxEnabled: parsed.data.rxEnabled, ...(parsed.data.fleetLive ? { fleetLive: true } : {}) } : null;
   } catch {
     return null;
   } finally {

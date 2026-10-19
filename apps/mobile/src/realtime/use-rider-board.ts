@@ -1,4 +1,4 @@
-import { BidExpiredEvent, BoardNewOrderEvent, FoodOfferEvent, OrderTakenEvent, WS_EVENTS } from "@lynia/shared";
+import { BidExpiredEvent, BoardNewOrderEvent, FleetJobOffer, FleetOfferClosedEvent, FoodOfferEvent, OrderTakenEvent, WS_EVENTS } from "@lynia/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -54,6 +54,8 @@ export function useRiderBoard(
   // source of truth is the poll-fallback GET (dispatch/offer), so this is purely a "go look" signal,
   // mirroring how a `bid:expired`/`order:taken` push is a signal, not a value the caller trusts as-is.
   onFoodOffer?: (orderId: string) => void,
+  /** Own bikers (D-117): a fleet job rang this biker (`fleet:offer`). The list re-reads on its own. */
+  onFleetOffer?: (orderId: string) => void,
 ): { connected: boolean; expiredOrderIds: Set<string>; takenOrderIds: Set<string>; boardTakenNudge: number } {
   const { session } = useAuth();
   // Keyed on the signed-in identity, not the raw token: a ~15-min access-token rotation must not tear
@@ -86,6 +88,8 @@ export function useRiderBoard(
   bidIdsRef.current = bidIds;
   const onFoodOfferRef = useRef(onFoodOffer);
   onFoodOfferRef.current = onFoodOffer;
+  const onFleetOfferRef = useRef(onFleetOffer);
+  onFleetOfferRef.current = onFleetOffer;
 
   useEffect(() => {
     const token = tokenRef.current;
@@ -109,6 +113,7 @@ export function useRiderBoard(
     // while backgrounded/disconnected must be reconciled on reconnect the same way, not just openOrders.
     const healBoard = () => {
       void qc.invalidateQueries({ queryKey: ["openOrders"] });
+      void qc.invalidateQueries({ queryKey: ["fleetOffers"] });
       void qc.invalidateQueries({ queryKey: ["activeJob"] });
     };
     // B-O5: connect/connect_error can both fire repeatedly, seconds apart, while the connection
@@ -208,6 +213,21 @@ export function useRiderBoard(
     };
     socket.on(WS_EVENTS.foodOffer, onFoodOfferEvent);
 
+    // Own bikers (D-117): a fleet job ringing this biker, and its close (taken, passed or out of time). Both go to
+    // this socket directly (emitToRider); the board's fleet list and an open offer screen re-read.
+    const onFleetOfferEvent = (raw: unknown) => {
+      const parsed = FleetJobOffer.safeParse(raw);
+      if (!parsed.success) return;
+      void qc.invalidateQueries({ queryKey: ["fleetOffers"] });
+      onFleetOfferRef.current?.(parsed.data.orderId);
+    };
+    const onFleetOfferClosed = (raw: unknown) => {
+      if (!FleetOfferClosedEvent.safeParse(raw).success) return;
+      void qc.invalidateQueries({ queryKey: ["fleetOffers"] });
+    };
+    socket.on(WS_EVENTS.fleetOffer, onFleetOfferEvent);
+    socket.on(WS_EVENTS.fleetOfferClosed, onFleetOfferClosed);
+
     return () => {
       socketRef.current = null;
       socket.emit(WS_EVENTS.boardLeave);
@@ -218,6 +238,8 @@ export function useRiderBoard(
       socket.off(WS_EVENTS.bidExpired, onBidExpired);
       socket.off(WS_EVENTS.orderTaken, onOrderTaken);
       socket.off(WS_EVENTS.foodOffer, onFoodOfferEvent);
+      socket.off(WS_EVENTS.fleetOffer, onFleetOfferEvent);
+      socket.off(WS_EVENTS.fleetOfferClosed, onFleetOfferClosed);
       releaseSocket(identity, socket);
     };
   }, [online, identity, qc]);

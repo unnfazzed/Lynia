@@ -11,6 +11,7 @@ import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
 import { getActiveOrder, getOpenOrders, type OpenOrder } from "../../../src/api/orders";
 import { getFoodDispatchOffers } from "../../../src/api/food-rider";
+import { getFleetOffers, joinFleet } from "../../../src/api/fleet";
 import { getDemandZones } from "../../../src/api/rider-v2";
 import { noteKycLaunched, retryKyc, setOnline } from "../../../src/api/riders";
 import { loadAcknowledgedHandbacks, saveRolePreference } from "../../../src/auth/session";
@@ -55,6 +56,7 @@ import { telUri } from "../../../src/logic/safety";
 import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pushOnce } from "../../../src/push/push";
 import { pendingOrQueued } from "../../../src/query/client";
+import { useMyFleet } from "../../../src/query/use-my-fleet";
 import { useSentOffers, useSkippedJobs } from "../../../src/query/use-sent-offers";
 import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
@@ -66,8 +68,10 @@ import { IdCheckOutcome } from "../../../src/ui/firstrun";
 import { CtaButton, SkeletonOffer, SmBtn } from "../../../src/ui/order/kit";
 import { OrderSheet, type OrderSheetHandle } from "../../../src/ui/order/OrderSheet";
 import { Notice } from "../../../src/ui/send/kit";
-import { type BoardJob, BoardJobCard, BoardMap, Gate, type GateAction, RToast } from "../../../src/ui/rider/board";
+import { type BoardJob, BoardJobCard, BoardMap, fleetBoardJob, Gate, type GateAction, RToast } from "../../../src/ui/rider/board";
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
+import { FleetCountRow, FleetIdPending, FleetInviteWaiting, FleetJoinCard, FleetLoadFail, FleetRingsHint, FleetSkeletonCard } from "../../../src/ui/rider/fleet";
+import { OBB } from "../../../src/ui/rider/fleet-copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
 import { RiderErrorState } from "../../../src/ui/rider/RiderErrorState";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
@@ -111,6 +115,8 @@ type Toast = { text: string; icon?: IconName; undo?: () => void } | null;
  */
 /** FJ-H3: the return leg the board has already reopened this app run (so Back from it stays on the board). */
 let broughtBackTo: string | null = null;
+/** OB-R2 "Not now": the invite this app run set aside (it comes back on the next launch). */
+let fleetInviteSetAside: string | null = null;
 
 export default function RiderHome(): React.ReactElement {
   usePrewarmRoutes(BOARD_PREWARM);
@@ -121,6 +127,11 @@ export default function RiderHome(): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const { height: winH } = useWindowDimensions();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
+  // Own bikers (D-117): a biker in a business's fleet gets that business's jobs (OB-R4), not the public board;
+  // an invited one sees the Join card (OB-R2). Public reads wait for the answer, so a fleet biker never
+  // flashes the public board's "Couldn't load" (its routes refuse a fleet biker).
+  const myFleet = useMyFleet();
+  const fleet = myFleet.fleet;
   const setError = useActionError();
   const { show: showNotice } = useToast();
   const [onlineFlag, setOnlineState] = useState(() => qc.getQueryData<Me>(["me"])?.rider?.kycStatus === "verified");
@@ -386,12 +397,19 @@ export default function RiderHome(): React.ReactElement {
     online,
     loc,
     bidIds,
-    foodOn
+    foodOn && !fleet
       ? (orderId: string) => {
           void qc.invalidateQueries({ queryKey: ["foodOffers"] });
           // An offer already on screen stays there (it refreshes); the new one waits on the board as its card.
           if (pathname === "/rider/food-offer") void qc.invalidateQueries({ queryKey: ["foodOfferJob"] });
           else router.push({ pathname: "/rider/food-offer", params: { orderId } });
+        }
+      : undefined,
+    // OB-R7: a fleet job rings full screen; one already on screen re-reads instead of stacking a copy.
+    fleet
+      ? (orderId: string) => {
+          if (pathname === "/rider/fleet-offer") void qc.invalidateQueries({ queryKey: ["fleetOffer"] });
+          else router.push({ pathname: "/rider/fleet-offer", params: { orderId } });
         }
       : undefined,
   );
@@ -647,7 +665,7 @@ export default function RiderHome(): React.ReactElement {
   const openQ = useQuery({
     queryKey: ["openOrders"],
     queryFn: () => getOpenOrders(loc ?? undefined, 5000),
-    enabled: online,
+    enabled: online && myFleet.loaded && !fleet,
     // The socket keeps the list live; while it's down — or the last read failed (BD-H4) — re-read every
     // 10 s (J7: "Trying again in 10 s").
     refetchInterval: (query) => boardPollMs(online, board.connected, query.state.status === "error", 10_000),
@@ -670,9 +688,19 @@ export default function RiderHome(): React.ReactElement {
   const foodOffersQ = useQuery({
     queryKey: ["foodOffers"],
     queryFn: getFoodDispatchOffers,
-    enabled: online && !!foodOn,
-    refetchInterval: (query) => boardPollMs(online && !!foodOn, board.connected, query.state.status === "error", 15_000),
+    enabled: online && !!foodOn && myFleet.loaded && !fleet,
+    refetchInterval: (query) => boardPollMs(online && !!foodOn && !fleet, board.connected, query.state.status === "error", 15_000),
   });
+  // OB-R4/R5: a fleet biker's jobs are the offers ringing them now. `fleet:offer` / `fleet:offer-closed` re-read
+  // the list; the poll runs while the socket is down or the last read failed ("Trying again in 10 s").
+  const fleetOn = online && !!fleet && !fleet.paused;
+  const fleetOffersQ = useQuery({
+    queryKey: ["fleetOffers"],
+    queryFn: getFleetOffers,
+    enabled: fleetOn,
+    refetchInterval: (query) => boardPollMs(fleetOn, board.connected, query.state.status === "error", 10_000),
+  });
+  const liveFleetIds = fleet ? (fleetOffersQ.data ?? []).filter((o) => new Date(o.expiresAt).getTime() > Date.now()).map((o) => o.orderId).join(",") : "";
   // Expiry is re-checked on every render (an offer drops off as soon as it runs out, as before); the list
   // itself only changes when the set of live offers does, so `jobs` below stays memoised.
   const liveFoodIds = foodOn ? (foodOffersQ.data ?? []).filter((o) => new Date(o.expiresAt).getTime() > Date.now()).map((o) => o.orderId).join(",") : "";
@@ -681,6 +709,13 @@ export default function RiderHome(): React.ReactElement {
     return (foodOffersQ.data ?? []).filter((o) => live.has(o.orderId));
   }, [liveFoodIds, foodOffersQ.data]);
   const jobs: BoardJob[] = useMemo(() => {
+    if (fleet) {
+      const live = new Set(liveFleetIds.split(","));
+      return (fleetOffersQ.data ?? [])
+        .filter((o) => live.has(o.orderId))
+        .map((o) => fleetBoardJob(o, fleet.shop, loc))
+        .sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
+    }
     const parcels = (Array.isArray(openQ.data) ? openQ.data : [])
       // A job the rider already bid on stays off the board — unless the sender has since raised the
       // price, which lets the rider answer the new one (owner 2026-10-12; the API replaces their offer).
@@ -700,7 +735,7 @@ export default function RiderHome(): React.ReactElement {
       kind: "food",
     }));
     return [...food, ...parcels].sort((a, b) => (a.toPickupKm ?? Number.MAX_SAFE_INTEGER) - (b.toPickupKm ?? Number.MAX_SAFE_INTEGER));
-  }, [openQ.data, sentById, skipped, loc, foodOffers]);
+  }, [openQ.data, sentById, skipped, loc, foodOffers, fleet, liveFleetIds, fleetOffersQ.data]);
   const mixedKinds = jobs.some((j) => j.kind === "food" || j.kind === "shop");
   const effectiveSelected = selectedId && jobs.some((j) => j.id === selectedId) ? selectedId : (jobs[0]?.id ?? null);
 
@@ -809,7 +844,7 @@ export default function RiderHome(): React.ReactElement {
   const myOffers = sentOffers.filter((s) => s.order.id !== activeJob?.id && !withdrawing.has(s.order.id));
 
   // ── Demand (busy zones) ──────────────────────────────────────────────────────────────────────────
-  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online, staleTime: 2 * 60_000, refetchInterval: online ? 2 * 60_000 : false });
+  const zonesQ = useQuery({ queryKey: ["demandZones", loc?.lat.toFixed(2), loc?.lng.toFixed(2)], queryFn: () => getDemandZones(loc), enabled: online && myFleet.loaded && !fleet, staleTime: 2 * 60_000, refetchInterval: online ? 2 * 60_000 : false });
   const zones = zonesQ.data ?? [];
   const busiest = zones.length ? zones.reduce((a, b) => (b.level > a.level ? b : a)) : null;
   const busyLine = busiest && loc ? RF.busyLine(busiest.place, haversineKm(loc, busiest)) : null;
@@ -898,7 +933,12 @@ export default function RiderHome(): React.ReactElement {
   // ── Layout ───────────────────────────────────────────────────────────────────────────────────────
   const [areaH, setAreaH] = useState(0);
   const [sheetVisible, setSheetVisible] = useState(0);
-  const empty = online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
+  // OB-R5/R6: the fleet board's own states. No demand line, no offers of the biker's own on it.
+  const fleetLoadFailed = !!fleet && fleetOffersQ.isError && fleetOffersQ.data == null;
+  const fleetLoading = !!fleet && !fleet.paused && !fleetLoadFailed && fleetOffersQ.data == null;
+  const empty = fleet
+    ? fleet.paused || (fleetOffersQ.isSuccess && jobs.length === 0)
+    : online && openQ.isSuccess && jobs.length === 0 && myOffers.length === 0;
   const loadFailed = openQ.isError && openQ.data == null;
   // The first seconds after sign-in: go-online and the first open-jobs read are still in flight. Rider v2
   // draws no loading state for the board, so the sheet holds no list chrome (no "N near you", no food line)
@@ -986,8 +1026,96 @@ export default function RiderHome(): React.ReactElement {
     }
   }
 
-  const sheetContent = (
+  const activeJobBar = activeJob ? (
+    <SmBtn
+      kind="fill"
+      icon="package"
+      // BD-L2: a cancelled job isn't "in progress" — the same title the job screen's handback uses.
+      label={
+        activeJob.status !== "cancelled"
+          ? RF.swJobBar(statusPillLabel(activeJob.status))
+          : activeJob.cancelledBy === "customer"
+            ? RF.custCxT(activeJob.customerFirstName || R.theSender)
+            : R.cancelled
+      }
+      onPress={() => pushOnce(router, pathname, jobRoute)}
+    />
+  ) : null;
+
+  // OB-R2/R3 (Own bikers): the invite to the business's bikers, on the public board until they join or set it
+  // aside. A refusal shows the server's sentence; a dropped connection is a toast and the card stays.
+  const invite = !fleet ? (myFleet.invites[0] ?? null) : null;
+  const [inviteSetAside, setInviteSetAside] = useState(fleetInviteSetAside);
+  const [joinRefusal, setJoinRefusal] = useState<{ inviteId: string; text: string } | null>(null);
+  const joinM = useMutation({
+    mutationFn: (inviteId: string) => joinFleet(inviteId),
+    onSuccess: (mine) => {
+      qc.setQueryData(["myFleet"], mine);
+      void qc.invalidateQueries({ queryKey: ["fleetOffers"] });
+    },
+    onError: (e: unknown, inviteId) => {
+      if (e instanceof ApiError && e.status !== 0) setJoinRefusal({ inviteId, text: e.message });
+      else showToast({ text: OBB.refNet, icon: "wifi-off" });
+    },
+  });
+  const joinCard =
+    invite && invite.canJoin && inviteSetAside !== invite.id ? (
+      <FleetJoinCard
+        shop={invite.shop}
+        joining={joinM.isPending}
+        refusal={joinRefusal?.inviteId === invite.id ? joinRefusal.text : null}
+        onJoin={() => joinM.mutate(invite.id)}
+        onNotNow={() => {
+          fleetInviteSetAside = invite.id;
+          setInviteSetAside(invite.id);
+        }}
+      />
+    ) : null;
+
+  const fleetShop = fleet?.shop ?? "";
+  const fleetSheet = fleet ? (
     <>
+      {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
+      {/* OB-R5 reconnecting (J6): the header says so; a calm notice; the list is kept. */}
+      {online && connDown && !empty ? <Notice icon="wifi-off" text={OBB.staleB} /> : null}
+      {activeJobBar}
+      {fleet.paused ? (
+        <EmptyState inSheet offsetTop={24} tone="info" icon="pause" title={OBB.pausedT(fleetShop)} body={OBB.pausedB(fleetShop)} />
+      ) : fleetLoadFailed ? (
+        <>
+          <FleetCountRow shop={fleetShop} count={null} />
+          <FleetLoadFail shop={fleetShop} />
+        </>
+      ) : fleetLoading ? (
+        <>
+          <FleetCountRow shop={fleetShop} count={null} />
+          <FleetSkeletonCard />
+          <FleetSkeletonCard />
+        </>
+      ) : jobs.length === 0 ? (
+        <>
+          <FleetCountRow shop={fleetShop} count={0} />
+          <EmptyState inSheet offsetTop={24} icon="bike" title={OBB.emptyT(fleetShop)} />
+        </>
+      ) : (
+        <>
+          <FleetCountRow shop={fleetShop} count={jobs.length} />
+          <FleetRingsHint shop={fleetShop} />
+          <View style={{ gap: 10, opacity: online && connDown ? 0.6 : 1 }} onLayout={(e) => (listY.current = e.nativeEvent.layout.y)}>
+            {jobs.map((j) => (
+              <View key={j.id} collapsable={false} onLayout={(e) => cardY.current.set(j.id, e.nativeEvent.layout.y)}>
+                <BoardJobCard job={j} selected={j.id === effectiveSelected} onSelect={() => setSelectedId(j.id)} />
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+    </>
+  ) : null;
+
+  const publicSheet = (
+    <>
+      {joinCard}
       {/* First Run v2 P14 J8 (D-82): "Turn on" reopens P9 (or P11/P12), not the phone's settings. */}
       {notifOff ? <RiderNotifOffRow onTurnOn={() => router.push(RIDER_PERM_ROUTES.notifications as never)} /> : null}
       {/* Empty board: reconnecting shows only in the header's status line (empty-states v2 J4, D-78). */}
@@ -996,21 +1124,7 @@ export default function RiderHome(): React.ReactElement {
       {openQ.isError ? <Notice icon="wifi-off" text={R.loadFail} /> : null}
       {locHint ? <Notice icon="map-pin" tone="warn" text={R.gGpsB} /> : null}
       {/* BD-H5: `assigned` too — the way back once "picked you" is closed (or never shown, for food). */}
-      {activeJob ? (
-        <SmBtn
-          kind="fill"
-          icon="package"
-          // BD-L2: a cancelled job isn't "in progress" — the same title the job screen's handback uses.
-          label={
-            activeJob.status !== "cancelled"
-              ? RF.swJobBar(statusPillLabel(activeJob.status))
-              : activeJob.cancelledBy === "customer"
-                ? RF.custCxT(activeJob.customerFirstName || R.theSender)
-                : R.cancelled
-          }
-          onPress={() => pushOnce(router, pathname, jobRoute)}
-        />
-      ) : null}
+      {activeJobBar}
       {empty ? (
         // J4 / J5 — empty-states v2 (D-78): the quiet mark, one line, then the busiest zone if there is one.
         <View style={{ gap: 24 }}>
@@ -1072,6 +1186,8 @@ export default function RiderHome(): React.ReactElement {
     </>
   );
 
+  const sheetContent = fleetSheet ?? publicSheet;
+
   // Funnel analytics: the rider page on screen — R2, R3, F1–F8 and the board all share the `/rider` route.
   const screenId =
     kycScreen?.kind === "outcome"
@@ -1118,6 +1234,19 @@ export default function RiderHome(): React.ReactElement {
   }
   // R2 and R3 are whole pages in the handoff (no mint top card), so they replace the board outright.
   // Calm Mint v2 R2 (D-55): "Rider setup" while the automated check is with the vendor (README G3 "or R2").
+  // OB-R1 (Own bikers): an invited biker whose ID check is still running sees the invite above "Your ID is under
+  // review", under the mint top card.
+  const pendingInvite = myFleet.invites[0] ?? null;
+  if (kycScreen?.kind === "r2" && pendingInvite && !fleet) {
+    return (
+      <AppScreen banner={<MintTop {...top} online loc={null} />}>
+        <View testID="fleet-invite-waiting" style={{ flex: 1, padding: 16, gap: 12 }}>
+          <FleetInviteWaiting shop={pendingInvite.shop} />
+          <FleetIdPending />
+        </View>
+      </AppScreen>
+    );
+  }
   if (kycScreen?.kind === "r2") {
     return (
       <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
