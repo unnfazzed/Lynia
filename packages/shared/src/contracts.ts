@@ -2364,6 +2364,20 @@ export const MerchantBookingResponse = z
       .strict()
       .nullable()
       .optional(),
+    /**
+     * Own bikers (D-117, OB-M9–M11): a "My bikers" booking while it rings the business's own bikers. `ringing` =
+     * a round is live (`rung` bikers, the search ends at `endsAt`); `none_took` = every round ran out (OB-M10);
+     * `none_online` = no Own biker was online to ring (OB-M11). Absent once a biker has it, and on Any biker
+     * bookings. Inlined (not a named schema) because it is declared above the Own bikers section.
+     */
+    fleet: z
+      .object({
+        state: z.enum(["ringing", "none_took", "none_online"]),
+        rung: z.number().int(),
+        endsAt: z.string().nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type MerchantBookingResponse = z.infer<typeof MerchantBookingResponse>;
@@ -2689,6 +2703,64 @@ export type MyFleetResponse = z.infer<typeof MyFleetResponse>;
 /** Join refusals (OB-R3), as `reason` on the 403/409 body. */
 export const FleetJoinRefusal = z.enum(["id_check_pending", "works_at_shop", "in_another_fleet", "invite_ended", "on_a_job"]);
 export type FleetJoinRefusal = z.infer<typeof FleetJoinRefusal>;
+
+/**
+ * How a "My bikers" booking rings (OB-M9/M10, `m.noneTookB`: "We rang them 3 times over 2 minutes."). Each round
+ * rings every online, free Own biker of the owner at once, nearest first; the first to accept takes it.
+ */
+export const FLEET_DISPATCH = {
+  rounds: 3,
+  roundMs: 40_000,
+  /** How often the server looks for bookings due a round (a round's end, or a biker's drop). */
+  sweepIntervalMs: 10_000,
+  /** The most bikers one round rings (a guard on the fan-out, not a product limit). */
+  maxRung: 50,
+  /** E8: a booking left waiting on the business ("None of your bikers took it") this long ends as `expired`. */
+  holdExpireMs: 30 * 60_000,
+} as const;
+
+/**
+ * `POST /merchant/fleet/bookings` (OB-M8 "Ring my bikers"): Book a biker for the business's own bikers. Same form
+ * as Any biker, minus the fare: an Own biker carries no fare (LyniaGo bills the business per ride).
+ */
+export const CreateFleetBookingRequest = CreateMerchantBookingRequest.omit({ proposedFare: true });
+export type CreateFleetBookingRequest = z.infer<typeof CreateFleetBookingRequest>;
+
+/**
+ * `POST /merchant/fleet/bookings`: the booking, and its delivery code shown ONCE (as Any biker's pick). A "My
+ * bikers" booking has its code from the start, so the business can send it to the buyer while it rings.
+ */
+export const CreateFleetBookingResponse = z.object({ booking: MerchantBookingResponse, deliveryCode: z.string() });
+export type CreateFleetBookingResponse = z.infer<typeof CreateFleetBookingResponse>;
+
+/** `POST /merchant/fleet/bookings/:id/any-biker` (OB-M10/M11 "Send to any biker"): the fare for the public auction. */
+export const ConvertFleetBookingRequest = z.object({ proposedFare: FareUsd }).strict();
+export type ConvertFleetBookingRequest = z.infer<typeof ConvertFleetBookingRequest>;
+
+/**
+ * An Own biker's live job offer (OB-R5 "New Chicken Inn job"): the `fleet:offer` socket event and each row of
+ * `GET /fleet/jobs/offers`. No fare: the biker is paid by the business. `collect` is the cash the buyer pays at
+ * the door, which the biker brings back (null when there is none).
+ */
+export const FleetJobOffer = z.object({
+  orderId: z.string().uuid(),
+  shop: z.string(),
+  pickup: PublicWaypoint,
+  dropoff: PublicWaypoint,
+  itemsSummary: z.string(),
+  collect: z.string().nullable(),
+  distanceKm: z.number().nullable(),
+  expiresAt: z.string().datetime(),
+});
+export type FleetJobOffer = z.infer<typeof FleetJobOffer>;
+
+/** `GET /fleet/jobs/offers`: the biker's live offers, the one running out first first. */
+export const FleetJobOffersResponse = z.object({ offers: z.array(FleetJobOffer) });
+export type FleetJobOffersResponse = z.infer<typeof FleetJobOffersResponse>;
+
+/** `fleet:offer-closed`: the offer stopped being live (taken, declined, ran out, cancelled or sent to any biker). */
+export const FleetOfferClosedEvent = z.object({ orderId: z.string().uuid(), at: z.string() });
+export type FleetOfferClosedEvent = z.infer<typeof FleetOfferClosedEvent>;
 
 /** `POST /admin/merchants/:id/owner`: support hands a business to another person after an identity check. */
 export const TransferMerchantOwnerRequest = z

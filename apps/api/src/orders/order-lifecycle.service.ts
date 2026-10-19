@@ -53,6 +53,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { FreeJobsMilestone } from "../wallet/free-jobs-reminder";
 import { WalletService } from "../wallet/wallet.service";
 import { cancelAttribution } from "../common/cancel-attribution";
+import { FLEET_DROP_ACTION } from "../common/fleet-scope";
 import { domainEvents } from "../common/domain-events";
 
 // Lifecycle policy constants + shared types now live in ./order-lifecycle.constants (roadmap 3.4).
@@ -1028,8 +1029,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
     // but this branch didn't. Forced offline in-tx + funnelled through evictRiderFromSupply post-commit, the
     // same as strikeLimitRiderId (the two are mutually exclusive — a cancel hits exactly one branch).
     let reliabilityHoldRiderId: string | null = null;
+    // Own bikers: set when the caller gave a "My bikers" booking back (no cancel happened; see the branch below).
+    let fleetDrop: { riderId: string; merchantId: string } | null = null;
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result: CancelResult = await this.prisma.$transaction(async (tx): Promise<CancelResult> => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         select: {
@@ -1048,6 +1051,9 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           otpHash: true,
           otpCipher: true,
           deliveryCodeRotatedAt: true,
+          // Own bikers (D-117): a biker giving back a "My bikers" booking is not a cancel (see below).
+          fleetMerchantId: true,
+          dispatchExcludedRiderIds: true,
         },
       });
       if (!order) throw new NotFoundException("Order not found");
@@ -1066,6 +1072,37 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       // just renders exception messages verbatim (apps/mobile/src/ui/index.tsx ErrorText).
       if (!allowed.has(order.status) || (opts?.allowedStatuses && !opts.allowedStatuses.includes(order.status))) {
         throw new ConflictException(opts?.refusal ?? "This order can't be cancelled anymore — it's already past that point.");
+      }
+
+      // Own bikers (D-117, plan "An Own biker drops an accepted booking before pickup"): the booking goes back to
+      // the business's own bikers on the SAME order, tag, fee and delivery code kept (the buyer may already hold
+      // it), and this biker isn't rung for it again. No strike and no reliability penalty: an Own biker answers
+      // to their business, which sees it on its board (handoff `b.cxB` "This tells Chicken Inn Avondale.").
+      if (isRider && order.fleetMerchantId && order.riderId) {
+        const back = await tx.order.updateMany({
+          where: { id: orderId, status: order.status, riderId: order.riderId, fleetMerchantId: order.fleetMerchantId },
+          data: {
+            status: "fleet_searching",
+            riderId: null,
+            assignedAt: null,
+            dispatchExcludedRiderIds: order.dispatchExcludedRiderIds.includes(order.riderId) ? order.dispatchExcludedRiderIds : [...order.dispatchExcludedRiderIds, order.riderId],
+            dispatchAttempt: 0,
+            dispatchStartedAt: null,
+            dispatchOfferExpiresAt: null,
+            dispatchNextCheckAt: null,
+            noRiderHoldAt: null,
+            riderArrivedAt: null,
+            riderEtaAt: null,
+            pickupPhotoKey: null,
+            pickupPhotoAt: null,
+            pickupBagSealed: null,
+          },
+        });
+        if (back.count === 0) throw new ConflictException("Order changed, retry");
+        await tx.orderEvent.create({ data: { orderId, status: "fleet_searching" } });
+        await tx.auditLog.create({ data: { actor: callerId, action: FLEET_DROP_ACTION, target: orderId, note: reason ?? null } });
+        fleetDrop = { riderId: order.riderId, merchantId: order.fleetMerchantId };
+        return { orderId, status: "fleet_searching" as const, cancelledBy: "rider" as const, cooldownUntil: null };
       }
 
       const claimed = await tx.order.updateMany({
@@ -1189,6 +1226,22 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         cooldownUntil,
       };
     });
+
+    // Own bikers: the booking rings the business's bikers again on the next fleet sweep (dispatchNextCheckAt is
+    // null). Take the biker out of the order's room and refresh the business's board. Best-effort, post-commit.
+    if (fleetDrop) {
+      const { riderId, merchantId } = fleetDrop;
+      void this.gateway.evictFromOrderRoom(riderId, orderId).catch((err) => {
+        this.logger.warn(`order room eviction after a fleet drop failed for biker ${riderId}: ${(err as Error).message}`);
+      });
+      try {
+        this.gateway.emitOrderStatus(orderId, "fleet_searching");
+        this.gateway.emitFoodQueueChanged(merchantId, orderId);
+      } catch (err) {
+        this.logger.warn(`fleet drop emit failed for order ${orderId}: ${(err as Error).message}`);
+      }
+      return result;
+    }
 
     // DS17-02: a 3rd-strike rider was forced offline in the transaction above — evict them from the board
     // rooms + `rider:geo` Redis index through the standing-demotion funnel (mirrors the markUndelivered
@@ -1707,8 +1760,10 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 }
 
 /** A delivery code is meaningful only while the trip is in flight and the code is still unconsumed
- *  (assigned through en_route_dropoff). Once `delivered`, the handover is done — no rotation. */
+ *  (assigned through en_route_dropoff). Once `delivered`, the handover is done — no rotation. Own bikers (D-117):
+ *  a "My bikers" booking has its code from the moment it is made, so it counts while it rings too. */
 const ACTIVE_FOR_CODE: readonly OrderStatus[] = [
+  "fleet_searching",
   "assigned",
   "confirmed",
   "en_route_pickup",

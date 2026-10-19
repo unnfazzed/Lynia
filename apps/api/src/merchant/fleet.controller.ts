@@ -1,7 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import {
+  ConvertFleetBookingRequest,
+  CreateFleetBookingRequest,
+  type CreateFleetBookingResponse,
   CreateFleetInviteRequest,
   type FleetInviteLinkResponse,
+  type FleetJobOffersResponse,
+  type MerchantBookingResponse,
   type MyFleetResponse,
   OpenFleetInviteRequest,
   type OwnerFleetResponse,
@@ -10,20 +15,26 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
+import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetEnabledGuard } from "./fleet-enabled.guard";
 import { FleetService } from "./fleet.service";
+import { MerchantBookingService } from "./merchant-booking.service";
 import type { MerchantAccess } from "./merchant-access";
 import { CurrentMerchantAccess, MerchantGuard, OwnerOnly } from "./merchant.guard";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
 /**
- * Own bikers (D-117, handoff own-bikers-v1 OB-M1–M7), the business's side. The roster is read by owner and staff
- * (staff read-only, E6); inviting, revoking, removing and dismissing suggestions are owner-only (E4, E13).
+ * Own bikers (D-117, handoff own-bikers-v1 OB-M1–M12), the business's side. The roster is read by owner and staff
+ * (staff read-only, E6); inviting, revoking, removing and dismissing suggestions are owner-only (E4, E13). "My
+ * bikers" bookings are any member's, like every booking (plan D3).
  */
 @Controller("merchant/fleet")
 @UseGuards(RestaurantsEnabledGuard, FleetEnabledGuard, JwtAuthGuard, MerchantGuard)
 export class MerchantFleetController {
-  constructor(private readonly fleet: FleetService) {}
+  constructor(
+    private readonly fleet: FleetService,
+    private readonly bookings: MerchantBookingService,
+  ) {}
 
   @Get()
   roster(@CurrentMerchantAccess() access: MerchantAccess): Promise<OwnerFleetResponse> {
@@ -73,6 +84,37 @@ export class MerchantFleetController {
   dismissSuggestions(@CurrentMerchantAccess() access: MerchantAccess): Promise<{ ok: true }> {
     return this.fleet.dismissSuggestions(access);
   }
+
+  /** OB-M8 "Ring my bikers". Same budget as Any biker's create. */
+  @Post("bookings")
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "merchant-booking-create" })
+  book(
+    @Body(new ZodBody(CreateFleetBookingRequest)) body: CreateFleetBookingRequest,
+    @CurrentMerchantAccess() access: MerchantAccess,
+    @CurrentUser() profileId: string,
+  ): Promise<CreateFleetBookingResponse> {
+    return this.bookings.createFleet(access, profileId, body);
+  }
+
+  /** OB-M10 "Try my bikers again". */
+  @Post("bookings/:id/retry")
+  @HttpCode(200)
+  retry(@Param("id", ParseUUIDPipe) id: string, @CurrentMerchantAccess() access: MerchantAccess): Promise<MerchantBookingResponse> {
+    return this.bookings.fleetRetry(access, id);
+  }
+
+  /** OB-M10/M11 "Send to any biker": the same booking, now the public auction at this fare. */
+  @Post("bookings/:id/any-biker")
+  @HttpCode(200)
+  @Throttle({ limit: 20, windowSec: 60, keyPrefix: "merchant-booking-create" })
+  anyBiker(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ConvertFleetBookingRequest)) body: ConvertFleetBookingRequest,
+    @CurrentMerchantAccess() access: MerchantAccess,
+    @CurrentUser() profileId: string,
+  ): Promise<MerchantBookingResponse> {
+    return this.bookings.fleetConvert(access, profileId, id, body.proposedFare);
+  }
 }
 
 /**
@@ -82,7 +124,10 @@ export class MerchantFleetController {
 @Controller("fleet")
 @UseGuards(RestaurantsEnabledGuard, FleetEnabledGuard, JwtAuthGuard)
 export class RiderFleetController {
-  constructor(private readonly fleet: FleetService) {}
+  constructor(
+    private readonly fleet: FleetService,
+    private readonly dispatch: FleetDispatchService,
+  ) {}
 
   @Get("me")
   mine(@CurrentUser() profileId: string): Promise<MyFleetResponse> {
@@ -108,5 +153,26 @@ export class RiderFleetController {
   @HttpCode(200)
   leave(@CurrentUser() profileId: string): Promise<{ ok: true }> {
     return this.fleet.leave(profileId);
+  }
+
+  /** OB-R4/R5: the biker's live job offers (the poll and reconnect fallback for `fleet:offer`). */
+  @Get("jobs/offers")
+  async offers(@CurrentUser() profileId: string): Promise<FleetJobOffersResponse> {
+    return { offers: await this.dispatch.offersFor(profileId) };
+  }
+
+  /** OB-R5 "Accept this job": the first of the round to accept takes it. */
+  @Post("jobs/:orderId/accept")
+  @HttpCode(200)
+  @Throttle({ limit: 30, windowSec: 60, keyPrefix: "fleet-job-accept" })
+  accept(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string): Promise<{ orderId: string; status: "assigned" }> {
+    return this.dispatch.accept(orderId, profileId);
+  }
+
+  /** OB-R5 "Not this one": no cost to the biker. */
+  @Post("jobs/:orderId/decline")
+  @HttpCode(200)
+  decline(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string): Promise<{ orderId: string; declined: true }> {
+    return this.dispatch.decline(orderId, profileId);
   }
 }

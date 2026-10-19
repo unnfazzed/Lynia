@@ -1014,7 +1014,7 @@ describe("FoodDispatchService — a round cancelled while its offers were being 
     const now = new Date();
     expect(await svc.sweepOrphanedOffers(now)).toEqual({ expired: 1 });
     expect(attemptFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { outcome: "pending", expiresAt: { lt: now }, order: { status: { not: "open_for_offers" } } } }),
+      expect.objectContaining({ where: { outcome: "pending", expiresAt: { lt: now }, order: { orderType: "merchant", status: { not: "open_for_offers" } } } }),
     );
     expect(attemptUpdateMany).toHaveBeenCalledWith({ where: { id: { in: ["a1"] }, outcome: "pending" }, data: { outcome: "expired", respondedAt: now } });
     expect(gateway.emitFoodOfferClosed).toHaveBeenCalledTimes(1);

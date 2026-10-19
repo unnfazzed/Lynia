@@ -105,6 +105,8 @@ export const CUSTOMER_ACTIVE_STATUSES: OrderStatus[] = [
  *  a `job_cancelled` terminal to the rider with the sender contact for the hand-back. No reliability
  *  impact on the rider either way. Server-enforced; clients import this for the cancel affordance. */
 export const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
+  // Own bikers (D-117): a "My bikers" booking still ringing; its customer is only ever the business's booking account.
+  OrderStatus.FLEET_SEARCHING,
   OrderStatus.OPEN_FOR_OFFERS,
   OrderStatus.ASSIGNED,
   OrderStatus.CONFIRMED,

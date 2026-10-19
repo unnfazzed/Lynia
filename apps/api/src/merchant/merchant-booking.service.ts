@@ -1,15 +1,19 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import {
   type CloseMerchantBookingCashRequest,
   codAmount,
   codItem,
+  type CreateFleetBookingRequest,
+  type CreateFleetBookingResponse,
   type CreateMerchantBookingRequest,
   type CreateOrderRequest,
   type LatLng,
   type MerchantBookingOffer,
   type MerchantBookingResponse,
   type MerchantBookingState,
+  isBusinessBookingAccountPhone,
   offerWindowEndsAt,
   type OrderItem,
   PHONE_REVEAL_STATUSES,
@@ -17,29 +21,35 @@ import {
   type RetryMerchantBookingRequest,
   RESTAURANTS_DEBT,
   type RotateMerchantBookingCodeResponse,
+  quoteFare,
   summarizeItems,
   type Waypoint,
   withoutCodItem,
 } from "@lynia/shared";
+import { TokenService } from "../auth/token.service";
+import { sealHandoverCode } from "../common/handover-code";
+import { PiiCryptoService } from "../common/pii-crypto.service";
 import { MatchingService } from "../matching/matching.service";
 import { OffersService } from "../offers/offers.service";
 import { customerSafeCancelReason } from "../orders/cancel-reason";
 import { OrderLifecycleService } from "../orders/order-lifecycle.service";
-import { OrdersService } from "../orders/orders.service";
+import { assertWithinServiceCorridor, OrdersService } from "../orders/orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ensureBookingAccount, findBookingAccountId } from "./booking-account";
+import { FleetDispatchService, fleetSearchEndsAt } from "./fleet-dispatch.service";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
 import { preferredRiderIds } from "./preferred-riders";
 
-/** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). */
-const MERCHANT_CANCELLABLE = ["open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
+/** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). Own bikers
+ *  (D-117): a "My bikers" booking still ringing is cancelled the same way (OB-M9 "Cancel"). */
+const MERCHANT_CANCELLABLE = ["fleet_searching", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
 /** The Deliveries list's depth: the latest 50 bookings (a business's recent history, not an archive). */
 const LIST_LIMIT = 50;
 /** Send's re-broadcast can chain if riders keep cancelling; follow it this far to find the booker. */
 const MAX_REBROADCAST_DEPTH = 5;
 /** Send's statuses while a booking is live for the business: finding, coming or picked up ({@link bookingStateOf}). */
-const LIVE_BOOKING_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const;
+const LIVE_BOOKING_STATUSES = ["requested", "fleet_searching", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"] as const;
 /**
  * MJ-RL26: what the Orders board can draw — a live booking, or a delivered one whose cash on delivery is
  * still on its way back (`cashOnDelivery.status === "due"`: debt open, not closed by the business). The
@@ -78,9 +88,14 @@ const BOOKING_SELECT = {
   debtStatus: true,
   debtAmount: true,
   merchantClosedAt: true,
+  // Own bikers (D-117): a "My bikers" booking's search, for the OB-M9–M11 sheet.
+  fleetMerchantId: true,
+  noRiderHoldAt: true,
+  dispatchAttempt: true,
+  dispatchStartedAt: true,
   rider: { select: { bikeReg: true, profile: { select: { firstName: true, lastName: true, phone: true } } } },
   merchantBooking: { select: { bookedByProfileId: true } },
-  _count: { select: { offers: { where: { status: "pending" } } } },
+  _count: { select: { offers: { where: { status: "pending" } }, dispatchAttempts: { where: { outcome: "pending" } } } },
 } satisfies Prisma.OrderSelect;
 type BookingRow = Prisma.OrderGetPayload<{ select: typeof BOOKING_SELECT }>;
 
@@ -88,6 +103,7 @@ type BookingRow = Prisma.OrderGetPayload<{ select: typeof BOOKING_SELECT }>;
 export function bookingStateOf(status: string, rebroadcastOfId: string | null): MerchantBookingState {
   switch (status) {
     case "requested":
+    case "fleet_searching":
     case "open_for_offers":
       return rebroadcastOfId ? "finding_again" : "finding";
     case "assigned":
@@ -135,6 +151,11 @@ export class MerchantBookingService {
     private readonly offers: OffersService,
     private readonly matching: MatchingService,
     private readonly lifecycle: OrderLifecycleService,
+    private readonly fleetDispatch: FleetDispatchService,
+    private readonly tokens: TokenService,
+    // D2: the delivery code is sealed next to its hash so it can be shown again. @Global in the app; optional only
+    // for the positional unit harnesses.
+    @Optional() private readonly codeCrypto?: PiiCryptoService,
   ) {}
 
   async create(access: MerchantAccess, profileId: string, body: CreateMerchantBookingRequest): Promise<MerchantBookingResponse> {
@@ -175,6 +196,120 @@ export class MerchantBookingService {
       skipDuplicates: true,
     });
     return this.detail(access, created.id);
+  }
+
+  /**
+   * Own bikers (D-117, OB-M8 "Ring my bikers"): a booking for the business's own bikers. Same form as Any biker
+   * minus the fare: the order carries no fare (`proposedFare` 0) and the fee LyniaGo bills per ride, snapshotted
+   * from the owner's OwnerFleet. The order and its `merchant_bookings` row are one transaction, so a booking is
+   * never half made. Its delivery code is minted now and returned once, so the business can send it to the buyer
+   * while it rings. Then its first round rings at once.
+   */
+  async createFleet(access: MerchantAccess, profileId: string, body: CreateFleetBookingRequest): Promise<CreateFleetBookingResponse> {
+    await this.assertMemberCanBook(profileId);
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: access.merchantId },
+      select: { id: true, name: true, location: true, ownerProfileId: true },
+    });
+    if (!merchant) throw new NotFoundException("Business not found");
+    const fleet = merchant.ownerProfileId
+      ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: merchant.ownerProfileId }, select: { enabled: true, rideFee: true, pausedAt: true } })
+      : null;
+    if (!fleet?.enabled || fleet.rideFee == null) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
+    // Handoff own-bikers-v1 `m.pausedT`/`m.pausedB` (OB-M12).
+    if (fleet.pausedAt) throw new ConflictException({ reason: "fleet_paused", message: "Own bikers paused. Talk to LyniaGo to turn them back on." });
+    const pickup = (merchant.location as Waypoint | null) ?? null;
+    if (!pickup) {
+      throw new ConflictException({ reason: "no_location", message: "Set your business's pin before booking a biker." });
+    }
+    const collectCash = body.collectCash === true;
+    const goods = withoutCodItem(body.items);
+    if (collectCash && (body.declaredValue <= 0 || goods.length > 9)) {
+      throw new BadRequestException({
+        reason: "bad_cash_on_delivery",
+        message: body.declaredValue <= 0 ? "Say what the buyer pays, so the biker knows what to collect." : "A cash-on-delivery booking carries up to 9 lines.",
+      });
+    }
+    const items = collectCash ? [...goods, codItem(body.declaredValue, merchant.name)] : goods;
+    const accountId = await ensureBookingAccount(this.prisma, merchant);
+    // Send's own per-account gates, applied to the booking account as Send's create would (a hold on the business).
+    await this.assertBusinessMayBook(accountId);
+
+    const replay = await this.prisma.order.findFirst({ where: { customerId: accountId, idempotencyKey: body.idempotencyKey }, select: { id: true, fleetMerchantId: true } });
+    if (replay) return this.fleetReplay(access, replay);
+
+    assertWithinServiceCorridor(pickup.point, body.dropoff.point);
+    const { distanceKm, suggestedFare } = quoteFare(pickup.point, body.dropoff.point);
+    const orderId = randomUUID();
+    const deliveryCode = this.tokens.randomOtp();
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.order.create({
+          data: {
+            id: orderId,
+            customerId: accountId,
+            orderType: "parcel",
+            pickup: pickup as unknown as Prisma.InputJsonValue,
+            dropoff: body.dropoff as unknown as Prisma.InputJsonValue,
+            itemDesc: summarizeItems(items),
+            items: items as unknown as Prisma.InputJsonValue,
+            note: body.note ?? null,
+            declaredValue: body.declaredValue,
+            distanceKm,
+            suggestedFare,
+            proposedFare: 0,
+            disclaimerVersion: body.disclaimerVersion,
+            disclaimerAcceptedAt: new Date(),
+            idempotencyKey: body.idempotencyKey,
+            status: "fleet_searching",
+            fleetMerchantId: merchant.id,
+            fleetFee: fleet.rideFee,
+            otpHash: this.tokens.hash(deliveryCode),
+            otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
+            deliveryOtpAttempts: 0,
+            deliveryCodeRotatedAt: new Date(),
+            events: { create: { status: "fleet_searching" } },
+          },
+          select: { id: true },
+        });
+        await tx.merchantBooking.create({
+          data: { orderId, merchantId: merchant.id, bookedByProfileId: profileId, ...(collectCash ? { collectCash: true } : {}) },
+        });
+      });
+    } catch (err) {
+      // A concurrent replay of the same key won the (customer_id, idempotency_key) unique: return its booking.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await this.prisma.order.findFirst({ where: { customerId: accountId, idempotencyKey: body.idempotencyKey }, select: { id: true, fleetMerchantId: true } });
+        if (winner) return this.fleetReplay(access, winner);
+      }
+      throw err;
+    }
+    await this.fleetDispatch.kick(orderId);
+    return { booking: await this.detail(access, orderId), deliveryCode };
+  }
+
+  /** OB-M10 "Try my bikers again" (any member). */
+  async fleetRetry(access: MerchantAccess, orderId: string): Promise<MerchantBookingResponse> {
+    const { row } = await this.ownedBooking(access, orderId);
+    if (!row.fleetMerchantId) throw new ConflictException({ reason: "not_waiting", message: "This booking isn't waiting on you any more." });
+    await this.fleetDispatch.retry(orderId, row.fleetMerchantId);
+    return this.detail(access, orderId);
+  }
+
+  /** OB-M10/M11 "Send to any biker" (any member): the same booking joins the public auction at `proposedFare`. */
+  async fleetConvert(access: MerchantAccess, profileId: string, orderId: string, proposedFare: number): Promise<MerchantBookingResponse> {
+    const { row } = await this.ownedBooking(access, orderId);
+    if (!row.fleetMerchantId) throw new ConflictException({ reason: "already_taken", message: "One of your bikers took it, or it's no longer searching." });
+    await this.fleetDispatch.convert(orderId, row.fleetMerchantId, proposedFare, profileId);
+    return this.detail(access, orderId);
+  }
+
+  /** An idempotent replay of "Ring my bikers": the same booking and its CURRENT code (D2 keeps it showable). */
+  private async fleetReplay(access: MerchantAccess, order: { id: string; fleetMerchantId: string | null }): Promise<CreateFleetBookingResponse> {
+    const booking = await this.detail(access, order.id);
+    const accountId = await findBookingAccountId(this.prisma, access.merchantId);
+    const code = accountId ? await this.lifecycle.revealDeliveryCode(order.id, accountId).catch(() => null) : null;
+    return { booking, deliveryCode: code?.deliveryCode ?? "" };
   }
 
   /** The business's bookings, newest first. Business-wide: every member sees every booking. `liveOnly`
@@ -232,11 +367,13 @@ export class MerchantBookingService {
 
   /** Cancel before pickup, as Send's customer cancel (no rider penalty). After pickup: 409 `picked_up`. */
   async cancel(access: MerchantAccess, profileId: string, orderId: string, reason?: string): Promise<MerchantBookingResponse> {
-    const { accountId } = await this.ownedBooking(access, orderId);
+    const { row, accountId } = await this.ownedBooking(access, orderId);
     await this.lifecycle.cancel(orderId, accountId, reason, {
       allowedStatuses: MERCHANT_CANCELLABLE,
       refusal: { reason: "picked_up", message: "The biker has it now. Call the biker." },
     });
+    // A "My bikers" booking cancelled while it rang: the bikers still deciding see it go.
+    if (row.fleetMerchantId) await this.fleetDispatch.closeOffers(orderId);
     await this.recordActor(access.merchantId, orderId, profileId, "cancelledByProfileId");
     return this.detail(access, orderId);
   }
@@ -322,6 +459,16 @@ export class MerchantBookingService {
         message: "Your account is not in good standing.",
       });
     }
+  }
+
+  /** Send's per-account gate on the booking account (a hold on the whole business), as Send's create applies it. */
+  private async assertBusinessMayBook(accountId: string): Promise<void> {
+    const account = await this.prisma.profile.findUnique({ where: { id: accountId }, select: { onHold: true, phone: true } });
+    if (account?.onHold) {
+      throw new ForbiddenException({ reason: "business_on_hold", message: "Bookings are paused for this business. Message LyniaGo on WhatsApp." });
+    }
+    // The cash-on-delivery line is only ever a booking account's (OrdersService.create's reserved-line rule).
+    if (!isBusinessBookingAccountPhone(account?.phone)) throw new ConflictException("Booking account not found");
   }
 
   /** Send's create as the business. Send refuses a held account with `on_hold`: here that's the business. */
@@ -511,8 +658,16 @@ export class MerchantBookingService {
       // Merchant v2 (D-77): the rider at the shop, and their estimated arrival at the next stop.
       ...(r.riderArrivedAt ? { riderArrivedAt: r.riderArrivedAt.toISOString() } : {}),
       ...(r.riderEtaAt ? { riderEtaAt: r.riderEtaAt.toISOString() } : {}),
+      ...(r.status === "fleet_searching" ? { fleet: fleetSearchOf(r) } : {}),
     };
   }
+}
+
+/** Own bikers (D-117): where a "My bikers" booking's search stands (OB-M9 ringing, M10 none took it, M11 none online). */
+function fleetSearchOf(r: BookingRow): NonNullable<MerchantBookingResponse["fleet"]> {
+  if (r.noRiderHoldAt) return { state: r.dispatchAttempt === 0 ? "none_online" : "none_took", rung: 0, endsAt: null };
+  const endsAt = fleetSearchEndsAt(r.dispatchStartedAt);
+  return { state: "ringing", rung: r._count.dispatchAttempts, endsAt: endsAt?.toISOString() ?? null };
 }
 
 /** The booking's own goods, without the cash-on-delivery line the riders see. */

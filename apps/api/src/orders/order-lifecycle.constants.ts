@@ -68,7 +68,8 @@ export interface LifecycleResult {
 }
 export interface CancelResult {
   orderId: string;
-  status: "cancelled";
+  /** `fleet_searching`: an Own biker gave a "My bikers" booking back, and it rings their business's bikers again. */
+  status: "cancelled" | "fleet_searching";
   cancelledBy: "customer" | "rider";
   cooldownUntil: Date | null;
 }

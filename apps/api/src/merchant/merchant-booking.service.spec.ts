@@ -2,11 +2,13 @@ import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { CreateMerchantBookingRequest, CreateOrderRequest } from "@lynia/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TokenService } from "../auth/token.service";
 import type { MatchingService } from "../matching/matching.service";
 import type { OffersService } from "../offers/offers.service";
 import type { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import type { OrdersService } from "../orders/orders.service";
 import type { PrismaService } from "../prisma/prisma.service";
+import type { FleetDispatchService } from "./fleet-dispatch.service";
 import type { MerchantAccess } from "./merchant-access";
 import { MerchantBookingController } from "./merchant-booking.controller";
 import { bookingStateOf, MerchantBookingService } from "./merchant-booking.service";
@@ -255,12 +257,16 @@ function makeWorld() {
     }),
   };
 
+  const fleetDispatch = { kick: vi.fn(async () => {}), closeOffers: vi.fn(async () => {}), retry: vi.fn(async () => {}), convert: vi.fn(async () => {}) };
+
   const svc = new MerchantBookingService(
     prisma as unknown as PrismaService,
     ordersSvc as unknown as OrdersService,
     offersSvc as unknown as OffersService,
     matching as unknown as MatchingService,
     lifecycle as unknown as OrderLifecycleService,
+    fleetDispatch as unknown as FleetDispatchService,
+    { randomOtp: () => "123456", hash: (c: string) => `h:${c}` } as unknown as TokenService,
   );
 
   // A car-parts shop with an owner and a cashier, and a rider who bids on things.
@@ -530,7 +536,7 @@ describe("pick, cancel, a new code, try again", () => {
     expect(callerId).toBe(account.id);
     expect(reason).toBe("Buyer changed their mind");
     expect(opts).toEqual({
-      allowedStatuses: ["open_for_offers", "assigned", "confirmed", "en_route_pickup"],
+      allowedStatuses: ["fleet_searching", "open_for_offers", "assigned", "confirmed", "en_route_pickup"],
       refusal: { reason: "picked_up", message: "The biker has it now. Call the biker." },
     });
     expect(cancelled).toMatchObject({ state: "cancelled", cancelledBy: "business" });
