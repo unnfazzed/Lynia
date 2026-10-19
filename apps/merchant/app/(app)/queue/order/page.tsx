@@ -3,12 +3,7 @@
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  DELIVERY_OTP_MAX_ATTEMPTS,
-  foodOrderMoney,
-  type MerchantOrderResponse,
-  type MerchantProfileResponse,
-} from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, foodOrderMoney, type MerchantOrderResponse, type MerchantProfileResponse } from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
@@ -17,29 +12,13 @@ import { ConfirmSheet } from "../../../components/m/ConfirmSheet";
 import { StaticMap } from "../../../components/m/StaticMap";
 import { useToast } from "../../../components/m/Toast";
 import { OrderLines } from "../../../components/queue/order-parts";
-import {
-  CashCard,
-  CodeCard,
-  codeText,
-  CtaBar,
-  ProgressSteps,
-  RiderCard,
-} from "../../../components/queue/v2-parts";
+import { CashCard, CodeCard, codeText, CtaBar, ProgressSteps, RiderCard } from "../../../components/queue/v2-parts";
 import { boardItems } from "../../../lib/board";
 import { HANDOVER_FALLBACK_ENABLED } from "../../../lib/config";
-import {
-  Note,
-  PhotoRow,
-  RoundLines,
-} from "../../../components/queue/proof-parts";
+import { Note, PhotoRow, RoundLines } from "../../../components/queue/proof-parts";
 import { ProposerSheet } from "../../../components/queue/proposer";
 import { RetryableError } from "../../../components/RetryableError";
-import {
-  InfoStrip,
-  PathCard,
-  ReasonSheet,
-  Sheet,
-} from "../../../components/m/ReasonSheet";
+import { InfoStrip, PathCard, ReasonSheet, Sheet } from "../../../components/m/ReasonSheet";
 import { ApiError, redirectIfSessionExpired } from "../../../lib/api-client";
 import { useBusiness } from "../../../lib/business";
 import { createCoalescedFetch } from "../../../lib/coalesced-fetch";
@@ -66,36 +45,14 @@ import {
   requestPayment,
   revealPickupCode,
 } from "../../../lib/orders-api";
-import {
-  detailView,
-  isAfterPickup,
-  isGoodsReturn,
-  money,
-  orderLabel,
-  riderFirstName,
-  slotLabel,
-  ticketPollMs,
-} from "../../../lib/orders-view";
-import {
-  changeableLines,
-  openRound,
-  proposalLines,
-} from "../../../lib/substitution";
+import { detailView, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName, slotLabel, ticketPollMs } from "../../../lib/orders-view";
+import { changeableLines, openRound, proposalLines } from "../../../lib/substitution";
 import { useNow } from "../../../lib/use-now";
-import {
-  countOf,
-  doorProofLine,
-  ORDER_FLOW as OF,
-  vocabulary,
-  type Vocabulary,
-} from "../../../lib/vocabulary";
+import { countOf, doorProofLine, ORDER_FLOW as OF, vocabulary, type Vocabulary } from "../../../lib/vocabulary";
 import { prescriptionHref } from "../../../lib/routes";
 import { OBM } from "../../../lib/own-bikers-copy";
 
-type Load =
-  | { status: "loading" }
-  | { status: "ready"; order: MerchantOrderResponse }
-  | { status: "error"; message: string };
+type Load = { status: "loading" } | { status: "ready"; order: MerchantOrderResponse } | { status: "error"; message: string };
 type Confirm =
   | null
   | "cancel"
@@ -114,11 +71,7 @@ type Confirm =
 /** What every order screen below needs from the page. */
 interface Ctx {
   order: MerchantOrderResponse;
-  act: (
-    action: () => Promise<unknown>,
-    done: string,
-    leave?: boolean,
-  ) => Promise<void>;
+  act: (action: () => Promise<unknown>, done: string, leave?: boolean) => Promise<void>;
   disabled: boolean;
   error: string | null;
   setConfirm: (c: Confirm) => void;
@@ -141,17 +94,10 @@ function cancelSub(order: MerchantOrderResponse): string {
 /** K5c's reason line, from the rider's door proof. */
 function failReason(order: MerchantOrderResponse): string {
   const r = order.doorProof?.reason;
-  return r === "customer_unreachable"
-    ? "Customer didn't answer"
-    : r === "left_at_gate"
-      ? "Couldn't hand it over"
-      : "Couldn't deliver";
+  return r === "customer_unreachable" ? "Customer didn't answer" : r === "left_at_gate" ? "Couldn't hand it over" : "Couldn't deliver";
 }
 
-function isShop(
-  order: MerchantOrderResponse,
-  business: { businessType?: string } | null,
-): boolean {
+function isShop(order: MerchantOrderResponse, business: { businessType?: string } | null): boolean {
   return (order.venue?.businessType ?? business?.businessType) === "shop";
 }
 
@@ -159,12 +105,7 @@ function isShop(
 function cantFinishReasons(shop: boolean) {
   return [
     ["ran_out", "Ran out and can't swap"],
-    [
-      "kitchen_problem",
-      shop
-        ? "Shop problem (power, stock count)"
-        : "Kitchen problem (gas, power, water)",
-    ],
+    ["kitchen_problem", shop ? "Shop problem (power, stock count)" : "Kitchen problem (gas, power, water)"],
     ["too_busy", "Too busy to finish it"],
     ["other", "Something else"],
   ] as const;
@@ -261,17 +202,7 @@ export default function OrderPage() {
         } catch (err) {
           if (redirectIfSessionExpired(err, () => signOutRef.current())) return;
           if (!current()) return;
-          setLoad((prev) =>
-            prev.status === "ready"
-              ? prev
-              : {
-                  status: "error",
-                  message:
-                    err instanceof ApiError
-                      ? err.message
-                      : "Couldn't load this order.",
-                },
-          );
+          setLoad((prev) => (prev.status === "ready" ? prev : { status: "error", message: err instanceof ApiError ? err.message : "Couldn't load this order." }));
         }
       }),
     [id],
@@ -292,24 +223,18 @@ export default function OrderPage() {
 
   // A ringing order is answered on the Orders home, where the alarm and the takeover are.
   useEffect(() => {
-    if (load.status === "ready" && detailView(load.order) === "ringing")
-      router.replace("/queue");
+    if (load.status === "ready" && detailView(load.order) === "ringing") router.replace("/queue");
   }, [load, router]);
 
   useEffect(() => {
     if (load.status !== "ready") return;
     const was = lastStatus.current;
     lastStatus.current = load.order.status;
-    if (was && was !== "picked_up" && load.order.status === "picked_up")
-      toast(`Handed over · ${riderName(load.order)} has it`);
+    if (was && was !== "picked_up" && load.order.status === "picked_up") toast(`Handed over · ${riderName(load.order)} has it`);
   }, [load, toast]);
 
   /** Runs an action once, refreshes, and toasts; `leave` returns to the Orders home afterwards. */
-  async function act(
-    action: () => Promise<unknown>,
-    done: string,
-    leave = false,
-  ) {
+  async function act(action: () => Promise<unknown>, done: string, leave = false) {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -327,11 +252,7 @@ export default function OrderPage() {
         setConfirm(null);
         toast(done);
       } else {
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : "That didn't work. Try again.",
-        );
+        setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
       }
       // MJ-RM19: a failed or timed-out action may still have landed (a 2G POST the client gave up on), or the
       // order moved under it — re-read it, so the next tap starts from what the server has (as RingingScreen).
@@ -352,16 +273,7 @@ export default function OrderPage() {
     return (
       <Kitchen active="queue" tabs={false}>
         <AppBar back="/queue" />
-        <div className="m-bd">
-          {load.status === "loading" ? (
-            <div className="m-hint">Loading…</div>
-          ) : (
-            <RetryableError
-              message={load.message}
-              onRetry={() => void refresh()}
-            />
-          )}
-        </div>
+        <div className="m-bd">{load.status === "loading" ? <div className="m-hint">Loading…</div> : <RetryableError message={load.message} onRetry={() => void refresh()} />}</div>
       </Kitchen>
     );
   }
@@ -371,16 +283,7 @@ export default function OrderPage() {
   const disabled = actionsDisabled || busy;
   const v = vocabulary(business?.businessType, business?.shopKind);
   const confirmSheet = renderConfirm();
-  const ctx: Ctx = {
-    order,
-    act,
-    disabled,
-    error,
-    setConfirm,
-    toast,
-    business,
-    v,
-  };
+  const ctx: Ctx = { order, act, disabled, error, setConfirm, toast, business, v };
 
   if (view === "ringing") return null;
 
@@ -402,13 +305,7 @@ export default function OrderPage() {
       <div className="m-fld">
         <label htmlFor="m-ref">{label}</label>
         <span className="m-in">
-          <input
-            id="m-ref"
-            value={reference}
-            maxLength={80}
-            autoComplete="off"
-            onChange={(e) => setReference(e.target.value)}
-          />
+          <input id="m-ref" value={reference} maxLength={80} autoComplete="off" onChange={(e) => setReference(e.target.value)} />
         </span>
       </div>
     );
@@ -427,15 +324,7 @@ export default function OrderPage() {
             busy={busy}
             error={error}
             making={v.making.toLowerCase()}
-            onSend={(p) =>
-              void act(
-                () =>
-                  proposeSubstitution(order.id, {
-                    lines: proposalLines(order, p.changes),
-                  }),
-                "Changes sent · the customer has 3 minutes",
-              )
-            }
+            onSend={(p) => void act(() => proposeSubstitution(order.id, { lines: proposalLines(order, p.changes) }), "Changes sent · the customer has 3 minutes")}
             onCancel={close}
           />
         );
@@ -466,9 +355,7 @@ export default function OrderPage() {
               tone="red"
               title="Can't finish this order"
               sub="Cancel with a reason. The customer and biker are told."
-              onClick={() =>
-                setConfirm(isPaidWallet(order) ? "refund" : "cancel")
-              }
+              onClick={() => setConfirm(isPaidWallet(order) ? "refund" : "cancel")}
             />
             <div className="m-sheethint">
               <Icon name="clock" size={16} />
@@ -484,13 +371,7 @@ export default function OrderPage() {
             confirmLabel="Decline order"
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void act(
-                () => rejectOrder(order.id, "other"),
-                "Declined · the customer was told",
-                true,
-              )
-            }
+            onConfirm={() => void act(() => rejectOrder(order.id, "other"), "Declined · the customer was told", true)}
             onCancel={close}
           />
         );
@@ -503,26 +384,12 @@ export default function OrderPage() {
             reasons={cantFinishReasons(isShop(order, business))}
             noteFor="other"
             noteHelper={`${order.customerFirstName?.trim() || "The customer"} sees this note.`}
-            extra={() => (
-              <InfoStrip icon="banknote">
-                Cash order · nothing to refund
-              </InfoStrip>
-            )}
+            extra={() => <InfoStrip icon="banknote">Cash order · nothing to refund</InfoStrip>}
             cta="Cancel order"
             secondary={`Keep ${v.making.toLowerCase()}`}
             busy={busy}
             error={error}
-            onConfirm={(reason, note) =>
-              void act(
-                () =>
-                  cancelPreparing(
-                    order.id,
-                    note ? { reason, note } : { reason },
-                  ),
-                "Order cancelled · customer told",
-                true,
-              )
-            }
+            onConfirm={(reason, note) => void act(() => cancelPreparing(order.id, note ? { reason, note } : { reason }), "Order cancelled · customer told", true)}
             onCancel={close}
           />
         );
@@ -534,13 +401,7 @@ export default function OrderPage() {
             confirmLabel="Cancel order"
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void act(
-                () => releaseUnpaid(order.id, "other"),
-                "Order cancelled · customer told",
-                true,
-              )
-            }
+            onConfirm={() => void act(() => releaseUnpaid(order.id, "other"), "Order cancelled · customer told", true)}
             onCancel={close}
           />
         );
@@ -556,16 +417,7 @@ export default function OrderPage() {
             busy={busy}
             confirmDisabled={!reference.trim()}
             error={error}
-            onConfirm={() =>
-              void act(
-                () =>
-                  confirmPayment(order.id, {
-                    reference: reference.trim(),
-                    amount,
-                  }),
-                `Payment confirmed · start ${v.making.toLowerCase()}`,
-              )
-            }
+            onConfirm={() => void act(() => confirmPayment(order.id, { reference: reference.trim(), amount }), `Payment confirmed · start ${v.making.toLowerCase()}`)}
             onCancel={close}
           >
             {referenceField("Reference")}
@@ -599,22 +451,14 @@ export default function OrderPage() {
             confirmDisabled={!reference.trim()}
             error={error}
             onConfirm={() =>
-              void act(
-                async () => {
-                  try {
-                    await refundOrder(order.id, reference.trim(), amount);
-                  } catch (err) {
-                    if (err instanceof ApiError && err.status === 401)
-                      throw err;
-                    throw new ApiError(
-                      err instanceof ApiError ? err.status : 0,
-                      "Couldn't refund right now. The order is still open; try again.",
-                    );
-                  }
-                },
-                "Refunded · order cancelled",
-                true,
-              )
+              void act(async () => {
+                try {
+                  await refundOrder(order.id, reference.trim(), amount);
+                } catch (err) {
+                  if (err instanceof ApiError && err.status === 401) throw err;
+                  throw new ApiError(err instanceof ApiError ? err.status : 0, "Couldn't refund right now. The order is still open; try again.");
+                }
+              }, "Refunded · order cancelled", true)
             }
             onCancel={close}
           />
@@ -628,13 +472,7 @@ export default function OrderPage() {
             confirmLabel="Cancel order"
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void act(
-                () => dispatchCancel(order.id),
-                "Order cancelled · customer told",
-                true,
-              )
-            }
+            onConfirm={() => void act(() => dispatchCancel(order.id), "Order cancelled · customer told", true)}
             onCancel={close}
           />
         );
@@ -647,13 +485,7 @@ export default function OrderPage() {
             danger={false}
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void act(
-                () => closeOrder(order.id, "force"),
-                "Ride marked completed · order closed",
-                true,
-              )
-            }
+            onConfirm={() => void act(() => closeOrder(order.id, "force"), "Ride marked completed · order closed", true)}
             onCancel={close}
           />
         );
@@ -666,13 +498,7 @@ export default function OrderPage() {
             danger={false}
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void act(
-                () => closeOrder(order.id, "no_cash"),
-                "Completed · no cash expected",
-                true,
-              )
-            }
+            onConfirm={() => void act(() => closeOrder(order.id, "no_cash"), "Completed · no cash expected", true)}
             onCancel={close}
           />
         );
@@ -690,26 +516,10 @@ export default function OrderPage() {
                     {error}
                   </div>
                 )}
-                <button
-                  type="button"
-                  className="m-btn m-danger"
-                  disabled={busy}
-                  onClick={() =>
-                    void act(
-                      () => reportNonReturn(order.id),
-                      "We've told LyniaGo. We'll WhatsApp you.",
-                      true,
-                    )
-                  }
-                >
+                <button type="button" className="m-btn m-danger" disabled={busy} onClick={() => void act(() => reportNonReturn(order.id), "We've told LyniaGo. We'll WhatsApp you.", true)}>
                   Report to LyniaGo
                 </button>
-                <button
-                  type="button"
-                  className="m-btn2"
-                  disabled={busy}
-                  onClick={close}
-                >
+                <button type="button" className="m-btn2" disabled={busy} onClick={close}>
                   Go back
                 </button>
               </>
@@ -726,28 +536,16 @@ export default function OrderPage() {
 
 /** A pushed screen that fills the scroll area, so its CTA bar sits at the bottom however short it is. */
 function Fill({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}
-    >
-      {children}
-    </div>
-  );
+  return <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>{children}</div>;
 }
 
 // ── M7b ────────────────────────────────────────────────────────────────────────────────────────
 function Scheduled({ order, disabled, setConfirm }: Ctx) {
   const now = useNow(60_000);
-  const s = order.scheduledFor
-    ? slotLabel(order.scheduledFor, new Date(now))
-    : null;
+  const s = order.scheduledFor ? slotLabel(order.scheduledFor, new Date(now)) : null;
   return (
     <Fill>
-      <AppBar
-        back="/queue"
-        title={orderLabel(order)}
-        right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>}
-      />
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
         <ProgressSteps step={1} label="Scheduled" />
         {s && (
@@ -765,12 +563,7 @@ function Scheduled({ order, disabled, setConfirm }: Ctx) {
         </div>
       </div>
       <CtaBar>
-        <button
-          type="button"
-          className="m-btn2"
-          disabled={disabled}
-          onClick={() => setConfirm("decline_scheduled")}
-        >
+        <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("decline_scheduled")}>
           {OF.decline}
         </button>
       </CtaBar>
@@ -792,25 +585,14 @@ function Cooking(ctx: Ctx) {
   // M2 also stands in for a shortened order sent before Order flow v2 (the 60-second approval): the
   // customer is answering, so nothing here is marked ready until they have.
   if (round || order.merchantPhase === "awaiting_item_approval") {
-    return (
-      <Waiting
-        {...ctx}
-        deadlineAt={round ? round.deadlineAt : order.itemApprovalDeadlineAt}
-        swaps={!!round}
-        now={now}
-      />
-    );
+    return <Waiting {...ctx} deadlineAt={round ? round.deadlineAt : order.itemApprovalDeadlineAt} swaps={!!round} now={now} />;
   }
-  const startMs = order.prepStartedAt
-    ? new Date(order.prepStartedAt).getTime()
-    : now;
+  const startMs = order.prepStartedAt ? new Date(order.prepStartedAt).getTime() : now;
   const totalMs = (order.prepMinutes ?? 15) * 60_000;
   const leftMs = Math.max(0, startMs + totalMs - now);
   const readyBy = hm(new Date(startMs + totalMs).toISOString());
   const canChange = changeableLines(order).length > 0;
-  const rxToCheck =
-    order.prescription?.status === "pending" &&
-    business?.myIsPharmacist === true;
+  const rxToCheck = order.prescription?.status === "pending" && business?.myIsPharmacist === true;
   const rider = riderFirstName(order);
   // Merchant v2 (D-77): the rider's arrival, from their location pings, once there's one to show.
   const riderLine =
@@ -826,11 +608,7 @@ function Cooking(ctx: Ctx) {
         : "We book the biker to arrive as it’s ready";
   return (
     <Fill>
-      <AppBar
-        back="/queue"
-        title={orderLabel(order)}
-        right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>}
-      />
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
         <ProgressSteps step={2} label={v.making} />
         <div className="m-cdcard">
@@ -838,15 +616,7 @@ function Cooking(ctx: Ctx) {
             <b className="m-num">{formatCountdown(leftMs)}</b>
             <span className="m-num">left · ready {readyBy}</span>
           </div>
-          <p
-            data-quiet={
-              (order.riderId &&
-                rider &&
-                !order.riderArrivedAt &&
-                !order.riderEtaAt) ||
-              undefined
-            }
-          >
+          <p data-quiet={(order.riderId && rider && !order.riderArrivedAt && !order.riderEtaAt) || undefined}>
             <Icon name="bike" size={16} />
             {riderLine}
           </p>
@@ -861,58 +631,24 @@ function Cooking(ctx: Ctx) {
           </Link>
         )}
         <div className="m-pillrow">
-          <button
-            type="button"
-            className="m-gh"
-            disabled={disabled}
-            onClick={() =>
-              void act(
-                () => extendPrep(order.id, order.prepMinutes),
-                "Ready time pushed back 5 min · customer told",
-              )
-            }
-          >
+          <button type="button" className="m-gh" disabled={disabled} onClick={() => void act(() => extendPrep(order.id, order.prepMinutes), "Ready time pushed back 5 min · customer told")}>
             <Icon name="clock" size={16} />
             +5 min
           </button>
           {canChange && (
-            <button
-              type="button"
-              className="m-gh"
-              disabled={disabled}
-              onClick={() => setConfirm("items")}
-            >
+            <button type="button" className="m-gh" disabled={disabled} onClick={() => setConfirm("items")}>
               <Icon name="pencil" size={16} />
               {OF.changeItems}
             </button>
           )}
         </div>
-        {error && (
-          <div className="m-alert" role="alert">
-            {error}
-          </div>
-        )}
-        <button
-          type="button"
-          className="m-problem"
-          disabled={disabled}
-          onClick={() => setConfirm("problem")}
-        >
+        {error && <div className="m-alert" role="alert">{error}</div>}
+        <button type="button" className="m-problem" disabled={disabled} onClick={() => setConfirm("problem")}>
           Problem with this order?
         </button>
       </div>
       <CtaBar>
-        <button
-          type="button"
-          className="m-btn"
-          disabled={disabled}
-          onClick={() =>
-            void act(
-              () => markReady(order.id),
-              "Marked ready · finding a biker",
-            )
-          }
-        >
+        <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => markReady(order.id), "Marked ready · finding a biker")}>
           {v.readyCta}
         </button>
       </CtaBar>
@@ -932,19 +668,11 @@ function Cooking(ctx: Ctx) {
  */
 function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
   const hold = isNoRiderHold(order);
-  const shop =
-    (order.venue?.businessType ?? business?.businessType) === "shop" ||
-    order.pickupProofRequired === true;
+  const shop = (order.venue?.businessType ?? business?.businessType) === "shop" || order.pickupProofRequired === true;
   const code = usePickupCode(order);
   const first = riderInSentence(order);
-  const proof =
-    order.pickupProof?.photoUrl || order.pickupProof?.takenAt
-      ? order.pickupProof
-      : null;
-  const fallback =
-    HANDOVER_FALLBACK_ENABLED &&
-    order.riderId &&
-    order.status === "en_route_pickup";
+  const proof = order.pickupProof?.photoUrl || order.pickupProof?.takenAt ? order.pickupProof : null;
+  const fallback = HANDOVER_FALLBACK_ENABLED && order.riderId && order.status === "en_route_pickup";
   return (
     <Fill>
       <AppBar back="/queue" title={OF.handTitle(orderLabel(order))} />
@@ -953,34 +681,15 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
         {order.rider ? (
           <RiderCard order={order} />
         ) : hold ? (
-          <div
-            className="m-card"
-            style={{
-              background: "var(--highlight-wash)",
-              borderColor: "var(--highlight-border)",
-            }}
-          >
+          <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
             <b style={{ fontSize: 15 }}>No biker yet</b>
             <span className="m-hint" style={{ fontSize: 13 }}>
-              Nobody has taken it so far. Keep searching, or cancel and the
-              customer is told.
+              Nobody has taken it so far. Keep searching, or cancel and the customer is told.
             </span>
-            <button
-              type="button"
-              className="m-btn m-sm"
-              disabled={disabled}
-              onClick={() =>
-                void act(() => dispatchResume(order.id), "Searching again")
-              }
-            >
+            <button type="button" className="m-btn m-sm" disabled={disabled} onClick={() => void act(() => dispatchResume(order.id), "Searching again")}>
               Keep searching
             </button>
-            <button
-              type="button"
-              className="m-lnk m-red"
-              disabled={disabled}
-              onClick={() => setConfirm("hold_cancel")}
-            >
+            <button type="button" className="m-lnk m-red" disabled={disabled} onClick={() => setConfirm("hold_cancel")}>
               Cancel order
             </button>
           </div>
@@ -995,41 +704,20 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
           <>
             <div className="m-check">
               <div>
-                <i className={proof?.bagSealed || proof ? "m-on" : undefined}>
-                  {proof?.bagSealed || proof ? (
-                    <Icon name="check" size={16} />
-                  ) : (
-                    1
-                  )}
-                </i>
+                <i className={proof?.bagSealed || proof ? "m-on" : undefined}>{proof?.bagSealed || proof ? <Icon name="check" size={16} /> : 1}</i>
                 <div>
                   <b>{OF.sealT}</b>
                   <span>Sticker or stapled receipt</span>
                 </div>
               </div>
               <div>
-                <i className={proof ? "m-on" : undefined}>
-                  {proof ? <Icon name="check" size={16} /> : 2}
-                </i>
+                <i className={proof ? "m-on" : undefined}>{proof ? <Icon name="check" size={16} /> : 2}</i>
                 <div>
-                  <b>
-                    {proof
-                      ? `${capitalised(first)} photographed it`
-                      : `${capitalised(first)} photographs it`}
-                  </b>
-                  <span>
-                    {proof
-                      ? `${hm(proof.takenAt)} · the customer sees this too`
-                      : OF.photoWait(riderFirstName(order) ?? first)}
-                  </span>
+                  <b>{proof ? `${capitalised(first)} photographed it` : `${capitalised(first)} photographs it`}</b>
+                  <span>{proof ? `${hm(proof.takenAt)} · the customer sees this too` : OF.photoWait(riderFirstName(order) ?? first)}</span>
                 </div>
                 {proof?.photoUrl ? (
-                  <a
-                    href={proof.photoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={OF.photo}
-                  >
+                  <a href={proof.photoUrl} target="_blank" rel="noreferrer" aria-label={OF.photo}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived proof URL */}
                     <img src={proof.photoUrl} alt="" className="m-thumb" />
                   </a>
@@ -1039,9 +727,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
                 <i>3</i>
                 <div>
                   <b>Say the code to {first}</b>
-                  {code && (
-                    <span className="m-bigcode m-num">{codeText(code)}</span>
-                  )}
+                  {code && <span className="m-bigcode m-num">{codeText(code)}</span>}
                 </div>
               </div>
             </div>
@@ -1064,8 +750,7 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
         {order.riderId && order.autoAccepted && (
           <div className="m-waitrow">
             <span className="m-wspin" />
-            {capitalised(first)} collects it at the counter. This screen moves
-            on by itself.
+            {capitalised(first)} collects it at the counter. This screen moves on by itself.
           </div>
         )}
 
@@ -1081,29 +766,18 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
             className="m-btn2"
             disabled={disabled}
             onClick={() =>
-              void act(
-                async () => {
-                  // The link goes from the counter's own phone (the rider may have no data for the app, but SMS works).
-                  const res = await requestHandoverFallback(order.id);
-                  const body = handoverLinkMessage(
-                    business?.name ?? "the counter",
-                    orderLabel(order),
-                    res.link,
-                  );
-                  window.location.href = `sms:${res.riderPhone ?? ""}?body=${encodeURIComponent(body)}`;
-                },
-                `${capitalised(first)} got a link to finish it`,
-              )
+              void act(async () => {
+                // The link goes from the counter's own phone (the rider may have no data for the app, but SMS works).
+                const res = await requestHandoverFallback(order.id);
+                const body = handoverLinkMessage(business?.name ?? "the counter", orderLabel(order), res.link);
+                window.location.href = `sms:${res.riderPhone ?? ""}?body=${encodeURIComponent(body)}`;
+              }, `${capitalised(first)} got a link to finish it`)
             }
           >
             Biker can’t enter code
           </button>
         )}
-        {error && (
-          <div className="m-alert" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <div className="m-alert" role="alert">{error}</div>}
       </div>
     </Fill>
   );
@@ -1117,72 +791,31 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
  * pinned "I got $12.00", held "· after delivery" until the order is delivered. An order that wasn't
  * delivered brings the goods back instead. It replaces the tracking, delivered and goods-back screens.
  */
-function OnTheWay({
-  order,
-  act,
-  disabled,
-  error,
-  setConfirm,
-  business,
-  v,
-}: Ctx) {
-  const delivered =
-    order.status === "delivered" || order.status === "completed";
+function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx) {
+  const delivered = order.status === "delivered" || order.status === "completed";
   // MJ-RB1: a cancel after the rider collected rides the goods back too — the same K5c screen.
   const failed = isGoodsReturn(order);
-  const cashBack =
-    order.paymentMethod === "cash" &&
-    order.merchantCashRule === "collect_and_return";
+  const cashBack = order.paymentMethod === "cash" && order.merchantCashRule === "collect_and_return";
   // Own bikers (D-117, OV-F5): the shop's own biker brings the delivery fee back with the food.
   const ownBiker = order.ownBiker === true;
-  const split = foodOrderMoney({
-    goodsTotal: order.merchantGoodsTotal,
-    deliveryFee: order.deliveryFee,
-    merchantDeliveryShare: order.merchantDeliveryShare,
-  });
-  const amount =
-    order.debtAmount ?? (ownBiker ? split.customerTotal : split.merchantNet);
+  const split = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
+  const amount = order.debtAmount ?? (ownBiker ? split.customerTotal : split.merchantNet);
   const rider = riderName(order);
   const first = capitalised(riderInSentence(order));
   const owes = order.debtStatus === "open";
   // K5b / K5c (D-77 follow-ups): "#A115 delivered" · "Blessing M. · 07:41 · 2 dishes"; "#A117 couldn't be
   // delivered" · "Customer didn't answer · 07:44".
   const label = orderLabel(order);
-  const title = delivered
-    ? `${label} delivered`
-    : failed
-      ? `${label} couldn't be delivered`
-      : OF.trackT(label);
+  const title = delivered ? `${label} delivered` : failed ? `${label} couldn't be delivered` : OF.trackT(label);
   // A2: "arrives 07:38", or "on the way" with no estimate — never "arrives —".
-  const eta =
-    delivered || failed
-      ? null
-      : order.riderEtaAt
-        ? `arrives ${hm(order.riderEtaAt)}`
-        : "on the way";
+  const eta = delivered || failed ? null : order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : "on the way";
   const failedAt = order.doorProof?.takenAt ?? null;
   const sub = failed
-    ? [failReason(order), failedAt ? hm(failedAt) : null]
-        .filter(Boolean)
-        .join(" · ")
-    : [
-        order.rider ? rider : null,
-        delivered && order.deliveredAt ? hm(order.deliveredAt) : eta,
-        countOf(order.items.length, v),
-      ]
-        .filter(Boolean)
-        .join(" · ");
-  const prepaid =
-    order.paymentMethod === "wallet"
-      ? `Paid by wallet · ${money(order.merchantGoodsTotal)}`
-      : `Paid at pickup · ${money(order.merchantGoodsTotal)}`;
-  const foodLabel =
-    (order.venue?.businessType ?? business?.businessType) === "shop"
-      ? "Goods"
-      : "Food";
-  const cashLine = order.cashDueAt
-    ? `${first} brings it back by ${hm(order.cashDueAt)}`
-    : `${first} brings it back after delivery`;
+    ? [failReason(order), failedAt ? hm(failedAt) : null].filter(Boolean).join(" · ")
+    : [order.rider ? rider : null, delivered && order.deliveredAt ? hm(order.deliveredAt) : eta, countOf(order.items.length, v)].filter(Boolean).join(" · ");
+  const prepaid = order.paymentMethod === "wallet" ? `Paid by wallet · ${money(order.merchantGoodsTotal)}` : `Paid at pickup · ${money(order.merchantGoodsTotal)}`;
+  const cashLine = order.cashDueAt ? `${first} brings it back by ${hm(order.cashDueAt)}` : `${first} brings it back after delivery`;
+  const foodLabel = (order.venue?.businessType ?? business?.businessType) === "shop" ? "Goods" : "Food";
   return (
     <Fill>
       <StaticMap center={business?.location?.point ?? null} height={250}>
@@ -1205,11 +838,7 @@ function OnTheWay({
             <b className="m-num">
               {boardItems(order)} · {money(order.merchantGoodsTotal)}
             </b>
-            <p>
-              {order.cashDueAt
-                ? `${rider} brings it back by ${hm(order.cashDueAt)}`
-                : `${rider} is bringing it back`}
-            </p>
+            <p>{order.cashDueAt ? `${rider} brings it back by ${hm(order.cashDueAt)}` : `${rider} is bringing it back`}</p>
           </div>
         ) : cashBack ? (
           <CashCard
@@ -1222,11 +851,7 @@ function OnTheWay({
               ownBiker && order.deliveryFee != null
                 ? OBM.cashBackApp(
                     first,
-                    money(
-                      (Math.round(amount * 100) -
-                        Math.round(order.deliveryFee * 100)) /
-                        100,
-                    ),
+                    money((Math.round(amount * 100) - Math.round(order.deliveryFee * 100)) / 100),
                     money(order.deliveryFee),
                     money(amount),
                     foodLabel.toLowerCase(),
@@ -1237,11 +862,7 @@ function OnTheWay({
         ) : null}
         {/* K5c draws no attempt photo; the goods card is the screen (D-77 follow-ups). */}
         {failed ? null : order.doorProof ? (
-          <PhotoRow
-            title={OF.doorPhoto}
-            sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))}
-            url={order.doorProof.photoUrl}
-          />
+          <PhotoRow title={OF.doorPhoto} sub={doorProofLine(order.doorProof, hm(order.doorProof.takenAt))} url={order.doorProof.photoUrl} />
         ) : (
           !delivered &&
           !failed && (
@@ -1259,46 +880,20 @@ function OnTheWay({
             Nothing to bring back. It&apos;s in your Money tab.
           </InfoStrip>
         )}
-        {error && (
-          <div className="m-alert" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <div className="m-alert" role="alert">{error}</div>}
         {!cashBack && !failed && !delivered && isAfterPickup(order) && (
-          <button
-            type="button"
-            className="m-lnk"
-            style={{ minHeight: "var(--target-min)", fontSize: 13 }}
-            disabled={disabled}
-            onClick={() => setConfirm("force")}
-          >
+          <button type="button" className="m-lnk" style={{ minHeight: "var(--target-min)", fontSize: 13 }} disabled={disabled} onClick={() => setConfirm("force")}>
             Mark ride completed
           </button>
         )}
       </div>
       {failed ? (
         <CtaBar>
-          <button
-            type="button"
-            className="m-btn"
-            disabled={disabled}
-            onClick={() =>
-              void act(
-                () => confirmGoodsReturned(order.id),
-                "Goods back · order closed",
-                true,
-              )
-            }
-          >
+          <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => confirmGoodsReturned(order.id), "Goods back · order closed", true)}>
             {v.goodsBack}
           </button>
           {/* R-07: the merchant's only way to flag goods that never came back. */}
-          <button
-            type="button"
-            className="m-btn2 m-danger-ink"
-            disabled={disabled}
-            onClick={() => setConfirm("not_returned")}
-          >
+          <button type="button" className="m-btn2 m-danger-ink" disabled={disabled} onClick={() => setConfirm("not_returned")}>
             It wasn&apos;t returned
           </button>
         </CtaBar>
@@ -1306,26 +901,10 @@ function OnTheWay({
         <CtaBar>
           {delivered && owes ? (
             <>
-              <button
-                type="button"
-                className="m-btn"
-                disabled={disabled}
-                onClick={() =>
-                  void act(
-                    () => confirmReturnedCash(order.id, amount),
-                    "Cash confirmed · order closed",
-                    true,
-                  )
-                }
-              >
+              <button type="button" className="m-btn" disabled={disabled} onClick={() => void act(() => confirmReturnedCash(order.id, amount), "Cash confirmed · order closed", true)}>
                 {OF.cashBtn(money(amount))}
               </button>
-              <button
-                type="button"
-                className="m-btn2"
-                disabled={disabled}
-                onClick={() => setConfirm("no_cash")}
-              >
+              <button type="button" className="m-btn2" disabled={disabled} onClick={() => setConfirm("no_cash")}>
                 {OF.noCash}
               </button>
             </>
@@ -1345,38 +924,15 @@ function OnTheWay({
  *  "Swap asked" / "Removing", and the ready button held until the customer answers (or time runs out).
  *  A shortened order from before Order flow v2 (`swaps` false) has no swaps and doesn't carry on by
  *  itself when time runs out, so it leaves out the line that says so. */
-function Waiting({
-  order,
-  v,
-  deadlineAt,
-  swaps,
-  now,
-}: Ctx & { deadlineAt: string | null; swaps: boolean; now: number }) {
-  const left = deadlineAt
-    ? formatCountdown(Math.max(0, new Date(deadlineAt).getTime() - now))
-    : null;
+function Waiting({ order, v, deadlineAt, swaps, now }: Ctx & { deadlineAt: string | null; swaps: boolean; now: number }) {
+  const left = deadlineAt ? formatCountdown(Math.max(0, new Date(deadlineAt).getTime() - now)) : null;
   return (
     <Fill>
-      <AppBar
-        back="/queue"
-        title={orderLabel(order)}
-        right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>}
-      />
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num">{money(order.merchantGoodsTotal)}</span>} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 4 }}>
         <ProgressSteps step={2} label={v.making} />
-        <div
-          className="m-note"
-          data-tone="ok"
-          style={{ flexDirection: "column", gap: 6 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-            }}
-          >
+        <div className="m-note" data-tone="ok" style={{ flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
             <b style={{ flex: 1, fontSize: 15 }}>{OF.mWait}</b>
             {left && <span className="m-cchip m-num">{left}</span>}
           </div>
@@ -1408,15 +964,7 @@ function Waiting({
 function Payment({ order, act, disabled, error, setConfirm }: Ctx) {
   return (
     <Fill>
-      <AppBar
-        back="/queue"
-        title={orderLabel(order)}
-        right={
-          <span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>
-            {money(order.merchantGoodsTotal)}
-          </span>
-        }
-      />
+      <AppBar back="/queue" title={orderLabel(order)} right={<span className="m-num" style={{ fontSize: 15, fontWeight: 700 }}>{money(order.merchantGoodsTotal)}</span>} />
       <div className="m-bd" style={{ flex: 1, paddingTop: 12 }}>
         <Note tone="hi" icon="clock" title="Waiting for payment">
           <br />
@@ -1426,42 +974,17 @@ function Payment({ order, act, disabled, error, setConfirm }: Ctx) {
           <OrderLines order={order} />
         </div>
         {!order.paymentRequestedAt && (
-          <button
-            type="button"
-            className="m-btn-sec"
-            disabled={disabled}
-            onClick={() =>
-              void act(
-                () => requestPayment(order.id, true),
-                "Payment asked for · customer told",
-              )
-            }
-          >
+          <button type="button" className="m-btn-sec" disabled={disabled} onClick={() => void act(() => requestPayment(order.id, true), "Payment asked for · customer told")}>
             Ask for payment
           </button>
         )}
-        {error && (
-          <div className="m-alert" role="alert">
-            {error}
-          </div>
-        )}
-        <button
-          type="button"
-          className="m-lnk m-red"
-          style={{ minHeight: "var(--target-min)", fontSize: 14 }}
-          disabled={disabled}
-          onClick={() => setConfirm("release")}
-        >
+        {error && <div className="m-alert" role="alert">{error}</div>}
+        <button type="button" className="m-lnk m-red" style={{ minHeight: "var(--target-min)", fontSize: 14 }} disabled={disabled} onClick={() => setConfirm("release")}>
           Cancel order
         </button>
       </div>
       <CtaBar>
-        <button
-          type="button"
-          className="m-btn"
-          disabled={disabled}
-          onClick={() => setConfirm("paid")}
-        >
+        <button type="button" className="m-btn" disabled={disabled} onClick={() => setConfirm("paid")}>
           {OF.cashBtn(money(order.merchantGoodsTotal))}
         </button>
       </CtaBar>
@@ -1479,15 +1002,7 @@ function Closed({ order }: Pick<Ctx, "order">) {
   return (
     <>
       <AppBar back="/queue" title={orderLabel(order)} />
-      <div
-        className="m-bd"
-        style={{
-          alignItems: "center",
-          textAlign: "center",
-          paddingTop: 48,
-          gap: 10,
-        }}
-      >
+      <div className="m-bd" style={{ alignItems: "center", textAlign: "center", paddingTop: 48, gap: 10 }}>
         <Icon name="circle-check" size={32} color="var(--muted)" />
         <b style={{ fontSize: 18 }}>{label}</b>
         <Link href="/queue" className="m-lnk">
@@ -1510,11 +1025,8 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
   const codeless = order.autoAccepted === true;
   useEffect(() => {
     const locked = order.pickupCodeAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
-    const key = order.riderId
-      ? `${order.riderId}:${locked ? "locked" : "open"}`
-      : null;
-    if (codeless || !key || isAfterPickup(order) || askedFor.current === key)
-      return;
+    const key = order.riderId ? `${order.riderId}:${locked ? "locked" : "open"}` : null;
+    if (codeless || !key || isAfterPickup(order) || askedFor.current === key) return;
     askedFor.current = key;
     revealPickupCode(order.id)
       .then((res) => setCode(res.pickupCode))
@@ -1523,8 +1035,7 @@ function usePickupCode(order: MerchantOrderResponse): string | null {
         // D2 review: the server re-issues a locked code at most HANDOVER_CODE_MAX_REISSUES times per order.
         // Past that it refuses for good, so this lock is not asked about again (no 409 on every poll); the
         // dead code stays hidden and the order goes through "Problem with this order?" / support.
-        if (e instanceof ApiError && e.reason === "pickup_code_reissue_limit")
-          return;
+        if (e instanceof ApiError && e.reason === "pickup_code_reissue_limit") return;
         // Not silent for good: the next order refresh asks again (E2E 2026-10-05 LB-1 hid behind this).
         askedFor.current = null;
       });
