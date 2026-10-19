@@ -9,8 +9,9 @@ import { Icon } from "../icons";
  * closed"). One per app, so a screen that navigates away right after an action still shows it.
  */
 export interface ToastOptions {
-  /** Shop front v1 (D-115): first-run-v2's saved toast — forest, a mint check, 96px up, 2.5 s. */
-  tone?: "saved";
+  /** Shop front v1 (D-115): first-run-v2's saved toast — forest, a mint check, 96px up, 2.5 s. Own bikers v1
+   *  (D-117): `offline` is the same toast with a wifi-off in the muted mint ("This list may be out of date"). */
+  tone?: "saved" | "offline";
 }
 
 const ToastContext = createContext<(message: string, options?: ToastOptions) => void>(() => {});
@@ -19,13 +20,13 @@ export const TOAST_MS = 2200;
 export const SAVED_TOAST_MS = 2500;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toast, setToast] = useState<{ message: string; tone?: "saved" } | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone?: ToastOptions["tone"] } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const show = useCallback((next: string, options?: ToastOptions) => {
     setToast({ message: next, tone: options?.tone });
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), options?.tone === "saved" ? SAVED_TOAST_MS : TOAST_MS);
+    timer.current = setTimeout(() => setToast(null), options?.tone ? SAVED_TOAST_MS : TOAST_MS);
   }, []);
 
   useEffect(
@@ -41,6 +42,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {toast && (
         <div className="m-toast" data-tone={toast.tone} role="status" aria-live="polite">
           {toast.tone === "saved" && <Icon name="check" size={20} color="var(--accent)" />}
+          {toast.tone === "offline" && <Icon name="wifi-off" size={20} color="var(--on-forest-muted)" />}
           {toast.message}
         </div>
       )}

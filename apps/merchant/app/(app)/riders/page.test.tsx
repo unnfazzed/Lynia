@@ -11,6 +11,9 @@ import { merchantProfile } from "../../testing/fixtures";
 
 vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn(), addRider: vi.fn(), removeRider: vi.fn() }));
 vi.mock("../../lib/business", () => ({ loadBusiness: vi.fn() }));
+const nav = vi.hoisted(() => ({ replace: vi.fn(), retired: false }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }) }));
+vi.mock("../../lib/order-flags", () => ({ usePreferredRetired: () => nav.retired }));
 
 vi.mock("../../components/KitchenConnectionProvider", () => {
   const value = { signOut: vi.fn(), actionsDisabled: false };
@@ -34,6 +37,7 @@ const Page = () => (
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  nav.retired = false;
 });
 
 function rider(over: Partial<MerchantPreferredRiderResponse> = {}): MerchantPreferredRiderResponse {
@@ -157,6 +161,14 @@ describe("E4 · Preferred bikers (merchant mobile, D-48)", () => {
     render(<Page />);
     expect(await screen.findByText("Blessing")).toBeTruthy();
     expect(screen.queryByText("Only the owner can add or remove bikers.")).toBeNull();
+  });
+
+  it("Own bikers T9: once Preferred riders is retired, a bookmark lands on Account", async () => {
+    nav.retired = true;
+    vi.mocked(loadBusiness).mockResolvedValue(SHOP);
+    vi.mocked(listRiders).mockResolvedValue({ riders: [], cap: 20 });
+    render(<Page />);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/account"));
   });
 
   it("says Your bikers is on its way on an API that doesn't keep bikers yet", async () => {

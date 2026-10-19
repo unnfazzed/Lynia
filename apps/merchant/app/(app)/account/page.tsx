@@ -17,6 +17,10 @@ import { firstName, initials, ROLE_LABEL } from "../../lib/team";
 import { getTeam, leaveBusiness, listMyInvites, noBusinessPath } from "../../lib/team-api";
 import { dayKeyFor } from "../../lib/hours";
 import { listRiders } from "../../lib/riders-api";
+import { getFleet } from "../../lib/fleet-api";
+import { usePreferredRetired } from "../../lib/order-flags";
+import { ownBikersRow, type OwnBikersRow } from "../../lib/own-bikers";
+import { OBM } from "../../lib/own-bikers-copy";
 
 type Confirm = null | "sign-out" | "leave";
 
@@ -25,7 +29,9 @@ type Confirm = null | "sign-out" | "leave";
  * top card: the business's initials, its name and "Farai · Owner · 2 branches". Then two grouped cards,
  * each row showing its current value so most visits need no tap — YOUR SHOP FRONT (Profile & photos ·
  * Opening hours "08:00–22:00" · Branches "2") and ORDERS & PEOPLE (Taking orders "Auto-accept off" ·
- * Preferred riders "4" · Team "1 invite open") — and the red "Sign out" pill behind the confirm sheet.
+ * Preferred riders "4" · Team "1 invite open") — and the red "Sign out" pill behind the confirm sheet. Own bikers v1
+ * (OB-M1, D-117): a business with Own bikers gets "Own bikers · 4 bikers · 1 invite open" (staff "4 bikers", a gold
+ * "Paused" chip when paused) instead of Preferred riders, which goes for everyone once it is retired.
  *
  * Staff don't see the shop front, Branches or Team (merchant-mobile README C4). A staff member also gets
  * "Leave this business". Help & support (WhatsApp) is its own HELP group (D-77 follow-ups).
@@ -38,6 +44,9 @@ export default function AccountPage() {
   const [pendingInvites, setPendingInvites] = useState(0);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
   const [riderCount, setRiderCount] = useState<number | null>(null);
+  // Own bikers (OB-M1, D-117): undefined while the roster is read; null = this business has none.
+  const [ownBikers, setOwnBikers] = useState<OwnBikersRow | undefined>(undefined);
+  const preferredRetired = usePreferredRetired();
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +82,21 @@ export default function AccountPage() {
       alive = false;
     };
   }, [staff, business?.name]);
+
+  useEffect(() => {
+    let alive = true;
+    // 503 while Own bikers isn't live, or any failure: no row, as for a business without a fleet.
+    getFleet()
+      .then((fleet) => {
+        if (alive) setOwnBikers(ownBikersRow(fleet));
+      })
+      .catch(() => {
+        if (alive) setOwnBikers(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -139,7 +163,19 @@ export default function AccountPage() {
         <div className="m-group">
           {!owner && <Row href="/hours" icon="clock" label="Opening hours" value={hoursValue} />}
           {owner && <Row href="/ordering" icon="inbox" label="Taking orders" value={takingValue} />}
-          <Row href="/riders" icon="bike" label="Preferred bikers" value={riderCount !== null ? String(riderCount) : undefined} />
+          {/* OB-M1: "Own bikers" replaces Preferred riders for a business with a fleet; Preferred stays for the
+              others until it is retired (PREFERRED_RETIRED), and waits for the fleet read so it never flashes. */}
+          {ownBikers ? (
+            <Row
+              href="/own-bikers"
+              icon="bike"
+              label={OBM.ownBikers}
+              value={ownBikers.kind === "value" ? ownBikers.text : undefined}
+              badge={ownBikers.kind === "paused" ? OBM.ownBikersPaused : undefined}
+            />
+          ) : ownBikers === null && !preferredRetired ? (
+            <Row href="/riders" icon="bike" label="Preferred bikers" value={riderCount !== null ? String(riderCount) : undefined} />
+          ) : null}
           {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? `${pendingInvites} invite${pendingInvites === 1 ? "" : "s"} open` : undefined} />}
         </div>
         {/* T3 (D-77 follow-ups): a HELP group — "Help & support · WhatsApp", the text prefilled. */}

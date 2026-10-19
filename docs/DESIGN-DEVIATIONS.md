@@ -5807,3 +5807,12 @@ hex values become `--muted` / `--line`; the admin kit's danger pill and button b
 **Shipping:** four PRs in the handoff's order (merchant Account + roster, merchant Book + board + money, biker app,
 admin), each behind `FLEET_UI_LIVE`. Strings come from the handoff's `copy.ts`, verbatim. User-facing copy says
 "biker" (D-101); the "From your Preferred riders" header names the retired feature on purpose.
+
+**Evidence, PR 1 (merchant Account + roster, OB-M1–M7):** `docs/parity/OWN-BIKERS-V1-MERCHANT-ROSTER-2026-10-19.png`
+(`tools/parity/shoot-own-bikers-v1.mjs`), 23 frames side by side at 360 × 720 and 320 × 640. What still differs, and why:
+- The strings that name the business (`m.removeB`, `m.waText`) take the branch's own name ("Chicken Inn Avondale"),
+  the only name the app has for it; the drawing's "Chicken Inn" is sample data.
+- Staff get no Call on a biker's sheet: their roster carries masked numbers (E6), so there is nothing to dial.
+- Offline, the app's existing "No connection, retrying…" bar sits above the roster beside the drawn toast.
+- OB-M7's notification-inbox row isn't built: the merchant app has no inbox. The join reaches the owner as a push.
+- Account's HELP group only renders where the support WhatsApp number is configured (unchanged behaviour).
