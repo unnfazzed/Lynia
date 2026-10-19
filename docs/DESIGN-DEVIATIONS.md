@@ -5714,3 +5714,32 @@ list, pending a product decision.
 Screenshot sheet (every frame, handoff left, app right): `docs/parity/SHOP-FRONT-V1-2026-10-18.png`, made by
 `tools/parity/shoot-shop-front-v1.mjs`.
 
+
+## D-116 · Sign-up from any country: the phone field's "+263" becomes a flag-and-code picker — APPROVED (owner, 2026-10-19)
+
+**Why:** the app is downloadable worldwide, and the owner wants diaspora customers and merchants to sign up on
+their own numbers (*"users and merchants can have any code .. Bikers still need to have +263"*). The owner chose
+the whole world over a country list, and a tappable prefix over typing "+": *"lets move from just 263 to a flag
+or flag and code .. the one with great aesthetics"*, with the list *"Zimbabwe at the top and top 10 countries
+below .. then list goes to alphabetical after that"*. No handoff draws a picker, so it is built from the existing
+kits' parts (the First Run v2 sheet on the app, the merchant-mobile sheet on merchant web) and existing tokens;
+**upstream ask: draw the C2 / A1 country segment and the country sheet.**
+
+| Where | Drawn | Now |
+|---|---|---|
+| C2 phone field prefix (`app/phone.tsx`) | fixed "+263" text | 🇿🇼 flag + "+263" + chevron, a button that opens the country sheet. A rider intent (C1 "Ride with LyniaGo") keeps 🇿🇼 +263 with no chevron |
+| A1 phone field prefix (`apps/merchant/app/login/page.tsx`) | fixed **+263** | the same flag + code + chevron button |
+| Country sheet (new; `src/ui/onboarding/CountrySheet.tsx`, `apps/merchant/app/components/m/CountrySheet.tsx`) | — | "Choose your country", a search ("Search country or code"), rows of flag · name · +code with the chosen one on `accentWash` + a check; Zimbabwe, the ten countries with the most Zimbabweans (South Africa, United Kingdom, Botswana, Mozambique, Malawi, United States, Australia, Zambia, Canada, New Zealand; `DIASPORA_COUNTRY_ISOS` in `packages/shared/src/countries.ts`), a hairline, then A–Z. No match: an `EmptyRow` "No country matches “…”" |
+| C2 help / C3 lines for another country | Zimbabwe-only ("Starts with 71, 73, 77 or 78.", "…9 digits after +263.") | Zimbabwe unchanged; any other country: "Your number without the country code." / "That number looks short. Check it and try again.", placeholder "Mobile number" |
+| R1 "Start ID check" on a non-+263 account | — | toast "Biking needs a Zimbabwe number (+263). Sign in with one to ride." (API `403 phone_country`) |
+| Merchant E3 masked number | "+263 •• ••• 2210" | the member's own code ("+44 •• ••• 3456") |
+
+**Behaviour:** a pasted or autofilled "+44 …" switches the country. Flags are emoji (no image assets); a desktop
+browser without flag glyphs (Windows) shows the two letters instead. The customer's Home deliver-to and Send's
+pickup pin ignore a GPS fix outside the service area, so a customer abroad starts from "Set your location"
+instead of a London address.
+
+**API:** `OTP_ALLOWED_COUNTRY_CODES` now defaults to `*` (any country; a list still narrows it), and
+`POST /riders/become` refuses a non-+263 account (`403 phone_country`) before any paid ID check.
+
+Screenshot sheet (C2 default, the list, search, UK picked, 320×640): `docs/parity/D-116-COUNTRY-PICKER-2026-10-19.png`.

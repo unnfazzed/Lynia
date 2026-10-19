@@ -47,7 +47,7 @@ async function caught(p: Promise<unknown>): Promise<unknown> {
 }
 
 describe("becomeRider — who may become a biker", () => {
-  const prismaFor = (profile: { firstName: string; role: string }) => {
+  const prismaFor = (profile: { firstName: string; role: string; phone?: string }) => {
     const create = vi.fn(async () => ({}));
     const update = vi.fn(async () => ({}));
     return {
@@ -55,7 +55,7 @@ describe("becomeRider — who may become a biker", () => {
       update,
       prisma: {
         rider: { findUnique: async () => null, create },
-        profile: { update, findUnique: async () => ({ ...profile, idNumberHash: null }), count: async () => 0 },
+        profile: { update, findUnique: async () => ({ phone: "+263771234567", ...profile, idNumberHash: null }), count: async () => 0 },
         auditLog: { create: vi.fn(async () => ({})), count: async () => 0 },
         $transaction: async (ops: unknown[]) => ops,
       } as Record<string, unknown>,
@@ -72,6 +72,20 @@ describe("becomeRider — who may become a biker", () => {
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+
+  it.each(["+447911123456", "+27821234567", "+14155551234"])(
+    "refuses a non-Zimbabwe number (%s) with 403 phone_country — customers may be abroad, bikers may not",
+    async (phone) => {
+      const submit = vi.fn(async () => ({ ref: "s", status: "pending" as const, url: "u" }));
+      const { prisma, create, update } = prismaFor({ firstName: "Rudo", role: "customer", phone });
+      const e = await caught(svc(prisma, { KYC_MODE: "auto", KYC_PROVIDER: "didit" }, { submit }).becomeRider("p1", {}));
+      expect(statusOf(e)).toBe(403);
+      expect(responseOf(e)).toMatchObject({ reason: "phone_country", message: "Biking needs a Zimbabwe number (+263)." });
+      expect(submit).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
 
   it("leaves a MERCHANT-role profile alone (merchant access reads memberships, not role)", async () => {
     const { prisma, create } = prismaFor({ firstName: "Chipo", role: "merchant" });

@@ -245,8 +245,11 @@ export function areaOf(label: string): string {
   return (label.split(",")[0] ?? label).trim() || label.trim();
 }
 
-/** "0771 234 567" — how the YOUR PHONE block shows a Zimbabwe mobile; anything else as typed. */
+/** "0771 234 567" — how the YOUR PHONE block shows a Zimbabwe mobile; a foreign number (D-116) in
+ *  E.164; anything else as typed. */
 export function displayPhone(phone: string): string {
+  const e164 = normalizePhone(phone);
+  if (e164 && !e164.startsWith("+263")) return e164;
   const d = zwNationalDigits(phone);
   return d.length === 9 ? `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}` : phone.trim();
 }

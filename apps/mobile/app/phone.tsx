@@ -1,3 +1,4 @@
+import { countryForE164, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164, type Country } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { otpErrorMessage } from "../src/logic/otp";
 import { formatZwNational, zwE164, zwMobileProblem, zwNationalDigits } from "../src/logic/zw-mobile";
 import { DismissKeyboardArea, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
+import { CountrySegment, CountrySheet } from "../src/ui/onboarding/CountrySheet";
 import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/onboarding/kit";
 
 /**
@@ -27,6 +29,11 @@ import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/
  * network, a server error, the send limit) is not the number's fault, so it is a toast, as on C4/C5.
  * The field has no `maxLength`: a pasted or autofilled "+263 77 245 1180" is longer than the nine digits
  * it holds, and `zwNationalDigits` already strips the prefix and caps at nine.
+ *
+ * D-116 (owner 2026-10-19): the prefix is the country's flag and code, and a customer can change it
+ * (Zimbabwe, the top-10 diaspora countries, then A–Z). Zimbabwe keeps every C2/C3 rule above; another
+ * country takes its national digits as typed. A pasted or autofilled "+44 …" switches the country. A
+ * rider intent pins the Zimbabwe flag and +263 with no chevron: bikers need a Zimbabwe number (the API refuses others).
  */
 export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
@@ -46,6 +53,10 @@ export default function PhoneScreen(): React.ReactElement {
     };
   }, []);
   const intent = params.intent === "rider" || storedIntent === "rider" ? "rider" : undefined;
+  const [picked, setPicked] = useState<Country>(HOME_COUNTRY);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const country = intent === "rider" ? HOME_COUNTRY : picked;
+  const isHome = country.iso === HOME_COUNTRY.iso;
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
   // The C3 validation line: only ever a problem with the number itself.
@@ -62,9 +73,14 @@ export default function PhoneScreen(): React.ReactElement {
 
   const submit = async (): Promise<void> => {
     if (inFlight.current) return;
-    const problem = zwMobileProblem(digits);
-    if (problem) {
-      setError(problem === "short" ? OB.phoneShort : OB.phoneNotMobile);
+    if (isHome) {
+      const problem = zwMobileProblem(digits);
+      if (problem) {
+        setError(problem === "short" ? OB.phoneShort : OB.phoneNotMobile);
+        return;
+      }
+    } else if (intlPhoneProblem(digits, country)) {
+      setError(OB.phoneShortIntl);
       return;
     }
     inFlight.current = true;
@@ -72,7 +88,7 @@ export default function PhoneScreen(): React.ReactElement {
     setError(null);
     setBusy(true);
     try {
-      const phone = zwE164(digits);
+      const phone = isHome ? zwE164(digits) : toE164(country, digits);
       const res = await requestOtp(phone);
       // A test code goes to the code screen in memory, never in the URL (src/auth/dev-code-handoff.ts).
       stashDevCode(phone, res.devCode);
@@ -154,22 +170,24 @@ export default function PhoneScreen(): React.ReactElement {
               gap: 12,
             }}
           >
-            <View style={{ height: 28, paddingRight: 12, borderRightWidth: 1, borderRightColor: tokens.color.line, justifyContent: "center" }}>
-              <Text style={{ fontSize: 17, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{OB.phonePrefix}</Text>
-            </View>
+            <CountrySegment country={country} locked={intent === "rider"} onPress={() => setPickerOpen(true)} />
             <TextInput
-              value={formatZwNational(digits)}
+              value={isHome ? formatZwNational(digits) : digits}
               onChangeText={(t) => {
-                setDigits(zwNationalDigits(t));
+                // A pasted or autofilled international number names its own country.
+                const pastedCountry = intent !== "rider" && /^\s*(\+|00)/.test(t) ? countryForE164(t.replace(/^\s*(\+|00)/, "")) : undefined;
+                const target = pastedCountry ?? country;
+                if (pastedCountry && pastedCountry.iso !== country.iso) setPicked(pastedCountry);
+                setDigits(target.iso === HOME_COUNTRY.iso ? zwNationalDigits(t) : nationalDigits(t, target));
                 if (error) setError(null);
               }}
               onSubmitEditing={() => void submit()}
-              placeholder="77 245 1180"
+              placeholder={isHome ? "77 245 1180" : OB.phonePlaceholderIntl}
               placeholderTextColor={tokens.color.muted}
               keyboardType="phone-pad"
               autoComplete="tel"
               textContentType="telephoneNumber"
-              accessibilityLabel={`${OB.phoneLabel}, ${OB.phonePrefix}`}
+              accessibilityLabel={`${OB.phoneLabel}, +${country.dial}`}
               style={{ flex: 1, height: "100%", fontSize: 17, color: tokens.color.ink, fontVariant: ["tabular-nums"] }}
             />
           </View>
@@ -178,9 +196,21 @@ export default function PhoneScreen(): React.ReactElement {
               {error}
             </Text>
           ) : (
-            <Text style={{ marginTop: 8, fontSize: 13, color: tokens.color.muted }}>{OB.phoneHelp}</Text>
+            <Text style={{ marginTop: 8, fontSize: 13, color: tokens.color.muted }}>{isHome ? OB.phoneHelp : OB.phoneHelpIntl}</Text>
           )}
         </Pad>
+        <CountrySheet
+          visible={pickerOpen}
+          selected={country}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(c) => {
+            setPickerOpen(false);
+            if (c.iso === country.iso) return;
+            setPicked(c);
+            setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d) : nationalDigits(d, c)));
+            if (error) setError(null);
+          }}
+        />
       </OnbScreen>
     </DismissKeyboardArea>
   );

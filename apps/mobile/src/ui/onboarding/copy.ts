@@ -21,6 +21,16 @@ export const OB = {
   phoneShort: "That number looks short. Zimbabwe mobiles have 9 digits after +263.",
   /** D-55: C3 draws only the too-short case; a 9-digit number on the wrong prefix gets this. */
   phoneNotMobile: "That doesn’t look like a mobile number. Zimbabwe mobiles start with 71, 73, 77 or 78.",
+  /** D-116 (owner 2026-10-19): any country for customers. The flag + code segment, its sheet, and the non-+263 lines. */
+  countryButton: (name: string, dial: string): string => `Country: ${name}, +${dial}. Change`,
+  countryTitle: "Choose your country",
+  countrySearch: "Search country or code",
+  countryClear: "Clear search",
+  countryClose: "Close",
+  countryNoMatch: (q: string): string => `No country matches “${q}”`,
+  phonePlaceholderIntl: "Mobile number",
+  phoneHelpIntl: "Your number without the country code.",
+  phoneShortIntl: "That number looks short. Check it and try again.",
   sendCode: "Send code",
   agreePrefix: "By continuing you agree to the ",
   terms: "Terms",

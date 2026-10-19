@@ -13,6 +13,7 @@ describe("Team's rules (merchant web upgrade L4)", () => {
   it("masks the number the way E2 and E3 draw it", () => {
     expect(shortMasked("+263•••••4567")).toBe("•••• 4567");
     expect(longMasked("+263•••••2210")).toBe("+263 •• ••• 2210");
+    expect(longMasked("+44••••••3456")).toBe("+44 •• ••• 3456");
   });
 
   it("says how long ago someone was invited", () => {

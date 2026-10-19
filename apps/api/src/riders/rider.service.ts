@@ -15,6 +15,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { Prisma, type Role } from "@prisma/client";
 import {
+  DEFAULT_COUNTRY_CODE,
   isInServiceArea,
   KYC_DECLINE_CLASS,
   KycDeclineReason,
@@ -450,10 +451,16 @@ export class RiderService {
       where: { id: profileId },
       // role: what a failed vendor call restores when it hands the rider claim back (KYC-R26-10), and
       // the admin refusal below. firstName: the blank-name refusal below.
-      select: { idNumberHash: true, firstName: true, role: true },
+      select: { idNumberHash: true, firstName: true, role: true, phone: true },
     });
     if (!profile) throw new NotFoundException("Profile not found");
     const previousRole = profile.role;
+    // Customers and merchants may sign up on any country's number (owner 2026-10-19, diaspora sign-up);
+    // bikers ride in Zimbabwe and are paid through EcoCash/InnBucks, so a biker account needs a +263
+    // number. The role is unknown when the OTP is sent, so this is the gate. Refused before vendor.submit.
+    if (!profile.phone.startsWith(`+${DEFAULT_COUNTRY_CODE}`)) {
+      throw new ForbiddenException({ reason: "phone_country", message: "Biking needs a Zimbabwe number (+263)." });
+    }
     // An admin account must never become a rider: the role flip below would replace `admin` with
     // `rider`, and the console session dies on its next refresh. Merchant staff are left alone — merchant
     // access reads `merchantMemberships`, not `role`. Refused before vendor.submit, so it bills nothing.

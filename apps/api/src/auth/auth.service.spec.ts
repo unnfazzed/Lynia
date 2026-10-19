@@ -188,19 +188,28 @@ describe("AuthService.requestOtp — a refused request spends no send budget", (
 });
 
 describe("AuthService.requestOtp — destination country allowlist", () => {
-  it("refuses a number outside the allowed calling codes with a 400, before any budget or send", async () => {
+  it("sends to any country when the variable is absent (diaspora sign-up, owner 2026-10-19)", async () => {
+    const { svc } = make(baseEnv, {});
+    await expect(svc.requestOtp("0771234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    await expect(svc.requestOtp("+447911123456", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    await expect(svc.requestOtp("+14155551234", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+    const star = make({ ...baseEnv, OTP_ALLOWED_COUNTRY_CODES: "*" } as Env, {}).svc;
+    await expect(star.requestOtp("+61412345678", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+  });
+
+  it("refuses a number outside a configured list with a 400, before any budget or send", async () => {
+    const env = { ...baseEnv, OTP_ALLOWED_COUNTRY_CODES: "263" } as Env;
     const sender = new ConsoleOtpSender();
     const send = vi.spyOn(sender, "send");
     const store = new InMemoryOtpStore();
-    const svc = new AuthService(baseEnv, {} as unknown as PrismaService, new TokenService(baseEnv), store, sender, fakeMetrics(), pii, fakeKycPendingState());
+    const svc = new AuthService(env, {} as unknown as PrismaService, new TokenService(env), store, sender, fakeMetrics(), pii, fakeKycPendingState());
     await expect(svc.requestOtp("+447911123456", "1.1.1.1")).rejects.toMatchObject({ status: 400, message: "Enter a valid phone number" });
     expect(send).not.toHaveBeenCalled();
     expect(await store.ttl("rl:phone:+447911123456")).toBeNull();
     expect(await store.ttl("rl:ip:1.1.1.1")).toBeNull();
   });
 
-  it("defaults to +263 when the variable is absent, and honours a configured list", async () => {
-    await expect(make(baseEnv, {}).svc.requestOtp("0771234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
+  it("honours a configured list", async () => {
     const env = { ...baseEnv, OTP_ALLOWED_COUNTRY_CODES: "263, +27" } as Env;
     const { svc } = make(env, {});
     await expect(svc.requestOtp("+27821234567", "1.1.1.1")).resolves.toMatchObject({ sent: true });
@@ -209,7 +218,7 @@ describe("AuthService.requestOtp — destination country allowlist", () => {
   });
 
   it("an OTP_TEST_PHONES number and a demo number are not refused by the allowlist", async () => {
-    const env = { ...baseEnv, OTP_TEST_PHONES: "+447911000001", DEMO_OTP_PHONE: "+447911000002", DEMO_OTP_CODE: "846201" } as Env;
+    const env = { ...baseEnv, OTP_ALLOWED_COUNTRY_CODES: "263", OTP_TEST_PHONES: "+447911000001", DEMO_OTP_PHONE: "+447911000002", DEMO_OTP_CODE: "846201" } as Env;
     const { svc } = make(env, {});
     await expect(svc.requestOtp("+447911000001", "1.1.1.1")).resolves.toMatchObject({ sent: true });
     await expect(svc.requestOtp("+447911000002", "1.1.1.1")).resolves.toMatchObject({ sent: true });

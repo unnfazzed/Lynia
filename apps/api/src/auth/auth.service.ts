@@ -12,7 +12,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { COMMISSION, DEFAULT_COUNTRY_CODE, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
+import { COMMISSION, freeJobsLeft, normalizePhone, RiderAccountStatus, type UpdateProfileRequest } from "@lynia/shared";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService, type OtpVerifyResult } from "../observability/metrics.service";
@@ -94,12 +94,15 @@ const rlFrom = (env: Env) => ({
   deviceSignup: { max: env.OTP_RL_DEVICE_SIGNUP_MAX, windowSec: 86400 },
 });
 // The calling codes an OTP may be sent to (OTP_ALLOWED_COUNTRY_CODES, comma-separated, validated in
-// config/env.ts). Falls back to the launch market when the var is absent.
-const otpAllowedCountryCodes = (env: Env): string[] =>
-  (env.OTP_ALLOWED_COUNTRY_CODES ?? DEFAULT_COUNTRY_CODE)
+// config/env.ts), or "*" for any. Falls back to "*" when the var is absent (env.ts's default).
+const otpAllowedCountryCodes = (env: Env): string[] | "*" => {
+  const raw = (env.OTP_ALLOWED_COUNTRY_CODES ?? "*").trim();
+  if (raw === "*") return "*";
+  return raw
     .split(",")
     .map((e) => e.trim().replace(/^\+/, ""))
     .filter((e) => /^\d{1,3}$/.test(e));
+};
 // L0 recycle-detection: a re-verify of an EXISTING account from a device never seen for it, after this
 // long without a fresh session, is flagged as a possible SIM recycle (non-destructive signal only).
 const RECYCLE_DORMANCY_MS = 90 * 24 * 60 * 60 * 1000;
@@ -517,10 +520,11 @@ export class AuthService {
 
   /**
    * Whether `phone` (E.164) is in a calling code listed in OTP_ALLOWED_COUNTRY_CODES (comma-separated,
-   * default "263"). E.164 calling codes are prefix-free, so a prefix match on `+<code>` is exact.
+   * default "*" = any). E.164 calling codes are prefix-free, so a prefix match on `+<code>` is exact.
    */
   private isAllowedOtpDestination(phone: string): boolean {
-    return otpAllowedCountryCodes(this.env).some((cc) => phone.startsWith(`+${cc}`));
+    const allowed = otpAllowedCountryCodes(this.env);
+    return allowed === "*" || allowed.some((cc) => phone.startsWith(`+${cc}`));
   }
 
   /**

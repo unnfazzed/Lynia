@@ -1,3 +1,4 @@
+import { isInServiceArea } from "@lynia/shared";
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
@@ -253,13 +254,23 @@ function boundedAddressFor(point: { lat: number; lng: number }): Promise<{ label
   return withTimeout(addressFor(point), FIX_TIMEOUT_MS).catch(() => ({ label: "" }));
 }
 
+/**
+ * A fix the CUSTOMER face may adopt as its deliver-to: a usable point inside the service area. D-116
+ * (owner 2026-10-19): customers abroad sign up to order for family at home, and a fix in London is not
+ * where anything can be delivered, so it is treated as no fix (the row stays "Set your location"). The
+ * detect-only face (the rider board) only labels where the phone is, so it keeps `isUsablePoint`.
+ */
+export function isDeliverablePoint(p: { lat: number; lng: number } | null | undefined): p is { lat: number; lng: number } {
+  return isUsablePoint(p) && isInServiceArea(p);
+}
+
 /** Detect → reverse-geocode → a place, or null on any failure (no permission included — it never asks).
  *  Exported for the location sheet's "Use my current location", which needs the same resolution
  *  without mounting the hook again. */
 export async function detectHomePlace(): Promise<HomePlace | null> {
   if (!usable(await readGrant())) return null;
   const point = (await livePoint()) ?? (await cachedPoint());
-  if (!isUsablePoint(point)) return null;
+  if (!isDeliverablePoint(point)) return null;
   const resolved = await boundedAddressFor(point);
   if (!resolved.label) return null;
   return { ...resolved, ...point };
@@ -451,7 +462,8 @@ async function detect(face: Face, store: Store): Promise<void> {
   let liveLanded = false;
   const cached = await cachedPoint();
   if (!current()) return;
-  if (isUsablePoint(cached)) {
+  const adoptable = face === "customer" ? isDeliverablePoint : isUsablePoint;
+  if (adoptable(cached)) {
     void boundedAddressFor(cached).then((resolved) => {
       // Dropped once the live answer has landed — a late cached label must never replace it.
       if (!current() || liveLanded || !resolved.label) return;
@@ -466,7 +478,7 @@ async function detect(face: Face, store: Store): Promise<void> {
   const stale = !isUsablePoint(live) && face === "detect" && !isUsablePoint(cached);
   if (stale) live = await cachedPoint(STALE_FIX_MAX_AGE_MS);
   if (!current()) return;
-  if (!isUsablePoint(live)) {
+  if (!adoptable(live)) {
     publish(store, { locating: false });
     if (!(await readGps()) && current()) watchForSwitch(face, store);
     return;
