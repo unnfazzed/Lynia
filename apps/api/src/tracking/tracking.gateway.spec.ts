@@ -353,7 +353,7 @@ describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 biker offer al
   it("Own bikers T9: emitDispatchOfferClosed closes the offer on both channels in one socket fetch, to the matched biker only", async () => {
     const target = remoteSocket("rider-1", []);
     const other = remoteSocket("rider-2", []);
-    const { server } = fakeServer([target, other]);
+    const { server, fetchAll } = fakeServer([target, other]);
     const g = gateway();
     g.server = server as never;
 
@@ -363,7 +363,7 @@ describe("TrackingGateway.emitFoodOffer / emitFoodOfferClosed (C5 biker offer al
     expect(target.emit).toHaveBeenCalledWith(WS_EVENTS.foodOfferClosed, closed);
     expect(target.emit).toHaveBeenCalledWith(WS_EVENTS.fleetOfferClosed, closed);
     expect(other.emit).not.toHaveBeenCalled();
-    expect(server.fetchSockets).toHaveBeenCalledTimes(1);
+    expect(fetchAll).toHaveBeenCalledTimes(1);
   });
 
   it("both are best-effort: never throw when the server is undefined or fetchSockets fails", async () => {
