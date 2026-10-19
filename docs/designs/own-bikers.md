@@ -1669,29 +1669,285 @@ a shortcut.
 - Distance limit on fleet rounds: the owner chose none (D9). Upgrade trigger: E5 shows long pickups.
 - Fleet batching: TODOS.md (CEO D8).
 
+
+### Outside voice (eng, native Plan fallback; Codex not installed)
+Ten findings. The code claims were checked: merchant-booking.service.ts:162-176 (order and booking row written
+separately), order-lifecycle.service.ts:1160 (rider cancel clones), merchant-debt-lock.ts:27 (parcel debt arm),
+merchant-booking.service.ts:36 (cancellable through en_route_pickup).
+
+Corrections applied as required mechanisms of approved rules (no new behaviour):
+- **F1:** the fleet booking writes `orders` + `merchant_bookings` in **one transaction**, so the deferred trigger
+  sees both rows (required by the approved trigger condition 2).
+- **F2 (part):** fleet orders **never clone**. A rider cancel or drop on a fleet booking takes the approved drop
+  path (back to `fleet_searching`, link kept). On marketplace orders, the approved unassign rule clears the
+  fleet tag before any clone. The plan line "cloneForRebroadcast carries fleetMerchantId" is replaced by this.
+- **F9:** separate INSERT and UPDATE triggers (`UPDATE OF rider_id, fleet_merchant_id`). E1's 409 mapping catches
+  commit-time errors. Pushes and socket emits run after commit, never inside the transaction callback.
+- **F10:** the report table is regenerated at the end of this review.
+
+### OV-F2: does an Own biker's cancel count as a reliability strike?
+Finding: OV F2, P2, confidence 8/10, order-lifecycle.service.ts:1150 (rider cancel → cancelStrikes/reliability hold, then clone). Reviewer: eng outside voice.
+Plan baseline: not specified. Runtime evidence: a rider cancel adds a strike and can put the rider on hold (Rider.cancelStrikes, onHold).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Strike on an Own biker's cancel of a fleet job | unspecified (today: yes for every rider) | no strike; the cancel is logged on the owner's fleet roster | strike as today (may hold the biker) |
+| Approved drop path (back to fleet_searching) | approved | unchanged | unchanged |
+Question D11:
+D11 — OV-F2: Should an Own biker get a strike when they drop their own merchant's job? Branch claude/tender-euler-mhwajf. ELI10: today a biker who cancels a job gets a strike, and too many strikes put them on hold. Own bikers are the merchant's employees, so their boss already manages them. A Lynia hold would stop the merchant's own worker from working for them. Stakes: strikes could freeze a chain's bikers over internal reshuffles; no strikes means Lynia can't police a bad fleet biker. Recommendation: A because the merchant employs and manages them, and the roster log still shows who drops jobs. Note: options differ in kind, not coverage. Net: A leaves discipline to the merchant; B keeps Lynia's rules.
+Header: OV strikes
+Options:
+A) No strike, log it (recommended)
+Fleet-job cancels by Own bikers add no strike or hold; each cancel is logged and shown on the owner's roster (cancels this week). Effort S (human ~2h / CC ~10min), risk low. ✅ A merchant's workers are never frozen by Lynia over internal moves. ✅ The owner still sees who drops jobs. ❌ Lynia loses one lever over a misbehaving fleet biker.
+B) Strike as today
+Keep the existing strike and hold rules for fleet jobs. Effort S (zero implementation work), risk medium. ✅ One rule for every biker. ✅ No new branch in the cancel path. ❌ Lynia holds can block a merchant's own employee from their job.
+
+State: approved
+Actual answer: A) No strike, log it (recommended), user answer to eng D11
+Accepted scope: Own-biker cancels of fleet jobs add no cancelStrike/hold; each cancel logged and shown on the owner roster (cancels this week); spec: fleet cancel leaves strikes unchanged, public cancel still strikes.
+History: none
+
+### OV-F3: the cash lock on Own bikers
+Finding: OV F3, P1, confidence 9/10, merchant-debt-lock.ts:27 `{ orderType: "parcel", debtStatus: "open", merchantClosedAt: null }`; dispatch filters on it (dispatch-strategy.ts:90-99). Reviewer: eng outside voice.
+Plan baseline: "Still apply: … hasOpenMerchantObligation" for fleet jobs (plan § Which gates apply). Runtime evidence: a cash-on-delivery booking opens a debt at delivery until staff confirm cash received.
+Comparison grid:
+| Commitment | Current (approved) | A | B |
+|---|---|---|---|
+| Cash owed to the biker's OWN owner blocks the next fleet job | yes | no; settled at shift end on the roster (cash pending per biker) | yes |
+| Cash owed to ANY OTHER merchant blocks | yes | yes | yes |
+| Unsettled own-owner cash visible to the owner | no | yes, roster shows cash pending per biker | no |
+Question D12:
+D12 — OV-F3: Should unreturned cash to their own boss stop an Own biker getting the next job? Branch claude/tender-euler-mhwajf. ELI10: when a biker collects cash on a delivery, Lynia locks them from new jobs until the shop taps "cash received". For a public biker, that protects the shop. For the shop's own biker, it means that at rush hour they can't take the next order until someone at the counter taps a button, so the shop sees "None of your bikers took it" while its bikers stand at the door. Stakes: keeping the lock can stall a big client's whole fleet at rush hour. Recommendation: A because the shop and the biker are the same business, so the shop can settle cash at shift end. Note: options differ in kind, not coverage. Net: A keeps the fleet moving; B keeps the per-delivery cash safety.
+Header: OV cash
+Options:
+A) Exempt own-owner cash (recommended)
+Cash owed to the biker's own owner never blocks that owner's fleet jobs; the roster shows "cash pending" per biker for end-of-shift settlement; cash owed to any other merchant still blocks. Effort S (human ~4h / CC ~20min), risk medium. ✅ Fleet keeps moving at rush hour. ✅ The owner still sees who holds cash. ❌ The shop carries the cash risk until shift end.
+B) Keep the lock
+Every open cash debt blocks the next job, own owner included. Effort S (zero implementation work), risk medium. ✅ Strongest per-delivery cash control. ✅ No new branch. ❌ Bikers idle until staff confirm cash; fleet stalls at rush.
+
+State: approved
+Actual answer: A) Exempt own-owner cash (recommended), user answer to eng D12
+Accepted scope: Open cash debts owed to the biker's own owner do not block that owner's fleet jobs (merchant-debt-lock + dispatch filter + acceptDispatch); debts to any other merchant still block; roster shows cash pending per biker; specs for both arms.
+History: none
+
+### OV-F4: owner-level or branch-level fleet switches
+Finding: OV F4, P1, confidence 9/10, plan § Data model: `Merchant.fleetEnabled`, `fleetRideFee`, `fleetPausedAt` per branch while links are per owner (R6). Reviewer: eng outside voice.
+Plan baseline: R6 (owner fleets); E11 (owner key). Runtime evidence: a branch is one Merchant row; the owner has many (schema.prisma:244).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Where enable/pause/fee live | per branch (Merchant) | per owner (new OwnerFleet row keyed by owner_profile_id) | per branch, with "disable dissolves links" only when the owner's LAST branch is disabled |
+| Pause for non-payment | per branch | per owner (one bill, one pause) | per branch |
+| Fee | per branch | per owner | per branch (different fees per branch possible) |
+Question D13:
+D13 — OV-F4: Do the fleet on/off, pause and fee settings belong to the owner or to each branch? Branch claude/tender-euler-mhwajf. ELI10: bikers belong to the owner, but the plan puts the on/off switch, the pause and the fee on each branch. So turning off one branch would release the whole chain's bikers, and pausing for non-payment would only hit one branch. Stakes: get this wrong and the database table is built twice. Recommendation: A because the owner is who pays, gets paused and owns the bikers. Note: options differ in kind, not coverage. Net: A gives one switch per chain; B gives a switch per branch.
+Header: OV flags
+Options:
+A) Owner-level settings (recommended)
+New OwnerFleet row (owner_profile_id, enabled, rideFee, pausedAt); every branch of that owner follows it; admin manages it per owner; bill and pause per owner. Effort S (human ~4h / CC ~20min), risk low. ✅ One switch, one fee, one pause per chain. ✅ Matches owner-level links and bills. ❌ No per-branch fee for chains that want one.
+B) Branch-level settings
+Keep enable/fee/pause per branch; disabling dissolves links only when the owner's last branch is off; pause blocks only that branch. Effort S (human ~6h / CC ~30min), risk medium. ✅ Different fees per branch possible. ✅ Close to the current draft. ❌ Pause for non-payment needs looping over branches; more states to test.
+
+State: approved
+Actual answer: A) Owner-level settings (recommended), user answer to eng D13
+Accepted scope: New OwnerFleet (owner_profile_id PK, enabled, rideFee, pausedAt) replaces Merchant.fleetEnabled/fleetRideFee/fleetPausedAt; all branches follow it; admin, bill, pause per owner; disable dissolves links for the owner; specs.
+History: none
+
+### OV-F5: who keeps the delivery fee on an app order an Own biker delivers
+Finding: OV F5, P1, confidence 8/10, schema.prisma:771-775 (rider keeps deliveryFee); D-71 merchantDeliveryShare (free delivery funded by the venue). Reviewer: eng outside voice.
+Plan baseline: Open Question 4 (unanswered); OV5 (CEO D7): merchant billed rate × delivery fee.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Customer pays delivery fee in cash to | the biker (keeps it) | the Own biker, who hands it to the merchant with the goods money | the Own biker, who keeps it |
+| Merchant cash-back amount (debt/closeCash) | goods only | goods + delivery fee | goods only |
+| Lynia bills the merchant | n/a | rate × delivery fee (OV5) | rate × delivery fee (OV5) |
+Question D14:
+D14 — OV-F5: When an Own biker delivers an app order, who keeps the delivery fee the customer pays? Branch claude/tender-euler-mhwajf. ELI10: on an app order the customer pays the delivery fee in cash to the biker. A public biker keeps it as their pay. An Own biker is paid a salary by the shop, so the fee should probably go back to the shop, which is also paying Lynia a percentage of it. Stakes: if this is unclear, shops pay Lynia on money their biker pocketed, and the cash count at the end of the day never matches. Recommendation: A because the shop pays both the salary and Lynia's percentage, so the fee belongs to the shop. Note: options differ in kind, not coverage. Net: A routes the fee to the shop; B leaves it with the biker.
+Header: OV fee
+Options:
+A) Fee goes to the shop (recommended)
+For app orders delivered by an Own biker, the cash the biker returns includes the delivery fee; closeCash and the statement show it; Lynia bills rate × fee. Effort S (human ~6h / CC ~30min), risk medium. ✅ Shop's cash count matches what customers paid. ✅ Shop pays Lynia on money it actually received. ❌ Changes the cash-back amount on these orders; needs clear biker copy.
+B) Biker keeps the fee
+Own biker keeps the delivery fee like a public biker; shop still pays Lynia rate × fee. Effort S (zero implementation work), risk medium. ✅ No change to cash handling. ✅ A tip-like bonus for fleet bikers. ❌ Shop pays Lynia on money it never received.
+
+State: approved
+Actual answer: A) Fee goes to the shop (recommended), user answer to eng D14
+Accepted scope: App orders delivered by an Own biker: cash returned to the shop includes the delivery fee (debt amount and closeCash include it; free-delivery D-71 case: shop share netted); statement shows it; Lynia bills rate x fee; biker copy on the handoff screen states the amount to return; specs incl. free delivery.
+History: none
+
+### OV-F6: which bill a fee correction lands on
+Finding: OV F6, P2, confidence 8/10, plan § ledger `orderId (unique)` vs E3 adjustment rows with orderId. Reviewer: eng outside voice.
+Plan baseline: E3 (eng D4) append-only credit rows. Runtime evidence: n/a (new table).
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| Uniqueness | orderId unique (blocks adjustments) | partial unique on (orderId) WHERE kind <> 'adjustment' | partial unique, same |
+| Credit for a ride in an already-closed week lands on | n/a | the current open week, labelled with the original ride date | reopens the original week's statement |
+Question D15:
+D15 — OV-F6: If admin corrects a fee from a week that's already billed, which bill shows the credit? Branch claude/tender-euler-mhwajf. ELI10: some disputes come after a week is billed or paid. The credit can go on this week's bill, or the old bill can be reopened and changed. Stakes: reopening paid bills makes totals change after the client paid, which confuses everyone. Recommendation: A because paid bills stay final, and the credit still names the original ride. Note: options differ in kind, not coverage. Net: A keeps old bills final; B edits history.
+Header: OV credit
+Options:
+A) Credit on current week (recommended)
+Adjustment rows date to when they're written and appear on the current open week, labelled with the original ride and date; partial unique index keeps one charge per order. Effort S (human ~2h / CC ~10min), risk low. ✅ Paid bills never change. ✅ Standard accounting practice. ❌ A credit can appear a week after the ride.
+B) Reopen old week
+The credit is applied to the original week's statement, which reopens if closed. Effort S (human ~4h / CC ~20min), risk medium. ✅ Each week's total reflects its rides exactly. ✅ No cross-week lines. ❌ Totals of paid bills change after payment.
+
+State: approved
+Actual answer: A) Credit on current week (recommended), user answer to eng D15
+Accepted scope: Partial unique index on merchant_fleet_ledger(order_id) WHERE kind <> adjustment; adjustment rows dated when written, shown on the current open week labelled with original ride and date; closed/paid statements never change; specs.
+History: none
+
+### OV-F7: when the fleet fee is earned
+Finding: OV F7, P2, confidence 8/10, merchant-booking.service.ts:36 (merchant may cancel until en_route_pickup); plan bills only from pickup. Reviewer: eng outside voice.
+Plan baseline: C1/CEO: fee on delivered, cancelled-after-pickup, undelivered; none before pickup.
+Comparison grid:
+| Commitment | Current (approved) | A | B |
+|---|---|---|---|
+| Fee when the merchant cancels after a biker accepted, before pickup | none | none, but alert on a high cancel-after-accept rate (E5 metric + Telegram) | full fee |
+| Fee on delivered / cancelled-after-pickup / undelivered | yes | yes | yes |
+Question D16:
+D16 — OV-F7: Should the shop pay if it cancels after its biker accepted but before pickup? Branch claude/tender-euler-mhwajf. ELI10: Lynia's service is finding and dispatching the biker. A shop could book, get a biker, cancel in the app and still use that biker off the app, paying nothing. Stakes: a loophole that lets big clients use the dispatch for free. Recommendation: A because it watches for abuse without charging honest cancels, and you can switch to charging later if the alert fires. Note: options differ in kind, not coverage. Net: A trusts and monitors; B charges on accept.
+Header: OV cancels
+Options:
+A) No fee, alert on abuse (recommended)
+Keep billing from pickup; track cancel-after-accept rate per owner and send a Telegram alert above a threshold (e.g. >20% in a week). Effort S (human ~3h / CC ~15min), risk low. ✅ Honest cancels stay free. ✅ Abuse is visible quickly. ❌ Some free rides get through until someone acts.
+B) Fee on accept
+Charge the fleet fee as soon as an Own biker accepts, even if cancelled before pickup. Effort S (human ~3h / CC ~15min), risk low. ✅ Closes the loophole fully. ✅ Simple rule. ❌ Honest late cancels cost the shop money.
+
+State: approved
+Actual answer: A) No fee, alert on abuse (recommended), user answer to eng D16
+Accepted scope: Billing stays from pickup; metric cancel-after-accept rate per owner per week; OwnerAlerts Telegram when > 20% in a week; spec for the alert threshold.
+History: none
+
+### OV-F8 (Open Question 7): can a shop employee also be one of its Own bikers?
+Finding: OV F8, P2, confidence 8/10, food-dispatch.service.ts:685-689 and merchant-booking.service.ts:225 refuse team members on their own business's jobs (OV-5, T16). Reviewer: eng outside voice.
+Plan baseline: Open Question 7 (unanswered). Runtime evidence: MerchantMember rows exclude a person from their business's jobs.
+Comparison grid:
+| Commitment | Current | A | B |
+|---|---|---|---|
+| A MerchantMember (staff) of the owner joins as an Own biker | refused today (team excluded) | refused: a person is staff OR Own biker for an owner, never both | allowed: staff can also ride for the owner's branches |
+| Existing team exclusion rule (OV-5) | applies | unchanged | relaxed for fleet jobs |
+Question D17:
+D17 — OV-F8: Can someone who works at the shop's counter also be one of its Own bikers? Branch claude/tender-euler-mhwajf. ELI10: today shop staff can never deliver their own shop's orders. That rule stops staff gaming the system. Small shops often have one person who does both. Stakes: allowing it weakens an existing safeguard; refusing it blocks small shops where staff also ride. Recommendation: A because it keeps the existing safeguard, and a shop can still add that person as a biker with a separate account role. Note: options differ in kind, not coverage. Net: A keeps the safeguard; B allows dual roles.
+Header: OV staff
+Options:
+A) Staff or biker, not both (recommended)
+Join is refused for anyone who is a team member of that owner's branches ("Leave the team first"); the existing team exclusion stays. Effort S (human ~2h / CC ~10min), risk low. ✅ Keeps the existing OV-5 safeguard intact. ✅ Clear roles for big clients. ❌ A small shop's counter person can't also ride.
+B) Allow both roles
+A team member may join as an Own biker; the team exclusion is skipped for fleet jobs. Effort S (human ~4h / CC ~20min), risk medium. ✅ Fits tiny shops where one person does both. ✅ No account juggling. ❌ Weakens an existing anti-gaming rule.
+
+State: approved
+Actual answer: A) Staff or biker, not both (recommended), user answer to eng D17
+Accepted scope: Join refused for a team member of any of that owner's branches ("Leave the team first"); OV-5 team exclusion unchanged; spec.
+History: none
+
+Approval readiness (eng, final): PASS. Checked: E11 (D2), E2 (D3), E3 (D4), E5 (D5), E6 (D6), E7 (D7), E10 (D8), E12 (D9),
+E13 (D10), E14 (D1), OV-F2 (D11), OV-F3 (D12), OV-F4 (D13), OV-F5 (D14), OV-F6 (D15), OV-F7 (D16), OV-F8 (D17).
+Corrections F1/F2-clone/F9 are applied as required mechanisms of approved rules.
+
+## Eng amendments: binding for implementers (these override older text above)
+1. **Settings are per owner:** `OwnerFleet(owner_profile_id PK, enabled, ride_fee, paused_at)` replaces
+   `Merchant.fleetEnabled/fleetRideFee/fleetPausedAt` (OV-F4). Pause, disable, bill and fee are all per owner.
+2. **Rider link:** `Rider.fleetOwnerProfileId` + `fleetHomeMerchantId`. Join is refused for a team member of
+   any of the owner's branches (OV-F8), and for a NULL-owner merchant (E11).
+3. **Triggers:**
+   - `orders`: separate INSERT and `UPDATE OF rider_id, fleet_merchant_id` constraint triggers, DEFERRABLE
+     INITIALLY DEFERRED. They join merchants for the owner and take `FOR SHARE` on the rider row (OV1, E2, E11,
+     F9).
+   - `riders`: a guard on fleet-link changes (OV1).
+   - `merchants`: refuses an owner_profile_id change while links exist (E11).
+   - Indexes per E2.
+4. **Fleet booking:** `orders` + `merchant_bookings` in one transaction (F1); status `fleet_searching`.
+   - Fleet orders never clone. A drop goes back to `fleet_searching` with the tag kept (F2).
+   - No strike for an Own biker's fleet cancel; it's logged on the roster (OV-F2).
+   - Rounds go to any of the owner's online Own bikers, nearest first, with no radius (E12; shortcut logged).
+5. **Gates:** commission cover is skipped for fleet jobs. Cash owed to the biker's own owner does not block
+   their fleet jobs; cash owed to anyone else still does. The roster shows cash pending (OV-F3).
+6. **Money:**
+   - App orders by an Own biker: the cash returned to the shop includes the delivery fee (OV-F5). Lynia bills
+     rate × delivery fee (OV5). Phone bookings: flat `ride_fee`.
+   - The ledger row is written in the terminal transaction (C1), with a partial unique index on order_id for
+     non-adjustment rows.
+   - Credits are append-only and land on the current open week (E3, OV-F6).
+   - No fee for a cancel before pickup; Telegram alert when cancel-after-accept is above 20% in a week (OV-F7).
+7. **Statement:** a per-branch "Fleet rides" section in the existing weekly statement, plus an owner fleet bill in
+   the same area (E7).
+8. **Roles:** staff book "My bikers" for their branch and see a read-only roster. Owner-only: invite (one at a
+   time, E13), remove, bill (E6, E4).
+9. **Ops:** MetricsService signals + OwnerAlertsService Telegram (violation, reconciliation miss, unpaid > 7 days,
+   cancel rate) + an admin live tile (E5). Erasure clears the link and keeps the ledger (E10).
+
+## Eng Implementation Tasks
+Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.
+Assumption: features ~30x, tests ~50x human÷CC.
+
+- [ ] **T1 (P1, human: ~4d / CC: ~4h)**: api/prisma: schema (OwnerFleet, rider link, order fleet cols, ledger
+  with partial unique, statement), migration A (enum `fleet_searching` alone), migration B (tables, indexes,
+  orders/riders/merchants triggers)
+  - Surfaced by: E2, E11, OV1, OV-F4, OV-F6, F9. Files: apps/api/prisma/schema.prisma, apps/api/prisma/migrations/*
+  - Verify: trigger int specs (all forbidden writes) + hot-path-indexes.spec + online-safe guard
+- [ ] **T2 (P1, human: ~3d / CC: ~3h)**: api: common/fleet-scope.ts + the 8 doors + admin assign + parity spec
+  - Surfaced by: CEO T2/T6, E14. Files: apps/api/src/common, orders, offers, matching, merchant, tracking, admin
+  - Verify: hostile-QA int table (each door refuses)
+- [ ] **T3 (P1, human: ~5d / CC: ~5h)**: api: merchant/fleet.service.ts: invite (one at a time), Join/Leave/Remove
+  with locks, fleet booking in one txn, its own sweeper (expiry + push, E8), convert CAS, drop path, no-strike
+  cancels
+  - Surfaced by: F1, F2, OV-F2, OV-F8, E8, E9, E13. Verify: race specs (convert vs accept, Join vs accept, stale tap)
+- [ ] **T4 (P1, human: ~2d / CC: ~2h)**: api: gates: commission-cover skip for fleet jobs, own-owner cash exemption,
+  OV-F5 cash-back incl. delivery fee
+  - Surfaced by: OV-F3, OV-F5. Files: common/commission-cover.ts, common/merchant-debt-lock.ts,
+    merchant/dispatch-strategy.ts, food-debt/booking cash paths. Verify: specs incl. free-delivery (D-71)
+- [ ] **T5 (P1, human: ~2d / CC: ~2h)**: api: ledger write in terminal txns (wallet.service charge sites 893/1512/
+  admin 324 + cancel/undelivered), reconciliation on the lifecycle sweep, adjustments
+  - Surfaced by: C1, E3, OV-F6. Verify: chaos spec (kill mid-txn) + reconciliation alert spec
+- [ ] **T6 (P1, human: ~1d / CC: ~1h)**: api: E1 409 mapping at commit, E4 owner-only + rate limit + IDOR, E6 role
+  checks, E10 erasure
+  - Surfaced by: OV4, E6, E10. Verify: IDOR and role specs; privacy spec
+- [ ] **T7 (P2, human: ~2d / CC: ~2h)**: api+admin: OwnerFleet admin API (enable/fee/pause), weekly statement close,
+  owner bill, getWeeklyStatement fleet section, metrics + Telegram alerts + admin live tile
+  - Surfaced by: E5, E7, OV-F4, OV-F7. Verify: statement specs (Harare week), alert threshold specs
+- [ ] **T8 (P1, gate)**: design handoff export for all fleet surfaces → then the merchant/biker/admin screens
+  (lanes B/C/D)
+- [ ] **T9 (P2, human: ~3d / CC: ~3h)**: api: marketplace fleet-first + PREFERRED_RETIRED flag + retirement note
+  - Surfaced by: R1, R2, OV5. Verify: preferred specs green with the flag unset; new specs with it set
+- [ ] **T10 (P2, human: ~30min / CC: ~5min)**: docs: TODOS.md links (settlement TODO, TODO-3), admin deploy path,
+  DESIGN-DEVIATIONS D-entry draft for owner approval
+
+### Unresolved decisions (eng)
+None. 17 answered.
+
+### Completion summary (eng)
+- Step 0: Scope Challenge: scope accepted as-is (Smaller arrangement, D1)
+- Reality rows: 7/7 applicable rows emitted, 3 unverified premises (demand)
+- Architecture Review: 2 issues found
+- Code Quality Review: 2 issues found
+- Test Review: diagram produced, 34 gaps identified (all new paths; all planned as required proof)
+- Performance Review: 3 issues found
+- NOT in scope: written
+- What already exists: written (Scope Challenge reuse list)
+- TODOS.md updates: 0 items proposed (batching already added by CEO review)
+- Failure modes: 0 critical gaps flagged
+- Unresolved decisions: 0 in this review
+- Outside voice: codex not installed; native Plan fallback completed: 10 findings (3 corrected, 7 decided by owner)
+- Parallelization: 4 lanes, 3 parallel / 1 sequential
+- Lake Score: 7/9 = answers picking a 10/10 option / answers scored for Completeness (E12 and E13 chose the 6/10 option)
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: SCOPE_REDUCTION, 0 critical gaps (5 cuts proposed, all declined; R6 owner fleets added; C1 + OV1/OV4/OV5 decided) |
-| Outside Review | native Plan subagent (codex not installed) | Independent 2nd opinion | 1 | unavailable (external); native completed | 10 findings; 10 dispositioned (5 decided by owner, 5 corrected or routed to eng); no completed external review |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | — |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN | mode: SCOPE_REDUCTION, 0 critical gaps |
+| Outside Review | native Plan subagent, CEO + Eng (codex not installed) | Independent 2nd opinion | 2 | unavailable (external); native completed both times | CEO: 10 findings, all dispositioned. Eng: 10 findings; 3 corrected, 7 decided by owner (D11–D17). No completed external review |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN | 41 issues, 0 critical gaps (all mapped to approved tasks T1–T10; 0 unresolved) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable (CLI not installed). The native in-host Plan
-  fallback completed with 10 findings. That is not external coverage.
-- **VERDICT:** No reviews are CLEAR yet. The CEO review is ISSUES OPEN, with 10 implementation decisions routed
-  to eng/design. Eng review required.
+- **OUTSIDE COVERAGE:** codex, plan-review phase, unavailable in both the CEO and the Eng review (CLI not
+  installed). The native in-host Plan fallbacks completed: 10 findings each. They are not external coverage.
+- **VERDICT:** No review is CLEAR. Eng is ISSUES OPEN because it mapped 41 items of planned work; it has 0
+  unresolved decisions and 0 critical gaps. Eng review required. Implementation can start on the API-only lane
+  (T1–T7); the screens wait on the design handoff (T8).
 
 **UNRESOLVED DECISIONS:**
-- E2 trigger cost on the hot orders table (eng)
-- E3 ledger adjustments for disputes (eng)
-- E5 fleet metrics and alerts (eng)
-- E6 branch staff view under owner fleets (eng/design)
-- E7 where the fleet bill shows in the merchant app (design)
-- E10 erasure of a fleet biker (eng)
-- E11 nullable owner and owner-change guard; restate the trigger in owner terms (eng; blocks T1)
-- E12 fleet round distance bound (eng)
-- E13 bulk onboarding for 50+ bikers (eng/design)
-- E14 drop the fleet socket room (eng)
+- + 10 unresolved from prior reviews (the CEO review's E-rows; all 10 were since answered in eng D1–D10, see Decision ledger)
