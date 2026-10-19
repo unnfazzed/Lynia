@@ -1985,6 +1985,25 @@ the handoff wins for screens and copy, and these product changes apply:
      The bill's owner-only view arrives with T7's statement.
    - E10: erasure now also clears the biker's fleet link (`fleetOwnerProfileId`, `fleetHomeMerchantId`,
      `fleetJoinedAt`), alongside the fleet invites to their number (T1). Ledger rows keep a plain rider id.
+12. **T7a (done 2026-10-19): the console.** `merchant/fleet-admin.service.ts` + `admin-fleets.controller.ts`
+   (`/admin/fleets…`, JWT + AdminGuard, not behind `FLEET_UI_LIVE`: ops set a fleet up before launch).
+   - OB-A1 `GET /admin/fleets`: owner, branches, bikers, this week, unpaid, days overdue, status
+     (disabled › paused › overdue › unpaid › paid). OB-A2 `GET /admin/fleets/:ownerId`: branches, bikers,
+     this week, and the last 12 bills with a line per branch.
+   - `POST /admin/merchants/:id/fleet` enables the branch's owner with a fee (required). `…/fee` changes it for
+     new bookings only.
+   - `…/pause` cancels the bookings still ringing on the same guard as Send to any biker (an accepted one keeps
+     its biker) and tells their booker. It also refuses new ones; bikers stay linked. `…/unpause` reverses it.
+   - `…/disable` does what pause does and ends open invites. Each biker's link is dissolved once they have no
+     ride under way (now, or on the fleet sweep when their ride ends), with a push. Bills stay open.
+   - Reason codes (OB-A3): `NON_PAYMENT`, `MERCHANT_REQUEST`, `ABUSE_REPORT`, `OTHER`, plus a note.
+   - Bills: `FleetLedgerService.closeWeeks` runs hourly. It turns each finished Harare week's rows into one
+     `merchant_fleet_statements` row per owner: status `sent`, due the Friday after, idempotent. `…/bills/:id/paid`
+     marks a bill paid. `…/adjust` writes a correction for one of the owner's branches.
+   - Migrations 0112/0113: `merchant_fleet_ledger.actor` holds a console operator, who is an email and not a
+     profile. The charge-shape check accepts either the operator or a profile, and is validated online.
+   - Left for T7b: the merchant's weekly-statement "Fleet rides" section and owner bill (E7), the alerts
+     (unpaid more than 7 days, cancel-after-accept above 20%), metrics and the OB-A4 live tile.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

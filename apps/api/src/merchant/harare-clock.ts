@@ -111,3 +111,14 @@ export function daysSinceMonday(key: string): number {
   const [y, mo, d] = key.split("-").map(Number) as [number, number, number];
   return (new Date(Date.UTC(y, mo - 1, d)).getUTCDay() + 6) % 7;
 }
+
+/** The Monday (`YYYY-MM-DD`, Harare) of the week `at` falls in: weeks run Monday to Sunday (Own bikers bills, E7). */
+export function harareWeekKey(at: Date): string {
+  const today = harareDayKey(at);
+  return addDaysToKey(today, -daysSinceMonday(today));
+}
+
+/** Monday 00:00 in Harare of the week `at` falls in. */
+export function harareWeekStart(at: Date): Date {
+  return harareDayBounds(harareWeekKey(at))!.start;
+}

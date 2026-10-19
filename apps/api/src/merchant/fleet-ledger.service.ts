@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { recordFleetRide } from "../common/fleet-ledger";
+import { addDaysToKey, harareWeekKey, harareWeekStart } from "./harare-clock";
 import { OwnerAlertsService } from "../owner-alerts/owner-alerts.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -9,6 +10,14 @@ export const FLEET_RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const FLEET_RECONCILE_LOOKBACK_MS = 8 * 24 * 60 * 60 * 1000;
 /** Audit action for an admin correction to a fleet bill. */
 export const FLEET_ADJUST_ACTION = "merchant.fleet.adjust";
+/** How often closed weeks are turned into bills (hourly: a Monday-morning bill appears within the hour). */
+export const FLEET_CLOSE_INTERVAL_MS = 60 * 60 * 1000;
+/** A bill is due the Friday after its week ends (handoff OB-M14 / OB-A1: "due Fri"): Monday + 11 days. */
+export const FLEET_BILL_DUE_DAYS_AFTER_MONDAY = 11;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A calendar day (`YYYY-MM-DD`) as the Date Prisma writes to a `@db.Date` column. */
+const dayDate = (key: string) => new Date(`${key}T00:00:00.000Z`);
 
 /**
  * Own bikers T5 (docs/designs/own-bikers.md "Commission and billing", D-117): the safety net under the fleet bill,
@@ -25,6 +34,7 @@ export const FLEET_ADJUST_ACTION = "merchant.fleet.adjust";
 export class FleetLedgerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FleetLedgerService.name);
   private timer?: ReturnType<typeof setInterval>;
+  private closeTimer?: ReturnType<typeof setInterval>;
   private startTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -35,15 +45,72 @@ export class FleetLedgerService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     // A random start offset (≤ 1 min) so several instances don't sweep in lockstep.
-    this.startTimer = setTimeout(() => void this.runReconcile(), Math.floor(Math.random() * 60_000));
+    this.startTimer = setTimeout(() => {
+      void this.runReconcile();
+      void this.runClose();
+    }, Math.floor(Math.random() * 60_000));
     this.startTimer.unref?.();
     this.timer = setInterval(() => void this.runReconcile(), FLEET_RECONCILE_INTERVAL_MS);
     this.timer.unref?.();
+    this.closeTimer = setInterval(() => void this.runClose(), FLEET_CLOSE_INTERVAL_MS);
+    this.closeTimer.unref?.();
   }
 
   onModuleDestroy(): void {
     if (this.startTimer) clearTimeout(this.startTimer);
     if (this.timer) clearInterval(this.timer);
+    if (this.closeTimer) clearInterval(this.closeTimer);
+  }
+
+  private async runClose(): Promise<void> {
+    try {
+      await this.closeWeeks();
+    } catch (err) {
+      this.logger.error(`fleet bill close failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * E7/R3: turn every finished Harare week's ledger rows into one stored bill per owner (`merchant_fleet_statements`,
+   * status `sent`, due the Friday after). Idempotent: the bill is keyed on (owner, Monday), only rows with no bill
+   * are claimed, and its total is re-summed from its rows. A correction written this week stays on this week.
+   */
+  async closeWeeks(now: Date = new Date()): Promise<{ closed: number }> {
+    const rows = await this.prisma.merchantFleetLedger.findMany({
+      where: { statementId: null, createdAt: { lt: harareWeekStart(now) } },
+      select: { id: true, ownerProfileId: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 5000,
+    });
+    const groups = new Map<string, { owner: string; monday: string; ids: string[] }>();
+    for (const r of rows) {
+      const monday = harareWeekKey(r.createdAt);
+      const key = `${r.ownerProfileId}|${monday}`;
+      const g = groups.get(key) ?? { owner: r.ownerProfileId, monday, ids: [] };
+      g.ids.push(r.id);
+      groups.set(key, g);
+    }
+    for (const g of groups.values()) {
+      await this.prisma.$transaction(async (tx) => {
+        const bill = await tx.merchantFleetStatement.upsert({
+          where: { ownerProfileId_periodStart: { ownerProfileId: g.owner, periodStart: dayDate(g.monday) } },
+          create: {
+            ownerProfileId: g.owner,
+            periodStart: dayDate(g.monday),
+            periodEnd: dayDate(addDaysToKey(g.monday, 6)),
+            dueOn: dayDate(addDaysToKey(g.monday, FLEET_BILL_DUE_DAYS_AFTER_MONDAY)),
+            status: "sent",
+          },
+          update: {},
+          select: { id: true },
+        });
+        await tx.merchantFleetLedger.updateMany({ where: { id: { in: g.ids }, statementId: null }, data: { statementId: bill.id } });
+        const sum = await tx.merchantFleetLedger.aggregate({ where: { statementId: bill.id }, _sum: { fee: true } });
+        await tx.merchantFleetStatement.update({ where: { id: bill.id }, data: { total: sum._sum.fee ?? 0 } });
+      });
+    }
+    if (groups.size > 0) this.logger.log(`fleet bills closed: ${groups.size} (rows ${rows.length})`);
+    return { closed: groups.size };
   }
 
   private async runReconcile(): Promise<void> {
@@ -85,7 +152,7 @@ export class FleetLedgerService implements OnModuleInit, OnModuleDestroy {
    * E3/OV-F6: an admin correction to a branch's fleet bill (usually negative, e.g. "wrong fee"). Append-only, with
    * the admin and a reason; it lands on the open week. `orderId`, when given, must be one of the branch's rides.
    */
-  async adjust(actorProfileId: string, input: { merchantId: string; fee: number; reason: string; orderId?: string | null }): Promise<{ id: string }> {
+  async adjust(actor: string, input: { merchantId: string; fee: number; reason: string; orderId?: string | null }): Promise<{ id: string }> {
     const reason = input.reason.trim();
     if (reason.length < 3) throw new BadRequestException({ reason: "reason_required", message: "Say why you're changing the bill." });
     if (!Number.isFinite(input.fee) || input.fee === 0 || Math.round(input.fee * 100) !== input.fee * 100) {
@@ -108,12 +175,14 @@ export class FleetLedgerService implements OnModuleInit, OnModuleDestroy {
           orderId: input.orderId ?? null,
           kind: "adjustment",
           fee: input.fee,
-          actorProfileId,
+          // An ops actor is the operator's email (X-Operator), not a profile: the audit row carries it then.
+          actorProfileId: UUID_RE.test(actor) ? actor : null,
+          actor: UUID_RE.test(actor) ? null : actor,
           reason,
         },
         select: { id: true },
       });
-      await tx.auditLog.create({ data: { actor: actorProfileId, action: FLEET_ADJUST_ACTION, target: input.merchantId, note: `${input.fee} ${reason}` } });
+      await tx.auditLog.create({ data: { actor, action: FLEET_ADJUST_ACTION, target: input.merchantId, note: `${input.fee} ${reason}` } });
       return row;
     });
   }

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { ACTIVE_RIDE_STATUSES, codAmount, FLEET_DISPATCH, FleetJobOffer, OFFER_WINDOW_MS, type OrderItem, type Waypoint } from "@lynia/shared";
 import { heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { domainEvents } from "../common/domain-events";
-import { FLEET_SCOPE_REFUSAL, orderFleetOwner, rethrowFleetScope } from "../common/fleet-scope";
+import { FLEET_SCOPE_REFUSAL, isFleetScopeViolation, orderFleetOwner, rethrowFleetScope } from "../common/fleet-scope";
 import { hasOpenMerchantObligation, notOwedToOwner, openMerchantObligationOr } from "../common/merchant-debt-lock";
 import { penaltiesSuspended } from "../common/penalties";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -100,6 +100,11 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`fleet hold expiry failed: ${(err as Error).message}`);
     }
     try {
+      await this.dissolveDisabledFleets();
+    } catch (err) {
+      this.logger.error(`fleet dissolve failed: ${(err as Error).message}`);
+    }
+    try {
       await this.sweepOrphanedOffers();
     } catch (err) {
       this.logger.error(`fleet orphan sweep failed: ${(err as Error).message}`);
@@ -144,6 +149,54 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { expired };
+  }
+
+  /**
+   * Disable (docs/designs/own-bikers.md "Disable"): every biker of a disabled fleet becomes a public biker as soon as
+   * they have no ride under way, now for the idle ones and on a later sweep for one finishing a fleet ride. Each is
+   * told (handoff `b.pubT`/`b.pubB`). The riders link guard (migration 0108) refuses an unlink mid-ride, so a race
+   * with a fresh accept just waits for the next sweep.
+   */
+  async dissolveDisabledFleets(): Promise<{ dissolved: number }> {
+    const riders = await this.prisma.rider.findMany({
+      where: { fleetOwner: { enabled: false } },
+      select: { profileId: true, fleetOwnerProfileId: true, fleetHomeMerchant: { select: { name: true } } },
+      take: 500,
+    });
+    if (riders.length === 0) return { dissolved: 0 };
+    const busy = new Set(
+      (
+        await this.prisma.order.findMany({ where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } }, select: { riderId: true } })
+      ).map((o) => o.riderId),
+    );
+    let dissolved = 0;
+    for (const r of riders) {
+      if (busy.has(r.profileId) || !r.fleetOwnerProfileId) continue;
+      try {
+        const done = await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT 1 FROM riders WHERE profile_id = ${r.profileId}::uuid FOR UPDATE`;
+          const cleared = await tx.rider.updateMany({
+            where: { profileId: r.profileId, fleetOwnerProfileId: r.fleetOwnerProfileId },
+            data: { fleetOwnerProfileId: null, fleetHomeMerchantId: null, fleetJoinedAt: null },
+          });
+          if (cleared.count === 0) return false;
+          await tx.auditLog.create({ data: { actor: "system", action: "merchant.fleet.dissolve", target: r.fleetOwnerProfileId!, note: r.profileId } });
+          return true;
+        });
+        if (!done) continue;
+        dissolved++;
+        const shop = r.fleetHomeMerchant?.name?.trim() || "Your business";
+        void this.notifications.notifyProfiles([r.profileId], {
+          title: "You're a public biker now",
+          body: `${shop} has stopped using Own bikers. You can take jobs from anyone near you.`,
+          data: { kind: "fleet_dissolved" },
+        });
+      } catch (err) {
+        // A ride started between the read and the unlink: the guard refused it; the next sweep tries again.
+        if (!isFleetScopeViolation(err)) throw err;
+      }
+    }
+    return { dissolved };
   }
 
   /**
