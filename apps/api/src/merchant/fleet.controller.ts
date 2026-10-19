@@ -1,10 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
   ConvertFleetBookingRequest,
   CreateFleetBookingRequest,
   type CreateFleetBookingResponse,
   CreateFleetInviteRequest,
+  type FleetBillsResponse,
   type FleetInviteLinkResponse,
+  type FleetRidesResponse,
   type FleetJobOffersResponse,
   type MerchantBookingResponse,
   type MyFleetResponse,
@@ -39,6 +41,19 @@ export class MerchantFleetController {
   @Get()
   roster(@CurrentMerchantAccess() access: MerchantAccess): Promise<OwnerFleetResponse> {
     return this.fleet.roster(access);
+  }
+
+  /** OB-M13 Money · Fleet rides (owner and staff): this branch's rides for a week (`?week=YYYY-MM-DD`). */
+  @Get("rides")
+  rides(@CurrentMerchantAccess() access: MerchantAccess, @Query("week") week?: string): Promise<FleetRidesResponse> {
+    return this.fleet.rides(access, week);
+  }
+
+  /** OB-M14 the fleet bill (owner only, E6). */
+  @Get("bills")
+  @OwnerOnly()
+  bills(@CurrentMerchantAccess() access: MerchantAccess): Promise<FleetBillsResponse> {
+    return this.fleet.bills(access);
   }
 
   // The per-owner daily limit lives in the service; this only stops a burst from one person.

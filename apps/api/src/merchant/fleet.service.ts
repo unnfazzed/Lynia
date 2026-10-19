@@ -11,6 +11,8 @@ import {
   FLEET_INVITES_PER_DAY,
   type FleetBikerRow,
   type FleetBikerState,
+  type FleetBillsResponse,
+  type FleetRidesResponse,
   type FleetInviteLinkResponse,
   type FleetInviteRow,
   type FleetInviteState,
@@ -27,7 +29,8 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { onlineRefusalReason } from "../riders/online-gate";
 import { TrackingGateway } from "../tracking/tracking.gateway";
-import { harareWeekStart } from "./harare-clock";
+import { branchRides, ownerBills, ownerThisWeek } from "./fleet-bills";
+import { harareDayBounds, harareWeekStart } from "./harare-clock";
 import type { MerchantAccess } from "./merchant-access";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -126,6 +129,25 @@ export class FleetService {
       return { row: created, alreadyInvited: false };
     });
     return this.linkResponse(row, alreadyInvited, now);
+  }
+
+  /**
+   * OB-M13 (owner and staff, E6): this branch's fleet rides and corrections for one Harare week (`week` = any day
+   * in it, `YYYY-MM-DD`; default this week). A disabled fleet still shows its rides: its bills stay open.
+   */
+  async rides(access: MerchantAccess, week?: string): Promise<FleetRidesResponse> {
+    await this.fleetOwner(access.merchantId);
+    const day = week ? harareDayBounds(week) : null;
+    if (week && !day) throw new HttpException({ statusCode: 400, reason: "bad_week", message: "Pick a day as YYYY-MM-DD." }, 400);
+    return branchRides(this.prisma, access.merchantId, day?.start ?? new Date());
+  }
+
+  /** OB-M14 (owner only): this week so far across the owner's branches, and the last 8 weekly bills. */
+  async bills(access: MerchantAccess): Promise<FleetBillsResponse> {
+    const owner = await this.fleetOwner(access.merchantId);
+    const now = new Date();
+    const [thisWeek, bills] = await Promise.all([ownerThisWeek(this.prisma, owner, now), ownerBills(this.prisma, owner, now, 8)]);
+    return { thisWeek, bills };
   }
 
   /** "Share again": the same link for a live invite (owner). */
@@ -330,6 +352,14 @@ export class FleetService {
   private async ownerOf(merchantId: string): Promise<string | null> {
     const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { ownerProfileId: true } });
     return m?.ownerProfileId ?? null;
+  }
+
+  /** The owner of this branch, who must have a fleet (on, paused or disabled: its bills outlive it). */
+  private async fleetOwner(merchantId: string): Promise<string> {
+    const owner = await this.ownerOf(merchantId);
+    const fleet = owner ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner }, select: { ownerProfileId: true } }) : null;
+    if (!owner || !fleet) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
+    return owner;
   }
 
   /** The owner of this branch, whose fleet must be switched on (admin, T7). */

@@ -66,6 +66,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
 import { findBookingAccountId } from "./booking-account";
+import { branchRides, ownerBills } from "./fleet-bills";
 import { harareEffectiveHours, harareStartOfNextDay } from "./harare-clock";
 import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
 import { addDaysToKey, daysSinceMonday, harareDayBounds, harareDayKey } from "./harare-clock";
@@ -981,6 +982,26 @@ export class MerchantService {
       illustrativeCommission: roundToCents(foodSalesTotal * (RESTAURANTS_COMMISSION.illustrativeRatePct / 100)),
       cookedFoodLossTotal: roundToCents(Number(noRiderLoss._sum.merchantGoodsTotal ?? 0)),
       lineItems,
+      ...(await this.fleetStatement(merchantId, rangeEnd)),
+    };
+  }
+
+  /**
+   * Own bikers (D-117, E7): the fleet part of the weekly statement — this branch's rides this week, and what the
+   * owner still owes on closed weeks. Nothing for a business without Own bikers.
+   */
+  private async fleetStatement(merchantId: string, now: Date): Promise<Pick<MerchantWeeklyStatementResponse, "fleet">> {
+    const branch = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { ownerProfileId: true } });
+    const owner = branch?.ownerProfileId;
+    if (!owner || !(await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner }, select: { ownerProfileId: true } }))) return {};
+    const [rides, bills] = await Promise.all([branchRides(this.prisma, merchantId, now), ownerBills(this.prisma, owner, now, 52)]);
+    const open = bills.filter((b) => b.state !== "paid");
+    return {
+      fleet: {
+        rides: { weekStart: rides.weekStart, weekEnd: rides.weekEnd, rides: rides.rides, total: rides.total },
+        unpaid: (open.reduce((t, b) => t + Math.round(Number(b.total) * 100), 0) / 100).toFixed(2),
+        overdueBills: open.filter((b) => b.state === "overdue").length,
+      },
     };
   }
 

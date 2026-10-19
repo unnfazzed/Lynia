@@ -709,3 +709,58 @@ describe("T7a the console", () => {
     await expect(admin.adjust(OPS, f.ownerId, { merchantId: other.branchId, amount: -1, reason: "wrong owner" })).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe("T7b the merchant's fleet money", () => {
+  it("staff and owner see the branch's rides this week (corrections included); only the week asked for", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await dispatch.accept(booking.id, a);
+    await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+    await lifecycle.completeOrder(booking.id);
+    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, fee: -0.5, reason: "wrong fee" });
+
+    const staff = { ...f.access, role: "staff" } as MerchantAccess;
+    const rides = await fleetSvc.rides(staff);
+    expect(rides).toMatchObject({ rides: 1, total: "1.00" });
+    expect(rides.lines.map((l) => l.kind).sort()).toEqual(["adjustment", "booking"]);
+    expect(rides.lines.find((l) => l.kind === "booking")?.ref).toMatch(/^#[0-9A-F]{4}$/);
+    expect((await fleetSvc.rides(staff, "2020-01-06")).lines).toEqual([]);
+    await expect(fleetSvc.rides(staff, "not-a-day")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("the owner's bill card: this week so far and the closed bills", async () => {
+    const f = await fleetOwner();
+    await prisma.merchantFleetLedger.create({
+      data: { ownerProfileId: f.ownerId, merchantId: f.branchId, kind: "adjustment", fee: 4, reason: "fixture", actor: "fixture", createdAt: new Date("2026-10-06T10:00:00Z") },
+    });
+    await ledger.closeWeeks(new Date("2026-10-13T09:00:00Z"));
+    const res = await fleetSvc.bills(f.access);
+    expect(res.bills).toHaveLength(1);
+    expect(res.bills[0]).toMatchObject({ periodStart: "2026-10-05", total: "4.00" });
+    expect(res.thisWeek).toEqual({ rides: 0, total: "0.00" });
+  });
+
+  it("alerts: a bill over 7 days overdue tells the owner once a day; a business cancelling most accepted bookings is flagged once", async () => {
+    const f = await fleetOwner();
+    await prisma.merchantFleetStatement.create({
+      data: { ownerProfileId: f.ownerId, periodStart: new Date("2026-09-21T00:00:00Z"), periodEnd: new Date("2026-09-27T00:00:00Z"), dueOn: new Date("2026-10-02T00:00:00Z"), total: 36, status: "sent" },
+    });
+    const now = new Date("2026-10-12T09:00:00Z");
+    expect(await ledger.alertOverdueBills(now)).toEqual({ alerted: 1 });
+    expect(await ledger.alertOverdueBills(now)).toEqual({ alerted: 0 });
+    expect(alerts.notify).toHaveBeenCalledWith(expect.stringContaining("10 days overdue"));
+
+    // 5 accepted bookings, 2 cancelled by the business before pickup: 40% > 20%.
+    const a = await biker({ fleet: f });
+    for (let i = 0; i < 5; i++) {
+      const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+      await dispatch.accept(booking.id, a);
+      if (i < 2) await bookings.cancel(f.access, f.ownerId, booking.id);
+      else await prisma.order.update({ where: { id: booking.id }, data: { status: "completed", completedAt: new Date() } });
+    }
+    expect(await ledger.alertCancelRates()).toEqual({ alerted: 1 });
+    expect(await ledger.alertCancelRates()).toEqual({ alerted: 0 });
+    expect(alerts.notify).toHaveBeenCalledWith(expect.stringContaining("cancelled 2 of 5"));
+  });
+});

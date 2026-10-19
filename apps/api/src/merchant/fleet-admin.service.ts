@@ -1,7 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   ACTIVE_RIDE_STATUSES,
-  type AdminFleetBill,
   type AdminFleetDetail,
   type AdminFleetRow,
   type AdminFleetStatus,
@@ -10,7 +9,6 @@ import {
   type FleetAdjustRequest,
   type FleetAdminActionRequest,
   type FleetBikerState,
-  type FleetBillState,
   type SetFleetFeeRequest,
 } from "@lynia/shared";
 import { cancelAttribution } from "../common/cancel-attribution";
@@ -19,6 +17,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
+import { overdueDays, ownerBills, ownerThisWeek } from "./fleet-bills";
 import { harareDayKey, harareWeekStart } from "./harare-clock";
 import { notifyFoodQueueChanged } from "./merchant-lookup.util";
 
@@ -31,10 +30,7 @@ export const FLEET_DISABLE_ACTION = "merchant.fleet.disable";
 export const FLEET_DISSOLVE_ACTION = "merchant.fleet.dissolve";
 export const FLEET_BILL_PAID_ACTION = "merchant.fleet.bill_paid";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A `@db.Date` value as its calendar day. */
-const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
  * Own bikers T7 (docs/designs/own-bikers.md "Pause" / "Disable", OV-F4, E7; handoff OB-A1–A3): the console's side.
@@ -109,52 +105,21 @@ export class FleetAdminService {
   async detail(ownerProfileId: string, now: Date = new Date()): Promise<AdminFleetDetail> {
     const fleet = await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId } });
     if (!fleet) throw new NotFoundException("Fleet not found");
-    const weekStart = harareWeekStart(now);
-    const [owner, branches, riders, week, statements] = await Promise.all([
+    const [owner, branches, riders, thisWeek, bills] = await Promise.all([
       this.prisma.profile.findUnique({ where: { id: ownerProfileId }, select: { firstName: true, lastName: true, phone: true } }),
       this.prisma.merchant.findMany({ where: { ownerProfileId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.rider.findMany({
         where: { fleetOwnerProfileId: ownerProfileId },
         select: { profileId: true, isOnline: true, fleetHomeMerchant: { select: { name: true } }, profile: { select: { firstName: true, lastName: true } } },
       }),
-      this.prisma.merchantFleetLedger.aggregate({
-        where: { ownerProfileId, statementId: null, createdAt: { gte: weekStart } },
-        _sum: { fee: true },
-        _count: { orderId: true },
-      }),
-      this.prisma.merchantFleetStatement.findMany({ where: { ownerProfileId }, orderBy: { periodStart: "desc" }, take: 12 }),
+      ownerThisWeek(this.prisma, ownerProfileId, now),
+      ownerBills(this.prisma, ownerProfileId, now),
     ]);
     const busy = new Set(
       (
         await this.prisma.order.findMany({ where: { riderId: { in: riders.map((r) => r.profileId) }, status: { in: ACTIVE_RIDE_STATUSES } }, select: { riderId: true } })
       ).map((o) => o.riderId),
     );
-    const nameOfBranch = new Map(branches.map((b) => [b.id, b.name]));
-    const lines = statements.length
-      ? await this.prisma.merchantFleetLedger.groupBy({
-          by: ["statementId", "merchantId"],
-          where: { statementId: { in: statements.map((s) => s.id) } },
-          _sum: { fee: true },
-          _count: { orderId: true },
-        })
-      : [];
-    const today = harareDayKey(now);
-    const bills: AdminFleetBill[] = statements.map((s) => {
-      const state: FleetBillState = s.status === "paid" ? "paid" : overdueDays(s.dueOn, today) > 0 ? "overdue" : "unpaid";
-      return {
-        id: s.id,
-        periodStart: dayKey(s.periodStart),
-        periodEnd: dayKey(s.periodEnd),
-        dueOn: s.dueOn ? dayKey(s.dueOn) : null,
-        total: Number(s.total).toFixed(2),
-        state,
-        daysOverdue: state === "overdue" ? overdueDays(s.dueOn, today) : 0,
-        paidAt: s.paidAt?.toISOString() ?? null,
-        branches: lines
-          .filter((l) => l.statementId === s.id)
-          .map((l) => ({ merchantId: l.merchantId, name: nameOfBranch.get(l.merchantId) ?? "Branch", rides: l._count.orderId, total: Number(l._sum.fee ?? 0).toFixed(2) })),
-      };
-    });
     return {
       ownerProfileId,
       owner: owner ? `${owner.firstName} ${owner.lastName}`.trim() || "Owner" : "Owner",
@@ -169,7 +134,7 @@ export class FleetAdminService {
         homeBranch: r.fleetHomeMerchant?.name ?? "",
         state: (busy.has(r.profileId) ? "on_a_job" : r.isOnline ? "online" : "offline") as FleetBikerState,
       })),
-      thisWeek: { rides: week._count.orderId, total: Number(week._sum.fee ?? 0).toFixed(2) },
+      thisWeek,
       bills,
     };
   }
@@ -310,11 +275,4 @@ export class FleetAdminService {
     if (cancelled > 0) this.logger.log(`fleet ${reason}: cancelled ${cancelled} ringing booking(s) for owner ${ownerProfileId}`);
     return cancelled;
   }
-}
-
-/** Whole days a bill due on `dueOn` (a `@db.Date`) is past due as of Harare day `today` (0 while not yet due). */
-function overdueDays(dueOn: Date | null, today: string): number {
-  if (!dueOn) return 0;
-  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dayKey(dueOn)}T00:00:00Z`)) / DAY_MS);
-  return Math.max(0, days);
 }

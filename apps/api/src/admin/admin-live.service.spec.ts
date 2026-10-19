@@ -68,9 +68,11 @@ function build(over: { orders?: unknown[]; riders?: unknown[]; live?: Record<str
         args.where.status ? [{ orderId: "o-quiet", _max: { createdAt: ago(45) } }] : [{ orderId: "o-quiet", _max: { createdAt: ago(30) } }],
       ),
     },
-    rider: { findMany: vi.fn(async () => over.riders ?? []) },
+    rider: { findMany: vi.fn(async () => over.riders ?? []), count: vi.fn(async () => 14) },
     sosEvent: { count: vi.fn(async () => 2) },
     merchant: { count: vi.fn(async () => 1) },
+    ownerFleet: { count: vi.fn(async () => 3) },
+    merchantFleetStatement: { count: vi.fn(async () => 2) },
   };
   const tracking = { getLivePosition: vi.fn(async (id: string) => (over.live?.[id] as never) ?? null) };
   const kitchen = { countToConfirm: vi.fn(async () => 3) };
@@ -182,7 +184,15 @@ describe("AdminLiveService.fleet", () => {
 describe("AdminLiveService.alerts", () => {
   it("counts every alert in one call and reuses it briefly", async () => {
     const { svc, prisma } = build();
-    expect(await svc.alerts()).toEqual({ sosPending: 2, topupAnomalies: 4, kitchenConfirmations: 3, merchantApplications: 1, ordersBreaching: 1 });
+    expect(await svc.alerts()).toEqual({
+      sosPending: 2,
+      topupAnomalies: 4,
+      kitchenConfirmations: 3,
+      merchantApplications: 1,
+      ordersBreaching: 1,
+      // OB-A4: "Own bikers live: 3 fleets · 14 bikers online · 2 overdue".
+      ownBikers: { fleets: 3, bikersOnline: 14, overdueBills: 2 },
+    });
     await svc.alerts();
     expect(prisma.sosEvent.count).toHaveBeenCalledTimes(1);
     vi.setSystemTime(new Date(NOW.getTime() + ALERTS_CACHE_MS + 1));

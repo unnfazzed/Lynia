@@ -1,3 +1,4 @@
+import { harareDayKey } from "../merchant/harare-clock";
 import { Inject, Injectable } from "@nestjs/common";
 import { COMMISSION, resolveCommissionRatePct } from "@lynia/shared";
 import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
@@ -89,6 +90,8 @@ export interface LiveAlerts {
   kitchenConfirmations: number;
   merchantApplications: number;
   ordersBreaching: number;
+  /** Own bikers (OB-A4 tile, D-117): fleets switched on, their bikers online now, and bills past their due day. */
+  ownBikers: { fleets: number; bikersOnline: number; overdueBills: number };
 }
 
 const nameOf = (p: { firstName: string; lastName: string } | null | undefined, fallback: string): string =>
@@ -275,12 +278,16 @@ export class AdminLiveService {
   async alerts(): Promise<LiveAlerts> {
     const now = Date.now();
     if (this.alertsCache && now - this.alertsCache.at < ALERTS_CACHE_MS) return this.alertsCache.value;
-    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, monitor] = await Promise.all([
+    const today = new Date(`${harareDayKey(new Date(now))}T00:00:00.000Z`);
+    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, monitor, fleets, bikersOnline, overdueBills] = await Promise.all([
       this.prisma.sosEvent.count({ where: { acknowledgedAt: null } }),
       this.money.openAnomalyCount(),
       this.kitchen.countToConfirm(),
       this.prisma.merchant.count({ where: applicationsPastSlaWhere(now) }),
       this.liveOrders(),
+      this.prisma.ownerFleet.count({ where: { enabled: true } }),
+      this.prisma.rider.count({ where: { fleetOwnerProfileId: { not: null }, isOnline: true } }),
+      this.prisma.merchantFleetStatement.count({ where: { status: { not: "paid" }, dueOn: { lt: today } } }),
     ]);
     const value: LiveAlerts = {
       sosPending,
@@ -288,6 +295,7 @@ export class AdminLiveService {
       kitchenConfirmations,
       merchantApplications,
       ordersBreaching: monitor.counts.breach,
+      ownBikers: { fleets, bikersOnline, overdueBills },
     };
     this.alertsCache = { at: now, value };
     return value;
