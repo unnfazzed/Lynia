@@ -1,3 +1,6 @@
+import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
+import { FleetEnabledGuard } from "./fleet-enabled.guard";
+import { FleetService } from "./fleet.service";
 import { Module } from "@nestjs/common";
 import { MatchingModule } from "../matching/matching.module";
 import { OffersModule } from "../offers/offers.module";
@@ -70,6 +73,9 @@ import { PrescriptionService } from "./prescription.service";
  *
  * Order flow v2 (ledger D-59, backend B) adds OrderScheduleService (slots + the ring sweep),
  * PrescriptionService (Rx behind RX_ENABLED) and their two controllers (order-flow-v2-b.controller.ts).
+ *
+ * Own bikers (docs/designs/own-bikers.md, D-117) adds FleetService and its two controllers (fleet.controller.ts):
+ * the owner's roster and invite links, and the biker's invites, Join and Leave, all behind FLEET_UI_LIVE.
  */
 @Module({
   imports: [TrackingModule, OrdersModule, MatchingModule, OffersModule],
@@ -87,6 +93,8 @@ import { PrescriptionService } from "./prescription.service";
     OrderFlowCustomerController,
     OrderFlowMerchantController,
     HandoverLinkController,
+    MerchantFleetController,
+    RiderFleetController,
   ],
   providers: [
     MerchantService,
@@ -95,6 +103,9 @@ import { PrescriptionService } from "./prescription.service";
     MerchantTeamService,
     MerchantInvitesService,
     MerchantBranchesService,
+    // Own bikers (D-117, T3a): invites, Join, Leave, Remove; behind FLEET_UI_LIVE.
+    FleetService,
+    FleetEnabledGuard,
     MerchantGuard,
     RestaurantsEnabledGuard,
     ShopsEnabledGuard,

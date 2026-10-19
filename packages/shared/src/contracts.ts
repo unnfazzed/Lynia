@@ -2572,6 +2572,124 @@ export const JoinMerchantInviteRequest = z
   .strict();
 export type JoinMerchantInviteRequest = z.infer<typeof JoinMerchantInviteRequest>;
 
+// ── Own bikers (docs/designs/own-bikers.md, ledger D-117; handoff own-bikers-v1) ─────────────────────────
+// A merchant owner's own bikers, invited by a link bound to their phone number (no SMS: the owner shares it).
+// Responses are NOT .strict(): the biker app is installed and these grow additively (cash held, cancels, bill).
+
+/** How long an Own bikers invite link works (handoff `m.linkSub`: "Works for 7 days, for this number only."). */
+export const FLEET_INVITE_TTL_DAYS = 7;
+/** Invite links an owner may create per day, across their branches (E4: abuse guard; E13: one at a time). */
+export const FLEET_INVITES_PER_DAY = 30;
+/** Where an invite link points: `<base><code>`. The app opens it (the code is redeemed by `POST /fleet/invites/open`). */
+export const FLEET_INVITE_LINK_BASE = "https://lyniago.com/j/";
+/** Invite codes use the referral alphabet (no 0/O/1/I/L) at this length: unguessable, and bound to one number. */
+export const FLEET_INVITE_CODE_LENGTH = 10;
+
+/** `POST /merchant/fleet/invites` (owner): who to invite. Their home branch is the branch the owner invites from. */
+export const CreateFleetInviteRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    phone: z.string().trim().min(6).max(20),
+  })
+  .strict();
+export type CreateFleetInviteRequest = z.infer<typeof CreateFleetInviteRequest>;
+
+/** An invite on the owner's roster (OB-M2 "INVITES"). `expired` shows "Link expired · New link". */
+export const FleetInviteState = z.enum(["not_opened", "signing_up", "waiting_id_check", "expired"]);
+export type FleetInviteState = z.infer<typeof FleetInviteState>;
+
+export const FleetInviteRow = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  phoneMasked: z.string(),
+  state: FleetInviteState,
+  homeBranch: z.string(),
+  sharedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
+export type FleetInviteRow = z.infer<typeof FleetInviteRow>;
+
+/**
+ * `POST /merchant/fleet/invites` and `GET /merchant/fleet/invites/:id/link` (owner): the link to share. `phone` is
+ * the invitee's number as digits for wa.me; `alreadyInvited` = a live invite for this number already existed,
+ * and this is its same link (handoff `m.alreadyInvited`).
+ */
+export const FleetInviteLinkResponse = z.object({
+  invite: FleetInviteRow,
+  link: z.string().url(),
+  phone: z.string(),
+  alreadyInvited: z.boolean(),
+});
+export type FleetInviteLinkResponse = z.infer<typeof FleetInviteLinkResponse>;
+
+/** A biker's state chip on the roster (handoff: On a job › Online › Offline). */
+export const FleetBikerState = z.enum(["on_a_job", "online", "offline"]);
+export type FleetBikerState = z.infer<typeof FleetBikerState>;
+
+export const FleetBikerRow = z.object({
+  riderId: z.string().uuid(),
+  name: z.string(),
+  /** Full number for the owner (the biker sheet's Call); masked for staff. */
+  phone: z.string(),
+  homeBranch: z.string(),
+  state: FleetBikerState,
+  joinedAt: z.string().datetime(),
+});
+export type FleetBikerRow = z.infer<typeof FleetBikerRow>;
+
+/** OB-M5: one of the owner's old Preferred riders, offered once as an invite. */
+export const FleetSuggestion = z.object({ name: z.string(), phone: z.string() });
+export type FleetSuggestion = z.infer<typeof FleetSuggestion>;
+
+/**
+ * `GET /merchant/fleet` (owner and staff): the Own bikers roster (OB-M1–M5). `enabled: false` = this business has
+ * no Own bikers (the Account row is removed; everything else empty). Staff get no invites' links, no suggestions
+ * and masked numbers (E6).
+ */
+export const OwnerFleetResponse = z.object({
+  enabled: z.boolean(),
+  paused: z.boolean(),
+  role: z.enum(["owner", "staff"]),
+  bikers: z.array(FleetBikerRow),
+  invites: z.array(FleetInviteRow),
+  suggestions: z.array(FleetSuggestion),
+});
+export type OwnerFleetResponse = z.infer<typeof OwnerFleetResponse>;
+
+/** `POST /fleet/invites/open` (biker app, from the link): the code in the link. */
+export const OpenFleetInviteRequest = z.object({ code: z.string().trim().min(4).max(32) }).strict();
+export type OpenFleetInviteRequest = z.infer<typeof OpenFleetInviteRequest>;
+
+/**
+ * An invite to the signed-in biker's number (OB-R1/OB-R2). `canJoin` is false until their ID check passes (the
+ * muted "finish your ID check to join" card).
+ */
+export const MyFleetInvite = z.object({
+  id: z.string().uuid(),
+  shop: z.string(),
+  canJoin: z.boolean(),
+  expiresAt: z.string().datetime(),
+});
+export type MyFleetInvite = z.infer<typeof MyFleetInvite>;
+
+/** `GET /fleet/me` (biker app): the fleet this biker rides for, if any, and any invites to their number. */
+export const MyFleetResponse = z.object({
+  fleet: z
+    .object({
+      /** The biker's home branch, the name every fleet screen uses (owner decision P7-1). */
+      shop: z.string(),
+      paused: z.boolean(),
+      joinedAt: z.string().datetime(),
+    })
+    .nullable(),
+  invites: z.array(MyFleetInvite),
+});
+export type MyFleetResponse = z.infer<typeof MyFleetResponse>;
+
+/** Join refusals (OB-R3), as `reason` on the 403/409 body. */
+export const FleetJoinRefusal = z.enum(["id_check_pending", "works_at_shop", "in_another_fleet", "invite_ended", "on_a_job"]);
+export type FleetJoinRefusal = z.infer<typeof FleetJoinRefusal>;
+
 /** `POST /admin/merchants/:id/owner`: support hands a business to another person after an identity check. */
 export const TransferMerchantOwnerRequest = z
   .object({
