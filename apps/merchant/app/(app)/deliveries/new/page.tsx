@@ -1,8 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { isShortMapLink, type LatLng, type MerchantDishResponse, type MerchantProfileResponse, parseMapLocation } from "@lynia/shared";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  FLEET_DISPATCH,
+  isShortMapLink,
+  type LatLng,
+  type MerchantBookingResponse,
+  type MerchantDishResponse,
+  type MerchantProfileResponse,
+  parseMapLocation,
+} from "@lynia/shared";
 import { Icon } from "../../../components/icons";
 import { Kitchen } from "../../../components/Kitchen";
 import { useKitchenConnection } from "../../../components/KitchenConnectionProvider";
@@ -23,8 +31,14 @@ import {
   type WhereErrors,
   worth,
 } from "../../../lib/book-form";
-import { bookingsAvailable, newIdempotencyKey, suggestedFare } from "../../../lib/booking";
-import { createBooking, resolveMapLink } from "../../../lib/bookings-api";
+import { bookingsAvailable, newIdempotencyKey, rememberCode, suggestedFare } from "../../../lib/booking";
+import { cancelBooking, createBooking, getBooking, resolveMapLink } from "../../../lib/bookings-api";
+import { CountdownBar } from "../../../components/m/CountdownBar";
+import { supportWhatsAppUrl } from "../../../lib/config";
+import { createFleetBooking, retryFleetBooking, sendFleetBookingToAny } from "../../../lib/fleet-api";
+import { OBM } from "../../../lib/own-bikers-copy";
+import { bikersOnline, likelyFleet, useFleet } from "../../../lib/use-fleet";
+import { useNow } from "../../../lib/use-now";
 import { primeBusiness } from "../../../lib/business";
 import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
 import { parseAmountInput } from "../../../lib/money-input";
@@ -35,6 +49,11 @@ import { bookingHref } from "../../../lib/routes";
 
 type Gate = { status: "loading" } | { status: "ready"; business: MerchantProfileResponse; pickup: LatLng } | { status: "no_pin" } | { status: "error"; message: string };
 type Sheet = null | "items" | "type";
+/** OB-M8: who the booking goes to. */
+type Mode = "mine" | "any";
+/** How often the ringing sheet re-reads its booking (OB-M9–M11). */
+const RING_POLL_MS = 2_000;
+const RING_TOTAL_MS = FLEET_DISPATCH.rounds * FLEET_DISPATCH.roundMs;
 
 const UNREADABLE_LINK = "We couldn't read a location from that link. Search for the street instead.";
 /** MJ-M15 (DESIGN-DEVIATIONS D-91): without a Places key typing an address finds nothing, so the field says
@@ -58,6 +77,13 @@ const RESOLVE_DELAY_MS = 400;
  * "Rider collects $51.00 · and brings it back to you"; the fare stepper with "Riders usually get $6–7";
  * then "Find a rider · $6.00". Riders' offers then use the Send v2 list, unchanged. The pickup is always
  * the business's own pin; everything is set before the broadcast, because riders have 90 seconds to offer.
+ *
+ * Own bikers v1 (OB-M8–M12, ledger D-117): a business with Own bikers gets "My bikers · 2 online | Any biker" on top
+ * (My bikers by default when one is online; otherwise Any biker with "0 of your bikers online"). My bikers has no
+ * fare stepper; "Ring my bikers" rings them, and a sheet over this screen counts the two minutes down (OB-M9). None
+ * took it (OB-M10) or nobody online (OB-M11): "Send to any biker" switches to Any biker with the stepper filled, and
+ * "Find a biker" then sends that same booking to the public. Paused (OB-M12): My bikers is locked. Once a biker
+ * accepts, the booking's own screen opens.
  */
 export default function NewBookingPage() {
   const router = useRouter();
@@ -77,6 +103,17 @@ export default function NewBookingPage() {
   const submittingRef = useRef(false);
   // One key per form: a double tap, or a retry after a lost answer, books once (Send dedupes on it).
   const idempotencyKey = useRef(newIdempotencyKey());
+  // Own bikers (OB-M8–M12).
+  const { fleet: fleetRead, reload: reloadFleet } = useFleet();
+  const fleet = fleetRead && fleetRead !== "unreachable" ? fleetRead : null;
+  const online = fleet ? bikersOnline(fleet) : 0;
+  const wantsMine = useSearchParams()?.get("mine") === "1";
+  const [mode, setMode] = useState<Mode | null>(null);
+  /** The fleet booking ringing (or held for a decision) under the sheet. */
+  const [ringing, setRinging] = useState<MerchantBookingResponse | null>(null);
+  /** A fleet booking nobody took, now to be sent to any biker from the Any biker form. */
+  const [heldId, setHeldId] = useState<string | null>(null);
+  const [unreachable, setUnreachable] = useState(false);
   // MJ-RL5 (not a bug): the key stays for the whole form, edits included. Send stores a key only when it
   // created a booking, so an edit after a refused attempt is already a fresh booking; after a lost success
   // the same key lands the merchant on the booking that exists instead of booking a second rider.
@@ -105,26 +142,106 @@ export default function NewBookingPage() {
     void load();
   }, [load]);
 
+  // OB-M8 default: My bikers when at least one is online (or the first-biker banner asked for it), else Any biker.
+  useEffect(() => {
+    if (mode !== null || fleetRead === undefined) return;
+    setMode(fleet && !fleet.paused && (online > 0 || wantsMine) ? "mine" : "any");
+  }, [mode, fleetRead, fleet, online, wantsMine]);
+  const mine = fleet !== null && !fleet.paused && mode === "mine" && heldId === null;
+  // OB-M8 "loading count": a business last seen with Own bikers gets the toggle at once, its count still loading.
+  const [pendingMine] = useState(() => typeof window !== "undefined" && likelyFleet());
+  const loadingMine = fleetRead === undefined && pendingMine;
+
+  // OB-M9–M11: follow the ringing booking until a biker takes it (its own screen), or it waits on a decision.
+  const ringingId = ringing?.id ?? null;
+  useEffect(() => {
+    if (!ringingId) return undefined;
+    let alive = true;
+    const t = setInterval(() => {
+      getBooking(ringingId).then(
+        (b) => {
+          if (!alive) return;
+          if (b.fleet) setRinging(b);
+          else if (b.state === "cancelled") setRinging(null);
+          else router.replace(bookingHref(b.id));
+        },
+        () => undefined, // a missed read: the next one tries again
+      );
+    }, RING_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [ringingId, router]);
+  const now = useNow(1000, ringing?.fleet?.state === "ringing");
+
   const pickup = gate.status === "ready" ? gate.pickup : null;
   const suggested = pickup && where ? suggestedFare(pickup, where.point) : null;
   const shownFare = fare ?? (suggested !== null ? startFare(suggested) : null);
 
   async function book() {
     if (submittingRef.current) return;
-    const found = validateWhere(where, phone);
-    setWhereErrors(found);
-    const problem = validateWhat(lines, collectCash);
-    setWhatError(problem);
+    // A held fleet booking already has its address, buyer and items: only the fare is new.
+    if (heldId === null) {
+      const found = validateWhere(where, phone);
+      setWhereErrors(found);
+      const problem = validateWhat(lines, collectCash);
+      setWhatError(problem);
+      if (Object.keys(found).length > 0 || problem || !where) return;
+    }
     setBanner(null);
-    if (Object.keys(found).length > 0 || problem || !where || shownFare === null) return;
+    setUnreachable(false);
+    if (!mine && shownFare === null) return;
     submittingRef.current = true;
     setBusy(true);
     try {
-      const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
-      router.replace(bookingHref(booking.id));
+      if (heldId !== null && shownFare !== null) {
+        // OB-M10/M11 "Send to any biker": the same booking and code, now to the public at this fare.
+        await sendFleetBookingToAny(heldId, shownFare);
+        router.replace(bookingHref(heldId));
+      } else if (mine && where) {
+        const { proposedFare: _fare, ...body } = toBookingRequest(where, phone, lines, shownFare ?? 0, idempotencyKey.current, collectCash);
+        const { booking, deliveryCode } = await createFleetBooking(body);
+        rememberCode(booking.id, deliveryCode);
+        setRinging(booking);
+      } else if (where && shownFare !== null) {
+        const booking = await createBooking(toBookingRequest(where, phone, lines, shownFare, idempotencyKey.current, collectCash));
+        router.replace(bookingHref(booking.id));
+      }
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
-      setBanner(err instanceof ApiError ? err.message : "Couldn't book a biker. Try again.");
+      // OB-M8 "can't reach": the strip over the button, with Try again.
+      if (!(err instanceof ApiError) || err.status === 0) setUnreachable(true);
+      else setBanner(err.message);
+    } finally {
+      setBusy(false);
+      submittingRef.current = false;
+    }
+  }
+
+  /** OB-M10 "Try my bikers again", OB-M9 Cancel, and "Send to any biker" from either result sheet. */
+  async function onRing(action: "retry" | "cancel" | "any") {
+    if (!ringing || submittingRef.current) return;
+    if (action === "any") {
+      setHeldId(ringing.id);
+      setRinging(null);
+      setMode("any");
+      return;
+    }
+    submittingRef.current = true;
+    setBusy(true);
+    try {
+      if (action === "retry") setRinging(await retryFleetBooking(ringing.id));
+      else {
+        await cancelBooking(ringing.id);
+        setRinging(null);
+        // Booking again starts a new one.
+        idempotencyKey.current = newIdempotencyKey();
+      }
+    } catch (err) {
+      if (redirectIfSessionExpired(err, signOut)) return;
+      setBanner(err instanceof ApiError && err.status !== 0 ? err.message : "Couldn't reach LyniaGo. Try again.");
+      setRinging(null);
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -142,6 +259,52 @@ export default function NewBookingPage() {
           {gate.status === "loading" && <div className="m-hint">Loading…</div>}
           {gate.status === "error" && <RetryableError message={gate.message} onRetry={() => void load()} />}
           {gate.status === "no_pin" && <p className="m-sub">Set your shop&apos;s location first, so bikers know where to collect.</p>}
+
+          {gate.status === "ready" && fleet?.paused && (
+            <div className="m-ob-paused">
+              <div>
+                <span className="m-ob-strip-ic">
+                  <Icon name="pause" size={16} />
+                </span>
+                <div>
+                  <b>{OBM.pausedT}</b>
+                  <span>{OBM.pausedB}</span>
+                </div>
+              </div>
+              <a className="m-ob-pill" data-out="" href={supportWhatsAppUrl(`Hi LyniaGo, about Own bikers for ${gate.business.name}`) ?? undefined} target="_blank" rel="noreferrer">
+                <Icon name="message-circle" size={16} />
+                {OBM.contact}
+              </a>
+            </div>
+          )}
+          {gate.status === "ready" && fleet && heldId === null && (
+            <>
+              <div className="m-ob-seg" role="radiogroup" aria-label={OBM.bookTitle}>
+                <button type="button" role="radio" aria-checked={mine} disabled={fleet.paused} onClick={() => setMode("mine")}>
+                  {fleet.paused && <Icon name="lock" size={16} />}
+                  <span className="m-ob-wide">{fleet.paused ? OBM.segMine : OBM.segMineN(online)}</span>
+                  <span className="m-ob-narrow">{OBM.segMine}</span>
+                </button>
+                <button type="button" role="radio" aria-checked={!mine} onClick={() => setMode("any")}>
+                  {OBM.segAny}
+                </button>
+              </div>
+              {!fleet.paused && (
+                <p className={`m-ob-seghint${online === 0 ? "" : " m-ob-narrow"}`}>{OBM.mineOnline(online)}</p>
+              )}
+            </>
+          )}
+          {gate.status === "ready" && loadingMine && (
+            <div className="m-ob-seg" aria-busy="true" aria-label={OBM.bookTitle}>
+              <button type="button" role="radio" aria-checked={true} disabled>
+                {`${OBM.segMine} · `}
+                <i className="m-ob-segsk" aria-hidden="true" />
+              </button>
+              <button type="button" role="radio" aria-checked={false} disabled>
+                {OBM.segAny}
+              </button>
+            </div>
+          )}
 
           {gate.status === "ready" && (
             <>
@@ -209,7 +372,7 @@ export default function NewBookingPage() {
                 <Switch checked={collectCash} label={`Biker collects ${money(worth(lines))}`} onChange={setCollectCash} />
               </div>
 
-              {shownFare !== null && (
+              {shownFare !== null && !mine && !loadingMine && (
                 <div className="m-fld">
                   <span className="m-label">Fare you offer</span>
                   <div className="m-fare2">
@@ -243,8 +406,33 @@ export default function NewBookingPage() {
 
         {gate.status === "ready" && (
           <div className="m-cta m-cta-pin">
-            <button type="button" className="m-btn" disabled={busy || actionsDisabled} onClick={() => void book()}>
-              {busy ? "Booking…" : shownFare !== null ? `Find a biker · ${money(shownFare)}` : "Find a biker"}
+            {(unreachable || fleetRead === "unreachable") && (
+              <div className="m-ob-strip" data-tone="bad" data-act="" role="alert">
+                <span className="m-ob-strip-ic">
+                  <Icon name="wifi-off" size={16} />
+                </span>
+                <div>
+                  <b>{OBM.cantReach}</b>
+                </div>
+                <button type="button" className="m-ob-pill" onClick={() => (fleetRead === "unreachable" ? reloadFleet() : void book())}>
+                  <Icon name="rotate-cw" size={16} />
+                  {OBM.tryAgain}
+                </button>
+              </div>
+            )}
+            <button type="button" className="m-btn" disabled={busy || actionsDisabled || fleetRead === undefined} onClick={() => void book()}>
+              {mine || loadingMine ? (
+                <>
+                  <Icon name="bike" size={20} />
+                  {OBM.ringMine}
+                </>
+              ) : busy ? (
+                "Booking…"
+              ) : shownFare !== null ? (
+                OBM.findAny(money(shownFare))
+              ) : (
+                "Find a biker"
+              )}
             </button>
           </div>
         )}
@@ -278,6 +466,52 @@ export default function NewBookingPage() {
                 />
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {ringing?.fleet && (
+        <div className="m-overlay" style={{ zIndex: 70 }}>
+          <div className="m-overlay-frame">
+            <div className="m-scrim" aria-hidden="true" />
+            {ringing.fleet.state === "ringing" ? (
+              <div className="m-sheet" role="dialog" aria-modal="true" aria-label={OBM.ringing(ringing.fleet.rung)}>
+                <div className="m-grab" />
+                <div className="m-ob-ring" aria-live="polite">
+                  <span>
+                    <Icon name="volume-2" size={20} />
+                  </span>
+                  <div>
+                    <b>{OBM.ringing(ringing.fleet.rung)}</b>
+                    <small>{OBM.ringingSub}</small>
+                  </div>
+                </div>
+                <CountdownBar msLeft={ringing.fleet.endsAt ? Date.parse(ringing.fleet.endsAt) - now : 0} totalMs={RING_TOTAL_MS} />
+                <button type="button" className="m-btn2" disabled={busy} onClick={() => void onRing("cancel")}>
+                  {OBM.cancel}
+                </button>
+              </div>
+            ) : (
+              <div className="m-sheet" role="alertdialog" aria-modal="true" aria-label={ringing.fleet.state === "none_took" ? OBM.noneTook : OBM.noneOnline}>
+                <div className="m-grab" />
+                <span className="m-ob-result-ic">
+                  <Icon name="users" size={24} />
+                </span>
+                <h2 className="m-ob-sheet-t">{ringing.fleet.state === "none_took" ? OBM.noneTook : OBM.noneOnline}</h2>
+                <p className="m-ob-sheet-s">{ringing.fleet.state === "none_took" ? OBM.noneTookB : OBM.noneOnlineB}</p>
+                <button type="button" className="m-btn" disabled={busy} onClick={() => void onRing("any")}>
+                  {OBM.sendAny}
+                </button>
+                {ringing.fleet.state === "none_took" ? (
+                  <button type="button" className="m-btn2" disabled={busy} onClick={() => void onRing("retry")}>
+                    {OBM.tryMine}
+                  </button>
+                ) : (
+                  <button type="button" className="m-btn2" disabled={busy} onClick={() => void onRing("cancel")}>
+                    {OBM.cancel}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

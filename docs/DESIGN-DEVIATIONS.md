@@ -5816,3 +5816,10 @@ admin), each behind `FLEET_UI_LIVE`. Strings come from the handoff's `copy.ts`, 
 - Offline, the app's existing "No connection, retrying…" bar sits above the roster beside the drawn toast.
 - OB-M7's notification-inbox row isn't built: the merchant app has no inbox. The join reaches the owner as a push.
 - Account's HELP group only renders where the support WhatsApp number is configured (unchanged behaviour).
+
+**Evidence, PR 2a (Book a biker with My bikers, OB-M8–M12):** `docs/parity/OWN-BIKERS-V1-MERCHANT-BOOK-2026-10-19.png`
+(`tools/parity/shoot-own-bikers-v1.mjs --set merchant-book`), 11 frames. What still differs, and why:
+- The disabled "Ring my bikers" while the count loads is the app's usual faded primary, not the drawing's grey one.
+- "Going to" reads "Pin the buyer sent" without the area where no address lookup key is configured (unchanged).
+- The loading toggle is drawn only for a business this tab last saw with Own bikers, so a business without them never
+  sees it flash.

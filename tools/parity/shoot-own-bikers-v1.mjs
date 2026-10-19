@@ -2,8 +2,9 @@
 /**
  * Own bikers v1's screenshot sheet (ledger D-117): each frame of the handoff
  * (packages/design/handoff/own-bikers-v1/Own bikers v1 - all screens.html, one `data-screen-label` per frame) beside
- * the app in the same state, at 360×720 (and 320×640 where the handoff draws it). Set `merchant-roster` (default):
- * OB-M1–M7, the invite sheet and the roster's states (lane B, PR 1).
+ * the app in the same state, at 360×720 (and 320×640 where the handoff draws it). `--set merchant-roster` (default):
+ * OB-M1–M7, the invite sheet and the roster's states (lane B, PR 1). `--set merchant-book`: OB-M8–M12, Book a biker
+ * with My bikers, the ringing sheet and its outcomes, and the kitchen's Book card (lane B, PR 2a).
  *
  * The merchant API is stubbed in the browser (every call to `<origin>/__api/**`), so no seeded backend is needed:
  *
@@ -20,6 +21,8 @@ import { contextDefaults, launch } from "./lib/browser.mjs";
 import { buildSheet } from "./lib/sheet.mjs";
 
 const ORIGIN = process.env.PARITY_MERCHANT_URL || "http://127.0.0.1:4312";
+const setArg = process.argv.indexOf("--set");
+const SET = setArg > 0 ? process.argv[setArg + 1] : "merchant-roster";
 const outArg = process.argv.indexOf("--out");
 const OUT = resolve(outArg > 0 ? process.argv[outArg + 1] : "out/own-bikers-v1");
 const SHOTS = `${OUT}-shots`;
@@ -77,6 +80,9 @@ const KUDA = invite("01", "Kuda", "signing_up", 48 * H);
 const INV2 = [KUDA, invite("02", "Rufaro", "waiting_id_check", 5 * H), invite("03", "+263 77 123 4567", "not_opened", 1 * H), invite("04", "Simba", "expired", 9 * 24 * H)];
 const fleet = (over = {}) => ({ enabled: true, paused: false, role: "owner", bikers: BIKERS, invites: [KUDA], suggestions: [], ...over });
 const LINK = { invite: { ...KUDA, sharedAt: new Date(now).toISOString(), state: "not_opened" }, link: "https://lyniago.co.zw/j/K7Q2-M9", phone: "263775550192", alreadyInvited: false };
+const RESTAURANT_ME = { ...ME };
+const fleetBooking = (state) => ({ id: "00000000-0000-4000-8000-00000000fb01", state: "finding", status: "fleet_searching", fleet: { state, rung: 2, endsAt: new Date(Date.now() + 84_000).toISOString() } });
+const ALL_OFFLINE = BIKERS.map((b) => ({ ...b, state: "offline" }));
 const BILLS = { thisWeek: { rides: 23, total: "34.50" }, bills: [{ id: "b1", periodStart: "2026-09-21", periodEnd: "2026-09-27", dueOn: "2026-10-02", total: "36.00", state: "overdue", daysOverdue: 2, paidAt: null, branches: [] }] };
 
 function apiRoute(route, sc) {
@@ -97,6 +103,12 @@ function apiRoute(route, sc) {
     if (sc.invite === "net") return route.abort();
     return json(200, sc.invite === "dup" ? { ...LINK, alreadyInvited: true, invite: KUDA } : LINK);
   }
+  if (path === "/merchant/fleet/bookings" && req.method() === "POST") {
+    if (sc.ring === "net") return route.abort();
+    return json(200, { booking: fleetBooking(sc.ring ?? "ringing"), deliveryCode: "482910" });
+  }
+  if (path.startsWith("/merchant/bookings/")) return json(200, fleetBooking(sc.ring ?? "ringing"));
+  if (path === "/merchant/summary/today") return json(200, { orders: 9, sales: 86, cashDue: 26 });
   if (path === "/app/order-flags") return json(200, { rxEnabled: true, preferredRetired: sc.retired ?? false });
   if (path === "/merchant/team") return json(200, { members: [], invites: [{ id: "t1" }] });
   if (path === "/merchant/riders") return json(200, { riders: [], cap: 20 });
@@ -106,11 +118,13 @@ function apiRoute(route, sc) {
   return json(200, []);
 }
 
-async function shootApp(browser, { name, w = 360, path = "/own-bikers", scenario, before }) {
+async function shootApp(browser, { name, w = 360, path = "/own-bikers", scenario, before, knownFleet = false }) {
   const ctx = await browser.newContext(contextDefaults({ viewport: { width: w, height: w === 320 ? 640 : 720 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }));
   await ctx.addCookies([{ name: "lynia_merchant_session", value: encodeURIComponent(JSON.stringify(SESSION)), url: ORIGIN }]);
   await ctx.route("**/__api/**", (route) => apiRoute(route, scenario));
   await ctx.route("**/socket.io/**", (route) => route.abort());
+  // A tab that last saw the business with Own bikers (lib/use-fleet.ts `likelyFleet`).
+  if (knownFleet) await ctx.addInitScript(() => window.sessionStorage.setItem("lynia.merchant.fleet", "1"));
   const page = await ctx.newPage();
   try {
     await page.goto(`${ORIGIN}${path}`, { waitUntil: scenario.load === "hang" ? "domcontentloaded" : "networkidle", timeout: 90000 });
@@ -144,6 +158,43 @@ const getLink = (wait) => async (p) => {
   if (wait) await p.getByText(wait).first().waitFor();
 };
 const scroll = (px) => (p) => p.locator("main.m-scroll").evaluate((el, y) => (el.scrollTop = y), px);
+
+/** OB-M8: the drawing's booking, Pin the buyer sent, +263 77 998 2210, 2× Quarter chicken and 1× Chips ($12.00), cash. */
+const fillBook = async (p) => {
+  await p.getByLabel("Search street or area, or paste the buyer's location").fill("-17.81, 31.05");
+  await p.getByLabel("Buyer’s phone").fill("779982210");
+  for (const [name, qty, price] of [["Quarter chicken", "2", "4.50"], ["Chips", "1", "3.00"]]) {
+    await p.getByRole("button", { name: "Add", exact: true }).click();
+    await p.getByRole("dialog", { name: "Your items" }).getByRole("button", { name: /Type one/ }).click();
+    const sheet = p.getByRole("dialog", { name: "Type an item" });
+    await sheet.getByLabel("What it is").fill(name);
+    await sheet.getByLabel("How many").fill(qty);
+    await sheet.getByLabel("Price of one ($)").fill(price);
+    await sheet.getByRole("button", { name: "Add", exact: true }).click();
+  }
+  await p.getByRole("switch").click();
+};
+const ring = async (p) => {
+  await fillBook(p);
+  await p.getByRole("button", { name: /Ring my bikers/ }).click();
+  await p.getByRole("dialog").or(p.getByRole("alertdialog")).last().waitFor();
+};
+const BOOK_ROWS = [
+  ["OB-M8 Kitchen orders · Book card", { path: "/queue", scenario: { me: RESTAURANT_ME, fleet: fleet() } }],
+  ["OB-M8 Book · My bikers", { path: "/deliveries/new", scenario: { fleet: fleet() }, before: fillBook }],
+  ["OB-M8 Book · My bikers · 320", { w: 320, path: "/deliveries/new", scenario: { fleet: fleet() }, before: fillBook }],
+  ["OB-M8 Book · Any biker", { path: "/deliveries/new", scenario: { fleet: fleet() }, before: async (p) => { await fillBook(p); await p.getByRole("radio", { name: "Any biker" }).click(); } }],
+  ["OB-M8 Book · 0 online", { path: "/deliveries/new", scenario: { fleet: fleet({ bikers: ALL_OFFLINE }) }, before: fillBook }],
+  ["OB-M8 Book · loading count", { path: "/deliveries/new", knownFleet: true, scenario: { fleet: fleet(), load: "hang" }, before: fillBook }],
+  ["OB-M8 Book · can't reach", { path: "/deliveries/new", scenario: { fleet: fleet(), ring: "net" }, before: async (p) => { await fillBook(p); await p.getByRole("button", { name: /Ring my bikers/ }).click(); await p.getByText("Can't reach LyniaGo").waitFor(); } }],
+  ["OB-M9 Ringing my bikers", { path: "/deliveries/new", scenario: { fleet: fleet(), ring: "ringing" }, before: ring }],
+  ["OB-M10 None took it", { path: "/deliveries/new", scenario: { fleet: fleet(), ring: "none_took" }, before: ring }],
+  [
+    "OB-M11 Nobody online",
+    { path: "/deliveries/new", scenario: { fleet: fleet({ bikers: ALL_OFFLINE }), ring: "none_online" }, before: async (p) => { await p.getByRole("radio", { name: /My bikers/ }).click(); await ring(p); } },
+  ],
+  ["OB-M12 Paused", { path: "/deliveries/new", scenario: { fleet: fleet({ paused: true }) }, before: fillBook }],
+];
 
 const ROWS = [
   ["OB-M1 Account · owner", { path: "/account", scenario: { fleet: fleet() } }],
@@ -204,7 +255,7 @@ const mpage = await mctx.newPage();
 await mpage.goto(MOCKS, { waitUntil: "load" });
 await mpage.waitForTimeout(1500);
 const rows = [];
-for (const [label, app] of ROWS) {
+for (const [label, app] of SET === "merchant-book" ? BOOK_ROWS : ROWS) {
   let mock = null;
   try {
     mock = join(SHOTS, `mock-${rows.length}.png`);
@@ -218,5 +269,5 @@ for (const [label, app] of ROWS) {
   rows.push({ label, mock, app: shot, logicalW: app.w ?? 360 });
 }
 await mctx.close();
-await buildSheet({ title: "Own bikers v1 (D-117) · merchant roster: handoff (left) vs app (right)", out: OUT, rows, browser });
+await buildSheet({ title: `Own bikers v1 (D-117) · ${SET}: handoff (left) vs app (right)`, out: OUT, rows, browser });
 await browser.close();

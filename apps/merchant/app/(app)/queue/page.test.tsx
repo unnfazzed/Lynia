@@ -27,6 +27,9 @@ vi.mock("../../lib/orders-api", () => ({
 vi.mock("../../lib/business", () => ({ primeBusiness: vi.fn(), useBusiness: () => null }));
 const bk = vi.hoisted(() => ({ bookings: [] as import("@lynia/shared").MerchantBookingResponse[] }));
 vi.mock("../../lib/use-bookings", () => ({ useBookings: () => ({ bookings: bk.bookings, loaded: true, error: null, reload: async () => {} }) }));
+// Own bikers (OB-M8): a kitchen with a fleet gets the Book card. None here unless a test says so.
+const fl = vi.hoisted(() => ({ fleet: null as unknown }));
+vi.mock("../../lib/use-fleet", () => ({ useFleet: () => ({ fleet: fl.fleet, reload: () => {} }) }));
 
 // One router object for the whole run: the page's load callback depends on it.
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -238,6 +241,18 @@ describe("B1 · Orders home (merchant mobile, D-48)", () => {
     expect(screen.getByRole("link", { name: /Cash due/ }).getAttribute("href")).toBe("/statement");
     expect(screen.queryByText(/Book a biker/)).toBeNull();
     expect(screen.queryByText(/alarm/i)).toBeNull();
+  });
+
+  it("Own bikers (OB-M8, D-117): a kitchen with Own bikers gets Book a biker on the top card", async () => {
+    fl.fleet = { enabled: true, paused: false, role: "owner", bikers: [], invites: [], suggestions: [] };
+    try {
+      vi.mocked(getMyMerchant).mockResolvedValue(kitchen());
+      render(<Page />);
+      await screen.findByText("Sadza Republic");
+      expect(screen.getAllByRole("link", { name: /Book a biker/ }).some((a) => a.getAttribute("href") === "/deliveries/new")).toBe(true);
+    } finally {
+      fl.fleet = null;
+    }
   });
 
   it("staff see no money tiles", async () => {

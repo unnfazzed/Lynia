@@ -4,17 +4,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import NewBookingPage from "./page";
 import { ApiError } from "../../../lib/api-client";
 import { VALUE_CAP_MESSAGE } from "../../../lib/booking";
-import { createBooking, resolveMapLink } from "../../../lib/bookings-api";
+import { cancelBooking, createBooking, getBooking, resolveMapLink } from "../../../lib/bookings-api";
+import { createFleetBooking, getFleet, sendFleetBookingToAny } from "../../../lib/fleet-api";
 import { clearBusinessCache } from "../../../lib/business";
 import { getMerchantProfile, listDishes } from "../../../lib/menu-api";
 import { placesEnabled, resolvePlace, reverseGeocode, searchPlaces } from "../../../lib/places";
 import { merchantBooking, merchantProfile } from "../../../testing/fixtures";
 
-const nav = vi.hoisted(() => ({ replace: vi.fn() }));
+const nav = vi.hoisted(() => ({ replace: vi.fn(), search: "" }));
 vi.mock("next/navigation", () => {
   const router = { replace: nav.replace, push: vi.fn() };
-  return { useRouter: () => router };
+  return { useRouter: () => router, useSearchParams: () => new URLSearchParams(nav.search) };
 });
+// Own bikers (OB-M8–M12): no fleet unless a test sets one (the API answers 503 while it isn't live).
+vi.mock("../../../lib/fleet-api", () => ({
+  getFleet: vi.fn(async () => {
+    throw new Error("Own bikers isn't live");
+  }),
+  createFleetBooking: vi.fn(),
+  retryFleetBooking: vi.fn(),
+  sendFleetBookingToAny: vi.fn(),
+}));
 
 vi.mock("../../../lib/menu-api", () => ({ getMerchantProfile: vi.fn(), listDishes: vi.fn(async () => []) }));
 vi.mock("../../../lib/places", () => ({
@@ -25,7 +35,7 @@ vi.mock("../../../lib/places", () => ({
   reverseGeocode: vi.fn(async () => null),
   pinnedLine: (area?: string | null) => (area ? `Pin the buyer sent · ${area}` : "Pin the buyer sent"),
 }));
-vi.mock("../../../lib/bookings-api", () => ({ createBooking: vi.fn(), resolveMapLink: vi.fn() }));
+vi.mock("../../../lib/bookings-api", () => ({ createBooking: vi.fn(), resolveMapLink: vi.fn(), getBooking: vi.fn(), cancelBooking: vi.fn() }));
 
 vi.mock("../../../components/KitchenConnectionProvider", () => {
   const value = { signOut: vi.fn(), actionsDisabled: false };
@@ -44,6 +54,7 @@ afterEach(() => {
   clearBusinessCache();
   vi.clearAllMocks();
   vi.mocked(placesEnabled).mockReturnValue(true);
+  nav.search = "";
 });
 
 async function openForm(overrides: Parameters<typeof merchantProfile>[0] = {}) {
@@ -280,5 +291,137 @@ describe("the gate", () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(merchantProfile());
     render(<NewBookingPage />);
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries"));
+  });
+});
+
+describe("OB-M8–M12 · My bikers (own-bikers-v1, D-117)", () => {
+  const biker = (state: "online" | "on_a_job" | "offline", i: number) => ({
+    riderId: `00000000-0000-4000-8000-00000000000${i}`,
+    name: `Biker ${i}`,
+    phone: "+263 77 000 0000",
+    homeBranch: "Avondale",
+    state,
+    joinedAt: "2026-10-01T00:00:00.000Z",
+    cashHeld: null,
+    cancelsThisWeek: 0,
+  });
+  function withFleet(over: Record<string, unknown> = {}) {
+    vi.mocked(getFleet).mockResolvedValue({
+      enabled: true,
+      paused: false,
+      role: "owner",
+      bikers: [biker("on_a_job", 1), biker("online", 2), biker("online", 3), biker("offline", 4)],
+      invites: [],
+      suggestions: [],
+      ...over,
+    } as never);
+  }
+  const fleetBooking = (state: "ringing" | "none_took" | "none_online", over: Record<string, unknown> = {}) =>
+    merchantBooking({ id: "fb1", state: "finding", fleet: { state, rung: 2, endsAt: new Date(Date.now() + 84_000).toISOString() }, ...over } as never);
+
+  it("My bikers by default with the online count, no fare stepper, and Ring my bikers books it with no fare", async () => {
+    withFleet();
+    vi.mocked(createFleetBooking).mockResolvedValue({ booking: fleetBooking("ringing"), deliveryCode: "482910" });
+    await openForm({ businessType: "restaurant" });
+    const mine = await screen.findByRole("radio", { name: /My bikers · 2 online/ });
+    expect(mine.getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText("Fare you offer")).toBeNull();
+    await fillWhere();
+    addTyped("Quarter chicken", "6");
+    fireEvent.click(screen.getByRole("button", { name: /Ring my bikers/ }));
+    const sheet = await screen.findByRole("dialog", { name: "2 of your bikers online · ringing…" });
+    expect(within(sheet).getByRole("progressbar").getAttribute("aria-label")).toMatch(/^1:2\d left$/);
+    expect(within(sheet).getByText("The first to accept takes it.")).toBeTruthy();
+    const body = vi.mocked(createFleetBooking).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("proposedFare");
+    expect(body).toMatchObject({ declaredValue: 6, items: [{ description: "Quarter chicken", quantity: 1 }] });
+    expect(createBooking).not.toHaveBeenCalled();
+  });
+
+  it("nobody online: Any biker is chosen, the hint says 0 online, and it books as before", async () => {
+    withFleet({ bikers: [biker("offline", 1)] });
+    await openForm({ businessType: "restaurant" });
+    expect((await screen.findByRole("radio", { name: "Any biker" })).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("0 of your bikers online")).toBeTruthy();
+    await fillWhere();
+    expect(screen.getByText("Fare you offer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Find a biker · \$/ })).toBeTruthy();
+  });
+
+  it("paused: My bikers is locked, the card says why with Contact LyniaGo, and Any biker works", async () => {
+    withFleet({ paused: true });
+    await openForm({ businessType: "restaurant" });
+    expect(await screen.findByText("Own bikers paused")).toBeTruthy();
+    expect(screen.getByText("Talk to LyniaGo to turn them back on.")).toBeTruthy();
+    expect((screen.getByRole("radio", { name: /My bikers/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("radio", { name: "Any biker" }).getAttribute("aria-checked")).toBe("true");
+    await fillWhere();
+    expect(screen.getByText("Fare you offer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Find a biker · \$/ })).toBeTruthy();
+  });
+
+  it("none took it: Send to any biker opens Any biker with the fare, and sends that same booking", async () => {
+    withFleet();
+    vi.mocked(createFleetBooking).mockResolvedValue({ booking: fleetBooking("none_took"), deliveryCode: "482910" });
+    vi.mocked(sendFleetBookingToAny).mockResolvedValue(merchantBooking({ id: "fb1" }));
+    await openForm({ businessType: "restaurant" });
+    await screen.findByRole("radio", { name: /My bikers/ });
+    await fillWhere();
+    addTyped("Quarter chicken", "6");
+    fireEvent.click(screen.getByRole("button", { name: /Ring my bikers/ }));
+    const result = await screen.findByRole("alertdialog", { name: "None of your bikers took it" });
+    expect(within(result).getByText("We rang them 3 times over 2 minutes.")).toBeTruthy();
+    expect(within(result).getByRole("button", { name: "Try my bikers again" })).toBeTruthy();
+    fireEvent.click(within(result).getByRole("button", { name: "Send to any biker" }));
+    expect(screen.getByText("Fare you offer")).toBeTruthy();
+    const find = screen.getByRole("button", { name: /^Find a biker · \$/ });
+    const fare = Number(find.textContent!.split("$")[1]);
+    fireEvent.click(find);
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=fb1"));
+    expect(sendFleetBookingToAny).toHaveBeenCalledWith("fb1", fare);
+    expect(createBooking).not.toHaveBeenCalled();
+  });
+
+  it("nobody online when rung: the sheet says so; Cancel cancels the booking; Try my bikers again rings again", async () => {
+    withFleet();
+    vi.mocked(createFleetBooking).mockResolvedValue({ booking: fleetBooking("none_online"), deliveryCode: "482910" });
+    vi.mocked(cancelBooking).mockResolvedValue(merchantBooking({ id: "fb1", state: "cancelled" } as never));
+    await openForm({ businessType: "restaurant" });
+    await screen.findByRole("radio", { name: /My bikers/ });
+    await fillWhere();
+    addTyped("Quarter chicken", "6");
+    fireEvent.click(screen.getByRole("button", { name: /Ring my bikers/ }));
+    const result = await screen.findByRole("alertdialog", { name: "None of your bikers are online" });
+    expect(within(result).getByText("Send it to any biker nearby instead.")).toBeTruthy();
+    fireEvent.click(within(result).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(cancelBooking).toHaveBeenCalledWith("fb1");
+  });
+
+  it("a biker accepts: the booking's own screen opens", async () => {
+    withFleet();
+    vi.mocked(createFleetBooking).mockResolvedValue({ booking: fleetBooking("ringing"), deliveryCode: "482910" });
+    vi.mocked(getBooking).mockResolvedValue(merchantBooking({ id: "fb1", state: "coming" } as never));
+    await openForm({ businessType: "restaurant" });
+    await screen.findByRole("radio", { name: /My bikers/ });
+    await fillWhere();
+    addTyped("Quarter chicken", "6");
+    fireEvent.click(screen.getByRole("button", { name: /Ring my bikers/ }));
+    await screen.findByRole("dialog", { name: /ringing/ });
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/deliveries/booking?id=fb1"), { timeout: 4000 });
+  });
+
+  it("can't reach LyniaGo on Ring: the strip with Try again, and nothing else changes", async () => {
+    withFleet();
+    vi.mocked(createFleetBooking).mockRejectedValueOnce(new ApiError(0, "Couldn't reach the server — check the connection and try again."));
+    await openForm({ businessType: "restaurant" });
+    await screen.findByRole("radio", { name: /My bikers/ });
+    await fillWhere();
+    addTyped("Quarter chicken", "6");
+    fireEvent.click(screen.getByRole("button", { name: /Ring my bikers/ }));
+    expect(await screen.findByText("Can't reach LyniaGo")).toBeTruthy();
+    vi.mocked(createFleetBooking).mockResolvedValueOnce({ booking: fleetBooking("ringing"), deliveryCode: "482910" });
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    expect(await screen.findByRole("dialog", { name: /ringing/ })).toBeTruthy();
   });
 });
