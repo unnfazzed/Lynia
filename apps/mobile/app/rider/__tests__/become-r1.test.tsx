@@ -661,6 +661,8 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
         [new ApiError(503, "KYC submit failed: Didit 502"), "Couldn't start biker setup."],
         [new ApiError(429, "ThrottlerException: Too Many Requests"), KYC_RETRY_TRY_LATER],
         [new ApiError(409, "This national ID is already linked to another account.", "id_in_use"), `${PD.takenA} ${PD.takenB}. ${PD.takenBody}`],
+        // D-116: a customer signed up on a foreign number can't ride.
+        [new ApiError(403, "Biking needs a Zimbabwe number (+263).", "phone_country"), "Biking needs a Zimbabwe number (+263). Sign in with one to ride."],
       ];
       for (const [err, said] of cases) {
         show.mockClear();

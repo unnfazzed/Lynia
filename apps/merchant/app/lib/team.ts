@@ -72,9 +72,10 @@ export function shortMasked(phoneMasked: string): string {
   return `•••• ${lastFour(phoneMasked)}`;
 }
 
-/** E3's number: "+263 •• ••• 2210". */
+/** E3's number: "+263 •• ••• 2210" — the member's own calling code (D-116: "+44 •• ••• 3456"). */
 export function longMasked(phoneMasked: string): string {
-  return `+263 •• ••• ${lastFour(phoneMasked)}`;
+  const cc = /^\+\d+/.exec(phoneMasked.trim())?.[0] ?? "+263";
+  return `${cc} •• ••• ${lastFour(phoneMasked)}`;
 }
 
 /** E2's invite line: "Invited 2 days ago". */

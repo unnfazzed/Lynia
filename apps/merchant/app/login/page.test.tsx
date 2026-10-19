@@ -55,6 +55,58 @@ async function signIn(deliveryChannel?: "whatsapp" | "sms") {
   fireEvent.change(await toCodeStep(deliveryChannel), { target: { value: "123456" } });
 }
 
+describe("A1 · the sign-in country (D-116: owners abroad sign in on their own number)", () => {
+  const segment = () => screen.getByRole("button", { name: /^Country: / });
+
+  it("shows Zimbabwe's flag and +263 by default", () => {
+    render(<LoginPage />);
+    expect(segment().getAttribute("aria-label")).toBe("Country: Zimbabwe, +263. Change");
+    expect(segment().textContent).toContain("🇿🇼");
+  });
+
+  it("lists Zimbabwe, then the diaspora ten, then A–Z, and searches", () => {
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    const options = screen.getAllByRole("listitem").map((o) => o.textContent ?? "");
+    expect(options[0]).toContain("Zimbabwe");
+    expect(options[1]).toContain("South Africa");
+    expect(options[2]).toContain("United Kingdom");
+    expect(options[11]).toContain("Afghanistan");
+    fireEvent.change(screen.getByLabelText("Search country or code"), { target: { value: "+353" } });
+    expect(screen.getAllByRole("listitem").map((o) => o.textContent)).toEqual(["🇮🇪Ireland+353"]);
+  });
+
+  it("sends a UK number in E.164 once the UK is picked", async () => {
+    vi.mocked(requestOtp).mockResolvedValue({ sent: true, channel: "bird-verify", deliveryChannel: "whatsapp" });
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    fireEvent.click(screen.getByRole("button", { name: /United Kingdom/ }));
+    expect(segment().getAttribute("aria-label")).toBe("Country: United Kingdom, +44. Change");
+    const input = screen.getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "07911 123456" } });
+    expect(input.value).toBe("7911123456");
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await screen.findByLabelText("6-digit code");
+    expect(requestOtp).toHaveBeenCalledWith("+447911123456");
+    expect(screen.getByText("+447911123456")).toBeTruthy();
+  });
+
+  it("a pasted international number switches the country", () => {
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "+27 82 123 4567" } });
+    expect(segment().getAttribute("aria-label")).toBe("Country: South Africa, +27. Change");
+    expect((screen.getByRole("button", { name: "Send code" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("Escape closes the list without a change", () => {
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(segment().getAttribute("aria-label")).toBe("Country: Zimbabwe, +263. Change");
+  });
+});
+
 describe("A1 · Get started (merchant mobile redesign, D-48; one way in, D-113)", () => {
   it("is the LyniaGo Merchant lockup, 'Get started', a +263 phone field and the privacy line", () => {
     render(<LoginPage />);

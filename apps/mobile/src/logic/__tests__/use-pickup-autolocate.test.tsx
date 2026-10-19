@@ -73,6 +73,16 @@ describe("usePickupAutolocate", () => {
     expect(onPoint).toHaveBeenCalledWith({ lat: LIVE.coords.latitude, lng: LIVE.coords.longitude });
   });
 
+  it("D-116: a phone abroad gets no pickup pin (the customer is sending for family at home)", async () => {
+    lastKnown.mockResolvedValue({ coords: { latitude: 51.5, longitude: -0.12 } });
+    current.mockResolvedValue({ coords: { latitude: 51.5001, longitude: -0.1201 } });
+    const onPoint = jest.fn();
+    const onLandmark = jest.fn();
+    await run({ onPoint, onLandmark });
+    expect(onPoint).not.toHaveBeenCalled();
+    expect(onLandmark).not.toHaveBeenCalled();
+  });
+
   it("paints the cached fix first, then refines it with the live one", async () => {
     lastKnown.mockResolvedValue(CACHED);
     const onPoint = jest.fn();

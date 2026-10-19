@@ -132,6 +132,10 @@ describe("Review formatting", () => {
     expect(displayPhone("0771234567")).toBe("0771 234 567");
     expect(displayPhone(" 12345 ")).toBe("12345");
   });
+  it("D-116: shows a diaspora customer's number in E.164, not as a mangled Zimbabwe one", () => {
+    expect(displayPhone("+447911123456")).toBe("+447911123456");
+    expect(displayPhone("+27821234567")).toBe("+27821234567");
+  });
   it("names the area of an address line", () => {
     expect(areaOf("Chitungwiza, Unit L")).toBe("Chitungwiza");
     expect(areaOf("Belgravia")).toBe("Belgravia");

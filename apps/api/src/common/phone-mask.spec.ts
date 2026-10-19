@@ -7,6 +7,12 @@ describe("maskPhone (A-03 admin PII masking)", () => {
     expect(maskPhone("+263771234567")).toBe("+263•••••4567");
   });
 
+  it("D-116: keeps the real calling code of a foreign number", () => {
+    expect(maskPhone("+447911123456")).toBe("+44••••••3456");
+    expect(maskPhone("+27821234567")).toBe("+27•••••4567");
+    expect(maskPhone("+14155551234")).toBe("+1••••••1234");
+  });
+
   it("never leaks the masked middle digits", () => {
     const masked = maskPhone("+263782000001");
     expect(masked).not.toContain("78200");

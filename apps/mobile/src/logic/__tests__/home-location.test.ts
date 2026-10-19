@@ -1,4 +1,4 @@
-import { homeAddressLabel, homeAreaLabel, isUsablePoint, parseStoredPlace } from "../home-location";
+import { homeAddressLabel, homeAreaLabel, isDeliverablePoint, isUsablePoint, parseStoredPlace } from "../home-location";
 
 describe("homeAddressLabel — the header's one-line detected address", () => {
   it("prefers a street line, the way the mock draws it", () => {
@@ -119,5 +119,15 @@ describe("parseStoredPlace — the persisted suburb is additive", () => {
     expect(parseStoredPlace(raw)!.place.area).toBeUndefined();
     const blank = JSON.stringify({ label: "12 Lanark Rd", lat: -17.8, lng: 31.05, area: "  " });
     expect(parseStoredPlace(blank)!.place.area).toBeUndefined();
+  });
+});
+
+describe("isDeliverablePoint (D-116: a customer abroad)", () => {
+  it("adopts a fix in Zimbabwe, never one abroad", () => {
+    expect(isDeliverablePoint({ lat: -17.83, lng: 31.05 })).toBe(true); // Harare
+    expect(isDeliverablePoint({ lat: -20.15, lng: 28.58 })).toBe(true); // Bulawayo
+    expect(isDeliverablePoint({ lat: 51.5, lng: -0.12 })).toBe(false); // London
+    expect(isDeliverablePoint({ lat: -26.2, lng: 28.05 })).toBe(false); // Johannesburg
+    expect(isDeliverablePoint(null)).toBe(false);
   });
 });

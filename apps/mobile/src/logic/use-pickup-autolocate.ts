@@ -1,3 +1,4 @@
+import { isInServiceArea } from "@lynia/shared";
 import * as Location from "expo-location";
 import { useEffect, useRef } from "react";
 import type { PickedPoint } from "../ui/MapPicker";
@@ -130,6 +131,10 @@ async function landmarkFor(p: PickedPoint): Promise<string> {
   }
 }
 
+/** D-116: a customer abroad (sending for family at home) gets no pickup pin from a fix outside the
+ *  service area; the slot stays empty for them to fill, instead of a pin Send would refuse. */
+const inArea = (p: PickedPoint | null): PickedPoint | null => (p && isInServiceArea(p) ? p : null);
+
 export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAutolocateOptions): void {
   // The callbacks are read through a ref at call time so the effect below can depend on `enabled`
   // alone: a caller that re-creates its handlers each render must not re-drive the pin.
@@ -158,7 +163,7 @@ export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAuto
 
       // The cached fix paints the pin now; the live one replaces it a beat later. Both are emitted
       // because the cached one is what makes the pin feel prefilled rather than eventually-filled.
-      const cached = await cachedPoint();
+      const cached = inArea(await cachedPoint());
       if (cancelled) return;
       if (cached) handlers.current.onPoint(cached);
 
@@ -169,7 +174,7 @@ export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAuto
       const cachedLandmark = cached ? landmarkFor(cached) : Promise.resolve("");
       void cachedLandmark.then((landmark) => applyLandmark(1, landmark));
 
-      const live = await livePoint();
+      const live = inArea(await livePoint());
       if (cancelled) return;
       if (live) handlers.current.onPoint(live);
       if (!live) return; // cached-only session: the generation-1 landmark (if any) stands.

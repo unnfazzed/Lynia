@@ -109,6 +109,77 @@ describe("C2 / C3 · Phone", () => {
   });
 });
 
+// D-116 (owner 2026-10-19): customers sign up from any country; bikers keep +263.
+describe("C2 · the country segment (D-116)", () => {
+  const segment = (t: renderer.ReactTestRenderer) =>
+    t.root.findAll((n) => typeof n.props?.accessibilityLabel === "string" && n.props.accessibilityLabel.startsWith("Country: ") && typeof n.props?.onPress === "function")[0];
+  const fieldFor = (t: renderer.ReactTestRenderer, dial: string) =>
+    t.root.find((n) => n.props?.accessibilityLabel === `Phone number, +${dial}` && typeof n.props?.onChangeText === "function");
+  const pick = (t: renderer.ReactTestRenderer, label: string): void => {
+    act(() => {
+      segment(t)!.props.onPress();
+    });
+    const row = t.root.find((n) => n.props?.accessibilityLabel === label && typeof n.props?.onPress === "function");
+    act(() => {
+      row.props.onPress();
+    });
+  };
+
+  it("shows Zimbabwe's flag and code by default, and the segment opens the country list", () => {
+    const t = mount();
+    expect(text(t)).toContain("🇿🇼");
+    expect(segment(t)!.props.accessibilityLabel).toBe("Country: Zimbabwe, +263. Change");
+    act(() => {
+      segment(t)!.props.onPress();
+    });
+    expect(t.root.findAll((n) => n.props?.accessibilityRole === "header" && n.props?.children === "Choose your country").length).toBeGreaterThan(0);
+    // Zimbabwe first, then the diaspora ten.
+    const rows = t.root.findAll((n) => typeof n.props?.accessibilityLabel === "string" && /^[^,]+, \+\d+$/.test(n.props.accessibilityLabel) && typeof n.props?.onPress === "function");
+    const labels = [...new Set(rows.map((r) => r.props.accessibilityLabel as string))];
+    expect(labels.slice(0, 3)).toEqual(["Zimbabwe, +263", "South Africa, +27", "United Kingdom, +44"]);
+  });
+
+  it("sends a UK number in E.164 once the UK is picked, with the trunk 0 dropped", async () => {
+    const t = mount();
+    pick(t, "United Kingdom, +44");
+    expect(text(t)).toContain("🇬🇧");
+    expect(text(t)).toContain("Your number without the country code.");
+    act(() => {
+      (fieldFor(t, "44").props.onChangeText as (s: string) => void)("07911 123456");
+    });
+    await send(t);
+    expect(mockRequestOtp).toHaveBeenCalledWith("+447911123456");
+  });
+
+  it("a short foreign number gets the generic too-short line and sends nothing", async () => {
+    const t = mount();
+    pick(t, "South Africa, +27");
+    act(() => {
+      (fieldFor(t, "27").props.onChangeText as (s: string) => void)("8212");
+    });
+    await send(t);
+    expect(text(t)).toContain("That number looks short. Check it and try again.");
+    expect(mockRequestOtp).not.toHaveBeenCalled();
+  });
+
+  it("a pasted international number switches the country", async () => {
+    const t = mount();
+    typeIn(t, "+27 82 123 4567");
+    expect(segment(t)!.props.accessibilityLabel).toBe("Country: South Africa, +27. Change");
+    await send(t);
+    expect(mockRequestOtp).toHaveBeenCalledWith("+27821234567");
+  });
+
+  it("a biker sign-up keeps a fixed 🇿🇼 +263 that can't be changed", async () => {
+    mockParams = { intent: "rider" };
+    const t = mount();
+    expect(text(t)).toContain("🇿🇼");
+    expect(segment(t)).toBeUndefined();
+    typeIn(t, "+44 7911 123456");
+    expect(field(t)).toBeDefined();
+  });
+});
+
 // A test code reaches the code screen in memory, never as a route param a link could forge.
 describe("C2 · the test code is not part of the URL", () => {
   afterEach(() => clearDevCode());

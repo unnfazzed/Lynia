@@ -1,9 +1,11 @@
 "use client";
 
+import { countryFlag, countryForE164, HOME_COUNTRY, intlPhoneProblem, nationalDigits, toE164 as intlE164, type Country } from "@lynia/shared";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAlarmController } from "../components/alarm-singleton";
 import { AppBar } from "../components/m/AppBar";
+import { CountrySheet } from "../components/m/CountrySheet";
 import { MerchantLockup } from "../components/m/Wordmark";
 import { ApiError, getMyMerchant, requestOtp, verifyOtp } from "../lib/api-client";
 import { homePath } from "../lib/booking";
@@ -40,10 +42,17 @@ const ENTRY = {
  * accepted once, here (README A1). Then six code boxes that sign in on the sixth digit, a resend
  * countdown and "Wrong number?". There is no alarm step (README global change 6): order alerts are
  * always on, and the Sign in tap still unlocks the browser's audio for them, silently.
+ *
+ * D-116 (owner 2026-10-19): the fixed "+263" is now the country's flag and code, and tapping it picks
+ * another country (Zimbabwe, the top-10 diaspora countries, then A–Z), so an owner abroad signs in on
+ * their own number. Zimbabwe keeps the 9-digit field; a pasted "+44 …" switches the country.
  */
 export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>({ kind: "phone" });
+  const [country, setCountry] = useState<Country>(HOME_COUNTRY);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const isHome = country.iso === HOME_COUNTRY.iso;
   const [digits, setDigits] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,7 +93,7 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      const phone = toE164(digits);
+      const phone = isHome ? toE164(digits) : intlE164(country, digits);
       const sent = await requestOtp(phone);
       setStep({ kind: "code", phone, deliveryChannel: sent.deliveryChannel });
       setCode("");
@@ -122,6 +131,14 @@ export default function LoginPage() {
     }
   }
 
+  /** Typed or pasted: a pasted international number ("+44 7911 …") names its own country. */
+  function onPhoneChange(raw: string) {
+    const pasted = /^\s*(\+|00)/.test(raw) ? countryForE164(raw.replace(/^\s*(\+|00)/, "")) : undefined;
+    const target = pasted ?? country;
+    if (pasted && pasted.iso !== country.iso) setCountry(pasted);
+    setDigits(target.iso === HOME_COUNTRY.iso ? localDigits(raw) : nationalDigits(raw, target));
+  }
+
   function onCodeChange(raw: string) {
     const next = raw.replace(/\D/g, "").slice(0, 6);
     setCode(next);
@@ -150,7 +167,19 @@ export default function LoginPage() {
           <div className="m-fld">
             <label htmlFor="phone">Phone number</label>
             <div className="m-in">
-              <b style={{ fontWeight: 600 }}>+263</b>
+              <button
+                type="button"
+                className="m-cc"
+                aria-label={`Country: ${country.name}, +${country.dial}. Change`}
+                aria-haspopup="dialog"
+                onClick={() => setPickerOpen(true)}
+              >
+                <span className="m-cc-flag" aria-hidden="true">
+                  {countryFlag(country.iso)}
+                </span>
+                <span className="m-num">{`+${country.dial}`}</span>
+                <span className="m-cc-chev" aria-hidden="true" />
+              </button>
               <span style={{ width: 1, height: 22, background: "var(--line)" }} />
               <input
                 id="phone"
@@ -160,9 +189,9 @@ export default function LoginPage() {
                 inputMode="tel"
                 autoComplete="tel-national"
                 aria-label="Phone number"
-                placeholder="77 123 4567"
-                value={formatLocalDigits(digits)}
-                onChange={(e) => setDigits(localDigits(e.target.value))}
+                placeholder={isHome ? "77 123 4567" : "Mobile number"}
+                value={isHome ? formatLocalDigits(digits) : digits}
+                onChange={(e) => onPhoneChange(e.target.value)}
               />
             </div>
           </div>
@@ -172,7 +201,7 @@ export default function LoginPage() {
             </div>
           )}
           <div style={{ flex: 1 }} />
-          <button type="submit" className="m-btn" disabled={busy || digits.length < 9}>
+          <button type="submit" className="m-btn" disabled={busy || (isHome ? digits.length < 9 : intlPhoneProblem(digits, country) !== null)}>
             {busy ? "Sending…" : "Send code"}
           </button>
           <p className="m-hint" style={{ textAlign: "center", margin: 0 }}>
@@ -188,6 +217,23 @@ export default function LoginPage() {
             .
           </p>
         </form>
+        {pickerOpen ? (
+          <CountrySheet
+            selected={country}
+            onClose={() => {
+              setPickerOpen(false);
+              inputRef.current?.focus();
+            }}
+            onSelect={(c) => {
+              setPickerOpen(false);
+              if (c.iso !== country.iso) {
+                setCountry(c);
+                setDigits((d) => (c.iso === HOME_COUNTRY.iso ? localDigits(d) : nationalDigits(d, c)));
+              }
+              inputRef.current?.focus();
+            }}
+          />
+        ) : null}
       </div>
     );
   }

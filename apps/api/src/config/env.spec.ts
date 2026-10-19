@@ -83,13 +83,14 @@ describe("loadEnv — OTP send caps", () => {
 });
 
 describe("loadEnv — OTP destination countries", () => {
-  it("defaults to the launch market and accepts a comma-separated list", () => {
-    expect(loadEnv(base).OTP_ALLOWED_COUNTRY_CODES).toBe("263");
+  it("defaults to any country and accepts * or a comma-separated list", () => {
+    expect(loadEnv(base).OTP_ALLOWED_COUNTRY_CODES).toBe("*");
+    expect(loadEnv({ ...base, OTP_ALLOWED_COUNTRY_CODES: "*" }).OTP_ALLOWED_COUNTRY_CODES).toBe("*");
     expect(loadEnv({ ...base, OTP_ALLOWED_COUNTRY_CODES: "263, +27" }).OTP_ALLOWED_COUNTRY_CODES).toBe("263, +27");
   });
 
   it("rejects a malformed list at boot", () => {
-    for (const bad of ["", "263,", "ZW", "2630"]) {
+    for (const bad of ["", "263,", "ZW", "2630", "263,*"]) {
       expect(() => loadEnv({ ...base, OTP_ALLOWED_COUNTRY_CODES: bad })).toThrow(/Invalid environment configuration/);
     }
   });
