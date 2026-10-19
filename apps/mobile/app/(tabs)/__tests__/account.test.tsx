@@ -177,6 +177,13 @@ describe("customer Account (Biker v2 C6–C11)", () => {
     expect(mockPush).toHaveBeenCalledWith("/rider/become");
   });
 
+  it("D-116: a customer signed in on a number from abroad isn't offered biking (it needs +263)", async () => {
+    mockGetMe.mockResolvedValue({ ...me(null), phone: "+447911123456" });
+    tree = renderScreen();
+    await settle();
+    expect(hasBecomeCard(tree)).toBe(false);
+  });
+
   it("a biker gets the toggle with Customer selected; Biker goes to Jobs", async () => {
     mockGetMe.mockResolvedValue(me({}));
     tree = renderScreen();

@@ -28,7 +28,9 @@ import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/
  * Only a problem with the NUMBER paints the field red (C3). A send that fails for any other reason (no
  * network, a server error, the send limit) is not the number's fault, so it is a toast, as on C4/C5.
  * The field has no `maxLength`: a pasted or autofilled "+263 77 245 1180" is longer than the nine digits
- * it holds, and `zwNationalDigits` already strips the prefix and caps at nine.
+ * it holds, and `zwNationalDigits` already strips the prefix. Under Zimbabwe it keeps a tenth digit so a
+ * number from abroad reads as too long instead of being cut to nine that pass (D-116). A "+" typed by hand
+ * stays in the field until the calling code after it names a country, which the field then switches to.
  *
  * D-116 (owner 2026-10-19): the prefix is the country's flag and code, and a customer can change it
  * (Zimbabwe, the top-10 diaspora countries, then A–Z). Zimbabwe keeps every C2/C3 rule above; another
@@ -39,7 +41,7 @@ export default function PhoneScreen(): React.ReactElement {
   const router = useRouter();
   const navigation = useNavigation();
   const { session } = useAuth();
-  const params = useLocalSearchParams<{ intent?: string }>();
+  const params = useLocalSearchParams<{ intent?: string; phone?: string }>();
   // C1's rider path, from the params or — after an app kill on this screen or C4, which relaunches here
   // with no params — from the device, where C1 kept it until sign-in completes.
   const [storedIntent, setStoredIntent] = useState<"rider" | null>(null);
@@ -53,11 +55,18 @@ export default function PhoneScreen(): React.ReactElement {
     };
   }, []);
   const intent = params.intent === "rider" || storedIntent === "rider" ? "rider" : undefined;
-  const [picked, setPicked] = useState<Country>(HOME_COUNTRY);
+  // "Change number" from the code screen hands the number back, so its country comes back with it.
+  const [picked, setPicked] = useState<Country>(() => (params.phone?.startsWith("+") && countryForE164(params.phone)) || HOME_COUNTRY);
   const [pickerOpen, setPickerOpen] = useState(false);
   const country = intent === "rider" ? HOME_COUNTRY : picked;
   const isHome = country.iso === HOME_COUNTRY.iso;
-  const [digits, setDigits] = useState("");
+  const [digits, setDigits] = useState(() => {
+    if (!params.phone?.startsWith("+")) return "";
+    const c = (intent !== "rider" && countryForE164(params.phone)) || HOME_COUNTRY;
+    return c.iso === HOME_COUNTRY.iso ? zwNationalDigits(params.phone, 10) : nationalDigits(params.phone, c);
+  });
+  // "+4" typed by hand, before the code after it names a country (D-116).
+  const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // The C3 validation line: only ever a problem with the number itself.
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +85,7 @@ export default function PhoneScreen(): React.ReactElement {
     if (isHome) {
       const problem = zwMobileProblem(digits);
       if (problem) {
-        setError(problem === "short" ? OB.phoneShort : OB.phoneNotMobile);
+        setError(problem === "short" ? OB.phoneShort : problem === "long" ? OB.phoneLongZw : OB.phoneNotMobile);
         return;
       }
     } else if (intlPhoneProblem(digits, country)) {
@@ -172,14 +181,21 @@ export default function PhoneScreen(): React.ReactElement {
           >
             <CountrySegment country={country} locked={intent === "rider"} onPress={() => setPickerOpen(true)} />
             <TextInput
-              value={isHome ? formatZwNational(digits) : digits}
+              value={draft ?? (isHome ? formatZwNational(digits) : digits)}
               onChangeText={(t) => {
-                // A pasted or autofilled international number names its own country.
-                const pastedCountry = intent !== "rider" && /^\s*(\+|00)/.test(t) ? countryForE164(t.replace(/^\s*(\+|00)/, "")) : undefined;
+                if (error) setError(null);
+                // A pasted, autofilled or typed international number names its own country.
+                const intl = intent !== "rider" && /^\s*(\+|00)/.test(t);
+                const pastedCountry = intl ? countryForE164(t.replace(/^\s*(\+|00)/, "")) : undefined;
+                if (intl && !pastedCountry && /^\s*\+\d{0,3}$/.test(t)) {
+                  setDraft(t.trim());
+                  setDigits("");
+                  return;
+                }
+                setDraft(null);
                 const target = pastedCountry ?? country;
                 if (pastedCountry && pastedCountry.iso !== country.iso) setPicked(pastedCountry);
-                setDigits(target.iso === HOME_COUNTRY.iso ? zwNationalDigits(t) : nationalDigits(t, target));
-                if (error) setError(null);
+                setDigits(target.iso === HOME_COUNTRY.iso ? zwNationalDigits(t, 10) : nationalDigits(t, target));
               }}
               onSubmitEditing={() => void submit()}
               placeholder={isHome ? "77 245 1180" : OB.phonePlaceholderIntl}
@@ -209,7 +225,8 @@ export default function PhoneScreen(): React.ReactElement {
               setPickerOpen(false);
               if (c.iso === country.iso) return;
               setPicked(c);
-              setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d) : nationalDigits(d, c)));
+              setDraft(null);
+              setDigits((d) => (c.iso === HOME_COUNTRY.iso ? zwNationalDigits(d, 10) : nationalDigits(d, c)));
               if (error) setError(null);
             }}
           />

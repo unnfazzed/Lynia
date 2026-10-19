@@ -4633,6 +4633,7 @@ button.m-sf-logo {
   border-top: 5px solid var(--muted);
 }
 .m-sheet.m-country-sheet {
+  outline: none;
   gap: 8px;
   height: calc(85% - env(safe-area-inset-top));
   padding-left: 0;
@@ -4654,6 +4655,8 @@ button.m-sf-logo {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .m-country-endpinned {
   border-bottom: 1px solid var(--line);

@@ -5743,3 +5743,18 @@ instead of a London address.
 `POST /riders/become` refuses a non-+263 account (`403 phone_country`) before any paid ID check.
 
 Screenshot sheet (C2 default, the list, search, UK picked, 320×640): `docs/parity/D-116-COUNTRY-PICKER-2026-10-19.png`.
+
+**Review round (2026-10-19, after the first ship).** The owner asked for a bug / flow / UX review of the shipped
+picker; these follow from it:
+
+| Where | Before | Now |
+|---|---|---|
+| C2 / A1 under 🇿🇼, a number from abroad typed by hand ("07711 123456") | cut to nine digits that passed as +263 77…, so the code went to a stranger | a tenth digit is kept and refused: "That’s too long for a Zimbabwe number. Tap the flag to choose your country." |
+| C2 / A1, "+44" typed by hand | the "+" vanished; only a paste switched the country | the "+" stays and the country switches once the code names one |
+| C4 "Change number" after an app restart | back on 🇿🇼 with an empty field | the number and its country come back |
+| C4 / A2, a number Bird's shared WhatsApp sender can't reach (South Africa, Nigeria, UAE, India and 14 more) | "Couldn't send the code — try again in a moment." | WhatsApp first, then SMS, for those 18 countries only (owner, 2026-10-19: *"put SMS fallback only for these countries"*); C4 then reads "Sent by SMS". Every other country stays WhatsApp only. A number Bird still can't reach at all: "We can’t send a WhatsApp code to this number yet. Try a number from another country that’s on WhatsApp." (`422 whatsapp_unavailable`) |
+| Account, a customer on a non-+263 number | the Become-a-biker card, refused at R1's end | no card |
+| Send "Use my location" / Review & place "Use my current location" from abroad | a London pin (and a world-wide map) | no pin; the Send out-of-area line "We don't cover that pickup or drop-off yet. We deliver across Zimbabwe." as a toast |
+| Browse B7 "Set" | dead when no fix came back | runs the PC1 location ask, which falls back to the address search |
+| Open / closed, closing soon, menu windows | read on the phone's clock | read on Harare's clock, as the API does |
+| Biker's "Call" on a job | the customer's sign-in number | the number on the order (the food order's "your phone", the parcel's sender), the sign-in number only when the order has none |

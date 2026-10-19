@@ -257,7 +257,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
             {otc}
             {filterBar}
             {total > 0 ? <ListHeading count={count} range={right} /> : null}
-            {!hasLocation && total > 0 ? <NoAddressRow onSet={() => void location.useCurrentLocation()} /> : null}
+            {!hasLocation && total > 0 ? <NoAddressRow onSet={locationAsk.start} /> : null}
             {kindNone ? (
               <EmptyState
                 icon="store"

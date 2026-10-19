@@ -1,5 +1,5 @@
 import type { LatLng, RestaurantListItem } from "@lynia/shared";
-import { deliveryFeeForDistance, haversineKm, isMerchantOpenNow } from "@lynia/shared";
+import { deliveryFeeForDistance, harareWallClock, haversineKm, isMerchantOpenNow } from "@lynia/shared";
 import { DEFAULT_PREP_MINUTES } from "./home-feed";
 import { ETA_SPEED_KMH, ROAD_WINDING_FACTOR } from "./eta";
 
@@ -82,8 +82,9 @@ export function applyFoodListView(
 ): RestaurantListItem[] {
   const open = new Map<string, boolean>();
   const meta = new Map<string, FoodListMeta>();
+  const harare = harareWallClock(now); // hours are Harare's, whatever the phone's zone (D-116)
   for (const r of restaurants) {
-    open.set(r.id, isMerchantOpenNow(r.hours, now));
+    open.set(r.id, isMerchantOpenNow(r.hours, harare));
     meta.set(r.id, restaurantMeta(r, customer));
   }
 

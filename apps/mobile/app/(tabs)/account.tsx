@@ -43,7 +43,10 @@ export default function AccountTabScreen(): React.ReactElement {
   // rider's own account (MOB-BOOT-02-SIB-3).
   // A check this phone just completed reads "in review", not "finish your check", while the vendor catches up.
   const launch = useStoredKycLaunch(me?.profileId ?? null);
-  const become = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me, launch) : null;
+  const becomeState = me && meQ.isSuccess && riderModeAvailable() ? becomeStateFor(me, launch) : null;
+  // Biking needs a Zimbabwe number (D-116): a customer signed in from abroad isn't offered the card for a
+  // path the server refuses at the end.
+  const become = becomeState === "none" && !me?.phone.startsWith("+263") ? null : becomeState;
   const left = Math.max(0, 2 - (me?.rider?.kycAttempts ?? 0));
   const declineLabel = riderDeclineLabel(me?.rider?.kycDeclineReason);
   // Held for a person or in manual (ops) review — hours, not the automated check's minute.

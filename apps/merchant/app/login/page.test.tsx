@@ -98,6 +98,38 @@ describe("A1 · the sign-in country (D-116: owners abroad sign in on their own n
     expect((screen.getByRole("button", { name: "Send code" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("focuses the search with a keyboard and mouse, but the sheet on a phone (no keyboard over the list)", () => {
+    render(<LoginPage />);
+    fireEvent.click(segment());
+    expect(document.activeElement).toBe(screen.getByLabelText("Search country or code"));
+    fireEvent.keyDown(document, { key: "Escape" });
+    const orig = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q === "(pointer: coarse)", media: q })) as unknown as typeof window.matchMedia;
+    try {
+      fireEvent.click(segment());
+      expect(document.activeElement).toBe(screen.getByRole("dialog"));
+    } finally {
+      window.matchMedia = orig;
+    }
+  });
+
+  it("a UK number typed under the Zimbabwe flag says it's too long and can't be sent", () => {
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "07711 123456" } });
+    expect(screen.getByRole("alert").textContent).toBe("That’s too long for a Zimbabwe number. Tap the flag to choose your country.");
+    expect((screen.getByRole("button", { name: "Send code" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a + typed by hand stays and switches the country once the code names one", () => {
+    render(<LoginPage />);
+    const input = () => screen.getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(input(), { target: { value: "+4" } });
+    expect(input().value).toBe("+4");
+    fireEvent.change(input(), { target: { value: "+44" } });
+    expect(segment().getAttribute("aria-label")).toBe("Country: United Kingdom, +44. Change");
+    expect(input().value).toBe("");
+  });
+
   it("Escape closes the list without a change", () => {
     render(<LoginPage />);
     fireEvent.click(segment());

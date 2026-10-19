@@ -138,3 +138,15 @@ export function categoryServedNow(from: string | null | undefined, to: string | 
   const mins = minutesOfDay(now);
   return mins >= parseHHMM(from) && mins < parseHHMM(to);
 }
+
+/**
+ * Harare's wall clock as a Date whose LOCAL getters (getDay/getHours/getMinutes) read Harare time,
+ * whatever zone the device or server is in, so `isMerchantOpenNow(hours, harareWallClock(now))` answers
+ * the question the venue configured. Customers abroad (D-116) browse Zimbabwe venues from London or
+ * Dallas, and the API container runs in UTC. Zimbabwe keeps UTC+2 all year (no DST), so this needs no
+ * time-zone database. Only for hours arithmetic: never store or compare the result as an instant.
+ */
+export function harareWallClock(now: Date): Date {
+  const t = new Date(now.getTime() + 2 * 3_600_000);
+  return new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), t.getUTCHours(), t.getUTCMinutes(), t.getUTCSeconds());
+}

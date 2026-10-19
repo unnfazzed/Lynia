@@ -3,7 +3,7 @@
 // order-tracking.ts. (The "Send again" rail was removed 2026-08-12 per the design AppHome contract:
 // "no order-again / send-again rails" — owner decision resolving home.prompt.md's conflicting spec.)
 import type { LatLng, MerchantHours, RestaurantListItem } from "@lynia/shared";
-import { deliveryFeeForDistance, haversineKm, isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
+import { deliveryFeeForDistance, harareWallClock, haversineKm, isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { ETA_SPEED_KMH, liveEta, ROAD_WINDING_FACTOR } from "./eta";
 import { formatMoney } from "./money";
 import { comparePopularity, deliversTo, NO_POPULARITY, type PopularityIndex } from "./popularity";
@@ -213,8 +213,10 @@ export interface RestaurantCardStatus {
  *  client-side exactly like the D1 browse list — the server never ships a staleable precomputed
  *  boolean (see `restaurant-hours.ts`). */
 export function restaurantCardStatus(hours: MerchantHours | null, now: Date): RestaurantCardStatus {
-  const open = isMerchantOpenNow(hours, now);
-  return { closed: !open, note: open ? null : nextOpenDescription(hours, now) };
+  // Hours are Harare's, whatever the phone's zone (D-116: customers abroad).
+  const harare = harareWallClock(now);
+  const open = isMerchantOpenNow(hours, harare);
+  return { closed: !open, note: open ? null : nextOpenDescription(hours, harare) };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +292,7 @@ export function popularNearYou(
       etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
       deliveryFee: distanceKm == null ? null : formatMoney(deliveryFeeForDistance(distanceKm)),
       freeDelivery: r.freeDelivery === true,
-      closed: !isMerchantOpenNow(r.hours, now),
+      closed: !isMerchantOpenNow(r.hours, harareWallClock(now)),
       distanceKm,
     };
   });

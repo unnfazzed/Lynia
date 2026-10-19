@@ -64,6 +64,11 @@ jest.mock("../../../src/logic/home-location", () => ({
 jest.mock("../../../src/logic/saved-places", () => ({
   loadSaved: () => Promise.resolve({ home: null, work: null }),
 }));
+// "Set" reads the permission first (D-82 location ask); granted with the switch on goes straight to a fix.
+jest.mock("../../../src/permissions/location", () => ({
+  ...jest.requireActual("../../../src/permissions/location"),
+  readLocation: async () => ({ loc: "granted", gps: true }),
+}));
 jest.mock("../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ restaurantsEnabled: true, merchantDispatchAutoEnabled: false, merchantWalletEnabled: false }),
 }));
@@ -209,6 +214,21 @@ describe("RestaurantListScreen — B7 no location", () => {
     expect(all).toContain("in Harare");
     const row = texts(renderRow(tree, 3));
     expect(row.some((t) => /km|delivery|min/.test(t))).toBe(false);
+  });
+});
+
+describe("RestaurantListScreen — B7 Set (D-116: no GPS answer, e.g. a customer abroad)", () => {
+  it("Set no longer dead-ends: with no usable fix it opens the address search", async () => {
+    mockLocation.point = null;
+    mockLocation.useCurrentLocation.mockResolvedValue(null);
+    const tree = mount();
+    const set = tree.root.findAll((n) => typeof n.props.onPress === "function" && n.findAll((c) => c.props.children === "Set").length > 0).pop()!;
+    await act(async () => {
+      set.props.onPress();
+    });
+    for (let i = 0; i < 6; i++) await act(async () => undefined);
+    expect(mockLocation.useCurrentLocation).toHaveBeenCalled();
+    expect(tree.root.findByType(LocationSheet).props.visible).toBe(true);
   });
 });
 

@@ -10,17 +10,17 @@ export const LOCAL_DIGITS = 9;
 /** How long "Resend" waits after a code goes out. */
 export const RESEND_AFTER_S = 60;
 
-/** Whatever was typed or pasted → the up-to-9 digits after +263. */
-export function localDigits(raw: string): string {
+/** Whatever was typed or pasted → the up-to-`max` digits after +263 (sign-in keeps a tenth, D-116). */
+export function localDigits(raw: string, max = LOCAL_DIGITS): string {
   let d = raw.replace(/\D/g, "");
   if (d.startsWith("263")) d = d.slice(3);
   else if (d.startsWith("0")) d = d.slice(1);
-  return d.slice(0, LOCAL_DIGITS);
+  return d.slice(0, max);
 }
 
 /** "771234567" → "77 123 4567" (partial input formats as far as it goes). */
 export function formatLocalDigits(digits: string): string {
-  const d = digits.slice(0, LOCAL_DIGITS);
+  const d = digits.slice(0, LOCAL_DIGITS + 1);
   return [d.slice(0, 2), d.slice(2, 5), d.slice(5)].filter(Boolean).join(" ");
 }
 

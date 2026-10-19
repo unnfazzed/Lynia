@@ -1,30 +1,7 @@
-import { effectiveMerchantHours, isMerchantOpenNow, type MerchantHours, startOfNextDay } from "@lynia/shared";
+import { effectiveMerchantHours, harareWallClock, isMerchantOpenNow, type MerchantHours, startOfNextDay } from "@lynia/shared";
 
-/**
- * Restaurant hours are Harare wall-clock times ("08:00"–"22:00"), but the API container runs in UTC
- * (no TZ is set), and the shared hours helpers read a Date's LOCAL getters. This returns a Date whose
- * local getters (getDay/getHours/getMinutes) read Harare's wall clock whatever the server's zone is,
- * so `isMerchantOpenNow(hours, harareWallClock(now))` answers the question the merchant configured.
- * Only for hours arithmetic: never store or compare the result as an instant.
- */
-const HARARE_PARTS = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Africa/Harare",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
-export function harareWallClock(now: Date): Date {
-  const parts: Record<string, number> = {};
-  for (const p of HARARE_PARTS.formatToParts(now)) {
-    if (p.type !== "literal") parts[p.type] = Number(p.value);
-  }
-  return new Date(parts.year!, parts.month! - 1, parts.day!, parts.hour!, parts.minute!, parts.second!);
-}
+/** Harare's wall clock for hours arithmetic: one definition, shared with the apps (D-116). */
+export { harareWallClock };
 
 /**
  * MJ-RM13 (2026-10-07): when a close by hand (D-48 "closed for today") ends, as an instant: Harare's
@@ -66,6 +43,17 @@ export function isVenueOpenNow(hours: MerchantHours | null, closedUntil: Date | 
 // The Money tab and the KPI strip count by the merchant's day, not the server's: the container runs in
 // UTC, so `setHours(0…)` put Harare's 00:00–02:00 on the previous day (and Monday's first two hours in
 // last week). These helpers turn a Harare calendar day into the instants it starts and ends at.
+
+const HARARE_PARTS = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Africa/Harare",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
 
 function harareFields(at: Date): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
   const parts: Record<string, number> = {};
