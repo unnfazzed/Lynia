@@ -448,6 +448,31 @@ describe("OffersService.makeOffer", () => {
     expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
   });
 
+  // Own bikers (D-117): an Own biker only carries their owner's jobs; a public parcel is never one.
+  it("403s fleet_scope an Own biker bidding on a public parcel, before any offer is written", async () => {
+    const create = vi.fn();
+    const { service, metrics } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", fleetMerchantId: null }), findFirst: async () => null },
+      rider: {
+        findUnique: async () => ({ kycStatus: "verified", isOnline: true, accountStatus: "active", onHold: false, cooldownUntil: null, fleetOwnerProfileId: "owner-1" }),
+      },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toMatchObject({ response: { reason: "fleet_scope" } });
+    expect(create).not.toHaveBeenCalled();
+    expect(metrics.incOffersMade).toHaveBeenCalledWith("forbidden");
+  });
+
+  it("409s any bid on a fleet job: it rings the owner's own bikers and never takes bids", async () => {
+    const create = vi.fn();
+    const { service } = svc({
+      order: { findUnique: async () => ({ status: "open_for_offers", orderType: "parcel", fleetMerchantId: "branch-1" }) },
+      offer: { create },
+    });
+    await expect(service.makeOffer(offerInput, "rider-1")).rejects.toThrow(/not open for offers/i);
+    expect(create).not.toHaveBeenCalled();
+  });
+
   // Owner 2026-10-12: a rider already on a job can't bid. The offer could never be picked (the list hides
   // it, selectOffer 409s rider_taken) but used up the rider's one round on the order.
   it("403s a rider who is already on a job, before any offer is written", async () => {

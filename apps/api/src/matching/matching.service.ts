@@ -5,6 +5,7 @@ import { TokenService } from "../auth/token.service";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMsForPush } from "../common/broadcast-policy";
 import { jobCommission, ridersWhoCoverCommission } from "../common/commission-cover";
 import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
+import { isFleetScopeViolation } from "../common/fleet-scope";
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { offerWindowEndedBy, offerWindowOpenAt } from "../common/offer-window";
 import { riderSelectableNow, SELECTABLE_RIDER_SELECT } from "../common/rider-selectable";
@@ -72,7 +73,7 @@ export class MatchingService {
             // account-standing fields (origin/main) gate a banned/suspended/held rider at select time.
             // otpHash/otpCipher: U22 — a rider-bail re-broadcast clone carries the trip's code (D2).
             order: { select: { status: true, customerId: true, pickup: true, createdAt: true, offerWindowEndsAt: true, otpHash: true, otpCipher: true, suggestedFare: true } },
-            rider: { select: SELECTABLE_RIDER_SELECT },
+            rider: { select: { ...SELECTABLE_RIDER_SELECT, fleetOwnerProfileId: true } },
           },
         });
 
@@ -109,6 +110,11 @@ export class MatchingService {
         // still flagged online) must not be selectable. One shared gate (common/rider-selectable.ts) that
         // `listForOrder` also applies, so such an offer leaves the list too (MJ-RL2).
         if (!riderSelectableNow(offer.rider)) {
+          throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
+        }
+        // Own bikers (D-117): a biker who joined a fleet after bidding only carries their owner's jobs now,
+        // and a public parcel is never one (listForOrder already hides the offer).
+        if (offer.rider.fleetOwnerProfileId != null) {
           throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
         }
 
@@ -211,6 +217,12 @@ export class MatchingService {
         this.metrics.recordMatchSelect(done(), "unavailable");
         // U62: the one case the customer's "taken by another customer" toast is true for.
         throw selectConflict("rider_taken", "Biker just became unavailable, pick another");
+      }
+      // Own bikers (D-117): the database guard refused the assignment at commit — the biker joined a fleet
+      // between the check above and the commit (OV1). Same "pick another" shape as any lost rider.
+      if (isFleetScopeViolation(err)) {
+        this.metrics.recordMatchSelect(done(), "unavailable");
+        throw selectConflict("rider_unavailable", "Biker just became unavailable, pick another");
       }
       // Map the thrown domain exception to an outcome label, then RE-THROW so the caller still sees it.
       this.metrics.recordMatchSelect(done(), this.selectOutcome(err));

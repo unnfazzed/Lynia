@@ -1405,9 +1405,16 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
         currency: true,
         disclaimerVersion: true,
         disclaimerAcceptedAt: true,
+        fleetMerchantId: true,
       },
     });
     if (!src) throw new NotFoundException("Order not found");
+    // Own bikers (D-117, F2): a fleet job never re-auctions to the public. A dropped fleet job goes back to
+    // ringing the owner's bikers in place (the fleet drop path), so a clone of one is always a bug: fail loudly
+    // rather than put a business's own job on the public board.
+    if (src.fleetMerchantId != null) {
+      throw new ConflictException("A fleet job is never re-broadcast to the public board");
+    }
     // A-4 (status-keyed-query-audit, Phase P2): a merchant order's rider-cancel needs C3's own
     // reassignment handling, not an auto re-auction to Express riders. Unreachable today — a merchant
     // order can't be `assigned` (RIDER_CANCELLABLE gate) without C3's dispatch — but fail loudly rather

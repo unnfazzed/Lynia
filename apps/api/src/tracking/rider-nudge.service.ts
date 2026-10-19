@@ -70,6 +70,7 @@ export class RiderNudgeService {
       SELECT count(*) AS n
       FROM orders
       WHERE pickup_geog IS NOT NULL
+        AND fleet_merchant_id IS NULL
         AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${RIDER_NUDGE.radiusM})
         AND (
           (order_type = 'parcel' AND status = 'open_for_offers')

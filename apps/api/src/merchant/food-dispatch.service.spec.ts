@@ -56,6 +56,13 @@ function build(methods: Record<string, unknown>, strategy: DispatchStrategy, gat
   if (!riders.findUnique) {
     riders.findUnique = async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null });
   }
+  // acceptDispatch's merchant-debt soft-lock (hasOpenMerchantObligation: `where: { riderId, OR }`) finds no open
+  // obligation unless a test says otherwise. Every other findFirst keeps the test's own mock.
+  if (order && typeof order.findFirst === "function") {
+    type Args = { where?: { riderId?: unknown; OR?: unknown } };
+    const findFirst = order.findFirst as (args: Args) => unknown;
+    order.findFirst = async (args: Args) => (args?.where?.riderId !== undefined && args.where.OR !== undefined ? null : findFirst(args));
+  }
   const svc = new FoodDispatchService(prisma as unknown as PrismaService, tokens, notifications, gateway, strategy, codeCrypto, nudge);
   return { svc, prisma, gateway };
 }
@@ -1182,5 +1189,52 @@ describe("FoodDispatchService — MJ-RM18 (C16): never the business's own team",
     );
     await expect(svc.acceptDispatch(orderId, "cashier")).rejects.toMatchObject({ status: 409, response: { reason: "own_member" } });
     expect(orderUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // Own bikers (D-117): the round rings public bikers only, but a biker can join a fleet between ring and tap.
+  it("acceptDispatch refuses 403 fleet_scope a biker who is now an Own biker, and nothing is written", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc } = build(
+      {
+        order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+        rider: {
+          findUnique: async () => ({ kycStatus: "verified", accountStatus: "active", onHold: false, cooldownUntil: null, fleetOwnerProfileId: "owner-1" }),
+        },
+      },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toMatchObject({ status: 403, response: { reason: "fleet_scope" } });
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+  });
+
+  // The plan's gap (own-bikers.md § Food dispatch): the round applies the merchant-debt soft-lock, the tap didn't.
+  it("acceptDispatch refuses a biker whose venue cash debt opened between ring and tap, and nothing is written", async () => {
+    const orderUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const { svc, prisma } = build(
+      { order: { findFirst: async () => liveOrder, updateMany: orderUpdateMany }, foodDispatchAttempt: { findUnique: async () => pendingRow } },
+      NONE,
+    );
+    // build() answers the debt read with "none"; this test models an open obligation instead.
+    (prisma.order as Record<string, unknown>).findFirst = async (args: { where?: { riderId?: unknown } }) =>
+      args?.where?.riderId !== undefined ? { id: "debt-order" } : liveOrder;
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toThrow(/still settling with a restaurant/i);
+    expect(orderUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("acceptDispatch turns the database guard's commit-time refusal (a Join raced the tap) into 409 fleet_scope", async () => {
+    const { svc } = build(
+      {
+        order: {
+          findFirst: async () => liveOrder,
+          updateMany: async () => {
+            throw new Error("fleet_scope: rider r1 is outside the scope of order o1");
+          },
+        },
+        foodDispatchAttempt: { findUnique: async () => pendingRow },
+      },
+      NONE,
+    );
+    await expect(svc.acceptDispatch(orderId, "r1")).rejects.toMatchObject({ status: 409, response: { reason: "fleet_scope" } });
   });
 });

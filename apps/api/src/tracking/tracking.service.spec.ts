@@ -121,6 +121,12 @@ describe("TrackingService.isBoardEligible", () => {
   it("denies a non-rider (no row)", async () => {
     expect(await riderSvc(null).isBoardEligible("u1")).toBe(false);
   });
+
+  // Own bikers (D-117): the public board, its socket room and the demand map are closed to a fleet biker.
+  it("denies an Own biker in good standing, and allows the same biker once public", async () => {
+    expect(await riderSvc({ ...goodStanding, fleetOwnerProfileId: "owner-1" }).isBoardEligible("u1")).toBe(false);
+    expect(await riderSvc({ ...goodStanding, fleetOwnerProfileId: null }).isBoardEligible("u1")).toBe(true);
+  });
   it("denies an unverified biker", async () => {
     expect(await riderSvc({ ...goodStanding, kycStatus: "pending" }).isBoardEligible("u1")).toBe(false);
   });
