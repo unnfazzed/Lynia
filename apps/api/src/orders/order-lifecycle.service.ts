@@ -53,6 +53,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import type { FreeJobsMilestone } from "../wallet/free-jobs-reminder";
 import { WalletService } from "../wallet/wallet.service";
 import { cancelAttribution } from "../common/cancel-attribution";
+import { recordFleetRide } from "../common/fleet-ledger";
 import { FLEET_DROP_ACTION } from "../common/fleet-scope";
 import { domainEvents } from "../common/domain-events";
 
@@ -576,6 +577,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed, retry");
       await tx.orderEvent.create({ data: { orderId, status: "undelivered" } });
+      // Own bikers (T5): the ride happened, so a fleet job is billed to the business.
+      await recordFleetRide(tx, orderId);
       // D5 review (item 3): the hand-off failed, so an unresolved doorstep handshake is void — in the same
       // transaction (a refusal after an early "I've paid" doesn't leave a confirm behind to freeze or lock).
       await closeUnresolvedHandshake(tx, orderId);
@@ -904,6 +907,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
               deliveryFee: order.deliveryFee,
               fleetMerchantId: order.fleetMerchantId,
             });
+            // Own bikers (T5, C1): the business's fleet bill, in the same commit as the completion.
+            await recordFleetRide(tx, orderId);
           }
         }
       });
@@ -1133,6 +1138,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
 
       // Post-pickup? `collectedAt` is stamped at the picked_up edge (drives the rider's hand-back UI).
       const collected = order.collectedAt != null;
+      // Own bikers (T5): a fleet job cancelled after its biker collected it is billed (the ride happened).
+      if (collected && order.fleetMerchantId) await recordFleetRide(tx, orderId);
 
       let cooldownUntil: Date | null = null;
       if (isRider && order.riderId) {
@@ -1585,6 +1592,8 @@ export class OrderLifecycleService implements OnModuleInit, OnModuleDestroy {
           deliveryFee: order.deliveryFee,
           fleetMerchantId: order.fleetMerchantId,
         });
+        // Own bikers (T5, C1): the business's fleet bill, in the same commit as the completion.
+        await recordFleetRide(tx, orderId);
       }
       return true;
     });

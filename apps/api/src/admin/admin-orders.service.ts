@@ -27,6 +27,7 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
 import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
 import { CANCELLED_BY_ROLES, type CancelledByRole, cancelAttribution } from "../common/cancel-attribution";
+import { recordFleetRide } from "../common/fleet-ledger";
 
 // Money math uses the shared money seam directly (subMoney for exact integer-cents fare/commission
 // deltas); the former local round2 helper is gone — nothing here rounds a standalone value any more.
@@ -199,6 +200,8 @@ export class AdminOrdersService {
       // otherwise keep seeing a live "offer sent" on an order that's dead). Same transaction as the cancel.
       await tx.offer.updateMany({ where: { orderId, status: "pending" }, data: { status: "declined" } });
       await tx.orderEvent.create({ data: { orderId, status: "cancelled" } });
+      // Own bikers (T5): a fleet job cancelled after pickup is still billed (recordFleetRide decides).
+      await recordFleetRide(tx, orderId);
       const audit = await tx.auditLog.create({
         data: auditData(actor, "order.cancel", orderId, input.reason, input.note),
         select: { id: true },
@@ -333,6 +336,8 @@ export class AdminOrdersService {
           fleetMerchantId: order.fleetMerchantId,
         });
       }
+      // Own bikers (T5): an adjudicated delivery is a completed ride (a no-op when undelivered already billed it).
+      await recordFleetRide(tx, orderId);
 
       const audit = await tx.auditLog.create({
         data: auditData(actor, "order.adjudicate_delivered", orderId, input.reason, input.note),
