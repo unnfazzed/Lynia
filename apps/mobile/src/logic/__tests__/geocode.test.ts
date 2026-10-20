@@ -61,6 +61,11 @@ describe("geocodeQueries (corridor biasing)", () => {
     expect(geocodeQueries("Mzwane Road")).toEqual(["Mzwane Road", "Mzwane Road, Harare, Zimbabwe"]);
     expect(geocodeQueries("Nortonville Close")).toEqual(["Nortonville Close", "Nortonville Close, Harare, Zimbabwe"]);
   });
+
+  it("retries in the user's own town — Bulawayo for someone in Bulawayo (D-120)", () => {
+    expect(geocodeQueries("12 Fife St", "Bulawayo")).toEqual(["12 Fife St", "12 Fife St, Bulawayo, Zimbabwe"]);
+    expect(geocodeQueries("12 Fife St", null)).toEqual(["12 Fife St", "12 Fife St, Harare, Zimbabwe"]);
+  });
 });
 
 describe("toResolvedPlace (geocoder results → the picked-point shape)", () => {

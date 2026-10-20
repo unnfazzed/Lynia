@@ -354,25 +354,30 @@ export function customerRatingCarriesWeight(priorCompletedOrders: number): boole
   return priorCompletedOrders >= CUSTOMER_TRUST.minCompletedOrders;
 }
 
+/** How far from its pickup a new parcel reaches online bikers (metres): 25 km (owner, 2026-10-20, D-120). */
+export const PARCEL_REACH_M = 25_000;
+
 /**
  * Broadcast reach policy — which online riders a new order is announced to. The radius is a pure function of
  * order age ({@link broadcastRadiusAtMs}), NOT persisted state, so the FCM push, the rider board, and the
  * customer-facing supply count all derive the same disc and can never disagree.
  *
- * **Nationwide (owner, 2026-10-12, ledger D-99):** "Bikers can get any order despite their location. Bikers
- * can bid from anywhere. It's up to the user to decide who they want." Every online rider in Zimbabwe is
- * pushed every new order and sees it on the board, nearest first, from the first second — so the base reach
- * is the whole country and there is nothing left to widen. The 5 → 8 → 12 km widening schedule is retired;
- * `expansion` stays as the (empty) hook a future narrower reach would use. Steps must sit inside the 90 s
- * offer window (contracts OFFER_WINDOW_MS) — a step at or past the window is never scheduled.
+ * **25 km from the pickup (owner, 2026-10-20, ledger D-120), amending D-99.** Live in Harare and Bulawayo, the
+ * nationwide reach buzzed every Harare biker for every Bulawayo parcel and back. A parcel is now pushed, and shown on
+ * the board, only to online bikers within {@link PARCEL_REACH_M} of its pickup. Where we serve is unchanged (all of
+ * Zimbabwe, `isInServiceArea`), and a parcel to another town is still allowed: it reaches the bikers near its pickup.
+ * Ops can widen the reach again without a code change (`BROADCAST_BASE_RADIUS_M`, up to {@link BROADCAST.maxRadiusM}).
+ * The 5 → 8 → 12 km widening schedule stays retired; `expansion` stays as the (empty) hook a widening reach would use.
+ * Steps must sit inside the 90 s offer window (contracts OFFER_WINDOW_MS) — a step at or past the window is never
+ * scheduled.
  */
 export const BROADCAST = {
-  /** Initial broadcast radius (metres) around the pickup at order creation: all of Zimbabwe. */
-  baseRadiusM: NATIONWIDE_REACH_M,
+  /** Initial broadcast radius (metres) around the pickup at order creation: 25 km (D-120). */
+  baseRadiusM: PARCEL_REACH_M,
   /** Widening schedule: at `atMs` after creation the reach becomes `radiusM` (monotonic). Empty: the base
-   *  reach is already nationwide. */
+   *  reach is the whole reach. */
   expansion: [] as readonly { readonly atMs: number; readonly radiusM: number }[],
-  /** Hard cap — never broadcast beyond the country we serve. */
+  /** Hard cap for a deploy override — never broadcast beyond the country we serve. */
   maxRadiusM: NATIONWIDE_REACH_M,
   /**
    * A rider whose last heartbeat is older than this is a ghost (app killed with `isOnline` stuck

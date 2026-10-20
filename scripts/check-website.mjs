@@ -134,6 +134,79 @@ export const LAUNCH_EDITS = [
   },  // The desktop QR popup (handoff download-qr-install-tip-2026-10 §1, owner 2026-10-15). On a desktop
   // ((min-width: 900px) and (hover: hover) and (pointer: fine)) a click on any data-download button opens it
   // instead of following /download; phones and tablets follow the link. Nothing else on the page changes.
+  // We are live in Harare and Bulawayo (owner 2026-10-20). The copy that named Harare alone names both, and the
+  // "Live in" map gets a second dot, drawn exactly like Harare's, with the chip naming both. The illustrations'
+  // alt text describes the drawings and is unchanged.
+  {
+    id: "live-title",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<title>LyniaGo — On-demand delivery in Harare</title>",
+    to: "<title>LyniaGo — On-demand delivery in Harare and Bulawayo</title>",
+  },
+  {
+    id: "live-description",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<meta name=\"description\" content=\"On-demand delivery for local businesses in Harare.\">",
+    to: "<meta name=\"description\" content=\"On-demand delivery for local businesses in Harare and Bulawayo.\">",
+  },
+  {
+    id: "live-og-title",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<meta property=\"og:title\" content=\"LyniaGo — On-demand delivery in Harare\">",
+    to: "<meta property=\"og:title\" content=\"LyniaGo — On-demand delivery in Harare and Bulawayo\">",
+  },
+  {
+    id: "live-og-description",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<meta property=\"og:description\" content=\"Parcels and deliveries across Harare, tracked to your door.\">",
+    to: "<meta property=\"og:description\" content=\"Parcels and deliveries across Harare and Bulawayo, tracked to your door.\">",
+  },
+  {
+    id: "live-hero",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<p>Parcels and deliveries across Harare, tracked to your door.</p>",
+    to: "<p>Parcels and deliveries across Harare and Bulawayo, tracked to your door.</p>",
+  },
+  {
+    id: "live-heading",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<h2><i data-i=\"pin\" class=\"pin\"></i>Live in Harare</h2>",
+    to: "<h2><i data-i=\"pin\" class=\"pin\"></i>Live in Harare and Bulawayo</h2>",
+  },
+  {
+    id: "live-map-label",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "aria-label=\"Map of Zimbabwe with Harare highlighted\"",
+    to: "aria-label=\"Map of Zimbabwe with Harare and Bulawayo highlighted\"",
+  },
+  {
+    id: "live-map-bulawayo-point",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "[hx,hy]=pr([31.05,-17.83]);",
+    to: "[hx,hy]=pr([31.05,-17.83]),[bx,by]=pr([28.58,-20.15]);",
+  },
+  {
+    id: "live-map-bulawayo-dot",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<circle cx=\"${hx}\" cy=\"${hy}\" r=\"7\" fill=\"#00B14F\"/></svg>",
+    to: "<circle cx=\"${hx}\" cy=\"${hy}\" r=\"7\" fill=\"#00B14F\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"6\" fill=\"#00B14F\" class=\"zpulse\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"11\" fill=\"#fff\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"7\" fill=\"#00B14F\"/></svg>",
+  },
+  {
+    id: "live-map-chip",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: ">Harare</div>`;}",
+    to: ">Harare · Bulawayo</div>`;}",
+  },
   {
     id: "download-qr-css",
     todo: "not a README TODO: handoff download-qr-install-tip-2026-10 §1 (popup CSS)",

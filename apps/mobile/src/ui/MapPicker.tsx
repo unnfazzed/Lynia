@@ -13,6 +13,7 @@ import MapView, {
 import { landmarkFromAddress } from "../logic/geocode";
 import { Button, Label } from "./index";
 import { LOCATION_OFF_MSG } from "../permissions/location";
+import { defaultMapRegion } from "../logic/user-area";
 
 export interface PickedPoint {
   lat: number;
@@ -22,8 +23,6 @@ export interface PickedPoint {
   placeId?: string;
 }
 
-/** Harare CBD — the pilot corridor. The map opens here until a pin is set. */
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 
 // GPS fix bound (C9): every REST call is capped at 15s, but `getCurrentPositionAsync` has no timeout of
 // its own and a cold fix can hang forever. Race it against this and fall back to the tap-the-map hint.
@@ -55,7 +54,7 @@ export function MapPicker(props: {
 
   const initialRegion: Region = props.value
     ? { latitude: props.value.lat, longitude: props.value.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }
-    : HARARE;
+    : defaultMapRegion();
 
   // Recenter when the value jumps to a new place (address search sets a far-away point). `initialRegion`
   // only positions the map on mount, so without this the pin would land off-screen after a search. We

@@ -87,7 +87,8 @@ describe("Own bikers v1 · biker copy", () => {
     expect(OBB.pubT).toBe(v(B.pubT));
     expect(OBB.pubB(SHORT)).toBe(v(B.pubB));
     expect(OBB.pub1T).toBe(B.pub1T);
-    expect(OBB.pub1B).toBe(B.pub1B);
+    // D-120: "across Harare" names both live towns.
+    expect(OBB.pub1B).toBe(B.pub1B!.replace("Harare", "Harare and Bulawayo"));
     expect(OBB.pub2T).toBe(B.pub2T);
     expect(OBB.pub2B).toBe(B.pub2B);
     expect(OBB.pub3T).toBe(B.pub3T);

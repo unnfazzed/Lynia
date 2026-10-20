@@ -16,6 +16,8 @@ import {
   type BidExpiredEvent,
   type BoardNewOrderEvent,
   BoardSubscribeEvent,
+  boardCell,
+  boardCellsCoveringRadius,
   type FleetJobOffer,
   type FleetOfferClosedEvent,
   type FoodOfferClosedEvent,
@@ -33,12 +35,13 @@ import {
   WS_EVENTS,
 } from "@lynia/shared";
 import { TokenService } from "../auth/token.service";
+import { maxBroadcastRadiusM } from "../common/broadcast-policy";
 import { corsOriginResolver } from "../common/cors";
 import { createRedisClient } from "../common/redis";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
-import { BOARD_ROOM, merchantQueueRoom, orderRoom, parseBearer } from "./tracking.constants";
+import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom, parseBearer } from "./tracking.constants";
 import { PositionCoalescer, POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, type PositionPayload } from "./position-coalescer";
 import { TrackingService } from "./tracking.service";
 
@@ -62,6 +65,9 @@ export const PRESENCE_STALE_DEDUP_TTL_S = 600;
 /** Largest delay `setTimeout` honours (2^31-1 ms); a longer one fires immediately, so the auth-expiry
  *  timer is clamped to it. Access tokens live minutes, so this is only a guard. */
 const MAX_TIMER_MS = 2_147_483_647;
+
+/** The most geo-cell rooms one new-order push fans out to (~45 km of reach); a wider reach goes to BOARD_ROOM. */
+export const BOARD_CELL_FANOUT_MAX = 400;
 
 /**
  * Live tracking (ET4). WS is best-effort PUSH only — GET /orders/:id (lane C) stays the source of
@@ -341,10 +347,11 @@ export class TrackingGateway
   }
 
   /**
-   * A KYC-verified, online rider subscribes to the new-order board (§3.10). The board is nationwide
-   * (owner 2026-10-12, D-99: "Bikers can get any order despite their location"), so every rider joins the
-   * one BOARD_ROOM wherever they are; a position, if sent, is accepted and ignored. A re-subscribe still
-   * leaves every board room first (a socket from an older server may sit in a `board:geo:*` cell room).
+   * A KYC-verified, online rider subscribes to the new-order board (§3.10). Every rider joins the one
+   * BOARD_ROOM, which carries the board's close events (`bid:expired`, `order:taken`: ids only, the client
+   * drops what it doesn't hold). A rider who sends a position also joins its own geo cell, where new parcels
+   * land: a parcel is pushed to every cell within the broadcast reach of its pickup (25 km, owner 2026-10-20,
+   * D-120). A re-subscribe leaves every board room first, so a moving rider never keeps a stale cell.
    */
   @SubscribeMessage(WS_EVENTS.boardSubscribe)
   async boardSubscribe(
@@ -355,7 +362,7 @@ export class TrackingGateway
     if (!user) return { error: "unauthenticated" };
     if (!(await this.tracking.isBoardEligible(user.sub))) return { error: "forbidden" };
 
-    BoardSubscribeEvent.parse(body ?? {});
+    const pos = BoardSubscribeEvent.parse(body ?? {});
 
     // BH-25: the leave/join loops below are serialized per-socket (see runBoardOpSerialized) — Socket.IO
     // does not queue concurrent event invocations for the same client, so two board:subscribe calls (or
@@ -370,6 +377,7 @@ export class TrackingGateway
       }
 
       const rooms = [BOARD_ROOM];
+      if (pos.lat !== undefined && pos.lng !== undefined) rooms.push(boardGeoRoom(boardCell(pos.lat, pos.lng)));
       for (const room of rooms) await client.join(room);
 
       // BH-25-SIB-1: re-check standing AFTER joining. kickRiderFromBoard runs post-commit off a
@@ -723,24 +731,25 @@ export class TrackingGateway
   }
 
   /**
-   * Push a new (redacted) open order to every rider on the board — the nationwide BOARD_ROOM (D-99), so
-   * the pickup's position no longer narrows the audience. Best-effort; a gateway failure must never
-   * affect the order the customer just created.
+   * Push a new (redacted) open order to the riders within the broadcast reach of its pickup (D-120): every
+   * geo-cell room the reach's disc touches. Riders join their own cell (boardSubscribe), so a Bulawayo
+   * parcel never lands on a Harare board. A reach wider than {@link BOARD_CELL_FANOUT_MAX} cells (an ops
+   * override back towards nationwide) goes to the whole BOARD_ROOM instead. Best-effort; a gateway failure
+   * must never affect the order the customer just created.
    */
-  emitBoardNewOrder(payload: BoardNewOrderEvent, _pickupLat: number, _pickupLng: number): void {
-    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
+  emitBoardNewOrder(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number): void {
+    this.emitBoardNewOrderToCells(payload, pickupLat, pickupLng, maxBroadcastRadiusM());
   }
 
   /**
-   * Widened-broadcast variant of {@link emitBoardNewOrder}: pushes the (redacted) card to EVERY
-   * geo-cell room intersecting the disc of `radiusM` around the pickup — an expansion tick's board
-   * channel (policy BROADCAST.expansion), where the audience is more than one cell away. Rooms the
-   * create-time emit already covered receive it again harmlessly (clients dedupe by id, same contract
-   * as emitBoardNewOrder's geo-cell + BOARD_ROOM union). Best-effort; never throws.
+   * {@link emitBoardNewOrder} for a given reach — also an expansion tick's board channel (policy
+   * BROADCAST.expansion). Rooms an earlier emit already covered receive it again harmlessly (clients
+   * dedupe by id). Best-effort; never throws.
    */
-  emitBoardNewOrderToCells(payload: BoardNewOrderEvent, _pickupLat: number, _pickupLng: number, _radiusM: number): void {
-    // D-99: the board is one nationwide room, so a widened reach has no extra cells to cover.
-    this.server?.to(BOARD_ROOM).emit(WS_EVENTS.boardNewOrder, payload);
+  emitBoardNewOrderToCells(payload: BoardNewOrderEvent, pickupLat: number, pickupLng: number, radiusM: number): void {
+    const cells = Number.isFinite(pickupLat) && Number.isFinite(pickupLng) ? boardCellsCoveringRadius(pickupLat, pickupLng, radiusM) : [];
+    const target = cells.length === 0 || cells.length > BOARD_CELL_FANOUT_MAX ? BOARD_ROOM : cells.map(boardGeoRoom);
+    this.server?.to(target).emit(WS_EVENTS.boardNewOrder, payload);
   }
 
   /**
@@ -753,7 +762,7 @@ export class TrackingGateway
    */
   emitBidExpired(orderId: string, _pickupLat?: number, _pickupLng?: number): void {
     const payload: BidExpiredEvent = { orderId, at: new Date().toISOString() };
-    // D-99: every rider who saw the card is in the nationwide BOARD_ROOM, so that is the whole audience.
+    // Every rider on the board is in BOARD_ROOM, whatever their cell, so that is the whole audience.
     this.server?.to(BOARD_ROOM).emit(WS_EVENTS.bidExpired, payload);
   }
 

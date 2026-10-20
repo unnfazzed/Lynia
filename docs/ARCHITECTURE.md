@@ -664,24 +664,26 @@ What makes the select safe:
 - The expiry path (`expireOrder`) runs the *same* guarded CAS: if a customer already selected, the
   order is no longer `open_for_offers`, so the expiry no-ops. Idempotent by construction.
 
-How the broadcast reaches riders (nationwide, ledger D-99):
+How the broadcast reaches riders (25 km from the pickup, ledger D-120; where we serve is D-99):
 
 - **One rule for where we serve.** `isInServiceArea` (`packages/shared/src/service-area.ts`) is the
   Zimbabwe border plus a 10 km margin. Every location check uses it: parcel pickup and drop-off,
   merchant delivery addresses, a rider going online, and where a merchant may register.
 - **Reach is a pure function of order age** — `broadcastRadiusAtMs` on the shared `BROADCAST` policy
-  (`packages/shared/src/policy.ts`). The base reach is `NATIONWIDE_REACH_M` (1,500 km) from creation and
+  (`packages/shared/src/policy.ts`). The base reach is `PARCEL_REACH_M` (25 km) from creation and
   `BROADCAST.expansion` is empty, so nothing widens. The old 5 → 8 → 12 km widening ticks
   (`MatchingService.expandBroadcast`) are a dormant hook: with an empty schedule none are scheduled.
-  The base reach is still deploy-tunable (`BROADCAST_BASE_RADIUS_M`, resolved in
+  The base reach is still deploy-tunable (`BROADCAST_BASE_RADIUS_M`, up to `NATIONWIDE_REACH_M`, resolved in
   `apps/api/src/common/broadcast-policy.ts`).
-- **The board.** Every eligible rider who sends `board:subscribe` joins the one `BOARD_ROOM`
-  (`tracking.gateway.ts`); a new order is emitted there as a redacted card. The REST board
-  (`GET /orders/open`) lists every open order, nearest first, with the rider's distance.
+- **The board.** Every eligible rider who sends `board:subscribe` joins `BOARD_ROOM` (close events) and, with a
+  position, its own geo cell (`board:geo:<cell>`, `packages/shared/src/geo.ts`). A new order is emitted as a
+  redacted card to every cell within the reach of its pickup (`tracking.gateway.ts`); a reach wider than
+  `BOARD_CELL_FANOUT_MAX` cells goes to `BOARD_ROOM`. The REST board (`GET /orders/open`) lists open orders within
+  the reach, nearest first; a caller's `radiusM` never widens it.
 - **The push.** `TrackingService.nearbyRiders` picks the **nearest 50** eligible riders (online,
   `active`, verified, a live position, and a heartbeat inside the push cutoff) and FCM/APNs-pushes them.
   A per-order Redis set (`broadcast:sent:<orderId>`) is claimed first so a rider is pinged once per order.
-  So the board reaches everyone; the push reaches the nearest 50.
+  So the board reaches every rider within the reach; the push reaches the nearest 50 of them.
 - **Ghost riders are filtered.** The customer-facing `ridersNearby` count and the push use heartbeat
   cutoffs (120 s strict, 15 min for push, `BROADCAST.heartbeatMaxAgeMs*`). Selection uses a stricter
   **30 s in-transaction gate**. Idle riders heartbeat every 20 s.

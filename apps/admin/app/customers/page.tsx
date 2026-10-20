@@ -78,7 +78,7 @@ export default async function CustomersPage({
       <header className="page">
         <h1>Customers</h1>
         <span className="sub">
-          {customers ? `${customers.length} customers · Harare pilot` : "Harare pilot"}
+          {customers ? `${customers.length} customers · Harare · Bulawayo` : "Harare · Bulawayo"}
         </span>
         <Conn connected={connected} reason={reason} />
       </header>

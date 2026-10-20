@@ -1,8 +1,10 @@
 /**
  * Browse v2 copy — `packages/design/handoff/browse-v2/code/copy.ts` (the handoff's `B`), verbatim
  * below this comment. The app copies mock text exactly (CLAUDE.md "Mock copy verbatim"); ledger
- * docs/DESIGN-DEVIATIONS.md D-57. `{x}` is a runtime value, filled with `fmt`.
+ * docs/DESIGN-DEVIATIONS.md D-57. `{x}` is a runtime value, filled with `fmt`. "in Harare" names both live towns (D-120).
  */
+import { liveTownsLabel } from "@lynia/shared";
+
 export const B = {
   "svc": {
     "food": {
@@ -96,7 +98,7 @@ export const B = {
     "free": "Free delivery",
     "sortBy": "Sort: {s}",
     "summary": "{n} places · {a}–{b} min",
-    "summaryNoLoc": "{n} places in Harare",
+    "summaryNoLoc": `{n} places in ${liveTownsLabel()}`,
     "closedNow": "Closed now",
     "opens": "Opens {t}",
     "opensTmr": "Opens tomorrow {t}",
@@ -110,7 +112,7 @@ export const B = {
     },
     "kindNone": {
       "t": "No {kind} shops here yet",
-      "s": "We’re signing up {kind} shops in Harare. Try All shops in the meantime.",
+      "s": `We’re signing up {kind} shops in ${liveTownsLabel()}. Try All shops in the meantime.`,
       "cta": "See all shops"
     },
     "noLoc": {

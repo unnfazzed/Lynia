@@ -1,4 +1,4 @@
-import { COMMISSION, freeJobsLeft, NATIONWIDE_REACH_M } from "@lynia/shared";
+import { COMMISSION, freeJobsLeft, PARCEL_REACH_M } from "@lynia/shared";
 import { ConflictException, InternalServerErrorException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
@@ -1497,7 +1497,7 @@ describe("RiderService.setOnline", () => {
     expect(await s.setOnline("p1", true, { lat: -17.83, lng: 31.05 })).toEqual({ online: true });
     // The drain is fire-and-forget — let the microtask settle, then assert it pinged the waiters.
     await new Promise((r) => setTimeout(r, 0));
-    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: NATIONWIDE_REACH_M });
+    expect(drainedAt).toEqual({ lat: -17.83, lng: 31.05, radius: PARCEL_REACH_M });
     expect(pushed).toEqual(["cust-1", "cust-2"]);
     // F-18: delivered waiters are cleared from the list; a miss would be left queued.
     expect(cleared).toEqual(["cust-1", "cust-2"]);

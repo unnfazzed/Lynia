@@ -3,6 +3,7 @@ import { mapPlaceDetails, mapPredictions, placesFault, type PlaceSuggestion, typ
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
 import { captureException } from "../telemetry/sentry";
 import { fetchSignal } from "../net/fetch-signal";
+import { userPoint } from "../logic/user-area";
 
 /**
  * Google Places API (New) client for search-first addressing (customer-journey §1·2/§1·3). These call
@@ -24,10 +25,10 @@ import { fetchSignal } from "../net/fetch-signal";
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const DETAILS_URL = "https://places.googleapis.com/v1/places/";
 
-// Bias results toward the pilot corridor (Harare) and restrict them to Zimbabwe, so a short query
-// surfaces local places first. Not a hard filter beyond the country — a valid out-of-area place still
-// resolves (the service corridor is enforced later, on broadcast). 50 km is the API's maximum radius.
-const BIAS_CENTER = { latitude: -17.8292, longitude: 31.0522 };
+// Restrict results to Zimbabwe, and rank places within 50 km (the API's maximum radius) of where the user
+// is first, so a short query surfaces local places: Bulawayo streets for someone in Bulawayo (owner
+// 2026-10-20, D-120; user-area.ts). Before the app knows where they are there is no bias beyond the
+// country. Not a hard filter — a valid place elsewhere still resolves (the service area is enforced later).
 const BIAS_RADIUS_M = 50000;
 const REGION_CODES = ["zw"];
 
@@ -69,13 +70,14 @@ async function requestJson(url: string, init: PlacesRequest): Promise<unknown | 
 export async function autocompletePlaces(input: string, sessionToken?: string): Promise<PlaceSuggestion[]> {
   const q = input.trim();
   if (!placesEnabled() || q.length < 3) return [];
+  const near = userPoint();
   const body = await requestJson(AUTOCOMPLETE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_PLACES_KEY as string },
     body: JSON.stringify({
       input: q,
       includedRegionCodes: REGION_CODES,
-      locationBias: { circle: { center: BIAS_CENTER, radius: BIAS_RADIUS_M } },
+      ...(near ? { locationBias: { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: BIAS_RADIUS_M } } } : {}),
       ...(sessionToken ? { sessionToken } : {}),
     }),
   });

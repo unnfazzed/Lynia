@@ -12,7 +12,7 @@
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   Strict-Transport-Security: max-age=31536000
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-4gmyRTycR2nHZRUq2oSgl+kTuPEvIo2WyKOw4+q7gnM=' 'sha256-rCNFGvnkRpdgI8HxXchQbgzNUJEQJRyOqEW9Z4rqMnI=' 'sha256-uvuHL9sVYr04KvtQCqjh8JGaBEbGxXXnoLS/4If6HfY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-4gmyRTycR2nHZRUq2oSgl+kTuPEvIo2WyKOw4+q7gnM=' 'sha256-uvuHL9sVYr04KvtQCqjh8JGaBEbGxXXnoLS/4If6HfY=' 'sha256-xUc1g5k4LlU0+gDt1aA81yHnTGXebrdrVKxc4KZ/8/k='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
 
 # Pages: always revalidate, so a deploy is visible on the next visit.
 /

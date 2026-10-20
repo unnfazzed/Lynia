@@ -183,7 +183,7 @@ export function Sidebar({
 
       <div className="foot">
         <b>{operator || "Ops admin"}</b>
-        ops admin · Harare pilot
+        ops admin · Harare · Bulawayo
         {/* Proxy sign-out (IAP cookie-clear on GCP, /.auth/logout on Azure Easy Auth). Only shown when
             there's a real signed-in identity (the dev/offline path has none). */}
         {operator ? (

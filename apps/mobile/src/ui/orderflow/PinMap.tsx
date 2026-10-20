@@ -5,13 +5,13 @@ import { View } from "react-native";
 import MapView, { type Region } from "react-native-maps";
 import { landmarkFromAddress } from "../../logic/geocode";
 import { withTimeout } from "../../util";
+import { defaultMapCenter } from "../../logic/user-area";
 
 /**
  * R3a's map (Order flow v2, D-59): a 200px r12 map with the red drop square fixed at its centre —
  * "Drag the map to put the pin on your gate". The point under the square is the drop; when the map
  * settles it is emitted, then named by a best-effort reverse geocode (offline leaves the name alone).
  */
-const HARARE = { latitude: -17.8292, longitude: 31.0522 };
 const DELTA = 0.012;
 const GEOCODE_TIMEOUT_MS = 9_000;
 
@@ -50,7 +50,7 @@ export function PinMap({
       .catch(() => undefined);
   };
 
-  const start = value ?? { lat: HARARE.latitude, lng: HARARE.longitude };
+  const start = value ?? { lat: defaultMapCenter().latitude, lng: defaultMapCenter().longitude };
   return (
     <View style={{ height: 200, borderRadius: 12, overflow: "hidden", backgroundColor: tokens.color.surface }}>
       <MapView

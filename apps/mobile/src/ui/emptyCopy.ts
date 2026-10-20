@@ -1,6 +1,8 @@
 // Every empty-state string, verbatim from packages/design/handoff/empty-states-v2-2026-10/copy.ts
-// (ledger D-78). Placeholders: {area} {q} {time} {place} {km} {service} {count} {amount} {s}. The
+// (ledger D-78), except that "in Harare" names both live towns (D-120). Placeholders: {area} {q} {time} {place} {km} {service} {count} {amount} {s}. The
 // handoff's "was:" notes are the approval record and live there, not here.
+
+import { liveTownsLabel } from "@lynia/shared";
 
 /** Fill `{name}` placeholders. */
 export function fillEmpty(s: string, vars: Record<string, string | number>): string {
@@ -30,7 +32,7 @@ export const emptyCopy = {
   browse: {
     noneInArea: { title: "No restaurants in {area} yet", body: "We’re adding kitchens near you.", primary: "Change address" },
     noFilterMatch: { title: "No places match", body: "Try fewer filters.", secondary: "Clear filters" },
-    noCategory: { title: "No {service} shops yet", body: "We’re adding them in Harare.", secondary: "See all shops" },
+    noCategory: { title: "No {service} shops yet", body: `We’re adding them in ${liveTownsLabel()}.`, secondary: "See all shops" },
     offline: { title: "You’re offline", body: "Places load when you’re back.", secondary: "Try again" },
     error: { title: "Couldn’t load restaurants", body: "Nothing was lost.", primary: "Try again" },
     noAddressRow: { text: "Add an address for fees and times", action: "Set" },

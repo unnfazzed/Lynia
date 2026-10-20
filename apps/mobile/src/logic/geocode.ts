@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { FAST_TIMEOUT_MS } from "../net/network-policy";
 import type { ResolvedPlace } from "./places";
 import { withTimeout } from "../util";
+import { userTown } from "./user-area";
 
 /**
  * Device-geocoder address resolution — the KEYLESS address→coordinates path.
@@ -38,23 +39,25 @@ export interface GeocodedLocation {
 const COUNTRY_SUFFIX = "Zimbabwe";
 
 /**
- * Appended when the query names neither the country nor a listed town. The platform geocoder is global
- * and a bare "14 Glenara Ave" resolves as happily in Glasgow as in the Avenues; biasing to the pilot
- * corridor is what makes a one-line query usable. Only ever a SECOND attempt, after the verbatim query:
- * tried first, it would move a Bulawayo or Mutare street to Harare whenever the customer left the town
- * out.
+ * The town appended when the query names neither the country nor a listed town: the live town the user is
+ * in (Bulawayo for someone in Bulawayo — owner 2026-10-20, D-120; user-area.ts), else Harare. The platform
+ * geocoder is global and a bare "14 Glenara Ave" resolves as happily in Glasgow as in the Avenues; biasing to
+ * the user's town is what makes a one-line query usable. Only ever a SECOND attempt, after the verbatim
+ * query: tried first, it would move a Mutare street to Harare whenever the customer left the town out.
  */
-const CORRIDOR_SUFFIX = `Harare, ${COUNTRY_SUFFIX}`;
+function corridorSuffix(town: string | null): string {
+  return `${town ?? "Harare"}, ${COUNTRY_SUFFIX}`;
+}
 
 /** The query already names the country, so neither suffix could add anything. */
 const NAMES_COUNTRY = /\b(zimbabwe|zw)\b/i;
 
 /**
- * The query names one of these towns, so the Harare suffix would be noise or wrong. Some of these names
+ * The query names one of these towns, so the town suffix would be noise or wrong. Some of these names
  * exist abroad too (there is a Norton and an Epworth in England), so such a query still gets a second
  * attempt with the country appended: without one, a verbatim hit abroad fails the box below and the
  * lookup ends in not-found. A town missing from this list (Masvingo, Kwekwe) is treated like any other
- * text: its retry gets the Harare suffix.
+ * text: its retry gets the user's town.
  */
 const NAMES_TOWN = /\b(harare|bulawayo|mutare|gweru|chitungwiza|norton|ruwa|epworth)\b/i;
 
@@ -80,17 +83,17 @@ const LANDMARK_MAX = 120;
 
 /**
  * The queries to try, in order. Always the trimmed input first, so what the customer typed is never
- * overridden. A query that names neither the country nor a listed town gets a corridor-biased second
- * attempt, and one that names a listed town but not the country gets a country-suffixed one. Returns
+ * overridden. A query that names neither the country nor a listed town gets a second attempt in the user's town
+ * ({@link corridorSuffix}), and one that names a listed town but not the country gets a country-suffixed one. Returns
  * `[]` for a query too short to be worth a geocoder round trip (mirrors the 3-character autocomplete
  * threshold).
  */
-export function geocodeQueries(input: string): string[] {
+export function geocodeQueries(input: string, town: string | null = userTown()): string[] {
   const q = input.trim().replace(/\s+/g, " ");
   if (q.length < 3) return [];
   if (NAMES_COUNTRY.test(q)) return [q];
   if (NAMES_TOWN.test(q)) return [q, `${q}, ${COUNTRY_SUFFIX}`];
-  return [q, `${q}, ${CORRIDOR_SUFFIX}`];
+  return [q, `${q}, ${corridorSuffix(town)}`];
 }
 
 /**

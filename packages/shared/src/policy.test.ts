@@ -12,6 +12,7 @@ import {
   BROADCAST,
   estimatePickupEtaMinutes,
   PICKUP_ETA,
+  PARCEL_REACH_M,
 } from "./policy";
 import { NATIONWIDE_REACH_M } from "./service-area";
 
@@ -203,16 +204,16 @@ describe("customerRatingCarriesWeight", () => {
   });
 });
 
-describe("broadcastRadiusAtMs — nationwide reach (D-99)", () => {
-  it.each([0, 29_999, 30_000, 60_000, 120_000])("broadcastRadiusAtMs(%d) is all of Zimbabwe from the start", (age) => {
-    expect(broadcastRadiusAtMs(age)).toBe(NATIONWIDE_REACH_M);
+describe("broadcastRadiusAtMs — 25 km from the pickup (D-120)", () => {
+  it.each([0, 29_999, 30_000, 60_000, 120_000])("broadcastRadiusAtMs(%d) is 25 km from the start", (age) => {
+    expect(broadcastRadiusAtMs(age)).toBe(PARCEL_REACH_M);
   });
 
   it("has nothing left to widen", () => {
     expect(BROADCAST.expansion).toHaveLength(0);
   });
 
-  it("still steps up a narrower base, capped at the nationwide reach", () => {
+  it("takes a deploy override, capped at the nationwide reach", () => {
     expect(broadcastRadiusAtMs(0, 5_000)).toBe(5_000);
     expect(broadcastRadiusAtMs(0, 5_000_000)).toBe(BROADCAST.maxRadiusM);
   });

@@ -1,11 +1,12 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, Text, View } from "react-native";
-import MapView, { type LatLng, Marker, Polyline, type Region } from "react-native-maps";
+import MapView, { type LatLng, Marker, Polyline } from "react-native-maps";
 import { PinView } from "../ComposeMap";
 import { Icon } from "../Icon";
 import type { MapPoint } from "../LiveMap";
 import { GlidingMarker, MapGround, RINGS_AS_OVERLAY, useDeferredMapMount, useProjectedPoint } from "./map-perf";
+import { defaultMapRegion } from "../../logic/user-area";
 
 /**
  * The order screen's full-bleed map (After Send handoff "Map", ledger D-53). It sits behind the sheet:
@@ -24,8 +25,6 @@ import { GlidingMarker, MapGround, RINGS_AS_OVERLAY, useDeferredMapMount, usePro
  * rider glides natively on Android (P37).
  */
 
-/** Harare CBD — the initial region before the first fit. */
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 /** The rings' box (two 40 rings scaled to 3.2 fit in it). */
 const RINGS_BOX = 132;
 
@@ -164,7 +163,7 @@ export const OrderMap = React.memo(function OrderMap(props: {
         <MapView
           ref={mapRef}
           style={{ flex: 1 }}
-          initialRegion={HARARE}
+          initialRegion={defaultMapRegion()}
           toolbarEnabled={false}
           showsCompass={false}
           onRegionChange={ringsOverlay ? projected.reproject : undefined}

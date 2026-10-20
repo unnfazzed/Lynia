@@ -17,6 +17,7 @@ import { isReachable } from "../net/reachability";
 import { addBreadcrumb, captureException } from "../telemetry/sentry";
 import type { PickedPoint } from "./MapPicker";
 import { Icon } from "./index";
+import { defaultMapRegion } from "../logic/user-area";
 
 /**
  * The full-bleed compose map (customer-journey 1·1). A single map that carries BOTH addresses at once:
@@ -34,7 +35,6 @@ import { Icon } from "./index";
  * `pickup`/`drop`/the callback props referentially stable across those unrelated renders (send.tsx's
  * `pickupPoint`/`dropPoint` state and its already-`useCallback`'d reverse-geocode handlers do).
  */
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 /**
  * The staged load-watch (RCA 2026-08-17 §3.1). On the program's own 600 ms-RTT design link, a full
  * Harare tile set legitimately takes longer than the old single 9 s deadline — so the failure card
@@ -325,7 +325,7 @@ export const ComposeMap = React.memo(function ComposeMap(props: {
 
   const initialRegion: Region = pickup
     ? { latitude: pickup.lat, longitude: pickup.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }
-    : HARARE;
+    : defaultMapRegion();
 
   return (
     <View style={{ flex: 1 }}>

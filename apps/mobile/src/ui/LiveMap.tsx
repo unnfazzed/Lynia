@@ -3,14 +3,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Modal, Pressable, Text, View } from "react-native";
 import MapView, { AnimatedRegion, type LatLng, Marker, MarkerAnimated, type Region } from "react-native-maps";
 import { Icon } from "./Icon";
+import { defaultMapRegion } from "../logic/user-area";
 
 export interface MapPoint {
   lat: number;
   lng: number;
 }
 
-/** Harare CBD — fallback region before the map fits to the order's points. */
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 /** Deltas the animated rider region keeps — the marker only tracks lat/lng, so these are inert but required. */
 const RIDER_DELTA = { latitudeDelta: 0.01, longitudeDelta: 0.01 } as const;
 const GLIDE_MS = 900;
@@ -162,7 +161,7 @@ export function LiveMap(props: {
         marginBottom: tokens.space.sm,
       }}
     >
-      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={HARARE}>
+      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={defaultMapRegion()}>
         {markers}
       </MapView>
 
@@ -204,7 +203,7 @@ export function LiveMap(props: {
         onShow={() => requestAnimationFrame(fitExpanded)}
       >
         <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-          <MapView ref={expandedMapRef} style={{ flex: 1 }} initialRegion={HARARE}>
+          <MapView ref={expandedMapRef} style={{ flex: 1 }} initialRegion={defaultMapRegion()}>
             {markers}
           </MapView>
 

@@ -211,7 +211,7 @@ describe("RestaurantListScreen — B7 no location", () => {
     const all = texts(tree);
     expect(all).toContain("Add an address for fees and times");
     expect(all).toContain("Set");
-    expect(all).toContain("in Harare");
+    expect(all).toContain("in Harare and Bulawayo"); // D-120
     const row = texts(renderRow(tree, 3));
     expect(row.some((t) => /km|delivery|min/.test(t))).toBe(false);
   });

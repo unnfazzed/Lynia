@@ -56,7 +56,7 @@ beforeEach(() => {
 });
 
 describe("autocompletePlaces", () => {
-  it("POSTs Places (New) autocomplete, biased to Harare and restricted to Zimbabwe", async () => {
+  it("POSTs Places (New) autocomplete, restricted to Zimbabwe, with no town bias before the user's point is known", async () => {
     fetchMock.mockResolvedValue(
       respond(200, {
         suggestions: [
@@ -84,9 +84,23 @@ describe("autocompletePlaces", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       input: "westgate",
       includedRegionCodes: ["zw"],
-      locationBias: { circle: { center: { latitude: -17.8292, longitude: 31.0522 }, radius: 50000 } },
       sessionToken: "tok-1",
     });
+  });
+
+  it("ranks places near the user first once their point is known: Bulawayo for someone in Bulawayo (D-120)", async () => {
+    fetchMock.mockResolvedValue(respond(200, {}));
+    // The places module reads the same (isolated) user-area module the app's location sources write.
+    let autocompletePlaces!: PlacesModule["autocompletePlaces"];
+    jest.isolateModules(() => {
+      (require("../../logic/user-area") as typeof import("../../logic/user-area")).noteUserPoint({ lat: -20.15, lng: 28.58 });
+      ({ autocompletePlaces } = require("../places") as PlacesModule);
+    });
+
+    await autocompletePlaces("fife street", "tok-2");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).locationBias).toEqual({ circle: { center: { latitude: -20.15, longitude: 28.58 }, radius: 50000 } });
   });
 
   it("never puts the key in the URL", async () => {

@@ -1,4 +1,4 @@
-import { BOARD_CELL_DEG, BROADCAST, boardCell, boardCellsCoveringRadius, broadcastRadiusAtMs, NATIONWIDE_REACH_M } from "@lynia/shared";
+import { BOARD_CELL_DEG, BROADCAST, boardCell, boardCellsCoveringRadius, broadcastRadiusAtMs, PARCEL_REACH_M } from "@lynia/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { baseBroadcastRadiusM, effectiveBroadcastRadiusM, heartbeatMaxAgeMs, maxBroadcastRadiusM } from "./broadcast-policy";
 
@@ -10,11 +10,12 @@ afterEach(() => {
   delete process.env[BROADCAST.heartbeatMaxAgeEnv];
 });
 
-describe("broadcastRadiusAtMs — nationwide reach (owner 2026-10-12, D-99)", () => {
-  it("reaches all of Zimbabwe from the first second, with nothing left to widen", () => {
+describe("broadcastRadiusAtMs — 25 km from the pickup (owner 2026-10-20, D-120)", () => {
+  it("reaches 25 km from the first second, with nothing left to widen", () => {
+    expect(PARCEL_REACH_M).toBe(25_000);
     expect(BROADCAST.expansion).toHaveLength(0);
-    expect(broadcastRadiusAtMs(0)).toBe(NATIONWIDE_REACH_M);
-    expect(broadcastRadiusAtMs(60_000)).toBe(NATIONWIDE_REACH_M);
+    expect(broadcastRadiusAtMs(0)).toBe(PARCEL_REACH_M);
+    expect(broadcastRadiusAtMs(60_000)).toBe(PARCEL_REACH_M);
   });
 
   it("never exceeds the nationwide cap, whatever the base override", () => {
@@ -54,12 +55,12 @@ describe("env resolution (deploy overrides, SOS_POLICY idiom)", () => {
   it("effectiveBroadcastRadiusM derives the radius from the order's age", () => {
     const createdAt = new Date("2026-07-01T00:00:00Z");
     const t0 = createdAt.getTime();
-    expect(effectiveBroadcastRadiusM(createdAt, t0)).toBe(NATIONWIDE_REACH_M);
-    expect(effectiveBroadcastRadiusM(createdAt, t0 + 61_000)).toBe(NATIONWIDE_REACH_M);
+    expect(effectiveBroadcastRadiusM(createdAt, t0)).toBe(PARCEL_REACH_M);
+    expect(effectiveBroadcastRadiusM(createdAt, t0 + 61_000)).toBe(PARCEL_REACH_M);
   });
 
   it("maxBroadcastRadiusM is the schedule's terminal radius", () => {
-    expect(maxBroadcastRadiusM()).toBe(NATIONWIDE_REACH_M);
+    expect(maxBroadcastRadiusM()).toBe(PARCEL_REACH_M);
   });
 });
 

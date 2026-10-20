@@ -48,6 +48,15 @@ export function serviceTownsLabel(): string {
   return "Zimbabwe";
 }
 
+/**
+ * The towns LyniaGo is live in, for copy that names where we are ("6 places in Harare and Bulawayo"): owner,
+ * 2026-10-20, ledger D-120. Where we SERVE is still all of Zimbabwe ({@link serviceTownsLabel}); this names where
+ * there are businesses and bikers today. Add a town here when it goes live.
+ */
+export function liveTownsLabel(): string {
+  return "Harare and Bulawayo";
+}
+
 /** Ray-casting point-in-polygon on the lat/lng border. */
 function insideBorder(lat: number, lng: number): boolean {
   let inside = false;

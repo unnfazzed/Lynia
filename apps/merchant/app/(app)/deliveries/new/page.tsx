@@ -309,6 +309,7 @@ export default function NewBookingPage() {
           {gate.status === "ready" && (
             <>
               <WhereSearch
+                near={pickup}
                 value={where}
                 error={whereErrors.where}
                 signOut={signOut}
@@ -520,7 +521,7 @@ export default function NewBookingPage() {
 }
 
 /** D2's search: Places rows as you type, or a pasted location link read straight away. */
-function WhereSearch({ value, error, signOut, onChange }: { value: Where | null; error?: string; signOut: () => void; onChange: (w: Where | null) => void }) {
+function WhereSearch({ value, error, near, signOut, onChange }: { value: Where | null; error?: string; near: LatLng | null; signOut: () => void; onChange: (w: Where | null) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [note, setNote] = useState<string | null>(null);
@@ -533,7 +534,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
     if (q.length < 3 || /https?:\/\//i.test(q) || parseMapLocation(q)) return undefined;
     let alive = true;
     const t = setTimeout(() => {
-      void searchPlaces(q, session.current).then((rows) => {
+      void searchPlaces(q, session.current, near).then((rows) => {
         if (alive) setResults(rows);
       });
     }, 300);
@@ -541,7 +542,7 @@ function WhereSearch({ value, error, signOut, onChange }: { value: Where | null;
       alive = false;
       clearTimeout(t);
     };
-  }, [query]);
+  }, [query, near]);
 
   /** A pasted pin: shown at once, then named by its area when the reverse lookup answers (if it does). */
   function pinned(point: LatLng, seq: number) {

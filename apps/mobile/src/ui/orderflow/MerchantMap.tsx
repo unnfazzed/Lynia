@@ -1,13 +1,14 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useMemo, useRef } from "react";
 import { Text, View } from "react-native";
-import MapView, { type LatLng, Marker, Polyline, type Region } from "react-native-maps";
+import MapView, { type LatLng, Marker, Polyline } from "react-native-maps";
 import type { MerchantService } from "../../logic/merchant-order";
 import { Icon } from "../Icon";
 import type { MapPoint } from "../LiveMap";
 import { GlidingMarker, MapGround, useDeferredMapMount } from "../order/map-perf";
 import { ALPHA, SVC_TILE, SvcSticker } from "./kit";
 import { O } from "./copy";
+import { defaultMapRegion } from "../../logic/user-area";
 
 /**
  * The merchant order's full-bleed map (Order flow v2.1, ledger D-59; polish `K.map`). From the first
@@ -23,7 +24,6 @@ import { O } from "./copy";
  */
 
 const C = tokens.color;
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const ll = (p: MapPoint): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
 function VenuePin({ name, svc }: { name: string; svc: MerchantService }): React.ReactElement {
@@ -105,7 +105,7 @@ export const MerchantMap = React.memo(function MerchantMap(props: {
     <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {!mapMounted ? <MapGround /> : null}
       {mapMounted ? (
-        <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={HARARE} toolbarEnabled={false} showsCompass={false}>
+        <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={defaultMapRegion()} toolbarEnabled={false} showsCompass={false}>
           {route ? <Polyline coordinates={route} strokeColor={C.bg} strokeWidth={props.collected ? 11 : 8} lineCap="round" /> : null}
           {route ? (
             props.collected ? (

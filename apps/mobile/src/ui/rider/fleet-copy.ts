@@ -3,8 +3,11 @@
  * packages/design/handoff/own-bikers-v1/copy.ts (`OB.biker`). The handoff writes its sample data into some strings
  * ("Chicken Inn Avondale", "Pizza Inn", "$14.00", "#B204", "0.4 km"); here those are parameters, the words around
  * them unchanged. Every fleet screen names the biker's home branch (owner decision P7-1), so the handoff's short
- * "Chicken Inn" and long "Chicken Inn Avondale" are both `shop`. User-facing copy says "biker" (D-101).
+ * "Chicken Inn" and long "Chicken Inn Avondale" are both `shop`. User-facing copy says "biker" (D-101), and
+ * "across Harare" names both live towns (D-120).
  */
+
+import { liveTownsLabel } from "@lynia/shared";
 
 export const OBB = {
   // OB-R1–R3 · joining.
@@ -115,7 +118,7 @@ export const OBB = {
   /** `pubB` "Chicken Inn has stopped using Own bikers. You can take jobs from anyone near you." */
   pubB: (shop: string) => `${shop} has stopped using Own bikers. You can take jobs from anyone near you.`,
   pub1T: "Parcels and food near you",
-  pub1B: "Jobs from shops, kitchens and customers across Harare.",
+  pub1B: `Jobs from shops, kitchens and customers across ${liveTownsLabel()}.`,
   pub2T: "You keep the fare",
   pub2B: "You set or accept a fare. Commission comes off when a job closes.",
   pub3T: "Top up to start",

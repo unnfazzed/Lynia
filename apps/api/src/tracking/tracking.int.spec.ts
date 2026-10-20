@@ -176,18 +176,19 @@ describe("orders.pickup_geog generated column (migration 0006) + listOpenNearby"
     expect(byId.get(bad)).toBe(false);
   });
 
-  it("listOpenNearby returns every open order nearest-first (nationwide, D-99) and skips malformed pickups", async () => {
+  it("listOpenNearby returns open orders within 25 km nearest-first (D-120) and skips malformed pickups", async () => {
     const cust = await makeCustomer();
     const near = await makeOrder(cust, { lat: CENTER.lat + 0.003, lng: CENTER.lng }); // ~0.33 km
     const far = await makeOrder(cust, { lat: CENTER.lat + 0.015, lng: CENTER.lng }); // ~1.66 km
     const town = await makeOrder(cust, { lat: CENTER.lat + 0.1, lng: CENTER.lng }); // ~11 km — past the caller's 3 km
+    const away = await makeOrder(cust, { lat: CENTER.lat + 0.5, lng: CENTER.lng }); // ~56 km — past the 25 km reach
     const bad = await makeOrder(cust, null); // malformed — must not 500 the board
 
     const list = await orders.listOpen(CENTER.lat, CENTER.lng, 3000);
-    const mine = new Set([near, far, town, bad]);
+    const mine = new Set([near, far, town, away, bad]);
     const ids = list.map((o) => o.id).filter((id) => mine.has(id));
 
-    expect(ids).toEqual([near, far, town]); // nearest-first; the board reach is the whole country, malformed excluded
+    expect(ids).toEqual([near, far, town]); // nearest-first; 25 km reach (the far town is out), malformed excluded
     // Redaction preserved on the geo path — point + landmark only, never contactPhone.
     expect(list[0]!.pickup).not.toHaveProperty("contactPhone");
     expect(JSON.stringify(list[0])).not.toContain("+263");

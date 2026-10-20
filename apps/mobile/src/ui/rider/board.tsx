@@ -3,7 +3,7 @@ import { type FleetJobOffer, haversineKm } from "@lynia/shared";
 import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useMemo, useRef } from "react";
 import { type AccessibilityActionEvent, ActivityIndicator, ScrollView, Text, View, type ViewStyle } from "react-native";
-import MapView, { Circle, type LatLng, Marker, Polyline, type Region } from "react-native-maps";
+import MapView, { Circle, type LatLng, Marker, Polyline } from "react-native-maps";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { CtaBar, CtaButton, IconDisc, SmBtn } from "../order/kit";
@@ -13,6 +13,7 @@ import { km, RIDER_COPY as R, RF, usd } from "./copy";
 import { RLabel, TABULAR } from "./kit";
 import { FleetPinLabel, FleetTag } from "./fleet";
 import { OBB } from "./fleet-copy";
+import { defaultMapRegion } from "../../logic/user-area";
 
 /**
  * Rider v2 Jobs-board parts (`packages/design/handoff/rider-v2/design/rv-board.jsx`, ledger D-54):
@@ -20,7 +21,6 @@ import { OBB } from "./fleet-copy";
  * job pins + busy zones + "You", the route strip, the Gate blocking state and the ink toast.
  */
 
-const HARARE: Region = { latitude: -17.8292, longitude: 31.0522, latitudeDelta: 0.06, longitudeDelta: 0.06 };
 type Pt = { lat: number; lng: number };
 const ll = (p: Pt): LatLng => ({ latitude: p.lat, longitude: p.lng });
 
@@ -290,7 +290,7 @@ export const BoardMap = React.memo(function BoardMap({
   const zoneFill = useMemo(() => `${tokens.color.accent}29`, []);
   return (
     <View style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={you ? { latitude: you.lat, longitude: you.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 } : HARARE} toolbarEnabled={false} showsCompass={false}>
+      <MapView ref={mapRef} style={{ flex: 1 }} initialRegion={you ? { latitude: you.lat, longitude: you.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 } : defaultMapRegion()} toolbarEnabled={false} showsCompass={false}>
         {zones.map((z, i) => (
           <Circle key={`z${i}`} center={ll(z)} radius={z.radiusM} fillColor={zoneFill} strokeColor={tokens.color.accent} strokeWidth={1.5} lineDashPattern={[6, 4]} />
         ))}
