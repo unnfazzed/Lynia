@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  billCards,
-  branchLines,
-  cachedLine,
-  type FleetMoneyRead,
-  noFleetRides,
-  rideRows,
-} from "../../lib/fleet-money";
+import { billCards, branchLines, cachedLine, type FleetMoneyRead, noFleetRides, rideRows } from "../../lib/fleet-money";
 import { OBM } from "../../lib/own-bikers-copy";
 import { Icon } from "../icons";
 
@@ -24,11 +17,7 @@ export function FleetCachedStrip({ read }: { read: FleetMoneyRead }) {
   );
 }
 
-const PILL = {
-  unpaid: OBM.billUnpaid,
-  paid: OBM.billPaid,
-  overdue: OBM.billOverdue,
-} as const;
+const PILL = { unpaid: OBM.billUnpaid, paid: OBM.billPaid, overdue: OBM.billOverdue } as const;
 
 /**
  * OB-M14 · Money · This week, FLEET RIDES (Own bikers v1, ledger D-117). The bill cards (receipt, state pill; overdue
@@ -58,14 +47,8 @@ export function FleetRides({
         <div aria-busy="true" aria-label="Loading">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="m-fr-row">
-              <span
-                className="m-ob-sk"
-                style={{ width: "62%", height: 14, borderRadius: 6 }}
-              />
-              <span
-                className="m-ob-sk"
-                style={{ width: 44, height: 14, borderRadius: 6 }}
-              />
+              <span className="m-ob-sk" style={{ width: "62%", height: 14, borderRadius: 6 }} />
+              <span className="m-ob-sk" style={{ width: 44, height: 14, borderRadius: 6 }} />
             </div>
           ))}
         </div>
@@ -84,27 +67,21 @@ export function FleetRides({
         </div>
       ) : (
         <div className="m-fr-body" data-cached={read.cachedAt ? "" : undefined}>
-          {billCards(read.data.bills, read.data.rides.weekStart, today).map(
-            (c) => (
-              <div key={c.key} className="m-fr-bill" data-state={c.state}>
-                <span className="m-fr-bill-ic">
-                  <Icon name="receipt-dollar" size={18} />
-                </span>
-                <div>
-                  <b className="m-num">{c.text}</b>
-                  {c.state === "overdue" && (
-                    <span>{OBM.billOverdueSub(c.daysOverdue)}</span>
-                  )}
-                </div>
-                <span className="m-fr-pill" data-state={c.state}>
-                  {c.state === "overdue" && (
-                    <Icon name="circle-alert" size={14} />
-                  )}
-                  {PILL[c.state]}
-                </span>
+          {billCards(read.data.bills, read.data.rides.weekStart, today).map((c) => (
+            <div key={c.key} className="m-fr-bill" data-state={c.state}>
+              <span className="m-fr-bill-ic">
+                <Icon name="receipt-dollar" size={18} />
+              </span>
+              <div>
+                <b className="m-num">{c.text}</b>
+                {c.state === "overdue" && <span>{OBM.billOverdueSub(c.daysOverdue)}</span>}
               </div>
-            ),
-          )}
+              <span className="m-fr-pill" data-state={c.state}>
+                {c.state === "overdue" && <Icon name="circle-alert" size={14} />}
+                {PILL[c.state]}
+              </span>
+            </div>
+          ))}
           {noFleetRides(read.data) ? (
             <div className="m-fr-zero">
               <span>
@@ -118,11 +95,7 @@ export function FleetRides({
                 <div key={b.key} className="m-fr-rides">
                   <b className="m-fr-branch m-num">{b.text}</b>
                   {rideRows(read.data.rides).map((r) => (
-                    <div
-                      key={r.key}
-                      className="m-fr-row m-num"
-                      data-muted={r.muted ? "" : undefined}
-                    >
+                    <div key={r.key} className="m-fr-row m-num" data-muted={r.muted ? "" : undefined}>
                       <span>{r.text}</span>
                       <b data-credit={r.credit ? "" : undefined}>{r.amount}</b>
                     </div>

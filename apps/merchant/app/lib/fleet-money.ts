@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type {
-  FleetBill,
-  FleetBillsResponse,
-  FleetRidesResponse,
-} from "@lynia/shared";
+import type { FleetBill, FleetBillsResponse, FleetRidesResponse } from "@lynia/shared";
 import { ApiError } from "./api-client";
 import { getFleetBills, getFleetRides } from "./fleet-api";
 import { addDaysToKey, hm, localDay } from "./money-view";
@@ -17,18 +13,11 @@ import { OBM } from "./own-bikers-copy";
  * fleet rides with the other branches' totals. Money is owner-only, so the bill card always shows here.
  */
 
-export type FleetMoney = {
-  rides: FleetRidesResponse;
-  bills: FleetBillsResponse;
-};
+export type FleetMoney = { rides: FleetRidesResponse; bills: FleetBillsResponse };
 
 /** `undefined` while reading; `null` = no Own bikers here (the section isn't drawn); `fail` = couldn't load and
  *  nothing cached; `ready` with `cachedAt` = offline, showing the last good read ("as of 12:40"). */
-export type FleetMoneyRead =
-  | undefined
-  | null
-  | { status: "fail" }
-  | { status: "ready"; data: FleetMoney; cachedAt?: string };
+export type FleetMoneyRead = undefined | null | { status: "fail" } | { status: "ready"; data: FleetMoney; cachedAt?: string };
 
 const CACHE_KEY = "lynia.merchant.fleetMoney";
 
@@ -38,9 +27,7 @@ function readCache(merchantId: string): Cached | null {
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     const c = raw ? (JSON.parse(raw) as Cached) : null;
-    return c && c.merchantId === merchantId && c.data?.rides && c.data?.bills
-      ? c
-      : null;
+    return c && c.merchantId === merchantId && c.data?.rides && c.data?.bills ? c : null;
   } catch {
     return null;
   }
@@ -57,10 +44,7 @@ function writeCache(c: Cached | null): void {
 
 /** Loads the branch's fleet rides and the owner's bills together. A business without Own bikers (409 `fleet_off`, or
  *  503 while the feature isn't live) reads as `null`; offline falls back to the last good read for this branch. */
-export function useFleetMoney(
-  merchantId: string | null,
-  enabled: boolean,
-): { read: FleetMoneyRead; reload: () => void } {
+export function useFleetMoney(merchantId: string | null, enabled: boolean): { read: FleetMoneyRead; reload: () => void } {
   const [read, setRead] = useState<FleetMoneyRead>(undefined);
   const load = useCallback(() => {
     if (!merchantId) return;
@@ -81,11 +65,7 @@ export function useFleetMoney(
           return setRead(null);
         }
         const cached = status === 0 ? readCache(merchantId) : null;
-        setRead(
-          cached
-            ? { status: "ready", data: cached.data, cachedAt: cached.at }
-            : { status: "fail" },
-        );
+        setRead(cached ? { status: "ready", data: cached.data, cachedAt: cached.at } : { status: "fail" });
       },
     );
     return () => {
@@ -96,85 +76,44 @@ export function useFleetMoney(
   return { read, reload: load };
 }
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** "21–27 Sep", "28 Sep–4 Oct": a bill's week, from Harare date keys. */
 export function billWeek(start: string, end: string): string {
   const a = localDay(start);
   const b = localDay(end);
-  const left =
-    a.getMonth() === b.getMonth()
-      ? `${a.getDate()}`
-      : `${a.getDate()} ${MONTHS[a.getMonth()]}`;
+  const left = a.getMonth() === b.getMonth() ? `${a.getDate()}` : `${a.getDate()} ${MONTHS[a.getMonth()]}`;
   return `${left}–${b.getDate()} ${MONTHS[b.getMonth()]}`;
 }
 
 /** "Fri" when it falls in the coming week, else "Fri 2 Oct". */
 export function dueLabel(due: string, today: string): string {
   const d = localDay(due);
-  const ahead = Math.round(
-    (d.getTime() - localDay(today).getTime()) / 86_400_000,
-  );
-  return ahead >= 0 && ahead < 7
-    ? DAYS[d.getDay()]!
-    : `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const ahead = Math.round((d.getTime() - localDay(today).getTime()) / 86_400_000);
+  return ahead >= 0 && ahead < 7 ? DAYS[d.getDay()]! : `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
-export type BillCard = {
-  key: string;
-  state: FleetBill["state"];
-  text: string;
-  daysOverdue: number;
-};
+export type BillCard = { key: string; state: FleetBill["state"]; text: string; daysOverdue: number };
 
 /**
  * The bill cards, oldest first: every closed bill still owed (overdue in danger), then this week's running bill (due
  * the Friday after the week ends). When nothing closed is owed, last week's paid bill shows with the mint pill.
  */
-export function billCards(
-  bills: FleetBillsResponse,
-  weekStart: string,
-  today: string,
-): BillCard[] {
+export function billCards(bills: FleetBillsResponse, weekStart: string, today: string): BillCard[] {
   const owed = bills.bills.filter((b) => b.state !== "paid").reverse();
   const cards: BillCard[] = owed.map((b) => ({
     key: b.id,
     state: b.state,
-    text: OBM.bill(
-      billWeek(b.periodStart, b.periodEnd),
-      money(Number(b.total)),
-      b.dueOn ? dueLabel(b.dueOn, today) : "—",
-    ),
+    text: OBM.bill(billWeek(b.periodStart, b.periodEnd), money(Number(b.total)), b.dueOn ? dueLabel(b.dueOn, today) : "—"),
     daysOverdue: b.daysOverdue,
   }));
   const last = bills.bills[0];
-  if (
-    cards.length === 0 &&
-    last?.state === "paid" &&
-    last.periodEnd === addDaysToKey(weekStart, -1)
-  ) {
+  if (cards.length === 0 && last?.state === "paid" && last.periodEnd === addDaysToKey(weekStart, -1)) {
     cards.push({
       key: last.id,
       state: "paid",
-      text: OBM.bill(
-        billWeek(last.periodStart, last.periodEnd),
-        money(Number(last.total)),
-        last.dueOn ? dueLabel(last.dueOn, today) : "—",
-      ),
+      text: OBM.bill(billWeek(last.periodStart, last.periodEnd), money(Number(last.total)), last.dueOn ? dueLabel(last.dueOn, today) : "—"),
       daysOverdue: 0,
     });
   }
@@ -183,24 +122,14 @@ export function billCards(
     cards.push({
       key: `week-${weekStart}`,
       state: "unpaid",
-      text: OBM.bill(
-        billWeek(weekStart, weekEnd),
-        money(Number(bills.thisWeek.total)),
-        dueLabel(addDaysToKey(weekEnd, 5), today),
-      ),
+      text: OBM.bill(billWeek(weekStart, weekEnd), money(Number(bills.thisWeek.total)), dueLabel(addDaysToKey(weekEnd, 5), today)),
       daysOverdue: 0,
     });
   }
   return cards;
 }
 
-export type RideRow = {
-  key: string;
-  text: string;
-  amount: string;
-  muted: boolean;
-  credit: boolean;
-};
+export type RideRow = { key: string; text: string; amount: string; muted: boolean; credit: boolean };
 
 const signed = (fee: number) => (fee < 0 ? `−${money(-fee)}` : money(fee));
 
@@ -208,72 +137,36 @@ const signed = (fee: number) => (fee < 0 ? `−${money(-fee)}` : money(fee));
  *  that week is muted with its credit (it isn't counted in the branch line). */
 export function rideRows(rides: FleetRidesResponse): RideRow[] {
   const net = new Map<string, number>();
-  for (const l of rides.lines)
-    if (l.orderId)
-      net.set(
-        l.orderId,
-        (net.get(l.orderId) ?? 0) + Math.round(Number(l.fee) * 100),
-      );
+  for (const l of rides.lines) if (l.orderId) net.set(l.orderId, (net.get(l.orderId) ?? 0) + Math.round(Number(l.fee) * 100));
   return rides.lines.map((l, i) => {
     const fee = Number(l.fee);
     const credited = l.orderId != null && (net.get(l.orderId) ?? 0) <= 0;
     if (l.kind === "adjustment") {
       return {
         key: `adj-${i}`,
-        text: [fee < 0 ? OBM.credit : null, l.ref, l.reason]
-          .filter(Boolean)
-          .join(" · "),
+        text: [fee < 0 ? OBM.credit : null, l.ref, l.reason].filter(Boolean).join(" · "),
         amount: signed(fee),
         muted: credited || fee < 0,
         credit: fee < 0,
       };
     }
-    return {
-      key: `ride-${i}`,
-      text: [l.ref, l.biker, hm(l.at)].filter(Boolean).join(" · "),
-      amount: signed(fee),
-      muted: credited,
-      credit: false,
-    };
+    return { key: `ride-${i}`, text: [l.ref, l.biker, hm(l.at)].filter(Boolean).join(" · "), amount: signed(fee), muted: credited, credit: false };
   });
 }
 
 /** The branch lines: this branch first (from its own ride list), then the owner's other branches this week. */
-export function branchLines(
-  data: FleetMoney,
-  merchantId: string,
-  name: string,
-): Array<{ key: string; text: string; mine: boolean }> {
-  const others = (data.bills.thisWeek.branches ?? []).filter(
-    (b) => b.merchantId !== merchantId,
-  );
-  const mine =
-    data.bills.thisWeek.branches?.find((b) => b.merchantId === merchantId)
-      ?.name ?? name;
+export function branchLines(data: FleetMoney, merchantId: string, name: string): Array<{ key: string; text: string; mine: boolean }> {
+  const others = (data.bills.thisWeek.branches ?? []).filter((b) => b.merchantId !== merchantId);
+  const mine = data.bills.thisWeek.branches?.find((b) => b.merchantId === merchantId)?.name ?? name;
   return [
-    {
-      key: merchantId,
-      text: OBM.branchLine(
-        mine,
-        data.rides.rides,
-        money(Number(data.rides.total)),
-      ),
-      mine: true,
-    },
-    ...others.map((b) => ({
-      key: b.merchantId,
-      text: OBM.branchLine(b.name, b.rides, money(Number(b.total))),
-      mine: false,
-    })),
+    { key: merchantId, text: OBM.branchLine(mine, data.rides.rides, money(Number(data.rides.total))), mine: true },
+    ...others.map((b) => ({ key: b.merchantId, text: OBM.branchLine(b.name, b.rides, money(Number(b.total))), mine: false })),
   ];
 }
 
 /** No fleet rides or corrections at any branch this week: "No fleet rides this week" in place of the branch lines. */
 export function noFleetRides(data: FleetMoney): boolean {
-  return (
-    data.rides.lines.length === 0 &&
-    (data.bills.thisWeek.branches ?? []).length === 0
-  );
+  return data.rides.lines.length === 0 && (data.bills.thisWeek.branches ?? []).length === 0;
 }
 
 /** "Offline · showing this week as of 12:40". */

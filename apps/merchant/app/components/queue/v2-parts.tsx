@@ -11,49 +11,16 @@ import { Icon } from "../icons";
  */
 
 /** The one lifecycle every order goes through (BRIEF §2). */
-export const LIFECYCLE = [
-  "Accept",
-  "Cook",
-  "Hand over",
-  "On the way",
-  "Cash back",
-] as const;
+export const LIFECYCLE = ["Accept", "Cook", "Hand over", "On the way", "Cash back"] as const;
 
 /** 5 segments, 4 tall, 4 apart; done = accent. With a label: "Step 2 of 5 · Cooking". */
-export function ProgressSteps({
-  step,
-  label,
-  failed = false,
-}: {
-  step: number;
-  label?: string;
-  failed?: boolean;
-}) {
+export function ProgressSteps({ step, label, failed = false }: { step: number; label?: string; failed?: boolean }) {
   // K5c (D-77 follow-ups): a failed delivery draws its step in --danger and leaves the last one empty.
   return (
     <div className="m-psteps">
-      <div
-        className="m-steps"
-        aria-hidden={label ? "true" : undefined}
-        aria-label={
-          label
-            ? undefined
-            : failed
-              ? `Step ${step} of 5 failed`
-              : `${step} of 5 steps`
-        }
-      >
+      <div className="m-steps" aria-hidden={label ? "true" : undefined} aria-label={label ? undefined : failed ? `Step ${step} of 5 failed` : `${step} of 5 steps`}>
         {[0, 1, 2, 3, 4].map((i) => (
-          <i
-            key={i}
-            className={
-              failed && i === step - 1
-                ? "m-fail"
-                : i < step
-                  ? "m-on"
-                  : undefined
-            }
-          />
+          <i key={i} className={failed && i === step - 1 ? "m-fail" : i < step ? "m-on" : undefined} />
         ))}
       </div>
       {label && (
@@ -71,43 +38,21 @@ function initials(r: NonNullable<MerchantOrderResponse["rider"]>): string {
 }
 
 /** K4/S3's rider card: the 48 mint disc, the name, plate and rating, and a 44 call button. */
-export function RiderCard({
-  order,
-  sub,
-}: {
-  order: MerchantOrderResponse;
-  sub?: string;
-}) {
+export function RiderCard({ order, sub }: { order: MerchantOrderResponse; sub?: string }) {
   const r = order.rider!;
   const name = riderFirstName(order) ?? r.firstName;
   // A1: "at your counter" once here, "arrives 07:31" before (A2: nothing when there's no estimate).
-  const here = order.riderArrivedAt
-    ? "at your counter"
-    : order.riderEtaAt
-      ? `arrives ${hm(order.riderEtaAt)}`
-      : null;
-  const line =
-    sub ??
-    [r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null, here]
-      .filter(Boolean)
-      .join(" · ");
+  const here = order.riderArrivedAt ? "at your counter" : order.riderEtaAt ? `arrives ${hm(order.riderEtaAt)}` : null;
+  const line = sub ?? [r.plate, r.ratingCount > 0 ? `★ ${r.ratingAvg.toFixed(1)}` : null, here].filter(Boolean).join(" · ");
   return (
     <div className="m-rcard">
       <span className="m-rav">{initials(r)}</span>
       <div>
         <b>{name}</b>
-        {line && (
-          <span data-here={(!sub && !!order.riderArrivedAt) || undefined}>
-            {line}
-          </span>
-        )}
+        {line && <span data-here={(!sub && !!order.riderArrivedAt) || undefined}>{line}</span>}
       </div>
       {order.riderPhone && (
-        <a
-          href={`tel:${order.riderPhone}`}
-          className="m-call"
-          aria-label={`Call ${name}`}
-        >
+        <a href={`tel:${order.riderPhone}`} className="m-call" aria-label={`Call ${name}`}>
           <Icon name="phone" size={16} />
         </a>
       )}
@@ -121,21 +66,12 @@ export function codeText(code: string): string {
 }
 
 /** K4's code card: "SAY THIS CODE TO BLESSING", then the code at 48/700. */
-export function CodeCard({
-  rider,
-  code,
-}: {
-  rider: string;
-  code: string | null;
-}) {
+export function CodeCard({ rider, code }: { rider: string; code: string | null }) {
   return (
     <div className="m-saycode">
       <span>SAY THIS CODE TO {rider.toUpperCase()}</span>
       {code ? (
-        <b
-          className="m-num"
-          aria-label={`Pickup code ${code.split("").join(" ")}`}
-        >
+        <b className="m-num" aria-label={`Pickup code ${code.split("").join(" ")}`}>
           {codeText(code)}
         </b>
       ) : (
@@ -178,9 +114,7 @@ export function CashCard({
           <span>
             {foodLabel} {money(food)}
           </span>
-          {delivery !== null && (
-            <span>Delivery {money(delivery)} · biker&apos;s</span>
-          )}
+          {delivery !== null && <span>Delivery {money(delivery)} · biker&apos;s</span>}
         </div>
       )}
       <p>{line}</p>

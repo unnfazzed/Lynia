@@ -3,29 +3,20 @@
 // ("Chicken Inn", "Kuda", "4 bikers", "$34.50"); here those are parameters, the words around them unchanged.
 // User-facing copy says "biker" (D-101).
 
-const plural = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export const OBM = {
   ownBikers: "Own bikers",
   /** `ownBikersV` "4 bikers · 1 invite open"; the invite part only while one is open. */
   ownBikersV: (bikers: number, invites: number) =>
-    [
-      plural(bikers, "biker", "bikers"),
-      invites > 0 ? `${plural(invites, "invite", "invites")} open` : null,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    [plural(bikers, "biker", "bikers"), invites > 0 ? `${plural(invites, "invite", "invites")} open` : null].filter(Boolean).join(" · "),
   ownBikersPaused: "Paused",
   /** `ownBikersStaffV` "4 bikers". */
   ownBikersStaffV: (bikers: number) => plural(bikers, "biker", "bikers"),
 
   rosterTitle: "Own bikers",
   /** `thisWeek` "This week: 23 rides · $34.50". */
-  thisWeek: (rides: number, total: string) => ({
-    lead: "This week: ",
-    value: `${plural(rides, "ride", "rides")} · ${total}`,
-  }),
+  thisWeek: (rides: number, total: string) => ({ lead: "This week: ", value: `${plural(rides, "ride", "rides")} · ${total}` }),
   grpBikers: "YOUR BIKERS",
   grpInvites: "INVITES",
   stOnJob: "On a job",
@@ -49,10 +40,8 @@ export const OBM = {
   none: "None",
   removeBiker: "Remove from my bikers",
   removeT: (name: string) => `Remove ${name} from your bikers?`,
-  removeB: (name: string, shop: string) =>
-    `${name} stops getting jobs from ${shop} straight away. Any cash they hold is still owed to you.`,
-  removeCashB: (name: string, amount: string) =>
-    `${name} still has ${amount} of your cash. Get it back before you remove them.`,
+  removeB: (name: string, shop: string) => `${name} stops getting jobs from ${shop} straight away. Any cash they hold is still owed to you.`,
+  removeCashB: (name: string, amount: string) => `${name} still has ${amount} of your cash. Get it back before you remove them.`,
   removeYes: "Remove",
   keep: "Keep",
   staffLock: "Only the owner can invite or remove bikers.",
@@ -64,8 +53,7 @@ export const OBM = {
   invited: "Invited",
 
   inviteT: "Invite a biker",
-  inviteB:
-    "You get an invite link to share. They open it, sign up with this phone number, pass the ID check, then join your bikers.",
+  inviteB: "You get an invite link to share. They open it, sign up with this phone number, pass the ID check, then join your bikers.",
   phone: "Phone",
   phoneHelp: "Only this number can use the link.",
   name: "Name",
@@ -84,8 +72,7 @@ export const OBM = {
   cantReach: "Can't reach LyniaGo",
   tryAgain: "Try again",
   /** `waText` "Hi Kuda, join Chicken Inn Avondale’s bikers on LyniaGo:" (the link follows). */
-  waText: (name: string, branch: string) =>
-    `Hi ${name}, join ${branch}’s bikers on LyniaGo:`,
+  waText: (name: string, branch: string) => `Hi ${name}, join ${branch}’s bikers on LyniaGo:`,
   readyBanner: (name: string) => `${name} is ready`,
   bookFirst: "Book your first delivery",
 
@@ -116,31 +103,21 @@ export const OBM = {
   // OB-M13 · board and K5.
   /** `cashBackApp` "Cash back from Tendai: food $12.00 + delivery $2.00 = $14.00". `noun` is "food", or "goods" for a shop
    *  (merchant-v2's own Food / Goods label on the same card). */
-  cashBackApp: (
-    name: string,
-    food: string,
-    delivery: string,
-    total: string,
-    noun = "food",
-  ) =>
+  cashBackApp: (name: string, food: string, delivery: string, total: string, noun = "food") =>
     `Cash back from ${name}: ${noun} ${food} + delivery ${delivery} = ${total}`,
   /** `cashBackPhone` "Cash back from Nyasha: $12.00". */
-  cashBackPhone: (name: string, amount: string) =>
-    `Cash back from ${name}: ${amount}`,
+  cashBackPhone: (name: string, amount: string) => `Cash back from ${name}: ${amount}`,
 
   // OB-M14 · Money · This week.
   grpFleet: "FLEET RIDES",
   /** `bill` "Fleet bill · 28 Sep–4 Oct · $34.50 · Due Fri". */
-  bill: (week: string, amount: string, due: string) =>
-    `Fleet bill · ${week} · ${amount} · Due ${due}`,
+  bill: (week: string, amount: string, due: string) => `Fleet bill · ${week} · ${amount} · Due ${due}`,
   billUnpaid: "Unpaid",
   billPaid: "Paid",
   billOverdue: "Overdue",
-  billOverdueSub: (n: number) =>
-    `${plural(n, "day", "days")} overdue · Talk to LyniaGo to pay`,
+  billOverdueSub: (n: number) => `${plural(n, "day", "days")} overdue · Talk to LyniaGo to pay`,
   /** `branchAv` "Avondale · 15 rides · $22.50". */
-  branchLine: (branch: string, rides: number, total: string) =>
-    `${branch} · ${plural(rides, "ride", "rides")} · ${total}`,
+  branchLine: (branch: string, rides: number, total: string) => `${branch} · ${plural(rides, "ride", "rides")} · ${total}`,
   /** `credit` "Credit · #B190 · wrong fee · −$1.50" (the amount sits on the right). */
   credit: "Credit",
   noFleet: "No fleet rides this week",
