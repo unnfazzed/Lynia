@@ -44,7 +44,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         {/* Ops-console shell: 216px sidebar (kit shell.js) + the page's own <main>. */}
         <div className="shell">
-          <Sidebar operator={operator} counts={counts} signOutUrl={signOutUrl} />
+          <Sidebar operator={operator} counts={counts ? { ...counts, fleetsOverdue: overdueFleets(alerts) } : null} signOutUrl={signOutUrl} />
           <div id="main-content" tabIndex={-1} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
             {/* Admin console v2 §7: what needs ops now, on every page; hidden when nothing does. */}
             <AlertStrip alerts={alerts} />
@@ -58,4 +58,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </body>
     </html>
   );
+}
+
+/** Own bikers' nav badge (OB-A1): fleets with a bill overdue, from the alert counts (older APIs: bills overdue). */
+function overdueFleets(alerts: LiveAlerts | null): number {
+  const o = alerts?.ownBikers;
+  return o ? (o.overdueFleets ?? o.overdueBills) : 0;
 }

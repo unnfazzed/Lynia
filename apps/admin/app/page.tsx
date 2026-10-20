@@ -1,5 +1,5 @@
 import { OrderStatus, STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
-import { adminFetchResult } from "./lib/api";
+import { adminFetch, adminFetchResult } from "./lib/api";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
 import { KpiCard } from "./components/KpiCard";
 import { StatusPill } from "./components/StatusPill";
@@ -7,7 +7,8 @@ import { IconAlert, IconIdCard, IconCheck, IconInbox } from "./components/icons"
 import { AutoRefresh } from "./components/AutoRefresh";
 import { FilterNav } from "./components/FilterNav";
 import { FunnelStrip } from "./components/FunnelStrip";
-import type { FunnelKind, FunnelRange, FunnelView } from "./lib/adminTypes";
+import type { FunnelKind, FunnelRange, FunnelView, LiveAlerts } from "./lib/adminTypes";
+import { OwnBikersTile } from "./own-bikers/OwnBikersTile";
 import { OrderLink } from "./components/links";
 import { money, timeAgo } from "./lib/format";
 
@@ -59,8 +60,10 @@ export default async function OverviewPage({
 }) {
   const sp = (await searchParams) ?? {};
   const range: FunnelRange = FUNNEL_RANGES.some((r) => r.value === sp.range) ? (sp.range as FunnelRange) : "7d";
-  const [res, ...funnelRes] = await Promise.all([
+  const [res, alerts, ...funnelRes] = await Promise.all([
     adminFetchResult<Overview>("/admin/overview"),
+    // OB-A4: the Own bikers tile reads the alert counts (cached briefly by the API).
+    adminFetch<LiveAlerts>("/admin/alerts"),
     ...FUNNELS.map((f) => adminFetchResult<FunnelView>(`/admin/funnels?kind=${f.kind}&range=${range}`)),
   ]);
   const funnels = funnelRes.map((r) => ("data" in r ? r.data : null));
@@ -92,6 +95,12 @@ export default async function OverviewPage({
         />
         <KpiCard label="Fares today" value={data ? money(data.today.fares) : "—"} hint="parcel fares + food delivery fees" />
       </section>
+
+      {alerts?.ownBikers?.fleets ? (
+        <div style={{ marginBottom: tokens.space.md }}>
+          <OwnBikersTile ownBikers={alerts.ownBikers} />
+        </div>
+      ) : null}
 
       {/* Secondary pilot-funnel strip. */}
       <section className="card substrip" style={{ marginBottom: tokens.space.lg }}>

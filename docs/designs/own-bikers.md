@@ -2090,6 +2090,13 @@ the handoff wins for screens and copy, and these product changes apply:
      and the history; Account (OB-R12) has the fleet row and Leave, which waits while a delivery runs. The phone remembers
      the branch, so when the server later answers with no fleet the board shows "You're a public biker now" once
      (OB-R13); leaving on purpose forgets it first, and with the flag off it never shows.
+18. **Lane D (2026-10-20): the admin Own bikers page.**
+   - **API (additive):** a fleets row carries `branchNames` and `online`; a fleet's detail carries `recentRides` (the last
+     5 weeks' billed rides, for Adjust's picker); the alert counts carry `ownBikers.overdueFleets`.
+   - **Console:** `/own-bikers` (OB-A1): the fleets table with its status subnav and the loading / empty / error / offline
+     states; a row opens the side panel (OB-A2: fee per ride, Pause / Unpause and Disable behind OB-A3's reason-code
+     confirms, the weekly bills with Mark paid and Adjust). Every write is audited by its endpoint with the operator.
+     Overview gets the OB-A4 tile; the sidebar gets Own bikers with the overdue fleets as its badge.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

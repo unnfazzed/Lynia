@@ -8,7 +8,7 @@ import type { LiveAlerts } from "../lib/adminTypes";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 interface Chip {
-  key: keyof LiveAlerts;
+  key: Exclude<keyof LiveAlerts, "ownBikers">;
   href: string;
   kind: "bad" | "warn";
   text: (n: number) => string;

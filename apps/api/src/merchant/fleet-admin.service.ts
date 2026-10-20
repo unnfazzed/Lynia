@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from "@nestj
 import {
   ACTIVE_RIDE_STATUSES,
   type AdminFleetDetail,
+  type AdminFleetRide,
   type AdminFleetRow,
   type AdminFleetStatus,
   addMoney,
@@ -9,6 +10,7 @@ import {
   type FleetAdjustRequest,
   type FleetAdminActionRequest,
   type FleetBikerState,
+  orderShortId,
   type SetFleetFeeRequest,
 } from "@lynia/shared";
 import { cancelAttribution } from "../common/cancel-attribution";
@@ -20,6 +22,9 @@ import { FleetLedgerService } from "./fleet-ledger.service";
 import { overdueDays, ownerBills, ownerThisWeek } from "./fleet-bills";
 import { harareDayKey, harareWeekStart } from "./harare-clock";
 import { notifyFoodQueueChanged } from "./merchant-lookup.util";
+
+/** How far back Adjust's ride picker looks (OB-A2). */
+const RECENT_RIDES_MS = 35 * 24 * 60 * 60 * 1000;
 
 /** Audit actions (admin). */
 export const FLEET_ENABLE_ACTION = "merchant.fleet.enable";
@@ -61,16 +66,19 @@ export class FleetAdminService {
     if (fleets.length === 0) return [];
     const owners = fleets.map((f) => f.ownerProfileId);
     const weekStart = harareWeekStart(now);
-    const [profiles, branches, bikers, week, bills] = await Promise.all([
+    const [profiles, branches, bikers, online, week, bills] = await Promise.all([
       this.prisma.profile.findMany({ where: { id: { in: owners } }, select: { id: true, firstName: true, lastName: true } }),
-      this.prisma.merchant.groupBy({ by: ["ownerProfileId"], where: { ownerProfileId: { in: owners } }, _count: { _all: true } }),
+      this.prisma.merchant.findMany({ where: { ownerProfileId: { in: owners } }, select: { ownerProfileId: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.rider.groupBy({ by: ["fleetOwnerProfileId"], where: { fleetOwnerProfileId: { in: owners } }, _count: { _all: true } }),
+      this.prisma.rider.groupBy({ by: ["fleetOwnerProfileId"], where: { fleetOwnerProfileId: { in: owners }, isOnline: true }, _count: { _all: true } }),
       this.prisma.merchantFleetLedger.groupBy({ by: ["ownerProfileId"], where: { ownerProfileId: { in: owners }, statementId: null, createdAt: { gte: weekStart } }, _sum: { fee: true } }),
       this.prisma.merchantFleetStatement.findMany({ where: { ownerProfileId: { in: owners }, status: { not: "paid" } }, select: { ownerProfileId: true, total: true, dueOn: true } }),
     ]);
     const nameOf = new Map(profiles.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim() || "Owner"]));
-    const branchCount = new Map(branches.map((b) => [b.ownerProfileId, b._count._all]));
+    const branchNames = new Map<string, string[]>();
+    for (const b of branches) if (b.ownerProfileId) branchNames.set(b.ownerProfileId, [...(branchNames.get(b.ownerProfileId) ?? []), b.name]);
     const bikerCount = new Map(bikers.map((b) => [b.fleetOwnerProfileId, b._count._all]));
+    const onlineCount = new Map(online.map((b) => [b.fleetOwnerProfileId, b._count._all]));
     const weekTotal = new Map(week.map((w) => [w.ownerProfileId, Number(w._sum.fee ?? 0)]));
     const today = harareDayKey(now);
     return fleets
@@ -90,8 +98,10 @@ export class FleetAdminService {
         return {
           ownerProfileId: f.ownerProfileId,
           owner: nameOf.get(f.ownerProfileId) ?? "Owner",
-          branches: branchCount.get(f.ownerProfileId) ?? 0,
+          branches: branchNames.get(f.ownerProfileId)?.length ?? 0,
+          branchNames: branchNames.get(f.ownerProfileId) ?? [],
           bikers: bikerCount.get(f.ownerProfileId) ?? 0,
+          online: onlineCount.get(f.ownerProfileId) ?? 0,
           thisWeek: (weekTotal.get(f.ownerProfileId) ?? 0).toFixed(2),
           unpaid: unpaid.toFixed(2),
           daysOverdue,
@@ -105,7 +115,7 @@ export class FleetAdminService {
   async detail(ownerProfileId: string, now: Date = new Date()): Promise<AdminFleetDetail> {
     const fleet = await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId } });
     if (!fleet) throw new NotFoundException("Fleet not found");
-    const [owner, branches, riders, thisWeek, bills] = await Promise.all([
+    const [owner, branches, riders, thisWeek, bills, rides] = await Promise.all([
       this.prisma.profile.findUnique({ where: { id: ownerProfileId }, select: { firstName: true, lastName: true, phone: true } }),
       this.prisma.merchant.findMany({ where: { ownerProfileId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
       this.prisma.rider.findMany({
@@ -114,6 +124,7 @@ export class FleetAdminService {
       }),
       ownerThisWeek(this.prisma, ownerProfileId, now),
       ownerBills(this.prisma, ownerProfileId, now),
+      this.recentRides(ownerProfileId, now),
     ]);
     const busy = new Set(
       (
@@ -136,7 +147,29 @@ export class FleetAdminService {
       })),
       thisWeek,
       bills,
+      recentRides: rides,
     };
+  }
+
+  /** OB-A2 Adjust "Which ride": the owner's billed rides over the last 5 weeks, newest first. */
+  private async recentRides(ownerProfileId: string, now: Date): Promise<AdminFleetRide[]> {
+    const rows = await this.prisma.merchantFleetLedger.findMany({
+      where: { ownerProfileId, kind: { not: "adjustment" }, orderId: { not: null }, createdAt: { gte: new Date(now.getTime() - RECENT_RIDES_MS) } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: { orderId: true, merchantId: true, riderId: true, createdAt: true, fee: true },
+    });
+    const riderIds = [...new Set(rows.flatMap((r) => (r.riderId ? [r.riderId] : [])))];
+    const people = riderIds.length ? await this.prisma.profile.findMany({ where: { id: { in: riderIds } }, select: { id: true, firstName: true } }) : [];
+    const firstName = new Map(people.map((p) => [p.id, p.firstName.trim().split(/\s+/)[0] || null]));
+    return rows.map((r) => ({
+      orderId: r.orderId!,
+      ref: `#${orderShortId(r.orderId!)}`,
+      merchantId: r.merchantId,
+      biker: r.riderId ? (firstName.get(r.riderId) ?? null) : null,
+      at: r.createdAt.toISOString(),
+      fee: Number(r.fee).toFixed(2),
+    }));
   }
 
   // ── Switches ────────────────────────────────────────────────────────────────────────────────────────────

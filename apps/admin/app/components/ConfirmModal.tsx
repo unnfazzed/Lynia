@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, useTransition, type ReactNode } fro
 import { submitAdminAction } from "../actions/audit";
 import { fmtDayMonth } from "../lib/format";
 
-type TriggerVariant = "ghost" | "danger" | "solid" | "quiet";
+type TriggerVariant = "ghost" | "danger" | "danger-wash" | "solid" | "quiet";
 
 /**
  * Reason-code destructive-action modal — the console's audit contract in one component. Renders its
@@ -44,6 +44,11 @@ export interface ConfirmModalProps {
   confirmLabel?: string;
   danger?: boolean;
   auditActor?: string;
+  /** A handoff's own words for the reason legend, the note label and the audit line (Own bikers OB-A3: "Reason
+   *  code", "Note for the audit log", "Recorded in the audit log with your name."). Default to the kit's. */
+  reasonLabel?: string;
+  noteLabel?: string;
+  auditLine?: string;
 
   /**
    * Optional single numeric input (e.g. an adjusted fare) rendered above the note. Its value is NOT
@@ -97,6 +102,9 @@ export function ConfirmModal(props: ConfirmModalProps) {
     confirmLabel = "Confirm",
     danger = false,
     auditActor = "the signed-in admin",
+    reasonLabel,
+    noteLabel,
+    auditLine,
     amount,
     textField,
     textFields = [],
@@ -288,7 +296,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
               // <fieldset>/<legend> so screen readers announce the radio group's purpose.
               <fieldset style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}>
                 <legend className="field-label" style={{ padding: 0 }}>
-                  Reason — required
+                  {reasonLabel ?? "Reason — required"}
                 </legend>
                 <div className="reason-list">
                   {reasonOpts.map((r) => (
@@ -394,7 +402,7 @@ export function ConfirmModal(props: ConfirmModalProps) {
             ))}
 
             <label className="field-label" htmlFor={noteId}>
-              Note {noteRequired ? "— required" : "(optional)"}
+              {noteLabel ?? `Note ${noteRequired ? "— required" : "(optional)"}`}
             </label>
             <textarea
               id={noteId}
@@ -443,8 +451,11 @@ export function ConfirmModal(props: ConfirmModalProps) {
             </div>
 
             <div className="audit">
-              Recorded in the audit log as {auditActor} ·{" "}
-              {fmtDayMonth(new Date())}
+              {auditLine ?? (
+                <>
+                  Recorded in the audit log as {auditActor} · {fmtDayMonth(new Date())}
+                </>
+              )}
             </div>
           </div>
         </div>

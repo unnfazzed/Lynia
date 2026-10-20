@@ -27,9 +27,11 @@ interface DataTableProps<T> {
   rowLabel?: (row: T) => string;
   /** Rendered as a single full-width row when `rows` is empty. */
   empty?: ReactNode;
+  /** The row whose detail is open beside the table (accent-wash, `aria-current`). */
+  isSelected?: (row: T) => boolean;
 }
 
-export function DataTable<T>({ columns, rows, rowKey, getRowHref, rowLabel, empty }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, getRowHref, rowLabel, empty, isSelected }: DataTableProps<T>) {
   // `.table-scroll`: on a phone the table scrolls sideways inside its card, never the page (D-105).
   // A plain block on desktop.
   return (
@@ -54,8 +56,10 @@ export function DataTable<T>({ columns, rows, rowKey, getRowHref, rowLabel, empt
           ) : (
             rows.map((row) => {
               const href = getRowHref?.(row);
+              const selected = isSelected?.(row) ?? false;
+              const cls = [href ? "rowlink" : null, selected ? "selected" : null].filter(Boolean).join(" ") || undefined;
               return (
-                <tr key={rowKey(row)} className={href ? "rowlink" : undefined}>
+                <tr key={rowKey(row)} className={cls} aria-current={selected ? "true" : undefined}>
                   {columns.map((c, ci) => (
                     <td
                       key={c.key}

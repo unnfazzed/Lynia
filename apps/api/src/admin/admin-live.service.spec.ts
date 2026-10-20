@@ -72,7 +72,13 @@ function build(over: { orders?: unknown[]; riders?: unknown[]; live?: Record<str
     sosEvent: { count: vi.fn(async () => 2) },
     merchant: { count: vi.fn(async () => 1) },
     ownerFleet: { count: vi.fn(async () => 3) },
-    merchantFleetStatement: { count: vi.fn(async () => 2) },
+    // Two fleets past due, one of them with two bills.
+    merchantFleetStatement: {
+      groupBy: vi.fn(async () => [
+        { ownerProfileId: "o-1", _count: { _all: 2 } },
+        { ownerProfileId: "o-2", _count: { _all: 1 } },
+      ]),
+    },
   };
   const tracking = { getLivePosition: vi.fn(async (id: string) => (over.live?.[id] as never) ?? null) };
   const kitchen = { countToConfirm: vi.fn(async () => 3) };
@@ -191,7 +197,7 @@ describe("AdminLiveService.alerts", () => {
       merchantApplications: 1,
       ordersBreaching: 1,
       // OB-A4: "Own bikers live: 3 fleets · 14 bikers online · 2 overdue".
-      ownBikers: { fleets: 3, bikersOnline: 14, overdueBills: 2 },
+      ownBikers: { fleets: 3, bikersOnline: 14, overdueBills: 3, overdueFleets: 2 },
     });
     await svc.alerts();
     expect(prisma.sosEvent.count).toHaveBeenCalledTimes(1);

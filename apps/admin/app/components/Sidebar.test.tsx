@@ -58,6 +58,15 @@ describe("Sidebar phone menu (D-105)", () => {
     expect(form?.querySelector("input[name='q']")).not.toBeNull();
   });
 
+  it("carries Own bikers with the overdue fleets as a danger badge (OB-A1)", () => {
+    render(<Sidebar counts={{ kycPending: 0, foodDisputes: 0, openIssues: 0, sosPending: 0, fleetsOverdue: 2 }} />);
+    const item = screen.getByRole("link", { name: /Own bikers/ });
+    expect(item.getAttribute("href")).toBe("/own-bikers");
+    const badge = item.querySelector(".nav-badge");
+    expect(badge?.textContent).toBe("2");
+    expect(badge?.className).toBe("nav-badge danger");
+  });
+
   it("closes on a tap outside the bar", () => {
     render(<Sidebar />);
     const button = screen.getByRole("button", { name: "Open menu" });

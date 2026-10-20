@@ -3,7 +3,7 @@
  * owner's online bikers, in rounds; the first to accept takes it; an accept and "Send to any biker" race on one
  * row and exactly one wins; a biker who gives a booking back costs them nothing and it rings the others again.
  */
-import { FLEET_DISPATCH, type CreateFleetBookingRequest } from "@lynia/shared";
+import { FLEET_DISPATCH, orderShortId, type CreateFleetBookingRequest } from "@lynia/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../auth/token.service";
 import { FLEET_DROP_ACTION } from "../common/fleet-scope";
@@ -639,7 +639,14 @@ describe("T7a the console", () => {
     });
     const detail = await admin.enable(OPS, m.id, { rideFee: 1.25 });
     expect(detail).toMatchObject({ enabled: true, paused: false, rideFee: "1.25", branches: [{ merchantId: m.id }] });
-    expect((await admin.list()).find((r) => r.ownerProfileId === ownerId)).toMatchObject({ status: "paid", rideFee: "1.25", branches: 1, bikers: 0 });
+    expect((await admin.list()).find((r) => r.ownerProfileId === ownerId)).toMatchObject({
+      status: "paid",
+      rideFee: "1.25",
+      branches: 1,
+      branchNames: ["Pizza Inn Avondale"],
+      bikers: 0,
+      online: 0,
+    });
     expect(await prisma.auditLog.count({ where: { actor: OPS, action: "merchant.fleet.enable", target: ownerId } })).toBe(1);
   });
 
@@ -718,6 +725,24 @@ describe("T7a the console", () => {
     const paid = await admin.markBillPaid(OPS, bills[0].id, "cash at the office");
     expect(paid.bills[0].state).toBe("paid");
     await expect(admin.markBillPaid(OPS, bills[0].id)).rejects.toMatchObject({ response: { reason: "already_paid" } });
+  });
+
+  it("OB-A1/A2: the row counts the bikers online; the side panel lists the billed rides Adjust can correct", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    await prisma.rider.update({ where: { profileId: a }, data: { isOnline: true } });
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await dispatch.accept(booking.id, a);
+    await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+    await lifecycle.completeOrder(booking.id);
+    await admin.adjust(OPS, f.ownerId, { merchantId: f.branchId, amount: -0.5, reason: "wrong fee", orderId: booking.id });
+
+    expect((await admin.list()).find((r) => r.ownerProfileId === f.ownerId)).toMatchObject({ bikers: 1, online: 1 });
+    const { recentRides } = await admin.detail(f.ownerId);
+    // The ride, not the correction.
+    expect(recentRides).toHaveLength(1);
+    expect(recentRides![0]).toMatchObject({ orderId: booking.id, ref: `#${orderShortId(booking.id)}`, merchantId: f.branchId });
+    expect(recentRides![0].biker).toEqual(expect.any(String));
   });
 
   it("an adjustment by an operator (an email, not a profile) is written and audited; another owner's branch is refused", async () => {
