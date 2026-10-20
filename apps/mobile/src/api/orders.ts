@@ -39,6 +39,8 @@ export interface OrderSnapshot {
   // kitchen/customer address); `merchantPhase` drives the food card's two pre-dispatch progress steps;
   // `merchantPaymentMethod` drives the design's payment+total meta ("Cash at the door · $15.50").
   merchantName?: string | null;
+  /** Own bikers (D-117): the branch this job is carried for, when the rider is one of its own bikers (rider view). */
+  fleetShop?: string;
   /** The sender's first name, for the assigned rider only (Rider v2, ledger D-54). */
   customerFirstName?: string | null;
   merchantPhase?: string | null;

@@ -1,17 +1,23 @@
 import { RIDER_STRIKE_LIMIT, SOS_POLICY } from "@lynia/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Linking, ScrollView, Text, View } from "react-native";
 import { tokens } from "@lynia/shared/tokens";
 import { getMe } from "../../../src/api/auth";
+import { ApiError } from "../../../src/api/client";
+import { leaveFleet } from "../../../src/api/fleet";
 import { getActiveOrder } from "../../../src/api/orders";
+import { forgetFleetShop } from "../../../src/logic/fleet-memory";
+import { useMyFleet } from "../../../src/query/use-my-fleet";
+import { FleetBtn2 } from "../../../src/ui/rider/fleet";
+import { OBB } from "../../../src/ui/rider/fleet-copy";
 import { openSupportWhatsApp } from "../../../src/config";
 import { replaceClearingStack } from "../../../src/logic/nav";
 import { switchToCustomer } from "../../../src/logic/switch-to-customer";
 import { getRiderStanding } from "../../../src/api/rider-v2";
 import { useNotificationsUnreadCount } from "../../../src/query/use-notifications-unread";
-import { AppScreen, SkeletonList, useActionError, useTabRoot } from "../../../src/ui";
+import { AppScreen, Icon, SkeletonList, useActionError, useTabRoot } from "../../../src/ui";
 import { CtaButton } from "../../../src/ui/order/kit";
 import { RIDER_COPY as R, RF } from "../../../src/ui/rider/copy";
 import { IdentityCard, MintTop, MSheet, RCard, RoleToggle, RRow, SafetyLineRow, Standing } from "../../../src/ui/rider/kit";
@@ -41,6 +47,26 @@ export default function RiderAccountTabScreen(): React.ReactElement {
   const fail = useActionError();
   const unreadCount = useNotificationsUnreadCount();
   const [confirm, setConfirm] = useState(false);
+  // OB-R12 (Own bikers): the business they ride for, and leaving it — not during a delivery.
+  const qc = useQueryClient();
+  const { fleet } = useMyFleet();
+  const [leaving, setLeaving] = useState(false);
+  const [leaveBlocked, setLeaveBlocked] = useState(false);
+  const leaveM = useMutation({
+    mutationFn: leaveFleet,
+    onSuccess: () => {
+      // Leaving on purpose: no "You're a public biker now" page for it (OB-R13 is for the business ending it).
+      if (me?.profileId) void forgetFleetShop(me.profileId);
+      qc.setQueryData(["myFleet"], (old: unknown) => (old && typeof old === "object" ? { ...(old as object), fleet: null } : old));
+      void qc.invalidateQueries({ queryKey: ["myFleet"] });
+      setLeaving(false);
+    },
+    onError: (e: unknown) => {
+      if (e instanceof ApiError && e.code === "on_a_job") setLeaveBlocked(true);
+      else fail(e instanceof ApiError ? e.message : R.offFail);
+    },
+  });
+  const duringDelivery = activeJob != null || leaveBlocked;
 
   const standing = getRiderStanding(rider ?? null);
   const name = me ? `${me.firstName} ${me.lastName}`.trim() || R.tabAccount : R.tabAccount;
@@ -85,7 +111,8 @@ export default function RiderAccountTabScreen(): React.ReactElement {
             oldestClears={standing.oldestClearsAt}
           />
           <RCard>
-            <RRow first icon="history" label={R.rJobHist} sub={R.rJobHistS} onPress={() => router.push("/history?side=rider")} />
+            {fleet ? <RRow first icon="store" label={OBB.acctRow(fleet.shop)} onPress={() => setLeaving(true)} /> : null}
+            <RRow first={!fleet} icon="history" label={R.rJobHist} sub={R.rJobHistS} onPress={() => router.push("/history?side=rider")} />
             <RRow icon="bell" label={R.rNotif} value={RF.rNotifS(unreadCount)} tone={unreadCount > 0 ? "ok" : null} onPress={() => router.push("/notifications?side=rider")} />
             <RRow icon="message-circle" label={R.rHelp} sub={R.hWa} onPress={openSupportWhatsApp} />
             <RRow icon="settings" label={R.rSettings} sub={R.rSettingsS} onPress={() => router.push("/settings?side=rider")} />
@@ -93,6 +120,32 @@ export default function RiderAccountTabScreen(): React.ReactElement {
           <SafetyLineRow onPress={() => void Linking.openURL(`tel:${SOS_POLICY.safetyLine.replace(/\s/g, "")}`).catch(() => undefined)} />
         </ScrollView>
       )}
+      <MSheet
+        visible={leaving && fleet != null}
+        onClose={() => setLeaving(false)}
+        title={fleet ? OBB.leaveT(fleet.shop) : undefined}
+        body={duringDelivery ? undefined : OBB.leaveB}
+        buttons={
+          <>
+            <CtaButton
+              ghost
+              danger
+              label={OBB.leave}
+              disabled={duringDelivery}
+              loading={leaveM.isPending}
+              onPress={() => leaveM.mutate()}
+            />
+            <FleetBtn2 label={OBB.stay} onPress={() => setLeaving(false)} />
+          </>
+        }
+      >
+        {duringDelivery ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14 }}>
+            <Icon name="bike" size={16} color={tokens.color.muted} />
+            <Text style={{ flex: 1, fontSize: 14, lineHeight: 20, color: tokens.color.ink }}>{OBB.leaveBlocked}</Text>
+          </View>
+        ) : null}
+      </MSheet>
       <MSheet
         visible={confirm}
         onClose={() => setConfirm(false)}

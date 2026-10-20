@@ -5,7 +5,8 @@
  * the app screen rendered through react-native-web at 360×720 from the ob_* fixtures
  * (tools/parity/mobile/fixtures/_own_bikers.mjs). No server: the API is stubbed in the page.
  *
- *   node tools/parity/shoot-own-bikers-v1-biker.mjs --out docs/parity/OWN-BIKERS-V1-BIKER-JOIN-BOARD-2026-10-19
+ *   node tools/parity/shoot-own-bikers-v1-biker.mjs --set join --out docs/parity/OWN-BIKERS-V1-BIKER-JOIN-BOARD-2026-10-19
+ *   node tools/parity/shoot-own-bikers-v1-biker.mjs --set job --out docs/parity/OWN-BIKERS-V1-BIKER-JOB-MONEY-2026-10-20
  */
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -71,6 +72,16 @@ const tap = (name) => async (p) => {
 };
 const board = app("rider/(tabs)/index.tsx");
 const offer = app("rider/fleet-offer.tsx");
+const foodJob = app("rider/food-job.tsx");
+const money = app("rider/(tabs)/money.tsx");
+const account = app("rider/(tabs)/account.tsx");
+const tapText = (text) => async (p) => {
+  await p.getByText(text, { exact: true }).first().click();
+  await p.waitForTimeout(800);
+};
+// `--set join` (OB-R1–R7, lane C PR 1) or `--set job` (OB-R8–R13, lane C PR 2); both when omitted.
+const setArg = process.argv.indexOf("--set");
+const SET = setArg > 0 ? process.argv[setArg + 1] : null;
 const ROWS = [
   ["OB-R1 Invite waiting for ID check", { component: board, fixture: "ob_invite_waiting" }],
   ["OB-R2 Join card", { component: board, fixture: "ob_join" }],
@@ -83,7 +94,32 @@ const ROWS = [
   ["OB-R6 Paused", { component: board, fixture: "ob_fleet_board_paused" }],
   ["OB-R7 Fleet job offer", { component: offer, fixture: "ob_fleet_offer" }],
   ["OB-R7 Offer expired (F4)", { component: offer, fixture: "ob_fleet_offer_expired" }],
-];
+].map((r) => [...r, "join"]);
+ROWS.push(
+  ...[
+    ["OB-R8 Active · heading to Chicken Inn", { component: foodJob, fixture: "ob_job_to_kitchen" }],
+    ["OB-R8 Active · heading to drop-off", { component: foodJob, fixture: "ob_job_to_drop" }],
+    ["OB-R8 Active · return the cash", { component: foodJob, fixture: "ob_job_return" }],
+    ["OB-R9 Done · return cash", { component: foodJob, fixture: "ob_job_done" }],
+    ["OB-R9 Done · nothing to return", { component: foodJob, fixture: "ob_job_done_prepaid" }],
+    ["OB-R10 Money · fleet biker", { component: money, fixture: "ob_money" }],
+    [
+      "OB-R11 Cancel sheet · fleet",
+      {
+        component: foodJob,
+        fixture: "ob_job_to_kitchen",
+        before: async (p) => {
+          await tap("Problem with this job?")(p);
+          await tapText("Drop this job")(p);
+        },
+      },
+    ],
+    ["OB-R12 Account · Chicken Inn bikers", { component: account, fixture: "ob_account" }],
+    ["OB-R12 Leave confirm", { component: account, fixture: "ob_account", before: tap("Chicken Inn Avondale bikers") }],
+    ["OB-R12 Leave · during a delivery", { component: account, fixture: "ob_account_on_job", before: tap("Chicken Inn Avondale bikers") }],
+    ["OB-R13 Public biker now", { component: board, fixture: "ob_fleet_ended" }],
+  ].map((r) => [...r, "job"]),
+);
 
 await mkdir(SHOTS, { recursive: true });
 const browser = await launch();
@@ -92,7 +128,8 @@ const mpage = await mctx.newPage();
 await mpage.goto(MOCKS, { waitUntil: "load" });
 await mpage.waitForTimeout(1500);
 const rows = [];
-for (const [label, a] of ROWS) {
+for (const [label, a, set] of ROWS) {
+  if (SET && set !== SET) continue;
   let mock = null;
   try {
     mock = join(SHOTS, `mock-${rows.length}.png`);

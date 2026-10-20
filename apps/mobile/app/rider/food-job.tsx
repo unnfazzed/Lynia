@@ -1,10 +1,10 @@
-import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, PICKUP_CODE_DIGITS, RESTAURANTS_DEBT, SOS_POLICY, type AdvanceStatusRequest, type DoorProofReason, type MerchantOrderResponse } from "@lynia/shared";
+import { DELIVERY_OTP_MAX_ATTEMPTS, haversineKm, orderShortId, PICKUP_CODE_DIGITS, RESTAURANTS_DEBT, SOS_POLICY, type AdvanceStatusRequest, type DoorProofReason, type MerchantOrderResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Linking, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, ScrollView, Text, TextInput, View } from "react-native";
 import { ApiError } from "../../src/api/client";
 import {
   attachFoodPickupProof,
@@ -48,7 +48,7 @@ import { ORDER_COPY as A } from "../../src/ui/order/copy";
 import { IconDisc, SmBtn, Stars, Tags } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
 import { Notice } from "../../src/ui/send/kit";
-import { hhmm, RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
+import { hhmm, km, RIDER_COPY as R, RF, usd, venueCopy } from "../../src/ui/rider/copy";
 import { CashLine, CashSplit, MSheet, Progress } from "../../src/ui/rider/kit";
 import {
   CodeBoxes,
@@ -71,6 +71,8 @@ import {
 import { ReturnToRestaurantCard } from "../../src/ui/rider/ReturnToRestaurantCard";
 import { type DoorRow, RiderDoorCard } from "../../src/ui/rider/RiderDoorCard";
 import { RiderErrorState } from "../../src/ui/rider/RiderErrorState";
+import { FleetDoneCard, FleetShopRow, FleetTag } from "../../src/ui/rider/fleet";
+import { OBB } from "../../src/ui/rider/fleet-copy";
 import { useBackToBoard } from "../../src/ui/rider/use-back-to-board";
 import { wasJobRestored } from "../../src/ui/rider/job-resume";
 import { clearLastActiveJob, loadLastActiveJob, saveLastActiveJob } from "../../src/net/last-active-store";
@@ -504,6 +506,7 @@ export default function RiderFoodJob(): React.ReactElement {
     return {
       orderId: o.id,
       pickupPoint: o.pickup.point,
+      dropoffPoint: o.dropoff.point,
       merchantCashRule: fo?.merchantCashRule ?? null,
       paymentMethod: fo?.paymentMethod ?? null,
       merchantGoodsTotal: fo?.merchantGoodsTotal ?? null,
@@ -512,14 +515,19 @@ export default function RiderFoodJob(): React.ReactElement {
       merchantName: venueNameOf(o, fo),
       kitchenPhone: o.pickup.contactPhone ?? null,
       place: placeOf(fo),
+      fleetShop: fo?.fleetShop ?? o.fleetShop ?? null,
     };
   };
   // FJ-H3: a delivered collect-and-return CASH order still owes the venue its cash — keep the return
   // leg across an app kill / lost response (job.tsx's LC-C07 marker, written before the request).
   const owesCashBack = (): boolean => foodOrderRef.current?.paymentMethod === "cash" && foodOrderRef.current?.merchantCashRule === "collect_and_return";
+  // Own bikers (OV-F3, D-117): delivered here and now → Done (R9), which never blocks; the waiting "Return the cash"
+  // page (R8) is for a job reopened later with the cash not yet confirmed.
+  const [deliveredNow, setDeliveredNow] = useState(false);
   const freezeDelivered = (): void => {
     const snap = deliveredSnapshot();
     if (snap) setDeliveredFood(snap);
+    setDeliveredNow(true);
   };
   const deliverM = useMutation({
     mutationFn: () => confirmDelivery(orderId!, deliveryCode.trim()),
@@ -867,10 +875,45 @@ export default function RiderFoodJob(): React.ReactElement {
 
   if (deliveredFood) {
     const cashCollect = deliveredFood.paymentMethod === "cash" && deliveredFood.merchantCashRule === "collect_and_return";
-    const breakdown = cashCollect ? foodCashBreakdown(deliveredFood) : null;
+    // Own bikers (D-117): the biker keeps nothing — every dollar collected goes back to the branch.
+    const deliveredFleet = deliveredFood.fleetShop ?? null;
+    const breakdown = cashCollect ? foodCashBreakdown(deliveredFood, { fleet: deliveredFleet != null }) : null;
     const stillOwed = returnLegQ.data ? returnLegNeeded(returnLegQ.data) : cashCollect;
     const snap = lastOrder.current && lastOrder.current.id === deliveredFood.orderId ? lastOrder.current : null;
     // B5 — return the cash: blocking until the kitchen confirms it in its app.
+    // OB-R8 "Return the cash" (fleet), reopened before the counter confirmed: "Bring $14.00 back to Chicken Inn
+    // Avondale", the branch, and the counter's confirmation as the bar.
+    if (cashCollect && stillOwed && breakdown && deliveredFleet && !deliveredNow) {
+      return (
+        <JobPage
+          title={OBB.tReturn}
+          help
+          onBack={() => toBoard()}
+          onHelp={() => setSheet("problem")}
+          bar={<FleetReturnWait shop={deliveredFleet} />}
+          overlays={
+            <ProblemSheet
+              visible={sheet === "problem"}
+              onClose={() => setSheet(null)}
+              beforePickup={false}
+              food
+              onHelp={() => helpFor(deliveredFood.orderId)}
+              onReport={() => setSheet("report")}
+              onSos={() => setSheet("sos")}
+            />
+          }
+        >
+          <FleetTag shop={deliveredFleet} />
+          <RSteps cur={3} />
+          <Text accessibilityRole="header" style={{ fontSize: 22, lineHeight: 28, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+            {OBB.bringLine(usd(breakdown.owed), deliveredFleet)}
+          </Text>
+          <Text style={{ fontSize: 15, lineHeight: 22, color: tokens.color.muted }}>{OBB.returnB}</Text>
+          <FleetShopRow shop={deliveredFleet} />
+          <ProblemLink onPress={() => setSheet("problem")} />
+        </JobPage>
+      );
+    }
     if (cashCollect && stillOwed && breakdown) {
       const place = deliveredFood.place ?? "kitchen";
       const kitchenPhone = deliveredFood.kitchenPhone ?? snap?.pickup.contactPhone ?? null;
@@ -905,6 +948,18 @@ export default function RiderFoodJob(): React.ReactElement {
             </View>
             <WaitLine text={venueCopy(R.returnWait, place)} />
           </TerminalBody>
+        </JobPage>
+      );
+    }
+    // OB-R9 — delivered, for a fleet biker: no earnings, no commission; the cash goes back, or there's nothing to return.
+    if (deliveredFleet) {
+      return (
+        <JobPage title={R.tDone} header={false} onBack={backToJobs} bar={<CtaBar><CtaButton label={OBB.nextJobs} onPress={backToJobs} /></CtaBar>}>
+          <FleetDoneCard
+            shop={deliveredFleet}
+            owed={cashCollect && breakdown ? breakdown.owed : null}
+            meta={doneMeta(deliveredFood.orderId, tripKm(snap, deliveredFood))}
+          />
         </JobPage>
       );
     }
@@ -1067,7 +1122,9 @@ export default function RiderFoodJob(): React.ReactElement {
   });
   // D-71: `goods` is the venue's cash (goods less any delivery it pays for), `total` what the customer
   // pays; the rider's `fee` is the full delivery fee either way.
-  const cashSplit = foodCashBreakdown(foodOrder);
+  // Own bikers (D-117): carried for this branch by one of its own bikers — no fare, the cash all goes back.
+  const fleetShop = foodOrder.fleetShop ?? order.fleetShop ?? null;
+  const cashSplit = foodCashBreakdown(foodOrder, { fleet: fleetShop != null });
   const goods = cashSplit.owed;
   const fee = cashSplit.kept;
   // FJ-H5: an earlier owed balance this order carries (`previousBalanceUsd`) is collected at the door on
@@ -1174,12 +1231,19 @@ export default function RiderFoodJob(): React.ReactElement {
       <MSheet
         visible={sheet === "drop"}
         onClose={() => setSheet(null)}
-        title={R.dropT}
-        body={v(R.dropB)}
+        // OB-R11: a fleet biker's cancel tells the branch and costs them nothing (no strike line).
+        title={fleetShop ? OBB.cxT : R.dropT}
+        body={fleetShop ? OBB.cxB(fleetShop) : v(R.dropB)}
         buttons={
           <>
-            <CtaButton label={R.cxKeep} onPress={() => setSheet(null)} />
-            <CtaButton ghost danger label={R.dropYes} loading={!!pendingOrQueued(dropM)} onPress={() => dropM.mutate(undefined, { onSettled: () => setSheet(null) })} />
+            <CtaButton label={fleetShop ? OBB.cxKeep : R.cxKeep} onPress={() => setSheet(null)} />
+            <CtaButton
+              ghost
+              danger
+              label={fleetShop ? OBB.cxYes : R.dropYes}
+              loading={!!pendingOrQueued(dropM)}
+              onPress={() => dropM.mutate(undefined, { onSettled: () => setSheet(null) })}
+            />
           </>
         }
       />
@@ -1558,6 +1622,7 @@ export default function RiderFoodJob(): React.ReactElement {
     content = (
       <>
         {notices}
+        {fleetShop ? <FleetTag shop={fleetShop} /> : null}
         <RSteps cur={stepFor(stage)} />
         <StopCard
           food
@@ -1570,7 +1635,15 @@ export default function RiderFoodJob(): React.ReactElement {
           onWhatsApp={!kit && order.counterpartyPhone ? () => wa(order.counterpartyPhone) : null}
           onNavigate={() => nav(target.point)}
         />
-        {kit ? (
+        {fleetShop ? (
+          // OB-R8: whose money it is, in ink — collect it at the door, then all of it goes back to the branch.
+          cashOrder ? (
+            <>
+              <CashLine text={OBB.collectLine(usd(collectAtDoor))} />
+              {kit ? null : <CashLine text={OBB.bringLine(usd(collectAtDoor), fleetShop)} />}
+            </>
+          ) : null
+        ) : kit ? (
           upfront && total != null ? <CashLine text={v(RF.payKitchenB(goods, total))} /> : null
         ) : cashOrder ? (
           <CashSplit title={RF.collectFood(collectAtDoor)} yours={yoursAtDoor} owed={owedAtDoor} owedLabel={venueCopy(R.owed, venuePlace)} />
@@ -1589,7 +1662,7 @@ export default function RiderFoodJob(): React.ReactElement {
     <JobShell
       // X3's Back returns to the drop-off stage (the customer answered) rather than leaving the job.
       onBack={() => (reaching ? setReaching(false) : toBoard())}
-      title={reaching ? R.tArriving : stage === "toKitchen" ? v(R.tToKitchen) : stage === "atKitchen" ? atVenueT : R.tToDrop}
+      title={reaching ? R.tArriving : stage === "toKitchen" ? (fleetShop ? OBB.tToKitchen(fleetShop) : v(R.tToKitchen)) : stage === "atKitchen" ? atVenueT : fleetShop ? OBB.tToDrop : R.tToDrop}
       onHelp={() => setSheet("problem")}
       contentKey={`${stage}|${reaching ? "r" : ""}|${liveReconnecting ? "o" : ""}|${upfront ? "u" : ""}`}
       toast={jobToast}
@@ -1628,6 +1701,8 @@ export default function RiderFoodJob(): React.ReactElement {
 type DeliveredFood = {
   orderId: string;
   pickupPoint: { lat: number; lng: number } | null;
+  /** For OB-R9's "3.2 km" after an app kill (absent on a snapshot from an older build). */
+  dropoffPoint?: { lat: number; lng: number } | null;
   merchantCashRule: string | null;
   paymentMethod: string | null;
   merchantGoodsTotal: number | null;
@@ -1636,6 +1711,8 @@ type DeliveredFood = {
   merchantName: string | null;
   kitchenPhone: string | null;
   place: string;
+  /** Own bikers (D-117): carried for this branch by one of its own bikers (absent on a snapshot from an older build). */
+  fleetShop?: string | null;
 };
 /** The undelivered order, frozen the same way — the venue's name, pin and cash rule are what the
  *  return leg needs. */
@@ -1669,3 +1746,30 @@ const PHOTO_OPTIONAL = "Optional";
 
 /** RD4c's three answers, in `O.rd.why`'s order. */
 const DOOR_REASONS: readonly DoorProofReason[] = ["customer_unreachable", "handed_to_someone_else", "left_at_gate"];
+
+/** The trip's length for OB-R9: from the live order, else the frozen snapshot's two points. */
+function tripKm(snap: OrderSnapshot | null, d: DeliveredFood): number | null {
+  if (snap) return haversineKm(snap.pickup.point, snap.dropoff.point);
+  return d.pickupPoint && d.dropoffPoint ? haversineKm(d.pickupPoint, d.dropoffPoint) : null;
+}
+
+/** OB-R9's line under the card: "#B204 · 3.2 km · 13:02". */
+function doneMeta(orderId: string, distanceKm: number | null): string {
+  const now = new Date();
+  const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return [`#${orderShortId(orderId)}`, distanceKm != null ? km(distanceKm) : null, hm].filter(Boolean).join(" · ");
+}
+
+/** OB-R8's bar while the counter confirms the cash: a spinner and "Waiting for Chicken Inn to confirm…". */
+function FleetReturnWait({ shop }: { shop: string }): React.ReactElement {
+  return (
+    <CtaBar>
+      <View accessibilityLiveRegion="polite" style={{ minHeight: 48, borderRadius: tokens.radius.pill, backgroundColor: tokens.color.surface, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18 }}>
+        <ActivityIndicator size="small" color={tokens.color.muted} />
+        <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }} numberOfLines={1}>
+          {OBB.returnWait(shop)}
+        </Text>
+      </View>
+    </CtaBar>
+  );
+}

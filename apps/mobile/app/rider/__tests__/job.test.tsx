@@ -23,6 +23,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 import type { OrderSnapshot } from "../../../src/api/orders";
+import { codItem } from "@lynia/shared";
 
 const mockGetActiveOrder = jest.fn<Promise<OrderSnapshot | null>, unknown[]>();
 const mockGetOrder = jest.fn<Promise<OrderSnapshot>, [string]>();
@@ -334,5 +335,44 @@ describe("rate-the-sender on the delivered terminal (A13)", () => {
     await settle();
     expect(mockRateSender.mock.calls.map((c) => c[1].score)).toEqual([1, 4]);
     expect(selected(tree)).toEqual([4]);
+  });
+});
+
+describe("Own bikers OB-R8/R11 (D-117): a business's booking carried by its own biker", () => {
+  const SHOP = "Chicken Inn Avondale";
+  const fleetOrder = (status: OrderSnapshot["status"]) =>
+    baseOrder({ status, agreedFare: "0.00", proposedFare: "0.00", fleetShop: SHOP, items: [{ description: "Chicken & chips", quantity: 1 }, codItem(14, SHOP)] } as Partial<OrderSnapshot>);
+  const words = (tree: renderer.ReactTestRenderer): string =>
+    tree.root
+      .findAll((n) => typeof n.type === "string")
+      .flatMap((n) => (Array.isArray(n.props.children) ? n.props.children : [n.props.children]))
+      .filter((c: unknown) => typeof c === "string")
+      .join(" | ");
+
+  it("heads to the branch by name and says the cash is the branch's: collect it, then bring it all back — no fare line", async () => {
+    mockGetActiveOrder.mockResolvedValue(fleetOrder("en_route_pickup"));
+    let tree = await render();
+    let text = words(tree);
+    expect(text).toContain(`Heading to ${SHOP}`);
+    expect(text).toContain("Collect $14.00 cash at the door");
+    expect(text).not.toContain("Bring $14.00 back");
+    expect(text).not.toContain("$0.00");
+    expect(text).not.toContain("It's the shop's money");
+    act(() => tree.unmount());
+
+    mockGetActiveOrder.mockResolvedValue(fleetOrder("en_route_dropoff"));
+    tree = await render();
+    text = words(tree);
+    // After pickup (here the delivery-code stage) it is both: collect it, then bring it all back.
+    expect(text).toContain("Collect $14.00 cash at the door");
+    expect(text).toContain(`Bring $14.00 back to ${SHOP}`);
+  });
+
+  it("OB-R11: cancelling tells the branch and carries no strike line", async () => {
+    mockGetActiveOrder.mockResolvedValue(fleetOrder("en_route_pickup"));
+    const tree = await render();
+    const sheet = tree.root.findAll((n) => n.props.title === "Cancel this job?" && n.props.body === `This tells ${SHOP}.`);
+    expect(sheet.length).toBeGreaterThan(0);
+    expect(words(tree)).not.toMatch(/strikes? used|one strike from a pause/);
   });
 });

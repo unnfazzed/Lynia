@@ -1511,6 +1511,14 @@ describe("FoodOrderService.toResponse — #671 assigned-rider identity block", (
     const res = await svc.getAsRider("o1", "r1");
     expect(res).not.toHaveProperty("rider");
   });
+
+  it("Own bikers (D-117, OB-R8/R9): an Own biker's read names the branch they carry it for; a public biker's doesn't", async () => {
+    const own = { ...assignedOrder(riderJoin), fleetMerchantId: "m1", merchant: { ...assignedOrder(riderJoin).merchant, name: "Chicken Inn Avondale" } };
+    let { svc } = build({ order: { findFirst: async () => own } });
+    expect((await svc.getAsRider("o1", "r1")).fleetShop).toBe("Chicken Inn Avondale");
+    ({ svc } = build({ order: { findFirst: async () => ({ ...own, fleetMerchantId: null }) } }));
+    expect(await svc.getAsRider("o1", "r1")).not.toHaveProperty("fleetShop");
+  });
 });
 
 describe("FoodOrderService payment prompt (#670)", () => {

@@ -421,3 +421,42 @@ describe("FJ-M4 / FJ-M5 / FJ-H3 · can't reach, can't deliver, and the return le
     expect(textOf(tree)).toContain("Return $15.50 to Sadza Republic");
   });
 });
+
+describe("Own bikers OV-F3 (D-117) · a fleet biker's cash never blocks the next job", () => {
+  const BRANCH = "Chicken Inn Avondale";
+  it("delivered just now: Done leads with the return and goes back to jobs — not the waiting page", async () => {
+    mockConfirmDelivery.mockResolvedValue({});
+    // The cash changed hands at the door (both sides confirmed): the delivery code is next.
+    const paid = { customerCashConfirmedAt: new Date().toISOString(), riderCashConfirmedAt: new Date().toISOString(), cashHandshakeAmount: 17.5 };
+    const tree = await mount({ status: "en_route_dropoff", fleetShop: BRANCH }, { ...CASH, ...paid, fleetShop: BRANCH });
+    await arrive(tree, "I'm at the drop-off");
+    await typeCode(tree, "DELIVERY CODE", "418290");
+    for (let i = 0; i < 10 && mockConfirmDelivery.mock.calls.length === 0; i++) await settle();
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...CASH, fleetShop: BRANCH, status: "delivered", debtStatus: "open" } as MerchantOrderResponse);
+    await waitFor(tree, "Delivered. Nice work.");
+    const text = textOf(tree);
+    expect(text).toContain(`Return $17.50 to ${BRANCH}`);
+    expect(text).toContain("Back to jobs");
+    expect(text).not.toContain(`Waiting for ${BRANCH} to confirm`);
+  });
+
+  it("reopened before the counter confirmed: Return the cash, waiting on the branch", async () => {
+    mockStore.set(
+      "lynia.riderFoodReturn",
+      JSON.stringify({
+        orderId: "order-1",
+        kind: "delivered",
+        snapshot: { orderId: "order-1", pickupPoint: null, merchantCashRule: "collect_and_return", paymentMethod: "cash", merchantGoodsTotal: 15.5, deliveryFee: 2, merchantDeliveryShare: null, merchantName: BRANCH, kitchenPhone: null, place: "kitchen", fleetShop: BRANCH },
+      }),
+    );
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetFoodOrderAsRider.mockResolvedValue({ ...BASE_FOOD_ORDER, ...CASH, fleetShop: BRANCH, status: "delivered", debtStatus: "open" } as MerchantOrderResponse);
+    const tree = await render();
+    await waitFor(tree, `Bring $17.50 back to ${BRANCH}`);
+    const text = textOf(tree);
+    expect(text).toContain(`Bring $17.50 back to ${BRANCH}`);
+    expect(text).toContain(`Waiting for ${BRANCH} to confirm`);
+    expect(text).not.toMatch(/Yours|You earned/);
+  });
+});

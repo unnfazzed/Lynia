@@ -24,6 +24,8 @@ import { Notice } from "../../../src/ui/send/kit";
 import { hhmm, RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
 import { CashLine, CashSplit, Chips, LRow, MintTop, RCard, RLabel, Seg } from "../../../src/ui/rider/kit";
 import { useTabTop } from "../../../src/query/use-tab-top";
+import { useMyFleet } from "../../../src/query/use-my-fleet";
+import { FleetMoney } from "../../../src/ui/rider/FleetMoney";
 import type { IconName } from "../../../src/ui";
 
 /**
@@ -147,6 +149,7 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("money");
   const qc = useQueryClient();
   const top = useTabTop("rider");
+  const myFleet = useMyFleet();
   const now = useNow();
   const { merchantDispatchAutoEnabled: foodOn } = useFeatureFlags();
   const { config } = useWalletConfig();
@@ -224,6 +227,15 @@ export default function RiderMoneyTabScreen(): React.ReactElement {
   };
 
   const noJobs = earned.jobs === 0;
+
+  // OB-R10 (Own bikers, D-117): one of a business's own bikers holds the business's cash, not earnings.
+  if (myFleet.fleet) {
+    return (
+      <AppScreen banner={<MintTop {...top} />}>
+        <FleetMoney shop={myFleet.fleet.shop} bottomPad={bottomPad} scrollRef={scrollRef} />
+      </AppScreen>
+    );
+  }
 
   return (
     <AppScreen banner={<MintTop {...top} />}>

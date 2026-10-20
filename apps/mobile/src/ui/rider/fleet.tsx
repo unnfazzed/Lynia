@@ -4,7 +4,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { Icon } from "../Icon";
 import { Tappable } from "../Tappable";
 import { CtaButton, IconDisc } from "../order/kit";
-import { km } from "./copy";
+import { km, usd } from "./copy";
 import { OBB } from "./fleet-copy";
 import { TABULAR } from "./kit";
 
@@ -394,6 +394,90 @@ export function FleetIdPending(): React.ReactElement {
       >
         {OBB.gPendingB}
       </Text>
+    </View>
+  );
+}
+
+/** OB-R8 "Return the cash": the branch the cash goes back to, on the surface row with the cash mark. */
+export function FleetShopRow({ shop }: { shop: string }): React.ReactElement {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: tokens.color.surface, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14 }}>
+      <Icon name="banknote" size={18} color={tokens.color.accentText} />
+      <Text style={{ flex: 1, fontSize: 15, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink }}>{shop}</Text>
+    </View>
+  );
+}
+
+/**
+ * OB-R9 "Delivered. Nice work.": the gold return card ("Return $14.00 to Chicken Inn Avondale" and how) when cash is
+ * going back, else "Nothing to return · This order was paid before delivery."; then "#B204 · 3.2 km · 13:02". No
+ * earnings and no commission: none of it was the biker's.
+ */
+export function FleetDoneCard({ shop, owed, meta }: { shop: string; owed: number | null; meta: string }): React.ReactElement {
+  return (
+    <View style={{ gap: 16, paddingTop: 40 }}>
+      <View style={{ alignItems: "center", gap: 14 }}>
+        <IconDisc name="check" tone="ok" size={72} />
+        <Text accessibilityRole="header" style={{ fontSize: 24, lineHeight: 30, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, textAlign: "center" }}>
+          {OBB.doneT}
+        </Text>
+      </View>
+      {owed != null && owed > 0 ? (
+        <View style={{ flexDirection: "row", gap: 10, backgroundColor: tokens.color.highlightWash, borderWidth: 1, borderColor: tokens.color.highlightBorder, borderRadius: 16, padding: 16 }}>
+          <View style={{ paddingTop: 4 }}>
+            <Icon name="banknote" size={20} color={tokens.color.highlightInk} />
+          </View>
+          <View style={{ flex: 1, gap: 6 }}>
+            <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink, ...TABULAR }}>{OBB.returnLead(usd(owed), shop)}</Text>
+            <Text style={{ fontSize: 14, lineHeight: 20, color: tokens.color.muted }}>{OBB.returnB}</Text>
+          </View>
+        </View>
+      ) : (
+        <View style={{ backgroundColor: tokens.color.surface, borderRadius: 16, padding: 16, gap: 4 }}>
+          <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{OBB.nothingReturn}</Text>
+          <Text style={{ fontSize: 14, lineHeight: 20, color: tokens.color.muted }}>{OBB.nothingReturnB}</Text>
+        </View>
+      )}
+      <Text style={{ fontSize: 14, color: tokens.color.muted, textAlign: "center", ...TABULAR }}>{meta}</Text>
+    </View>
+  );
+}
+
+/**
+ * OB-R13 "You're a public biker now": full screen, once, when the business stops using Own bikers — what changes
+ * (jobs from anyone near them, their own fare, a commission top-up) and "See jobs near me".
+ */
+export function FleetEndedPage({ shop, floor, onDone }: { shop: string; floor: string; onDone: () => void }): React.ReactElement {
+  const row = (icon: React.ComponentProps<typeof Icon>["name"], title: string, body: string) => (
+    <View key={title} style={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
+        <Icon name={icon} size={20} color={tokens.color.accentText} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{title}</Text>
+        <Text style={{ fontSize: 14, lineHeight: 20, color: tokens.color.muted }}>{body}</Text>
+      </View>
+    </View>
+  );
+  return (
+    <View testID="fleet-ended" style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+      <View style={{ flex: 1, paddingTop: 24, paddingHorizontal: 24, gap: 14 }}>
+        <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: tokens.color.accentWash, alignItems: "center", justifyContent: "center" }}>
+          <Icon name="bike" size={30} color={tokens.color.accentText} />
+        </View>
+        <Text accessibilityRole="header" style={{ fontSize: 24, lineHeight: 30, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
+          {OBB.pubT}
+        </Text>
+        <Text style={{ fontSize: 15, lineHeight: 22, color: tokens.color.muted }}>{OBB.pubB(shop)}</Text>
+        <View style={{ gap: 20, marginTop: 10 }}>
+          {row("map-pin", OBB.pub1T, OBB.pub1B)}
+          {row("banknote", OBB.pub2T, OBB.pub2B)}
+          {row("wallet", OBB.pub3T, OBB.pub3B(floor))}
+        </View>
+      </View>
+      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, ...tokens.shadow.sheet, backgroundColor: tokens.color.bg }}>
+        <CtaButton label={OBB.pubCta} onPress={onDone} />
+      </View>
     </View>
   );
 }

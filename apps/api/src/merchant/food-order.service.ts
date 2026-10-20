@@ -921,6 +921,12 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     });
     if (!order) throw new NotFoundException("Order not found");
     const { venueRating: _venueRating, ...forRider } = await this.withDetail(order, this.toResponse(order));
+    // Own bikers (D-117, OB-R8/R9): carried by one of the business's own bikers — no fare, no commission, all the
+    // cash goes back to this branch, which the job screens name.
+    if (order.fleetMerchantId) {
+      const branch = order.fleetMerchantId === order.merchantId ? order.merchant?.name : (await this.prisma.merchant.findUnique({ where: { id: order.fleetMerchantId }, select: { name: true } }))?.name;
+      if (branch) return { ...forRider, fleetShop: branch };
+    }
     return forRider;
   }
 

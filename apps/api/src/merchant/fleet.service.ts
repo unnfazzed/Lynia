@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import {
   ACTIVE_RIDE_STATUSES,
   addMoney,
+  orderShortId,
   type CreateFleetInviteRequest,
   FLEET_INVITE_CODE_LENGTH,
   FLEET_INVITE_LINK_BASE,
@@ -18,6 +19,7 @@ import {
   type FleetInviteState,
   type FleetJoinRefusal,
   type FleetSuggestion,
+  type FleetMoneyResponse,
   type MyFleetResponse,
   normalizePhone,
   type OwnerFleetResponse,
@@ -203,6 +205,46 @@ export class FleetService {
   // ── The biker's side (biker app) ──────────────────────────────────────────────────────────────────────────
 
   /** `GET /fleet/me`: the fleet they ride for, and live invites to their number (OB-R1/R2). */
+  /**
+   * `GET /fleet/money` (OB-R10): the cash this biker holds for their business — every open cash debt to the owner's
+   * branches, a venue order's or a booking's cash on delivery, the roster's `cashHeld` (OV-F3) — and the last 50
+   * movements from the debt ledger: collected at a door, handed back at the counter.
+   */
+  async money(profileId: string): Promise<FleetMoneyResponse> {
+    const rider = await this.prisma.rider.findUnique({ where: { profileId }, select: { fleetOwnerProfileId: true, fleetHomeMerchant: { select: { name: true } } } });
+    const owner = rider?.fleetOwnerProfileId;
+    if (!owner) throw new ConflictException({ reason: "not_in_fleet", message: "You're not one of a business's bikers." });
+    const branches = (await this.prisma.merchant.findMany({ where: { ownerProfileId: owner }, select: { id: true } })).map((b) => b.id);
+    const [open, rows] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          riderId: profileId,
+          debtStatus: "open",
+          merchantClosedAt: null,
+          OR: [{ merchant: { is: { ownerProfileId: owner } } }, { merchantBooking: { is: { merchant: { ownerProfileId: owner } } } }],
+        },
+        select: { debtAmount: true },
+      }),
+      this.prisma.merchantDebtLedger.findMany({
+        where: { riderId: profileId, merchantId: { in: branches }, type: { in: ["opened", "settled_cash"] } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: { orderId: true, type: true, amount: true, createdAt: true },
+      }),
+    ]);
+    const held = open.reduce((t, o) => addMoney(t, Number(o.debtAmount ?? 0)), 0);
+    return {
+      shop: rider.fleetHomeMerchant?.name ?? "",
+      cashHeld: held.toFixed(2),
+      lines: rows.map((r) => ({
+        kind: r.type === "opened" ? ("collected" as const) : ("returned" as const),
+        ref: `#${orderShortId(r.orderId)}`,
+        amount: Math.abs(Number(r.amount)).toFixed(2),
+        at: r.createdAt.toISOString(),
+      })),
+    };
+  }
+
   async mine(profileId: string): Promise<MyFleetResponse> {
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },

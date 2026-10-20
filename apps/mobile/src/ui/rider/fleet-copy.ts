@@ -60,4 +60,66 @@ export const OBB = {
   /** `expB` "Chicken Inn jobs hold for 60 seconds, then go to the next biker." The hold is the server's round. */
   expB: (shop: string, seconds: number) => `${shop} jobs hold for ${seconds} seconds, then go to the next biker.`,
   backJobs: "Back to jobs",
+
+  // OB-R8 · the job.
+  /** `tToKitchen` "Heading to Chicken Inn". */
+  tToKitchen: (shop: string) => `Heading to ${shop}`,
+  tToDrop: "Heading to drop-off",
+  tReturn: "Return the cash",
+  /** `collectLine` "Collect $14.00 cash at the door". */
+  collectLine: (amount: string) => `Collect ${amount} cash at the door`,
+  /** `bringLine` "Bring $14.00 back to Chicken Inn Avondale". */
+  bringLine: (amount: string, shop: string) => `Bring ${amount} back to ${shop}`,
+  returnB: "Hand the cash to the counter. They confirm it in their app and this job closes.",
+  /** `returnWait` "Waiting for Chicken Inn to confirm…". */
+  returnWait: (shop: string) => `Waiting for ${shop} to confirm…`,
+
+  // OB-R9 · done.
+  doneT: "Delivered. Nice work.",
+  /** `returnLead` "Return $14.00 to Chicken Inn Avondale". */
+  returnLead: (amount: string, shop: string) => `Return ${amount} to ${shop}`,
+  nothingReturn: "Nothing to return",
+  nothingReturnB: "This order was paid before delivery.",
+  nextJobs: "Back to jobs",
+
+  // OB-R10 · Money.
+  /** `cashHero` "Cash with you · owed to Chicken Inn Avondale". */
+  cashHero: (shop: string) => `Cash with you · owed to ${shop}`,
+  cashHeroB: "Hand it to the counter after each job.",
+  history: "HISTORY",
+  todayH: "TODAY",
+  /** `hCollected` "Collected · #B204". */
+  hCollected: (ref: string) => `Collected · ${ref}`,
+  /** `hReturned` "Returned to Chicken Inn". */
+  hReturned: (shop: string) => `Returned to ${shop}`,
+
+  // OB-R11 · cancel.
+  cxT: "Cancel this job?",
+  /** `cxB` "This tells Chicken Inn Avondale." */
+  cxB: (shop: string) => `This tells ${shop}.`,
+  cxKeep: "Keep the job",
+  cxYes: "Cancel job",
+
+  // OB-R12 · Account and leaving.
+  /** `acctRow` "Chicken Inn bikers". */
+  acctRow: (shop: string) => `${shop} bikers`,
+  /** `leaveT` "Leave Chicken Inn's bikers?" */
+  leaveT: (shop: string) => `Leave ${shop}'s bikers?`,
+  leaveB: "You'll become a public biker and need a commission top-up to take jobs.",
+  leave: "Leave",
+  stay: "Stay",
+  leaveBlocked: "You can leave after this delivery.",
+
+  // OB-R13 · public biker now.
+  pubT: "You're a public biker now",
+  /** `pubB` "Chicken Inn has stopped using Own bikers. You can take jobs from anyone near you." */
+  pubB: (shop: string) => `${shop} has stopped using Own bikers. You can take jobs from anyone near you.`,
+  pub1T: "Parcels and food near you",
+  pub1B: "Jobs from shops, kitchens and customers across Harare.",
+  pub2T: "You keep the fare",
+  pub2B: "You set or accept a fare. Commission comes off when a job closes.",
+  pub3T: "Top up to start",
+  /** `pub3B` "Keep at least $2.00 commission balance to take jobs." */
+  pub3B: (floor: string) => `Keep at least ${floor} commission balance to take jobs.`,
+  pubCta: "See jobs near me",
 } as const;
