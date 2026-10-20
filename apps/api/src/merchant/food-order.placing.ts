@@ -13,10 +13,10 @@ import { carryBalance, openBalance } from "./customer-balance";
 import { cancelAttribution } from "../common/cancel-attribution";
 import { ownerAlertText } from "../owner-alerts/owner-alerts.service";
 import { ORDER_WITH_ITEMS_INCLUDE, type OrderWithItems, SECTIONS_OFF, lineTotal, noRiderHeld, summarizeMerchantItems } from "./food-order.helpers";
-import type { FoodOrderService } from "./food-order.service";
+import type { FoodOrderHost } from "./food-order.host";
 
 export class FoodOrderPlacing {
-  constructor(private readonly svc: FoodOrderService) {}
+  constructor(private readonly svc: FoodOrderHost) {}
   // ── Customer ─────────────────────────────────────────────────────────────────────────────────────
 
   /** `POST /restaurants/:merchantId/orders`. Price is always server-computed (D-35). */

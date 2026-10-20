@@ -13,10 +13,10 @@ import { toSubstitutionRoundView } from "./order-substitution.service";
 import { customerBalance } from "./customer-balance";
 import { venueNoteOf } from "./venue-note";
 import { ORDER_WITH_ITEMS_INCLUDE, type OrderWithItems, RESPONSE_NULL_OMIT_FIELDS, type StampedRejectionReason, VENUE_DECLINED, keptSubtotalOf, orderFlowV2BFields, orderFlowV2Fields } from "./food-order.helpers";
-import type { FoodOrderService } from "./food-order.service";
+import type { FoodOrderHost } from "./food-order.host";
 
 export class FoodOrderViews {
-  constructor(private readonly svc: FoodOrderService) {}
+  constructor(private readonly svc: FoodOrderHost) {}
   /** The MICRO_CACHE_DISABLED kill-switch plus "TTL 0 disables it" — OrdersService.microCacheBypassed. */
   microCacheBypassed(ttlMs: number): boolean {
     return this.svc.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;

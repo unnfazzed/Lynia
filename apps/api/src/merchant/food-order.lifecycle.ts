@@ -11,10 +11,10 @@ import { confirmKitchen, editOrderItems } from "./food-order-ops";
 import { cancelAttribution } from "../common/cancel-attribution";
 import { domainEvents } from "../common/domain-events";
 import { AFTER_PICKUP_STATUSES, HANDOVER_LINK_TTL_S, ORDER_WITH_ITEMS_INCLUDE, PREP_EXTEND_MIN, PREP_MAX_MIN, QUEUE_VISIBLE_STATUSES, RIDER_PRE_PICKUP_STATUSES, type StampedRejectionReason, isPastClosingTime, lineTotal, pickupRevealWhere, readyPhaseFor } from "./food-order.helpers";
-import type { FoodOrderService } from "./food-order.service";
+import type { FoodOrderHost } from "./food-order.host";
 
 export class FoodOrderLifecycle {
-  constructor(private readonly svc: FoodOrderService) {}
+  constructor(private readonly svc: FoodOrderHost) {}
   async runSweeps(): Promise<void> {
     try {
       await this.svc.sweepExpiredAcceptWindows();
