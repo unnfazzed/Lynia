@@ -20,3 +20,4 @@ export * from "./wording";
 export * from "./merchant-application";
 export * from "./referral";
 export * from "./countries";
+export * from "./api-errors";

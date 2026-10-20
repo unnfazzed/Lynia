@@ -4,7 +4,9 @@
  * CAS guards reject out-of-order/wrong-actor moves and that `delivered` frees the rider.
  */
 import { CUSTOMER_TRUST, OFFER_WINDOW_MS } from "@lynia/shared";
+import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { normalizeErrorBody } from "../common/api-error";
 import { TokenService } from "../auth/token.service";
 import type { Env } from "../config/env";
 import { StubKycVendor } from "../kyc/kyc-vendor";
@@ -225,7 +227,13 @@ describe("delivery lifecycle", () => {
 
     const wrong = deliveryCode === "000000" ? "111111" : "000000";
     // 4·b1: the wrong-code error now carries the remaining attempt count instead of a bare "incorrect".
-    await expect(lifecycle.confirmDelivery(orderId, rider, wrong)).rejects.toThrow(/attempts left/i);
+    const err = await lifecycle.confirmDelivery(orderId, rider, wrong).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    // R-2 / R7 regression contract: installed biker builds branch on this 401 (apps/mobile/src/api/client.ts), so the
+    // status and message must not move. The wire body only gains `reason`.
+    const wire = normalizeErrorBody((err as HttpException).getStatus(), (err as HttpException).getResponse());
+    expect((err as HttpException).getStatus()).toBe(401);
+    expect(wire).toMatchObject({ statusCode: 401, reason: "unauthorized", message: expect.stringMatching(/attempts left/i) });
     const after = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { deliveryOtpAttempts: true } });
     expect(after.deliveryOtpAttempts).toBe(1); // persisted despite the throw
 
