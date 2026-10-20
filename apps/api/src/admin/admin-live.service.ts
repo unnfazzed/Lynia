@@ -91,7 +91,7 @@ export interface LiveAlerts {
   merchantApplications: number;
   ordersBreaching: number;
   /** Own bikers (OB-A4 tile, D-117): fleets switched on, their bikers online now, and bills past their due day. */
-  ownBikers: { fleets: number; bikersOnline: number; overdueBills: number };
+  ownBikers: { fleets: number; bikersOnline: number; overdueBills: number; overdueFleets: number };
 }
 
 const nameOf = (p: { firstName: string; lastName: string } | null | undefined, fallback: string): string =>
@@ -287,7 +287,7 @@ export class AdminLiveService {
       this.liveOrders(),
       this.prisma.ownerFleet.count({ where: { enabled: true } }),
       this.prisma.rider.count({ where: { fleetOwnerProfileId: { not: null }, isOnline: true } }),
-      this.prisma.merchantFleetStatement.count({ where: { status: { not: "paid" }, dueOn: { lt: today } } }),
+      this.prisma.merchantFleetStatement.groupBy({ by: ["ownerProfileId"], where: { status: { not: "paid" }, dueOn: { lt: today } }, _count: { _all: true } }),
     ]);
     const value: LiveAlerts = {
       sosPending,
@@ -295,7 +295,13 @@ export class AdminLiveService {
       kitchenConfirmations,
       merchantApplications,
       ordersBreaching: monitor.counts.breach,
-      ownBikers: { fleets, bikersOnline, overdueBills },
+      ownBikers: {
+        fleets,
+        bikersOnline,
+        overdueBills: overdueBills.reduce((n, g) => n + g._count._all, 0),
+        // OB-A4 "2 overdue": fleets with a bill past its due day (the table's Overdue chip counts the same).
+        overdueFleets: overdueBills.length,
+      },
     };
     this.alertsCache = { at: now, value };
     return value;

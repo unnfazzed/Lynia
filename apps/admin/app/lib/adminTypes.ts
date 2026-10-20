@@ -612,6 +612,8 @@ export interface NavCounts {
   foodDisputes: number;
   /** Admin console v2 §5: merchant applications waiting on ops past the 24h SLA. Optional: older APIs omit it. */
   merchantApplications?: number;
+  /** Own bikers (OB-A1): fleets with a bill past its due day. Filled by the layout from `/admin/alerts`. */
+  fleetsOverdue?: number;
 }
 
 /* ── Rider prepaid wallet (DOC-16-03 — GET /admin/riders/:id/wallet) ── */
@@ -963,6 +965,9 @@ export interface LiveAlerts {
   kitchenConfirmations: number;
   merchantApplications: number;
   ordersBreaching: number;
+  /** Own bikers (OB-A4 tile): fleets switched on, their bikers online, bills and fleets past due. Older APIs omit it
+   *  (and `overdueFleets`). */
+  ownBikers?: { fleets: number; bikersOnline: number; overdueBills: number; overdueFleets?: number };
 }
 
 /** The read-only settings panel. */

@@ -2,10 +2,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import OverviewPage from "./page";
-import { adminFetchResult } from "./lib/api";
+import { adminFetch, adminFetchResult } from "./lib/api";
 
 /** Admin console v2 §4: the Overview's three happy-path strips (the rest of the page is unchanged). */
-vi.mock("./lib/api", () => ({ adminFetchResult: vi.fn() }));
+vi.mock("./lib/api", () => ({ adminFetchResult: vi.fn(), adminFetch: vi.fn(async () => null) }));
 vi.mock("./components/AutoRefresh", () => ({ AutoRefresh: () => null }));
 
 afterEach(() => {
@@ -57,5 +57,29 @@ describe("Overview happy paths", () => {
     render(await OverviewPage({ searchParams: Promise.resolve({}) }));
     expect(screen.queryByLabelText("Happy paths")).toBeNull();
     expect(screen.getByText("Live orders")).toBeTruthy();
+  });
+});
+
+describe("Overview · the Own bikers tile (OB-A4)", () => {
+  const live = async (path: string) => (path.startsWith("/admin/funnels") ? { reason: "not-implemented" } : { data: overview }) as never;
+
+  it("says how many fleets, bikers online and overdue, and opens Own bikers", async () => {
+    vi.mocked(adminFetchResult).mockImplementation(live);
+    vi.mocked(adminFetch).mockResolvedValue({ ownBikers: { fleets: 3, bikersOnline: 14, overdueBills: 3, overdueFleets: 2 } } as never);
+    render(await OverviewPage({ searchParams: Promise.resolve({}) }));
+    const tile = screen.getByLabelText("Own bikers");
+    expect(tile.textContent).toBe("Own bikers live: 3 fleets · 14 bikers online · 2 overdueOpen Own bikers");
+    expect(screen.getByRole("link", { name: "Open Own bikers" }).getAttribute("href")).toBe("/own-bikers");
+  });
+
+  it("shows nothing while no business runs its own bikers, or the API has no counts", async () => {
+    vi.mocked(adminFetchResult).mockImplementation(live);
+    vi.mocked(adminFetch).mockResolvedValue({ ownBikers: { fleets: 0, bikersOnline: 0, overdueBills: 0 } } as never);
+    render(await OverviewPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.queryByLabelText("Own bikers")).toBeNull();
+    cleanup();
+    vi.mocked(adminFetch).mockResolvedValue(null as never);
+    render(await OverviewPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.queryByLabelText("Own bikers")).toBeNull();
   });
 });

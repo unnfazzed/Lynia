@@ -210,3 +210,30 @@ export function IconSliders(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/** lucide `pause` — Own bikers OB-A2 "Pause". */
+export function IconPause(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+/** lucide `ban` — Own bikers OB-A2 "Disable". */
+export function IconBan(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m4.9 4.9 14.2 14.2" />
+    </svg>
+  );
+}
+/** lucide `rotate-ccw` — Own bikers "Try again". */
+export function IconRotate(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}

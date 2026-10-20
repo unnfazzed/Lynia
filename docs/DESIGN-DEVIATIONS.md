@@ -5873,3 +5873,31 @@ real screens from the `ob_job_*`, `ob_money`, `ob_account*` and `ob_fleet_ended`
 - The danger ghost ("Cancel job", the disabled "Leave") is the app's shared `CtaButton ghost danger` (outlined), where the
   kit fills it pale red; the same button the public drop and cancel sheets use.
 - R13's floor is the live wallet floor (`walletConfig.floor`, falling back to `COMMISSION.lowBalanceBlockBelow`).
+
+**Evidence, lane D (admin, OB-A1–A4):** `docs/parity/OWN-BIKERS-V1-ADMIN-2026-10-20.png`
+(`tools/parity/shoot-own-bikers-v1-admin.mjs`, 10 frames at 1440×900; the console reads from its server, so the script
+runs a stub API with the handoff's data set and switches it per frame). What still differs, and why:
+- The shell is the console's own (D-105): the sidebar's real items and its search box, the operator footer. The handoff
+  redraws the kit's older sidebar (Riders, KYC, Cash). Own bikers sits after Commission with its overdue badge in
+  `--danger-ink` on `--danger-wash`, as drawn.
+- "Owner" shows the business and "Branches" its branches, split from the branch names (one name per branch, P7-1):
+  the words every branch name starts with are the business ("Chicken Inn Avondale" + "Chicken Inn Borrowdale" →
+  "Chicken Inn" · "Avondale, Borrowdale"). A business with one branch shows its full name in both, where the handoff's
+  sample has "Mama's Kitchen" · "Avondale". The owner's own name is in the side panel's line ("Owner Rumbi Chari"), as
+  drawn. Branches read A–Z (the API's order), where the sample writes Eastgate first.
+- OB-A3's confirms open from the side panel (the switches live there), so the panel shows under the dialog; the handoff
+  draws the dialog over the table alone. The dialog is the console's `ConfirmModal`, with the handoff's labels ("Reason
+  code", "Note for the audit log", "Recorded in the audit log with your name.") passed in; its Cancel is the kit's quiet
+  button where the frame draws a ghost.
+- Save beside the fee stays disabled until the fee changes (a no-op save would write an empty audit row). The fee endpoint
+  needs a note, and the handoff draws none, so the console writes what changed: "Fee per ride 1.50 → 1.75".
+- Adjust lands on the fleet's open week, billed to the chosen ride's branch (the API's T7a rule), whichever bill row
+  opened it; the form's title names that bill, as drawn. Its ride picker lists the last 5 weeks' billed rides
+  (`AdminFleetDetail.recentRides`, added here).
+- Unpause (a paused fleet) uses the same confirm, titled "Unpause Chicken Inn's Own bikers?": the handoff has the
+  `unpause` label but draws no dialog for it. A disabled fleet's status reads "Disabled" (muted); the handoff draws none
+  and has no string for it.
+- Offline: the console is server-rendered and keeps no copy of the last read, so it can't show "Offline · showing data
+  from 14:02"; it shows the console's offline banner (API unreachable) over the error row instead of dimmed data.
+- The OB-A4 tile counts fleets with a bill overdue (`ownBikers.overdueFleets`, added here), so its "2 overdue" matches the
+  table's Overdue chip.

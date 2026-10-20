@@ -25,6 +25,8 @@ interface NavEntry {
   match: string;
   /** Which attention count (if any) drives this item's badge. */
   badge?: keyof NavCounts;
+  /** A badge that means money is late reads in danger (Own bikers, OB-A1). */
+  badgeTone?: "danger";
 }
 
 const NAV: NavEntry[] = [
@@ -53,6 +55,8 @@ const NAV: NavEntry[] = [
   { label: "Issues", href: "/issues", icon: <IconAlert />, match: "/issues", badge: "openIssues" },
   { label: "SOS", href: "/sos", icon: <IconPhone />, match: "/sos", badge: "sosPending" },
   { label: "Commission", href: "/cash", icon: <IconBanknote />, match: "/cash" },
+  // Own bikers (OB-A1, D-117): businesses that run their own bikers; the badge counts the fleets with a bill overdue.
+  { label: "Own bikers", href: "/own-bikers", icon: <IconStore />, match: "/own-bikers", badge: "fleetsOverdue", badgeTone: "danger" },
   // Admin console v2 §8: who did what, newest first.
   { label: "Audit", href: "/audit", icon: <IconHistory />, match: "/audit" },
   // Admin console v2 §7: the settings the services run with, read-only.
@@ -168,7 +172,7 @@ export function Sidebar({
             <span style={{ display: "inline-flex", width: 17, height: 17, fontSize: 17 }}>{n.icon}</span>
             {n.label}
             {count > 0 ? (
-              <span className="nav-badge" aria-label={`${count} awaiting`}>
+              <span className={n.badgeTone ? `nav-badge ${n.badgeTone}` : "nav-badge"} aria-label={`${count} awaiting`}>
                 {count}
               </span>
             ) : null}

@@ -2836,8 +2836,23 @@ export const AdminFleetRow = z.object({
   daysOverdue: z.number().int(),
   status: AdminFleetStatus,
   rideFee: z.string().nullable(),
+  /** OB-A1 "Branches": the branches' names, A–Z. Older APIs leave it out. */
+  branchNames: z.array(z.string()).optional(),
+  /** The fleet's bikers online now (on a job included). Older APIs leave it out. */
+  online: z.number().int().optional(),
 });
 export type AdminFleetRow = z.infer<typeof AdminFleetRow>;
+
+/** One billed ride the console can correct (OB-A2 Adjust "Which ride": "#B190 · Tendai · 4 Oct 10:05"). */
+export const AdminFleetRide = z.object({
+  orderId: z.string().uuid(),
+  ref: z.string(),
+  merchantId: z.string().uuid(),
+  biker: z.string().nullable(),
+  at: z.string().datetime(),
+  fee: z.string(),
+});
+export type AdminFleetRide = z.infer<typeof AdminFleetRide>;
 
 /** One closed week's bill, with a line per branch (E7). Dates are Harare calendar days. */
 export const AdminFleetBill = z.object({
@@ -2866,6 +2881,8 @@ export const AdminFleetDetail = z.object({
   /** The open week so far: rides and total, adjustments included. */
   thisWeek: z.object({ rides: z.number().int(), total: z.string() }),
   bills: z.array(AdminFleetBill),
+  /** The last 5 weeks' billed rides, newest first (at most 100): what Adjust can correct. Older APIs leave it out. */
+  recentRides: z.array(AdminFleetRide).optional(),
 });
 export type AdminFleetDetail = z.infer<typeof AdminFleetDetail>;
 
