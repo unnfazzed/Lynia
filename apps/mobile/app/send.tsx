@@ -23,6 +23,7 @@ import {
   inArea,
   isDefinitiveSendFailure,
   kmLabel,
+  mapTapStop,
   money,
   phoneOk,
   priceFromText,
@@ -105,6 +106,8 @@ export default function SendScreen(): React.ReactElement {
   const [drop, setDrop] = useState<Stop | null>(null);
   const [editing, setEditing] = useState<Slot | null>(null);
   const [query, setQuery] = useState("");
+  /** QA-B07: what was typed when "Tap the map" was chosen, kept to name that row's next map pin. */
+  const armedText = useRef<{ slot: Slot; text: string } | null>(null);
   /** The row the map edits when nothing is being typed: the last row the customer touched. */
   const [lastEdited, setLastEdited] = useState<Slot>("drop");
   const [locating, setLocating] = useState(false);
@@ -291,7 +294,9 @@ export default function SendScreen(): React.ReactElement {
   const mapPoint = useCallback(
     (slot: Slot) =>
       (p: PickedPoint): void => {
-        setStop(slot, { lat: p.lat, lng: p.lng, name: coordName(p.lat, p.lng), source: "map" });
+        const armed = armedText.current;
+        armedText.current = null;
+        setStop(slot, mapTapStop(p.lat, p.lng, armed?.slot === slot ? armed.text : null));
         setEditing(null);
         Keyboard.dismiss();
       },
@@ -375,8 +380,9 @@ export default function SendScreen(): React.ReactElement {
   /** "Tap the map to set the pin": close the keyboard; the next map tap sets this row's pin. */
   const armMapTap = useCallback((): void => {
     if (editing) setLastEdited(editing);
+    armedText.current = editing && query.trim() ? { slot: editing, text: query.trim() } : null;
     finishEdit();
-  }, [editing, finishEdit]);
+  }, [editing, query, finishEdit]);
 
   // ── Derived ───────────────────────────────────────────────────────────────────────────────────────
 

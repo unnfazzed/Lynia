@@ -33,6 +33,16 @@ export function coordName(lat: number, lng: number): string {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
+/**
+ * QA-B07: the stop a map tap places. After "Tap the map to set the pin" the text the customer had typed
+ * names the pin (it is what they meant, and with search limited it is the only address there is); a
+ * plain tap is named by its coordinates until the reverse geocode answers.
+ */
+export function mapTapStop(lat: number, lng: number, typed: string | null): Stop {
+  const name = typed ? stopName(typed) : "";
+  return name ? { lat, lng, name, source: "search" } : { lat, lng, name: coordName(lat, lng), source: "map" };
+}
+
 export function inArea(stop: Stop | null): boolean {
   return stop != null && isWithinServiceCorridor({ lat: stop.lat, lng: stop.lng });
 }

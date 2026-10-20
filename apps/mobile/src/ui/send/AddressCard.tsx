@@ -1,12 +1,15 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Keyboard, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Keyboard, Platform, ScrollView, Text, TextInput, type TextStyle, View } from "react-native";
 import type { ResolvedPlace } from "../../api/places";
 import type { Stop } from "../../logic/send-steps";
 import type { SuggestRow, SuggestStatus } from "../../logic/use-address-suggest";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { Dot, LABEL_STYLE, SEND_COPY, Sq, TextAction } from "./kit";
+
+/** QA-B05: the field's 2px accent border IS its focus ring; on web the browser's own outline drew a second one inside it. */
+const NO_UA_FOCUS_RING = Platform.OS === "web" ? ({ outlineStyle: "none" } as unknown as TextStyle) : null;
 
 /**
  * Step 1's floating address card (ledger D-52; handoff README "Address card"). Two rows — PICKUP (green
@@ -141,7 +144,7 @@ function EditRow(props: {
             accessibilityLabel={`${label} address`}
             placeholder={props.slot === "pickup" ? SEND_COPY.pickPh : SEND_COPY.dropPh}
             placeholderTextColor={tokens.color.muted}
-            style={{ fontSize: 15, fontWeight: tokens.font.weight.semibold, lineHeight: 20, color: tokens.color.ink, padding: 0, margin: 0 }}
+            style={[{ fontSize: 15, fontWeight: tokens.font.weight.semibold, lineHeight: 20, color: tokens.color.ink, padding: 0, margin: 0 }, NO_UA_FOCUS_RING]}
           />
         </View>
         {props.query.length > 0 ? (

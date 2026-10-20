@@ -1,4 +1,5 @@
-import { focusManager, QueryClient, type QueryKey } from "@tanstack/react-query";
+import { focusManager, QueryClient, type QueryKey, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { ApiError } from "../api/client";
 import { queryRetryDelayMs } from "../net/network-policy";
@@ -17,6 +18,32 @@ export function shouldRetry(failureCount: number, error: unknown): boolean {
   // here (see the `mutations` policy below). Delegates the per-error classification to ApiError.retryable.
   if (error instanceof ApiError && !error.retryable) return false;
   return failureCount < 2;
+}
+
+type RetryOption = boolean | number | ((failureCount: number, error: unknown) => boolean) | undefined;
+
+function retries(option: RetryOption, failureCount: number, error: unknown): boolean {
+  if (typeof option === "function") return option(failureCount, error);
+  if (typeof option === "number") return failureCount < option;
+  return option ?? failureCount < 3; // TanStack's own default when nothing is set
+}
+
+/**
+ * QA-B06 (2026-10-20): a query's retry policy, but only while the query is still `enabled`. The
+ * Restaurants / Shops / Pharmacy kill switches fail OPEN, so a cold start's first frame queries the
+ * catalogue before the flag answer lands; with a switch off, each list answered 503 three times (the first
+ * try plus two retries) because TanStack keeps retrying a fetch that started while the query was enabled.
+ * A retry runs after the flag answer has usually arrived, so reading the latest `enabled` stops at the
+ * first 503. `base` is the policy to apply while enabled; omitted, it is the client's default.
+ */
+export function useRetryWhileEnabled(enabled: boolean, base?: RetryOption): (failureCount: number, error: unknown) => boolean {
+  const client = useQueryClient();
+  const policy = base ?? (client.getDefaultOptions().queries?.retry as RetryOption);
+  const on = useRef(enabled);
+  useEffect(() => {
+    on.current = enabled;
+  }, [enabled]);
+  return useCallback((failureCount: number, error: unknown) => on.current && retries(policy, failureCount, error), [policy]);
 }
 
 // A-O15: the one place both the global default staleTime and `invalidateIfStale`'s default read

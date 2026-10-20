@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { getPopularRestaurants } from "../api/restaurants";
 import { getPopularShops } from "../api/shops";
 import { NO_POPULARITY, type PopularityIndex, popularityIndex } from "../logic/popularity";
+import { useRetryWhileEnabled } from "./client";
 
 export type PopularityList = "restaurants" | ShopService;
 
@@ -16,12 +17,14 @@ export const popularityKey = (list: PopularityList): readonly ["popularity", Pop
  * nearest-open order. Never a spinner, never an error state: the ranking is an ordering hint, not content.
  */
 export function usePopularity(list: PopularityList, enabled: boolean): PopularityIndex {
+  // One retry, and none once the list's kill switch reads off (QA-B06).
+  const retry = useRetryWhileEnabled(enabled, 1);
   const q = useQuery({
     queryKey: popularityKey(list),
     queryFn: () => (list === "restaurants" ? getPopularRestaurants() : getPopularShops(list)),
     enabled,
     staleTime: 10 * 60_000,
-    retry: 1,
+    retry,
   });
   const data = enabled ? q.data : undefined;
   return useMemo(() => (data === undefined ? NO_POPULARITY : popularityIndex(data)), [data]);

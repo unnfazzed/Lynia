@@ -2,6 +2,7 @@ import type { ShopCatalogueResponse, ShopListItem, ShopSearchResponse, ShopServi
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { getShopCatalogue, getShops, searchShops } from "../api/shops";
+import { useRetryWhileEnabled } from "./client";
 import type { RestaurantListFeed } from "./use-restaurants";
 
 export const shopsKey = (service: ShopService): readonly ["shops", ShopService] => ["shops", service];
@@ -15,12 +16,14 @@ export type ShopListFeed = Omit<RestaurantListFeed, "restaurants"> & { shops: Sh
  * (B10a) has a saved list to show and a cold start paints last-known cards.
  */
 export function useShopListFeed(service: ShopService, enabled: boolean): ShopListFeed {
+  const retry = useRetryWhileEnabled(enabled);
   const q = useInfiniteQuery({
     queryKey: shopsKey(service),
     queryFn: ({ pageParam }: { pageParam: string | undefined }) => getShops(service, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled,
+    retry,
   });
   // Array.isArray, not a bare `p.shops`: a malformed 200 page must read as empty, not as a list of
   // `undefined` rows that crash every consumer (CF-04's lesson).
