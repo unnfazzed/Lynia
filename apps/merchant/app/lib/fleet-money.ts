@@ -43,7 +43,7 @@ function writeCache(c: Cached | null): void {
 }
 
 /** Loads the branch's fleet rides and the owner's bills together. A business without Own bikers (409 `fleet_off`, or
- *  503 while the feature isn't live) reads as `null`; offline falls back to the last good read for this branch. */
+ *  503 while the merchant vertical is off) reads as `null`; offline falls back to the last good read for this branch. */
 export function useFleetMoney(merchantId: string | null, enabled: boolean): { read: FleetMoneyRead; reload: () => void } {
   const [read, setRead] = useState<FleetMoneyRead>(undefined);
   const load = useCallback(() => {

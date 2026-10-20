@@ -7,8 +7,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export const OBA = {
   nav: "Own bikers",
   title: "Own bikers",
-  /** `sub` "3 fleets · fee per ride billed weekly". */
-  sub: (fleets: number) => `${plural(fleets, "fleet", "fleets")} · fee per ride billed weekly`,
+  /** `sub`, owner 2026-10-20 (D-117): every business pays the commission rate on its rides, not a fee per ride. */
+  sub: (fleets: number) => `${plural(fleets, "fleet", "fleets")} · commission billed weekly`,
   cols: ["Owner", "Branches", "Bikers", "This week", "Unpaid", "Days overdue", "Status"] as const,
   stOverdue: "Overdue",
   stUnpaid: "Unpaid",
@@ -16,8 +16,13 @@ export const OBA = {
   stPaused: "Paused",
   /** `overdueN` "9 days overdue". */
   overdueN: (n: number) => (n === 1 ? "1 day overdue" : `${n} days overdue`),
-  fee: "Fee per ride",
-  save: "Save",
+  /** Owner 2026-10-20 (D-117): the flat fee per ride is retired; a ride is billed at the commission rate. */
+  fee: "Fee",
+  /** "10% of each ride". */
+  feeLine: (pct: number) => `${pct}% of each ride`,
+  /** Turns a disabled business back on (Own bikers is on for every business by default). */
+  turnOn: "Turn on",
+  turnOnT: (brand: string) => `Turn ${brand}'s Own bikers back on?`,
   pause: "Pause",
   unpause: "Unpause",
   disable: "Disable",

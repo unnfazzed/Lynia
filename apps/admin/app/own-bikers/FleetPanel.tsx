@@ -6,12 +6,13 @@ import { ConfirmModal } from "../components/ConfirmModal";
 import { IconBan, IconPause, IconX } from "../components/icons";
 import { Pill } from "../components/StatusPill";
 import { OBA, OBA_FRAME } from "../lib/own-bikers-copy";
-import { adjustFleet, type FleetWriteResult, markFleetBillPaid, setFleetFee, switchFleet } from "./actions";
+import { adjustFleet, enableFleet, type FleetWriteResult, markFleetBillPaid, switchFleet } from "./actions";
 import { billPill, billRides, rideLabel, statusPill, usd, weekLabel } from "./fleet-view";
 
 /**
  * OB-A2 · a fleet's side panel (Own bikers v1, ledger D-117): the business, its status and one line (owner, branches,
- * bikers, online, unpaid); Fee per ride + Save; Pause (Unpause) and Disable behind OB-A3's reason-code confirms; the
+ * bikers, online, unpaid); the fee (the commission rate, owner 2026-10-20); Pause (Unpause) and Disable behind OB-A3's
+ * reason-code confirms, and Turn on for a disabled business; the
  * weekly bills with Mark paid and Adjust, which opens the correction form (amount, ride, reason). Every write is
  * audited by its endpoint with the operator's name.
  */
@@ -69,7 +70,7 @@ export function FleetPanel({
         {OBA_FRAME.panelSub(detail.owner, branches.join(", "), detail.bikers.length, online, usd(row.unpaid))}
       </div>
 
-      <FeeRow ownerId={detail.ownerProfileId} fee={detail.rideFee} disabled={!connected || !detail.enabled} />
+      {detail.feePct != null ? <FeeLine pct={detail.feePct} /> : null}
 
       {detail.enabled ? (
         <div style={{ display: "flex", gap: 8 }}>
@@ -110,6 +111,24 @@ export function FleetPanel({
             onConfirm={switchTo("disable")}
           />
         </div>
+      ) : detail.branches[0] ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <ConfirmModal
+            {...modal}
+            reasons={[]}
+            action="merchant.fleet.enable"
+            triggerLabel={OBA.turnOn}
+            triggerVariant="ghost"
+            title={OBA.turnOnT(brand)}
+            consequence={null}
+            confirmLabel={OBA.turnOn}
+            danger={false}
+            onConfirm={async ({ note }) => {
+              const res = await enableFleet(detail.branches[0]!.merchantId, note);
+              if (!res.ok) throw new Error(res.message);
+            }}
+          />
+        </div>
       ) : null}
 
       <div style={{ fontSize: 14, fontWeight: 700 }}>{OBA.bills}</div>
@@ -119,40 +138,12 @@ export function FleetPanel({
   );
 }
 
-/** "Fee per ride" and Save: the fee for new phone bookings (rides already booked keep theirs). */
-function FeeRow({ ownerId, fee, disabled }: { ownerId: string; fee: string | null; disabled: boolean }) {
-  const id = useId();
-  // Drawn as "$1.50"; the dollar sign is optional when typing.
-  const [value, setValue] = useState(fee ? `$${fee}` : "");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  const raw = value.trim().replace(/^\$/, "");
-  const n = Number(raw);
-  // Whole cents (1.15 × 100 is 114.999… in floating point, so compare with a tolerance).
-  const valid = raw !== "" && Number.isFinite(n) && n > 0 && n <= 100 && Math.abs(Math.round(n * 100) - n * 100) < 1e-6;
-  const changed = valid && n.toFixed(2) !== fee;
+/** The fee: every business pays the commission rate on each ride's cost (owner, 2026-10-20). Read-only. */
+function FeeLine({ pct }: { pct: number }) {
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-        <label className="ob-field" htmlFor={id} style={{ flex: 1 }}>
-          {OBA.fee}
-          <input id={id} inputMode="decimal" value={value} disabled={disabled} onChange={(e) => setValue(e.target.value)} />
-        </label>
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={disabled || !changed || pending}
-          onClick={() =>
-            start(async () => {
-              const res = await setFleetFee(ownerId, Math.round(n * 100) / 100, fee);
-              setError(res.ok ? null : res.message);
-            })
-          }
-        >
-          {OBA.save}
-        </button>
-      </div>
-      {error ? <WriteError message={error} /> : null}
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
+      <span style={{ color: "var(--muted)" }}>{OBA.fee}</span>
+      <span style={{ fontWeight: 600 }}>{OBA.feeLine(pct)}</span>
     </div>
   );
 }

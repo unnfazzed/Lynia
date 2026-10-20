@@ -7,7 +7,7 @@ import OwnBikersPage from "./page";
 
 /** OB-A1 · the fleets table and its states; OB-A2 opens beside it (the panel's own behaviour is FleetPanel.test). */
 vi.mock("../lib/api", () => ({ adminFetchResult: vi.fn() }));
-vi.mock("./actions", () => ({ setFleetFee: vi.fn(), switchFleet: vi.fn(), markFleetBillPaid: vi.fn(), adjustFleet: vi.fn() }));
+vi.mock("./actions", () => ({ enableFleet: vi.fn(), switchFleet: vi.fn(), markFleetBillPaid: vi.fn(), adjustFleet: vi.fn() }));
 vi.mock("../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -26,7 +26,7 @@ describe("OB-A1 · the fleets table", () => {
     api({ data: ROWS });
     await page();
     expect(screen.getByRole("heading", { name: "Own bikers" })).toBeTruthy();
-    expect(screen.getByText("3 fleets · fee per ride billed weekly")).toBeTruthy();
+    expect(screen.getByText("3 fleets · commission billed weekly")).toBeTruthy();
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
       "Owner",
       "Branches",

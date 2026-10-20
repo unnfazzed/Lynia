@@ -1436,9 +1436,10 @@ model MerchantInvite {
 /// The owner key is a plain id like MerchantInvite's, so an erased profile never removes billing history.
 model OwnerFleet {
   ownerProfileId         String    @id @map("owner_profile_id") @db.Uuid
-  enabled                Boolean   @default(false)
-  /// Flat fee LyniaGo bills per phone-booking ride. App orders carried by an Own biker bill the commission
-  /// rate × the delivery fee instead (OV5). Null until admin sets it; enable requires it.
+  /// On for every business (owner, 2026-10-20): false only after admin's Disable. A missing row reads as on.
+  enabled                Boolean   @default(true)
+  /// Retired 2026-10-20: LyniaGo bills the commission rate × the ride's cost (an app order's delivery fee, a phone
+  /// booking's suggested fare), not a flat fee. Kept for the bills already written; nothing reads it.
   rideFee                Decimal?  @map("ride_fee") @db.Decimal(10, 2)
   /// Admin pause for non-payment: "My bikers" is refused while set; links stay.
   pausedAt               DateTime? @map("paused_at")

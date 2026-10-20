@@ -85,7 +85,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     let alive = true;
-    // 503 while Own bikers isn't live, or any failure: no row, as for a business without a fleet.
+    // 503 (the merchant vertical switched off), or any failure: no row, as for a business admin disabled.
     getFleet()
       .then((fleet) => {
         if (alive) setOwnBikers(ownBikersRow(fleet));

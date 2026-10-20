@@ -97,3 +97,20 @@ test("only /r/<one segment> runs the referral redirect", async () => {
     assert.equal(await res.text(), "asset", path);
   }
 });
+
+// Own bikers invite links (D-117): lyniago.com/j/<code>.
+test("an Own bikers invite link sends every device to the plain Play listing, with no referrer", async () => {
+  for (const ua of [UA.androidWhatsApp, UA.android, UA.iphone, UA.windows, undefined]) {
+    const res = await get("/j/K7P3QX", ua);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get("location"), "https://play.google.com/store/apps/details?id=zw.co.lynia", String(ua));
+    assert.equal(res.headers.get("cache-control"), "private, no-store");
+  }
+});
+
+test("only /j/<one segment> runs the invite redirect", async () => {
+  for (const path of ["/j", "/j/", "/j/a/b", "/jj/K7P3QX"]) {
+    const res = await get(path, UA.android);
+    assert.equal(await res.text(), "asset", path);
+  }
+});

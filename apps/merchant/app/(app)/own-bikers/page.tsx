@@ -76,7 +76,7 @@ export default function OwnBikersPage() {
       setLoad({ status: "ready", fleet, week });
     } catch (err) {
       if (redirectIfSessionExpired(err, signOut)) return;
-      // Own bikers isn't live yet (503) or this business has none: back to Account, where the row isn't drawn.
+      // The merchant vertical is off (503) or this business has none: back to Account, where the row isn't drawn.
       if (err instanceof ApiError && (err.status === 503 || err.status === 404)) {
         router.replace("/account");
         return;

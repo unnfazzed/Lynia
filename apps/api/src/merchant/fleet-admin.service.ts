@@ -11,9 +11,9 @@ import {
   type FleetAdminActionRequest,
   type FleetBikerState,
   orderShortId,
-  type SetFleetFeeRequest,
 } from "@lynia/shared";
 import { cancelAttribution } from "../common/cancel-attribution";
+import { liveCommissionRatePct } from "../common/commission-cover";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
@@ -28,7 +28,6 @@ const RECENT_RIDES_MS = 35 * 24 * 60 * 60 * 1000;
 
 /** Audit actions (admin). */
 export const FLEET_ENABLE_ACTION = "merchant.fleet.enable";
-export const FLEET_FEE_ACTION = "merchant.fleet.fee";
 export const FLEET_PAUSE_ACTION = "merchant.fleet.pause";
 export const FLEET_UNPAUSE_ACTION = "merchant.fleet.unpause";
 export const FLEET_DISABLE_ACTION = "merchant.fleet.disable";
@@ -148,6 +147,7 @@ export class FleetAdminService {
       thisWeek,
       bills,
       recentRides: rides,
+      feePct: liveCommissionRatePct(),
     };
   }
 
@@ -174,30 +174,19 @@ export class FleetAdminService {
 
   // ── Switches ────────────────────────────────────────────────────────────────────────────────────────────
 
-  /** Switch Own bikers on for a branch's owner (all their branches), with the ride fee. Re-enabling needs fresh invites. */
+  /**
+   * Turn Own bikers back on for a branch's owner (all their branches) after a Disable. Every business has it by default
+   * at the commission rate (owner, 2026-10-20), so there's no fee to set. Re-enabling needs fresh invites.
+   */
   async enable(actor: string, merchantId: string, body: EnableFleetRequest): Promise<AdminFleetDetail> {
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { ownerProfileId: true } });
     if (!merchant?.ownerProfileId) throw new NotFoundException("Business not found");
     const owner = merchant.ownerProfileId;
     await this.prisma.$transaction(async (tx) => {
-      await tx.ownerFleet.upsert({
-        where: { ownerProfileId: owner },
-        create: { ownerProfileId: owner, enabled: true, rideFee: body.rideFee },
-        update: { enabled: true, rideFee: body.rideFee, pausedAt: null },
-      });
-      await tx.auditLog.create({ data: { actor, action: FLEET_ENABLE_ACTION, target: owner, note: `fee ${body.rideFee.toFixed(2)}${body.note ? ` · ${body.note}` : ""}` } });
+      await tx.ownerFleet.upsert({ where: { ownerProfileId: owner }, create: { ownerProfileId: owner, enabled: true }, update: { enabled: true, pausedAt: null } });
+      await tx.auditLog.create({ data: { actor, action: FLEET_ENABLE_ACTION, target: owner, note: body.note ?? null } });
     });
     return this.detail(owner);
-  }
-
-  /** The fee for new bookings. A ride already booked keeps the fee it was booked at. */
-  async setFee(actor: string, ownerProfileId: string, body: SetFleetFeeRequest): Promise<AdminFleetDetail> {
-    await this.prisma.$transaction(async (tx) => {
-      const changed = await tx.ownerFleet.updateMany({ where: { ownerProfileId }, data: { rideFee: body.rideFee } });
-      if (changed.count === 0) throw new NotFoundException("Fleet not found");
-      await tx.auditLog.create({ data: { actor, action: FLEET_FEE_ACTION, target: ownerProfileId, note: `fee ${body.rideFee.toFixed(2)} · ${body.note}` } });
-    });
-    return this.detail(ownerProfileId);
   }
 
   /** OB-A3 Pause. Idempotent: pausing a paused fleet changes nothing but still cancels any booking left ringing. */

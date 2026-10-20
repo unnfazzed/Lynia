@@ -2097,6 +2097,23 @@ the handoff wins for screens and copy, and these product changes apply:
      states; a row opens the side panel (OB-A2: fee per ride, Pause / Unpause and Disable behind OB-A3's reason-code
      confirms, the weekly bills with Mark paid and Adjust). Every write is audited by its endpoint with the operator.
      Overview gets the OB-A4 tile; the sidebar gets Own bikers with the overdue fleets as its badge.
+19. **Launch (owner, 2026-10-20): live for every business, billed at the commission rate.** The owner: "this is already
+   for launch .. remove any gates"; "we charge a percentage fee like commission per cost of ride"; confirmed: every
+   business has Own bikers, billed the commission rate × the ride's cost, admin keeps Pause and Disable.
+   - **No launch switch.** `FLEET_UI_LIVE`, its guard and its deploy wiring are gone; `GET /app/order-flags` still sends
+     `fleetLive: true` for installed apps, and the biker app no longer reads it (it asks `GET /fleet/me` always).
+   - **No admin switch-on, no flat fee.** Migration 0114 drops `owner_fleets_enabled_needs_fee`, defaults `enabled` to
+     true and gives every existing owner a row (on); an owner added later gets theirs on first use, and a missing row
+     reads as on everywhere. Admin's Disable (`enabled = false`) and Pause stay; "Turn on" undoes a Disable.
+   - **Billing (supersedes OV-F4's flat fee):** an app order an Own biker carries is billed the commission rate × its
+     delivery fee (OV5, unchanged); a phone booking is billed the commission rate × its suggested fare
+     (`bookingFleetFee`), snapshotted on the order when booked. `rideFee` is kept for the history and read by nothing;
+     `POST /admin/fleets/:ownerId/fee` is gone. The console shows "Fee · 10% of each ride".
+   - **Invite links:** `lyniago.com/j/<code>` now answers (it served the 404 page): the website Worker sends every
+     device to the plain Play listing. Joining never needed the link (the invite is bound to the biker's number);
+     opening straight into the app (Android App Links) is not built.
+   - **Not changed:** `PREFERRED_RETIRED` stays as it is. With every business on Own bikers, Preferred is already
+     skipped in dispatch and replaced on Account; flipping it would also send the one-time retirement note.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

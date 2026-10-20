@@ -36,6 +36,7 @@ import { OrderLifecycleService } from "../orders/order-lifecycle.service";
 import { assertWithinServiceCorridor, OrdersService } from "../orders/orders.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ensureBookingAccount, findBookingAccountId } from "./booking-account";
+import { bookingFleetFee } from "./fleet-candidates";
 import { FleetDispatchService, fleetSearchEndsAt } from "./fleet-dispatch.service";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
@@ -213,12 +214,13 @@ export class MerchantBookingService {
       select: { id: true, name: true, location: true, ownerProfileId: true },
     });
     if (!merchant) throw new NotFoundException("Business not found");
+    // Every business has Own bikers (owner, 2026-10-20): only admin's Disable turns it off. No row yet reads as on.
     const fleet = merchant.ownerProfileId
-      ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: merchant.ownerProfileId }, select: { enabled: true, rideFee: true, pausedAt: true } })
+      ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: merchant.ownerProfileId }, select: { enabled: true, pausedAt: true } })
       : null;
-    if (!fleet?.enabled || fleet.rideFee == null) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
+    if (!merchant.ownerProfileId || (fleet && !fleet.enabled)) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
     // Handoff own-bikers-v1 `m.pausedT`/`m.pausedB` (OB-M12).
-    if (fleet.pausedAt) throw new ConflictException({ reason: "fleet_paused", message: "Own bikers paused. Talk to LyniaGo to turn them back on." });
+    if (fleet?.pausedAt) throw new ConflictException({ reason: "fleet_paused", message: "Own bikers paused. Talk to LyniaGo to turn them back on." });
     const pickup = (merchant.location as Waypoint | null) ?? null;
     if (!pickup) {
       throw new ConflictException({ reason: "no_location", message: "Set your business's pin before booking a biker." });
@@ -264,7 +266,7 @@ export class MerchantBookingService {
             idempotencyKey: body.idempotencyKey,
             status: "fleet_searching",
             fleetMerchantId: merchant.id,
-            fleetFee: fleet.rideFee,
+            fleetFee: bookingFleetFee(suggestedFare),
             otpHash: this.tokens.hash(deliveryCode),
             otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
             deliveryOtpAttempts: 0,

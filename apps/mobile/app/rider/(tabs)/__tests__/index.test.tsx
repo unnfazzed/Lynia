@@ -158,12 +158,11 @@ jest.mock("../../../../src/logic/use-keep-screen-on", () => ({ useKeepScreenOn: 
 jest.mock("../../../../src/net/use-feature-flags", () => ({
   useFeatureFlags: () => ({ merchantDispatchAutoEnabled: mockFoodOn }),
 }));
-// Own bikers (D-117): off unless a test switches it on — then `GET /fleet/me` and the fleet offers are these.
-let mockFleetLive = false;
+// Own bikers (D-117, live for everyone): `GET /fleet/me` and the fleet offers are these (no fleet by default).
 const mockGetMyFleet = jest.fn(async () => ({ fleet: null, invites: [] }) as unknown);
 const mockGetFleetOffers = jest.fn(async () => [] as unknown[]);
 const mockJoinFleet = jest.fn(async (_id: string) => ({ fleet: null, invites: [] }) as unknown);
-jest.mock("../../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: false, fleetLive: mockFleetLive }) }));
+jest.mock("../../../../src/net/use-order-flags", () => ({ useOrderFlags: () => ({ rxEnabled: false }) }));
 jest.mock("../../../../src/api/fleet", () => ({
   getMyFleet: () => mockGetMyFleet(),
   getFleetOffers: () => mockGetFleetOffers(),
@@ -325,7 +324,6 @@ afterEach(() => {
   mockBooting = false;
   mockNotifGranted = true;
   mockFoodOn = false;
-  mockFleetLive = false;
   mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [] }));
   mockGetFleetOffers.mockImplementation(async () => []);
   mockGetDemandZones.mockImplementation(async () => []);
@@ -2626,7 +2624,6 @@ describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite w
     kind: "app",
   });
   const inFleet = (paused = false) => {
-    mockFleetLive = true;
     mockGetMyFleet.mockImplementation(async () => ({ fleet: { shop: SHOP, paused, joinedAt: "2026-10-01T10:00:00Z" }, invites: [] }));
   };
 
@@ -2683,7 +2680,6 @@ describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite w
   });
 
   it("OB-R2/R3: an invited, verified biker gets the Join card on the public board; a refusal shows the server's sentence", async () => {
-    mockFleetLive = true;
     mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [{ id: "inv-1", shop: SHOP, canJoin: true, expiresAt: "2026-10-26T10:00:00Z" }] }));
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
@@ -2712,7 +2708,6 @@ describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite w
   });
 
   it("OB-R1: an invited biker still in the ID check sees the invite above 'Your ID is under review'", async () => {
-    mockFleetLive = true;
     mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [{ id: "inv-1", shop: SHOP, canJoin: false, expiresAt: "2026-10-26T10:00:00Z" }] }));
     // The automated check is with the vendor (R2's state).
     mockGetMe.mockResolvedValue(meFixture({ kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight" }));
@@ -2761,9 +2756,11 @@ describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite w
     expect(treeText(activeTree)).not.toContain("You're a public biker now");
   });
 
-  it("OB-R13: with Own bikers switched off the remembered shop never turns into 'You're a public biker now'", async () => {
+  it("OB-R13: a fleet read that fails never turns the remembered shop into 'You're a public biker now'", async () => {
     mockStore["lynia.fleetShop.v1.p1"] = SHOP;
-    mockFleetLive = false;
+    mockGetMyFleet.mockImplementation(async () => {
+      throw new ApiError(503, "down");
+    });
     mockGetMe.mockResolvedValue(meFixture());
     mockGetActiveOrder.mockResolvedValue(null);
     activeTree = renderScreen();

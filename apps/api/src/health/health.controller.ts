@@ -92,7 +92,8 @@ export class HealthController {
     return {
       rxEnabled: this.env.RX_ENABLED === "true",
       preferredRetired: this.env.PREFERRED_RETIRED === "true",
-      fleetLive: this.env.FLEET_UI_LIVE === "true",
+      // Own bikers is live for everyone (owner, 2026-10-20); installed apps still read this.
+      fleetLive: true,
     };
   }
 }

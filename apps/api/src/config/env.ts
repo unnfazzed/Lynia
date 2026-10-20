@@ -443,10 +443,6 @@ export const envSchema = z.object({
   // ON; "false" is the kill switch: while off, Rx items are not listed and an order containing one is
   // refused. The pharmacist check stays mandatory either way.
   RX_ENABLED: z.enum(["true", "false"]).default("true"),
-  // Own bikers (docs/designs/own-bikers.md, ledger D-117): every Own bikers route (the owner's roster and invites,
-  // the biker's invites, Join and Leave). Fail-safe OFF like the verticals above: while off, those routes 503 and
-  // nobody can join a fleet, so the T1/T2 guards stay inert. Fleets also need admin to enable an owner (T7).
-  FLEET_UI_LIVE: z.enum(["true", "false"]).default("false"),
   // Retiring Preferred riders (own-bikers.md "Distribution Plan", T9): "true" once the release is live. Read at
   // point of use via common/preferred-retired.ts; unset keeps Preferred for businesses without Own bikers.
   PREFERRED_RETIRED: z.enum(["true", "false"]).default("false"),

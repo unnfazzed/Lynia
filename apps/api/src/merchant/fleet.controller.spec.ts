@@ -1,18 +1,14 @@
 /**
  * Own bikers (D-117): the routes' access rules, pinned so they can't quietly loosen. Inviting, revoking, removing
- * and dismissing are owner-only (E4, E6); everything sits behind the FLEET_UI_LIVE switch; the link-opening and
- * Join routes are throttled (a code is a secret).
+ * and dismissing are owner-only (E4, E6); the link-opening and Join routes are throttled (a code is a secret).
  */
 import "reflect-metadata";
-import { ServiceUnavailableException } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { describe, expect, it } from "vitest";
-import type { Env } from "../config/env";
 import { THROTTLE_KEY, type ThrottleOptions } from "../common/throttle.guard";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AdminFleetsController } from "./admin-fleets.controller";
-import { FleetEnabledGuard } from "./fleet-enabled.guard";
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
 
@@ -22,9 +18,9 @@ const throttleOf = (fn: unknown) => Reflect.getMetadata(THROTTLE_KEY, fn as obje
 const guardsOf = (cls: object) => (Reflect.getMetadata(GUARDS_METADATA, cls) as unknown[]) ?? [];
 
 describe("Own bikers routes", () => {
-  it("put the merchant vertical's switch, then FLEET_UI_LIVE, ahead of auth on both controllers", () => {
+  it("put the merchant vertical's switch ahead of auth on both controllers (no Own bikers launch switch: live for all)", () => {
     for (const cls of [MerchantFleetController, RiderFleetController]) {
-      expect(guardsOf(cls).slice(0, 2)).toEqual([RestaurantsEnabledGuard, FleetEnabledGuard]);
+      expect(guardsOf(cls)[0]).toBe(RestaurantsEnabledGuard);
     }
   });
 
@@ -48,13 +44,8 @@ describe("Own bikers routes", () => {
     expect(throttleOf(RiderFleetController.prototype.accept)?.keyPrefix).toBe("fleet-job-accept");
   });
 
-  it("put the console's fleet routes behind the admin role (and not behind FLEET_UI_LIVE: ops set fleets up first)", () => {
+  it("put the console's fleet routes behind the admin role", () => {
     expect(guardsOf(AdminFleetsController)).toEqual([JwtAuthGuard, AdminGuard]);
   });
 
-  it("503 every route while FLEET_UI_LIVE is off, and let them through when it is on", () => {
-    const ctx = {} as never;
-    expect(() => new FleetEnabledGuard({ FLEET_UI_LIVE: "false" } as Env).canActivate(ctx)).toThrow(ServiceUnavailableException);
-    expect(new FleetEnabledGuard({ FLEET_UI_LIVE: "true" } as Env).canActivate(ctx)).toBe(true);
-  });
 });

@@ -290,7 +290,7 @@ export class FleetDispatchService implements OnModuleInit, OnModuleDestroy {
     // Paused or switched off mid-search: no fleet round rings. T7's pause cancels these bookings; until it does,
     // the business sees "None of your bikers took it" and can send it to any biker.
     const point = (merchant?.location as Waypoint | null)?.point ?? null;
-    const candidates = owner && fleet?.enabled && !fleet.pausedAt && point ? await this.candidates(order, owner, order.fleetMerchantId, point) : [];
+    const candidates = owner && (fleet?.enabled ?? true) && !fleet?.pausedAt && point ? await this.candidates(order, owner, order.fleetMerchantId, point) : [];
 
     const startedAt = attempt === 1 ? now : (order.dispatchStartedAt ?? now);
     if (candidates.length === 0) {

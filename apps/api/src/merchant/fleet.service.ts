@@ -85,7 +85,7 @@ export class FleetService {
   async roster(access: MerchantAccess): Promise<OwnerFleetResponse> {
     const role = access.role === "owner" ? "owner" : "staff";
     const owner = await this.ownerOf(access.merchantId);
-    const fleet = owner ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner } }) : null;
+    const fleet = owner ? await this.ensureFleet(owner) : null;
     if (!owner || !fleet?.enabled) return { enabled: false, paused: false, role, bikers: [], invites: [], suggestions: [] };
 
     const now = new Date();
@@ -313,7 +313,7 @@ export class FleetService {
     const shop = home?.name ?? "the shop";
     const now = new Date();
     const fleet = await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: invite.ownerProfileId } });
-    const ended = invite.revokedAt !== null || invite.expiresAt <= now || home?.ownerProfileId !== invite.ownerProfileId || !fleet?.enabled;
+    const ended = invite.revokedAt !== null || invite.expiresAt <= now || home?.ownerProfileId !== invite.ownerProfileId || fleet?.enabled === false;
     const rider = profile.rider;
     if (rider?.fleetOwnerProfileId === invite.ownerProfileId) return this.mine(profileId); // a second tap
     if (invite.joinedAt !== null || ended) throw refuse(410, "invite_ended", `This invite has ended. Ask ${shop} for a new one.`);
@@ -397,18 +397,31 @@ export class FleetService {
     return m?.ownerProfileId ?? null;
   }
 
-  /** The owner of this branch, who must have a fleet (on, paused or disabled: its bills outlive it). */
+  /**
+   * The owner's fleet row, made on first use: every business has Own bikers (owner, 2026-10-20), and a biker's link
+   * needs the row. A row admin wrote (Disable included) is returned as it is.
+   */
+  private async ensureFleet(owner: string): Promise<{ enabled: boolean; pausedAt: Date | null; suggestionsDismissedAt: Date | null }> {
+    return this.prisma.ownerFleet.upsert({
+      where: { ownerProfileId: owner },
+      create: { ownerProfileId: owner },
+      update: {},
+      select: { enabled: true, pausedAt: true, suggestionsDismissedAt: true },
+    });
+  }
+
+  /** The owner of this branch (any business: on, paused or disabled, its bills outlive it). */
   private async fleetOwner(merchantId: string): Promise<string> {
     const owner = await this.ownerOf(merchantId);
-    const fleet = owner ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner }, select: { ownerProfileId: true } }) : null;
-    if (!owner || !fleet) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
+    if (!owner) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
+    await this.ensureFleet(owner);
     return owner;
   }
 
-  /** The owner of this branch, whose fleet must be switched on (admin, T7). */
+  /** The owner of this branch, whose Own bikers admin hasn't disabled (T7). */
   private async enabledOwner(merchantId: string): Promise<string> {
     const owner = await this.ownerOf(merchantId);
-    const fleet = owner ? await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner }, select: { enabled: true } }) : null;
+    const fleet = owner ? await this.ensureFleet(owner) : null;
     if (!owner || !fleet?.enabled) throw new ConflictException({ reason: "fleet_off", message: "Own bikers isn't on for this business." });
     return owner;
   }

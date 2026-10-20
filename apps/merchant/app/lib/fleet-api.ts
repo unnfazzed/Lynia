@@ -13,7 +13,7 @@ import { authedFetch } from "./api-client";
 /**
  * Own bikers (ledger D-117): `/merchant/fleet`. The whole team reads the roster (staff see masked numbers and no
  * invite links); only the owner invites, revokes, removes and sees the bill (403 `owner_only` otherwise). The
- * routes answer 503 while Own bikers isn't live yet (`FLEET_UI_LIVE`).
+ * routes answer 503 only while the merchant vertical is switched off (Own bikers is on for every business).
  */
 
 export function getFleet(): Promise<OwnerFleetResponse> {

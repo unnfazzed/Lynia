@@ -21,9 +21,9 @@ async function post(path: string, body: unknown): Promise<FleetWriteResult> {
   return { ok: true };
 }
 
-/** "Fee per ride" · Save. The fee endpoint needs a note for its audit row; the console writes what changed. */
-export async function setFleetFee(ownerId: string, rideFee: number, from: string | null): Promise<FleetWriteResult> {
-  return post(`/admin/fleets/${ownerId}/fee`, { rideFee, note: `Fee per ride ${from ?? "none"} → ${rideFee.toFixed(2)}` });
+/** "Turn on": a business admin disabled gets Own bikers back (on for every business by default; no fee to set). */
+export async function enableFleet(merchantId: string, note: string): Promise<FleetWriteResult> {
+  return post(`/admin/merchants/${merchantId}/fleet`, note.trim() ? { note: note.trim() } : {});
 }
 
 /** OB-A3 Pause / Unpause / Disable: a reason code and a note for the audit log. */

@@ -27,7 +27,6 @@
  * the depcruise `express-no-merchant-coupling` rule.
  */
 import { MerchantFleetController, RiderFleetController } from "../merchant/fleet.controller";
-import { FleetEnabledGuard } from "../merchant/fleet-enabled.guard";
 import { FleetService } from "../merchant/fleet.service";
 import "reflect-metadata";
 import { Module, type INestApplication } from "@nestjs/common";
@@ -215,7 +214,6 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       JwtAuthGuard,
       MerchantGuard,
       RestaurantsEnabledGuard,
-      FleetEnabledGuard,
       { provide: FleetService, useValue: {} },
       { provide: MerchantService, useValue: merchantServiceStub },
       { provide: FoodOrderService, useValue: foodOrderServiceStub },

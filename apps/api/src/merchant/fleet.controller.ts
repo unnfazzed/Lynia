@@ -19,7 +19,6 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
 import { ZodBody } from "../common/zod.pipe";
 import { FleetDispatchService } from "./fleet-dispatch.service";
-import { FleetEnabledGuard } from "./fleet-enabled.guard";
 import { FleetService } from "./fleet.service";
 import { MerchantBookingService } from "./merchant-booking.service";
 import type { MerchantAccess } from "./merchant-access";
@@ -32,7 +31,7 @@ import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
  * bikers" bookings are any member's, like every booking (plan D3).
  */
 @Controller("merchant/fleet")
-@UseGuards(RestaurantsEnabledGuard, FleetEnabledGuard, JwtAuthGuard, MerchantGuard)
+@UseGuards(RestaurantsEnabledGuard, JwtAuthGuard, MerchantGuard)
 export class MerchantFleetController {
   constructor(
     private readonly fleet: FleetService,
@@ -138,7 +137,7 @@ export class MerchantFleetController {
  * (OV-F8 refuses anyone who is on one of the owner's).
  */
 @Controller("fleet")
-@UseGuards(RestaurantsEnabledGuard, FleetEnabledGuard, JwtAuthGuard)
+@UseGuards(RestaurantsEnabledGuard, JwtAuthGuard)
 export class RiderFleetController {
   constructor(
     private readonly fleet: FleetService,
