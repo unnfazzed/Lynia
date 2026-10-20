@@ -30,6 +30,7 @@ import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { FREE_JOBS_ACTION, FREE_JOBS_COPY, FREE_JOBS_PUSH_KIND, type FreeJobsMilestone, freeJobsMilestoneAt } from "./free-jobs-reminder";
 import { type DomainEventData, domainEvents } from "../common/domain-events";
+import { createOnce, replayFirst } from "../common/idempotency";
 
 /** Page size for the ledger history feed. */
 const LEDGER_PAGE_SIZE = 25;
@@ -526,10 +527,9 @@ export class WalletService {
     // BH-09: idempotent replay — a client-generated key lets a timeout+retry return the SAME pending
     // intent instead of opening a second one for the same attempt (mirrors OrdersService.create).
     // Checked before any other work so a replay is cheap, and a replay never charges twice.
-    if (body.idempotencyKey) {
-      const existing = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
-      if (existing) return this.toTopup(existing);
-    }
+    const findByKey = () => this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
+    const existing = await replayFirst(body.idempotencyKey, findByKey);
+    if (existing) return this.toTopup(existing);
     if (!this.topupRails.includes(body.rail)) {
       throw new ForbiddenException({
         reason: "topup_rail_unavailable",
@@ -539,21 +539,18 @@ export class WalletService {
     const amount = Math.min(COMMISSION.maxTopUp, Math.max(COMMISSION.minTopUp, round2(body.amount)));
     const charged = addMoney(amount, topupFee(amount, this.topupFeePct));
     const expiresAt = new Date(Date.now() + TOPUP_WINDOW_MS);
-    let topUp;
-    try {
-      topUp = await this.prisma.topUp.create({
-        data: { riderId, rail: body.rail, amount, charged, phone: body.phone, status: "pending", expiresAt, idempotencyKey: body.idempotencyKey ?? null },
-      });
-    } catch (err) {
-      // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
-      // (rider_id, idempotency_key) index) — return their intent instead of a spurious 5xx. The winner
-      // is the one that charges.
-      if (body.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        const winner = await this.prisma.topUp.findFirst({ where: { riderId, idempotencyKey: body.idempotencyKey } });
-        if (winner) return this.toTopup(winner);
-      }
-      throw err;
-    }
+    // A concurrent duplicate of the same key won the (rider_id, idempotency_key) index: return its intent. The winner
+    // is the one that charges.
+    const once = await createOnce({
+      key: body.idempotencyKey,
+      find: findByKey,
+      create: () =>
+        this.prisma.topUp.create({
+          data: { riderId, rail: body.rail, amount, charged, phone: body.phone, status: "pending", expiresAt, idempotencyKey: body.idempotencyKey ?? null },
+        }),
+    });
+    if (!once.created) return this.toTopup(once.row);
+    const topUp = once.row;
     if (!this.railLive || !this.rail) return this.toTopup(topUp);
 
     let result: PaymentRailResult;

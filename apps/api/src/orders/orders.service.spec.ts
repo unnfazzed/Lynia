@@ -542,6 +542,27 @@ describe("OrdersService.create idempotency (BUG-HUNT: duplicate orders on client
     expect(findFirstCalls).toBe(2);
   });
 
+  it("R-3: a key already used by one of the customer's food orders is a 409, never replayed as a parcel", async () => {
+    const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
+    const findFirst = vi.fn(async () => null);
+    const prisma = {
+      profile: { findUnique: async () => ({ onHold: false }) },
+      order: {
+        findFirst,
+        // The food order holds the key, so the shared (customer_id, idempotency_key) index refuses the insert.
+        count: async () => 1,
+        create: async () => {
+          throw dup;
+        },
+      },
+    };
+    const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
+
+    await expect(svc.create(withKey, "cust-1")).rejects.toMatchObject({ response: { statusCode: 409, reason: "idempotency_key_reused" } });
+    // The replay lookup is scoped to parcel orders, so the food order is never returned as this parcel.
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ orderType: "parcel" }) }));
+  });
+
   it("re-throws a P2002 that isn't the idempotency race (e.g. no key was sent at all)", async () => {
     const dup = new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "5.22.0" });
     const prisma = {

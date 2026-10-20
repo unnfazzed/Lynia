@@ -85,6 +85,19 @@ describe("order-create idempotency concurrency", () => {
     expect(rows).toBe(2);
   });
 
+  it("R-3: a key already held by one of the customer's food orders is a 409, not a 500 and not a second row", async () => {
+    const customer = await makeCustomer();
+    const input: CreateOrderRequest = { ...baseInput, idempotencyKey: crypto.randomUUID() };
+    // The food and parcel paths share the (customer_id, idempotency_key) index (migration 0021). Make the key's
+    // first row a merchant order, then send a parcel with the same key.
+    const first = await orders.create(input, customer);
+    await prisma.order.update({ where: { id: first.id }, data: { orderType: "merchant" } });
+
+    await expect(orders.create(input, customer)).rejects.toMatchObject({ response: { statusCode: 409, reason: "idempotency_key_reused" } });
+    const rows = await prisma.order.count({ where: { customerId: customer, idempotencyKey: input.idempotencyKey } });
+    expect(rows).toBe(1);
+  });
+
   it("an old client that never sends a key keeps the pre-existing no-dedupe behavior", async () => {
     const customer = await makeCustomer();
 

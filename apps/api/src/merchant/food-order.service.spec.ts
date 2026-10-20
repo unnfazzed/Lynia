@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException, Logger } from "@nestjs/common";
 import { cancelledByOf, customerOrderOutcome, MerchantCancelOrderRequest, RESTAURANTS_TIMING } from "@lynia/shared";
@@ -329,6 +330,27 @@ describe("FoodOrderService.placeOrder", () => {
     } as never);
     expect(res.id).toBe("o1");
     expect(createCalls).toBe(0);
+  });
+  it("R-3: a key held by one of the customer's parcel orders is a 409, not the old 500", async () => {
+    const { svc } = build({
+      order: {
+        findFirst: async () => null, // no merchant order has this key
+        count: async () => 1, // ...but a parcel order does, on the shared (customer_id, idempotency_key) index
+        create: async () => {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "5.22.0" });
+        },
+      },
+      merchant: { findFirst: async () => ({ id: "m1", location: { point: HARARE_CBD, landmark: "CBD", contactPhone: "+263771234567" } }) },
+      merchantDish: { findMany: async () => [dish()] },
+    });
+    await expect(
+      svc.placeOrder("c1", "m1", {
+        items: [{ dishId: "d1", quantity: 1 }],
+        dropoff: { point: AVONDALE },
+        paymentMethod: "cash",
+        idempotencyKey: "22222222-2222-2222-2222-222222222222",
+      } as never),
+    ).rejects.toMatchObject({ response: { statusCode: 409, reason: "idempotency_key_reused" } });
   });
 });
 

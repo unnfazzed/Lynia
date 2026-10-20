@@ -40,6 +40,7 @@ import { bookingFleetFee } from "./fleet-candidates";
 import { FleetDispatchService, fleetSearchEndsAt } from "./fleet-dispatch.service";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
+import { createOnce, replayFirst } from "../common/idempotency";
 
 /** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). Own bikers
  *  (D-117): a "My bikers" booking still ringing is cancelled the same way (OB-M9 "Cancel"). */
@@ -236,55 +237,57 @@ export class MerchantBookingService {
     // Send's own per-account gates, applied to the booking account as Send's create would (a hold on the business).
     await this.assertBusinessMayBook(accountId);
 
-    const replay = await this.prisma.order.findFirst({ where: { customerId: accountId, idempotencyKey: body.idempotencyKey }, select: { id: true, fleetMerchantId: true } });
+    // R-3 (common/idempotency.ts): the booking account only ever books, so its key scope is the whole index scope.
+    const findByKey = () =>
+      this.prisma.order.findFirst({ where: { customerId: accountId, idempotencyKey: body.idempotencyKey }, select: { id: true, fleetMerchantId: true } });
+    const replay = await replayFirst(body.idempotencyKey, findByKey);
     if (replay) return this.fleetReplay(access, replay);
 
     assertWithinServiceCorridor(pickup.point, body.dropoff.point);
     const { distanceKm, suggestedFare } = quoteFare(pickup.point, body.dropoff.point);
     const orderId = randomUUID();
     const deliveryCode = this.tokens.randomOtp();
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.order.create({
-          data: {
-            id: orderId,
-            customerId: accountId,
-            orderType: "parcel",
-            pickup: pickup as unknown as Prisma.InputJsonValue,
-            dropoff: body.dropoff as unknown as Prisma.InputJsonValue,
-            itemDesc: summarizeItems(items),
-            items: items as unknown as Prisma.InputJsonValue,
-            note: body.note ?? null,
-            declaredValue: body.declaredValue,
-            distanceKm,
-            suggestedFare,
-            proposedFare: 0,
-            disclaimerVersion: body.disclaimerVersion,
-            disclaimerAcceptedAt: new Date(),
-            idempotencyKey: body.idempotencyKey,
-            status: "fleet_searching",
-            fleetMerchantId: merchant.id,
-            fleetFee: bookingFleetFee(suggestedFare),
-            otpHash: this.tokens.hash(deliveryCode),
-            otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
-            deliveryOtpAttempts: 0,
-            deliveryCodeRotatedAt: new Date(),
-            events: { create: { status: "fleet_searching" } },
-          },
-          select: { id: true },
-        });
-        await tx.merchantBooking.create({
-          data: { orderId, merchantId: merchant.id, bookedByProfileId: profileId, ...(collectCash ? { collectCash: true } : {}) },
-        });
-      });
-    } catch (err) {
-      // A concurrent replay of the same key won the (customer_id, idempotency_key) unique: return its booking.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        const winner = await this.prisma.order.findFirst({ where: { customerId: accountId, idempotencyKey: body.idempotencyKey }, select: { id: true, fleetMerchantId: true } });
-        if (winner) return this.fleetReplay(access, winner);
-      }
-      throw err;
-    }
+    const once = await createOnce({
+      key: body.idempotencyKey,
+      find: findByKey,
+      create: () =>
+        this.prisma.$transaction(async (tx) => {
+          await tx.order.create({
+            data: {
+              id: orderId,
+              customerId: accountId,
+              orderType: "parcel",
+              pickup: pickup as unknown as Prisma.InputJsonValue,
+              dropoff: body.dropoff as unknown as Prisma.InputJsonValue,
+              itemDesc: summarizeItems(items),
+              items: items as unknown as Prisma.InputJsonValue,
+              note: body.note ?? null,
+              declaredValue: body.declaredValue,
+              distanceKm,
+              suggestedFare,
+              proposedFare: 0,
+              disclaimerVersion: body.disclaimerVersion,
+              disclaimerAcceptedAt: new Date(),
+              idempotencyKey: body.idempotencyKey,
+              status: "fleet_searching",
+              fleetMerchantId: merchant.id,
+              fleetFee: bookingFleetFee(suggestedFare),
+              otpHash: this.tokens.hash(deliveryCode),
+              otpCipher: sealHandoverCode(this.codeCrypto, "delivery", orderId, deliveryCode),
+              deliveryOtpAttempts: 0,
+              deliveryCodeRotatedAt: new Date(),
+              events: { create: { status: "fleet_searching" } },
+            },
+            select: { id: true },
+          });
+          await tx.merchantBooking.create({
+            data: { orderId, merchantId: merchant.id, bookedByProfileId: profileId, ...(collectCash ? { collectCash: true } : {}) },
+          });
+          return { id: orderId, fleetMerchantId: merchant.id };
+        }),
+    });
+    // A concurrent duplicate of the same key won the (customer_id, idempotency_key) index: return its booking.
+    if (!once.created) return this.fleetReplay(access, once.row);
     await this.fleetDispatch.kick(orderId);
     return { booking: await this.detail(access, orderId), deliveryCode };
   }
