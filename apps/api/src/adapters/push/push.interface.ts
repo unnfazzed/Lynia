@@ -46,8 +46,9 @@ export interface PushMessage {
 /** The rider job-alert channel the app creates (apps/mobile src/permissions/notifications.ts). */
 export const JOB_ALERTS_CHANNEL = "job-alerts";
 
-/** The push kinds that are rider job alerts: the new-parcel ping and the food-offer alarm. */
-const JOB_ALERT_KINDS: ReadonlySet<string> = new Set(["broadcast", "food_offer"]);
+/** The push kinds that are rider job alerts: the new-parcel ping, the food-offer alarm and an Own biker's ring
+ *  (D-117: "Chicken Inn jobs ring full screen", so it sounds like a food offer). */
+const JOB_ALERT_KINDS: ReadonlySet<string> = new Set(["broadcast", "food_offer", "fleet_offer"]);
 
 /** The Android channel for a push, from its `data.kind`: job alerts → `job-alerts`, everything else default. */
 export function androidChannelFor(data: Record<string, string> | undefined): string | undefined {

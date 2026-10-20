@@ -288,8 +288,9 @@ export class FleetService {
     try {
       withdrawn = await this.prisma.$transaction(async (tx) => {
         await this.lockRider(tx, profileId);
-        const locked = await tx.rider.findUnique({ where: { profileId }, select: { fleetOwnerProfileId: true } });
-        if (locked?.fleetOwnerProfileId) throw refuse(409, "in_another_fleet", `Leave ${shop} first.`);
+        const locked = await tx.rider.findUnique({ where: { profileId }, select: { fleetOwnerProfileId: true, fleetHomeMerchant: { select: { name: true } } } });
+        // OB-R3: name the shop they already ride for (another invite may have won the race), not this one.
+        if (locked?.fleetOwnerProfileId) throw refuse(409, "in_another_fleet", `Leave ${locked.fleetHomeMerchant?.name ?? "your other shop"} first.`);
         // Taking the invite is the claim: one revoked a moment ago can't still be joined.
         const claimed = await tx.fleetInvite.updateMany({
           where: { id: invite.id, revokedAt: null, joinedAt: null, expiresAt: { gt: now } },

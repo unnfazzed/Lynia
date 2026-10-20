@@ -2165,6 +2165,30 @@ describe("RiderService.applyKycResult", () => {
     expect(notifyProfiles).toHaveBeenCalledWith(["p1"], expect.objectContaining({ title: "You're verified" }));
   });
 
+  it("Own bikers OB-R2 (D-117): a biker verified with a live invite to their number is told the shop is waiting", async () => {
+    const invites: unknown[] = [];
+    const full: Record<string, unknown> = {
+      rider: {
+        updateMany: async () => ({ count: 1 }),
+        findFirst: async () => ({ profileId: "p1", duplicateIdFlag: false, ...ON_FILE }),
+      },
+      profile: { count: async () => 0, findUnique: async () => ({ phone: "+263775550192" }) },
+      fleetInvite: { findFirst: async (a: unknown) => (invites.push(a), { homeMerchantId: "m1" }) },
+      merchant: { findUnique: async () => ({ name: "Chicken Inn Avondale" }) },
+      auditLog: { create: async () => ({}) },
+      $executeRaw: async () => 1,
+    };
+    full.$transaction = async (fn: (tx: unknown) => unknown) => fn(full);
+    const notifyProfiles = vi.fn(async () => new Set(["p1"]));
+    const s = svc(full, {}, new StubKycVendor());
+    (s as unknown as { notifications: unknown }).notifications = { ...notificationsStub, notifyProfiles };
+    await s.applyKycResult("sess_1", "verified", new Date());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(notifyProfiles).toHaveBeenCalledWith(["p1"], { title: "Chicken Inn Avondale is waiting for you", body: "", data: { kind: "fleet_invite" } });
+    // Only a live invite to this number: not revoked, not taken, not expired.
+    expect(invites[0]).toMatchObject({ where: { phone: "+263775550192", revokedAt: null, joinedAt: null } });
+  });
+
   it("returning user: a document number on an ERASED account only (no live one) verifies, audit-flagged verified_id_returning", async () => {
     let data: Record<string, unknown> | undefined;
     let audit: Record<string, unknown> | undefined;

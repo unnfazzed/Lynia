@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { type FleetJobOffer, haversineKm } from "@lynia/shared";
 import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useMemo, useRef } from "react";
 import { type AccessibilityActionEvent, ActivityIndicator, ScrollView, Text, View, type ViewStyle } from "react-native";
@@ -10,6 +11,8 @@ import { useTabBarSpace } from "../shell/TabShell";
 import { Dot, Sq } from "../send/kit";
 import { km, RIDER_COPY as R, RF, usd } from "./copy";
 import { RLabel, TABULAR } from "./kit";
+import { FleetPinLabel, FleetTag } from "./fleet";
+import { OBB } from "./fleet-copy";
 
 /**
  * Rider v2 Jobs-board parts (`packages/design/handoff/rider-v2/design/rv-board.jsx`, ledger D-54):
@@ -73,6 +76,23 @@ export interface BoardJob {
   asking: number;
   /** Which board tag the card wears; parcel when absent. */
   kind?: JobKind;
+  /** Own bikers (D-117): a fleet offer — the "Chicken Inn job" tag, no fare, a preview card, a distance pin. */
+  fleet?: { shop: string };
+}
+
+/** A fleet offer as a board card and pin: the meta line is "3.2 km trip · Collect $14.00" (or "Paid already"). */
+export function fleetBoardJob(o: FleetJobOffer, shop: string, you: { lat: number; lng: number } | null): BoardJob {
+  const collect = o.collect != null && Number(o.collect) > 0 ? OBB.collectMeta(usd(Number(o.collect))) : OBB.paidAlready;
+  return {
+    id: `fleet:${o.orderId}`,
+    pickup: { ...o.pickup.point, landmark: o.pickup.landmark },
+    dropoff: { ...o.dropoff.point, landmark: o.dropoff.landmark },
+    toPickupKm: you ? haversineKm(you, o.pickup.point) : null,
+    tripKm: o.distanceKm,
+    item: collect,
+    asking: 0,
+    fleet: { shop: o.shop || shop },
+  };
 }
 
 /** The board card: tag · "0.8 km to pickup" · fare + "asking"; stops; meta; one "Make an offer". */
@@ -105,7 +125,9 @@ export const BoardJobCard = React.memo(function BoardJobCard({
       else if (e.nativeEvent.actionName === "withdraw") onWithdraw?.();
       else if (e.nativeEvent.actionName === "activate") onSelect?.();
     },
-    accessibilityLabel: `${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : job.kind === "pharmacy" ? R.pharmacy : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`,
+    accessibilityLabel: job.fleet
+      ? `${job.fleet.shop}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${job.item}`
+      : `${job.kind === "food" ? R.food : job.kind === "shop" ? R.shop : job.kind === "pharmacy" ? R.pharmacy : R.parcel}, ${job.pickup.landmark} to ${job.dropoff.landmark}, ${usd(offer ? offer.fare : job.asking)}`,
   };
   const style: ViewStyle = {
     borderWidth: selected ? 2 : 1,
@@ -115,7 +137,29 @@ export const BoardJobCard = React.memo(function BoardJobCard({
     gap: 8,
     backgroundColor: tokens.color.bg,
   };
-  const content = (
+  // OB-R4: a fleet card is a preview — tag and distance, the stops, "3.2 km trip · Collect $14.00". It rings full
+  // screen (OB-R7), so it has no fare, no button and no tap of its own beyond selecting its pin.
+  const fleetContent = job.fleet ? (
+    <>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <FleetTag shop={job.fleet.shop} />
+        {job.toPickupKm != null ? (
+          <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.semibold, color: tokens.color.ink, ...TABULAR }} numberOfLines={1}>
+            {`${km(job.toPickupKm)} `}
+            <Text style={{ color: tokens.color.muted, fontWeight: tokens.font.weight.regular }}>{R.toPickup}</Text>
+          </Text>
+        ) : null}
+      </View>
+      <View style={{ gap: 4 }}>
+        <StopLine name={job.pickup.landmark} />
+        <StopLine drop name={job.dropoff.landmark} />
+      </View>
+      <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted, ...TABULAR }} numberOfLines={1}>
+        {job.tripKm != null ? `${km(job.tripKm)} ${R.trip} · ${job.item}` : job.item}
+      </Text>
+    </>
+  ) : null;
+  const content = fleetContent ?? (
     <>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <JTag kind={job.kind} />
@@ -165,7 +209,8 @@ export const BoardJobCard = React.memo(function BoardJobCard({
 });
 
 /** A job pin: 20px accent dot (24 + accent-text ring when selected) + a fare pill (ink when selected). */
-function JobPin({ fare, selected }: { fare: number; selected: boolean }): React.ReactElement {
+/** `fleetKm` (Own bikers OB-R4): a fleet pin shows a store mark and the distance instead of the fare. */
+function JobPin({ fare, selected, fleetKm }: { fare: number; selected: boolean; fleetKm?: number | null }): React.ReactElement {
   const s = selected ? 24 : 20;
   return (
     <View style={{ alignItems: "center", gap: 3, padding: 4 }}>
@@ -182,7 +227,11 @@ function JobPin({ fare, selected }: { fare: number; selected: boolean }): React.
         <View style={{ width: s, height: s, borderRadius: s / 2, backgroundColor: tokens.color.accent, borderWidth: 3, borderColor: tokens.color.bg, ...tokens.shadow.card }} />
       </View>
       <View style={{ backgroundColor: selected ? tokens.color.ink : tokens.color.bg, borderRadius: tokens.radius.pill, paddingHorizontal: 8, paddingVertical: 2, ...tokens.shadow.card }}>
-        <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: selected ? tokens.color.onAccent : tokens.color.ink, ...TABULAR }}>{usd(fare)}</Text>
+        {fleetKm !== undefined ? (
+          <FleetPinLabel toPickupKm={fleetKm} selected={selected} />
+        ) : (
+          <Text style={{ fontSize: 12, fontWeight: tokens.font.weight.bold, color: selected ? tokens.color.onAccent : tokens.color.ink, ...TABULAR }}>{usd(fare)}</Text>
+        )}
       </View>
     </View>
   );
@@ -263,7 +312,7 @@ export const BoardMap = React.memo(function BoardMap({
             zIndex={j.id === selectedId ? 5 : 4}
             onPress={() => onSelect(j.id)}
           >
-            <JobPin fare={j.asking} selected={j.id === selectedId} />
+            <JobPin fare={j.asking} selected={j.id === selectedId} fleetKm={j.fleet ? j.toPickupKm : undefined} />
           </Marker>
         ))}
         {you ? (

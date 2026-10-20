@@ -14,7 +14,9 @@ describe("job-alerts Android channel", () => {
     expect(JOB_ALERTS_CHANNEL).toBe("job-alerts");
     expect(androidChannelFor({ kind: "broadcast" })).toBe("job-alerts");
     expect(androidChannelFor({ kind: "food_offer" })).toBe("job-alerts");
-    for (const kind of ["offer", "riders_available", "issue", "food_ready_time"]) expect(androidChannelFor({ kind })).toBeUndefined();
+    // Own bikers (D-117): a fleet ring sounds like a food offer; the owner-side fleet pushes don't.
+    expect(androidChannelFor({ kind: "fleet_offer" })).toBe("job-alerts");
+    for (const kind of ["offer", "riders_available", "issue", "food_ready_time", "fleet_dissolved", "fleet_none_took"]) expect(androidChannelFor({ kind })).toBeUndefined();
     expect(androidChannelFor({ orderId: "o1", status: "assigned" })).toBeUndefined();
     expect(androidChannelFor(undefined)).toBeUndefined();
   });

@@ -741,6 +741,8 @@ export const OrderFlagsResponse = z.object({
   rxEnabled: z.boolean(),
   /** Own bikers T9 (`PREFERRED_RETIRED`): Preferred riders is gone, so the merchant app hides its row and screen. */
   preferredRetired: z.boolean().optional(),
+  /** Own bikers (`FLEET_UI_LIVE`): the `/fleet` routes answer, so the biker app asks `GET /fleet/me`. */
+  fleetLive: z.boolean().optional(),
 });
 export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;
 

@@ -11,11 +11,11 @@ const todayAt = (h, m) => {
   return d.toISOString();
 };
 
-export function me({ rider = true, kycStatus = "verified", cancelStrikes = 1, kycPendingState = null, tripsCount = 312 } = {}) {
+export function me({ rider = true, kycStatus = "verified", cancelStrikes = 1, kycPendingState = null, tripsCount = 312, firstName = "Tendai" } = {}) {
   return {
     profileId: "0a1b2c3d-0000-4000-8000-00000000me01",
     role: rider ? "rider" : "customer",
-    firstName: "Tendai",
+    firstName,
     lastName: "Moyo",
     phone: "+263772451180",
     email: null,
@@ -84,10 +84,10 @@ export const OPEN_ORDERS = [
   open(3, "Fife Ave Shops", { lat: -17.818, lng: 31.047 }, "Belgravia", { lat: -17.81, lng: 31.04 }, "Phone + charger", "2.50", 1.6, "Chipo"),
 ];
 
-export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, side, kycPendingState, tripsCount, openOrders = [], active = false, extra = [] } = {}) {
+export function stage({ rider = true, kycStatus, cancelStrikes, balance = 7.6, side, kycPendingState, tripsCount, firstName, openOrders = [], active = false, extra = [] } = {}) {
   if (side) setParams({ side });
   installRouter([
-    { match: "/auth/me", json: me({ rider, kycStatus, cancelStrikes, kycPendingState, tripsCount }) },
+    { match: "/auth/me", json: me({ rider, kycStatus, cancelStrikes, kycPendingState, tripsCount, firstName }) },
     { match: "/notifications/unread-count", json: { count: 3 } },
     // `false`, not `null`: the harness coalesces a null body to `{}`, which would read as an active job.
     { match: "/orders/mine/active", json: active },

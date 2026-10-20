@@ -2067,6 +2067,17 @@ the handoff wins for screens and copy, and these product changes apply:
    - **Additive reads:** `FleetRideLine.biker` (first name), `FleetBillsResponse.thisWeek.branches` (OB-M14's branch
      lines), and `ownBiker: true` on the merchant's order and booking reads when its own biker carries it (the order's
      fleet tag and a rider), which switches K5's cash card to one sentence with food + delivery.
+16. **Lane C PR 1 (2026-10-19): the biker joins, sees the fleet board and takes a ring.**
+   - **API:** `GET /app/order-flags` says `fleetLive` (FLEET_UI_LIVE), so the app asks `/fleet/me` only while the routes
+     answer; a `fleet_offer` push goes on the loud `job-alerts` channel like a food offer; an invited biker whose ID check
+     passes gets "Chicken Inn Avondale is waiting for you" (`fleet_invite`, OB-R2); a join that loses the lock race names
+     the shop they already ride for.
+   - **App:** the board keeps its shift, gates and heartbeat for a fleet biker and swaps the job source: the offers ringing
+     them (`GET /fleet/jobs/offers`, re-read on `fleet:offer` / `fleet:offer-closed`, polled while the socket is down) as
+     preview cards and distance pins; empty, loading, couldn't load and paused. The public reads (open jobs, food
+     offers, demand) never run for a fleet biker. The Join card sits on the public board for an invited, verified biker;
+     OB-R1 shows the invite above "Your ID is under review". `/rider/fleet-offer` rings full screen (OB-R7) and opens the
+     food job screen for an app order, the Send job screen for a booking.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

@@ -5840,3 +5840,18 @@ admin), each behind `FLEET_UI_LIVE`. Strings come from the handoff's `copy.ts`, 
 - "1 day overdue" in the singular: `billOverdueSub` is a template, so its count agrees like the roster's counts.
 - The offline frame also shows the app's "Back online" toast: the shot cuts only the Fleet rides call, and the
   connection probe then finds the server.
+
+**Evidence, lane C PR 1 (biker: joining, the fleet board, the offer, OB-R1–R7):**
+`docs/parity/OWN-BIKERS-V1-BIKER-JOIN-BOARD-2026-10-19.png` (`tools/parity/shoot-own-bikers-v1-biker.mjs`, 11 frames,
+react-native-web from the `ob_*` fixtures). What still differs, and why:
+- Every fleet string names the biker's home branch ("Chicken Inn Avondale jobs", "New Chicken Inn Avondale job"), where
+  the handoff shortens to the brand in some strings: there is one name per branch, and owner decision P7-1 makes it the
+  name every fleet screen uses. The templates are checked against the handoff with its own sample names
+  (`src/ui/rider/__tests__/fleet-copy.test.ts`).
+- **Open, owner's call:** `b.expB` says fleet jobs "hold for 60 seconds"; a round is 40 s on the server
+  (`FLEET_DISPATCH.roundMs`, which the merchant's "We rang them 3 times over 2 minutes" depends on). The app says the
+  real number, from that constant, until the owner picks the copy or the round.
+- Primary buttons are the app's shared `CtaButton` fill (the rider screens' primary everywhere), a lighter green than the
+  kit's `--cta-fill`; the secondaries are the kit's `btn2` (48, 1px line, ink).
+- The harness draws no map tiles (grey), the drop-off square is the app's stop mark, and the offer screen is a pushed
+  screen, so F4 has no tab bar. The pins show the distance from the fixture's position.
