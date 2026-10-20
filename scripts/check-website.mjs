@@ -135,7 +135,9 @@ export const LAUNCH_EDITS = [
   // ((min-width: 900px) and (hover: hover) and (pointer: fine)) a click on any data-download button opens it
   // instead of following /download; phones and tablets follow the link. Nothing else on the page changes.
   // We are live in Harare and Bulawayo (owner 2026-10-20). The copy that named Harare alone names both, and the
-  // "Live in" map gets a second dot, drawn exactly like Harare's, with the chip naming both. The illustrations'
+  // "Live in" map gets a second dot, drawn exactly like Harare's. Each town's chip is a small pill pinned to its own
+  // dot: Harare's above it, Bulawayo's below it (owner 2026-10-20: "the Bulawayo tab should be on Bulawayo", "make the
+  // label smaller"). The illustrations'
   // alt text describes the drawings and is unchanged.
   {
     id: "live-title",
@@ -191,21 +193,28 @@ export const LAUNCH_EDITS = [
     todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
     decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
     from: "[hx,hy]=pr([31.05,-17.83]);",
-    to: "[hx,hy]=pr([31.05,-17.83]),[bx,by]=pr([28.58,-20.15]);",
+    to: "[hx,hy]=pr([31.05,-17.83]),[bx,by]=pr([28.58,-20.15]),bl=8+84*(bx+10)/(W+20),bt=50+84*(by+10-(H+20)/2)/(W+20),hl=8+84*(hx+10)/(W+20),ht=50+84*(hy+10-(H+20)/2)/(W+20);",
   },
   {
     id: "live-map-bulawayo-dot",
     todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
     decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
     from: "<circle cx=\"${hx}\" cy=\"${hy}\" r=\"7\" fill=\"#00B14F\"/></svg>",
-    to: "<circle cx=\"${hx}\" cy=\"${hy}\" r=\"7\" fill=\"#00B14F\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"6\" fill=\"#00B14F\" class=\"zpulse\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"11\" fill=\"#fff\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"7\" fill=\"#00B14F\"/></svg>",
+    to: "<circle cx=\"${hx}\" cy=\"${hy}\" r=\"7\" fill=\"#00B14F\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"6\" fill=\"#00B14F\" class=\"zpulse\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"11\" fill=\"#fff\"/><circle cx=\"${bx}\" cy=\"${by}\" r=\"7\" fill=\"#00B14F\"/></svg><div class=\"chip\" style=\"left:${bl}%;top:${bt}%;transform:translate(-50%,14px)\"><span class=\"dot\" style=\"background:#FFD23F;box-shadow:0 0 0 3px rgba(255,210,63,.25)\"></span>Bulawayo</div>",
   },
   {
-    id: "live-map-chip",
+    id: "live-map-chip-style",
     todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
     decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
-    from: ">Harare</div>`;}",
-    to: ">Harare · Bulawayo</div>`;}",
+    from: ".zmap .chip{right:7%;top:9%;background:var(--ink);color:#fff}",
+    to: ".zmap .chip{right:auto;background:var(--ink);color:#fff;font-size:13px;gap:7px;padding:6px 11px 6px 9px;border-radius:999px;box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}.zmap .chip .dot{width:7px;height:7px}",
+  },
+  {
+    id: "live-map-harare-chip",
+    todo: "not a README TODO: Bulawayo launch (owner 2026-10-20)",
+    decision: "owner 2026-10-20: we are live in Harare and Bulawayo; the site names both and the map marks both (D-42, D-120)",
+    from: "<div class=\"chip\"><span class=\"dot\" style=\"background:#FFD23F;box-shadow:0 0 0 4px rgba(255,210,63,.25)\"></span>Harare</div>",
+    to: "<div class=\"chip\" style=\"left:${hl}%;top:${ht}%;transform:translate(-50%,calc(-100% - 14px))\"><span class=\"dot\" style=\"background:#FFD23F;box-shadow:0 0 0 3px rgba(255,210,63,.25)\"></span>Harare</div>",
   },
   {
     id: "download-qr-css",
