@@ -1969,6 +1969,7 @@ rule. A change comes back as a new export.
 | #1, the desktop QR popup | **Built from the owner's handoff `packages/design/handoff/download-qr-install-tip-2026-10/` §1** (owner, 2026-10-15: *"the desktop version not much but just a pop up QR code"*). On a desktop (`(min-width: 900px) and (hover: hover) and (pointer: fine)`) a click on any `data-download` button opens a 440-wide popup: green band with three blobs, the QR (`assets/download-qr-2026-10.svg`, verbatim from the handoff, tilted −3°), the "Point. Scan. Go." sticker, "Scan to get LyniaGo". ✕ / Esc / backdrop close it; focus is trapped and returned; body scroll locks; 160/200 ms motion, none under reduced motion. Phones and tablets follow the link. **One owner choice beyond the handoff** (2026-10-15): the handoff names three buttons; "Send a parcel" opens the popup too. | Nothing changes until a desktop click. `LAUNCH_EDITS` → `download-qr-css` (CSS appended to the page's `<style>`, the page's own variables) and `download-qr-popup` (markup + a small inline script before `</body>`; its hash joins the CSP). The new asset is on `EXTRA_FILES`. The page around it is untouched. |
 | #3 About us, revisited | **Remove the link** (owner, 2026-09-30: *"remove the about us section in the website"*). There is no About page, so the footer's "About us" link is dropped rather than left pointing at a 404. | The footer loses one link (`LAUNCH_EDITS` → `about-removed`); `INTENTIONAL_404` is empty. `/about` still 404s like any unknown path. |
 
+| (not a README TODO) Live in Bulawayo too | **Name both towns** (owner, 2026-10-20, D-120). Title, description, OG title and description, the hero line and "Live in Harare and Bulawayo"; the "Live in" map gets a Bulawayo dot drawn like Harare's and the chip reads "Harare · Bulawayo". | Copy and one map dot (`LAUNCH_EDITS` `live-*`). |
 | (not a README TODO) Menu buttons stop short on phones | **Fix it** (owner, 2026-09-28, after the gstack QA and design reviews both found it). The lazy `biz-scooter-rider.svg` had no reserved size, so on a first visit at ≤960px the page grew about 350px while scrolling. The first tap on "Download the app" or "Send a parcel" then stopped 320–540px short of `#app`. The fix uses the README's own screenshot pattern: `width="460" height="460"` (the SVG's size) on that `<img>`, plus `height:auto` in `.biz-ill`. | Nothing looks different: the parity harness shows 0 px at all 7 widths. On a cold load the buttons now land where the reference lands (0px at 360, 390 and 768). **Report upstream** so the next export carries it; this row then retires. `LAUNCH_EDITS` → `biz-ill-size` and `biz-ill-height-auto`. |
 
 Hosting-only files, none of which render: `_headers` (the README's caching rules plus security
@@ -5345,6 +5346,9 @@ every online rider gets the push and the board card for every new order.
   never shorter than the rider's straight-line distance to the pickup allows (`PICKUP_ETA`), so the customer choosing
   among nationwide bids sees an honest number in the ETA slot the offer card already draws.
 
+- **Amended (owner, 2026-10-20, D-120): parcels reach bikers within 25 km of the pickup**, not the whole country. Where
+  we serve is unchanged.
+
 ## D-100 · The sealed-bag photo at pickup is optional for shops and pharmacies too — APPROVED (owner, 2026-10-12)
 
 **Owner instruction (2026-10-12):** "make pictures optional for shops and pharmacies too." Order flow v2 (D-59,
@@ -5943,3 +5947,33 @@ per-step late rule for every admin screen, and one "active orders" meaning (not 
 - **Live · Orders card.** Its title's right-hand text gains " · No timer: N" when some active orders have no stage
   clock (delivered, fleet searching, a scheduled order not rung). Not drawn in the kit.
 - **Upstream:** the admin kit should draw the per-step detail line and the untimed count. The kit is not edited.
+
+## D-120 · Live in Harare and Bulawayo: copy names both towns, parcels reach bikers within 25 km, the app follows the user's town — APPROVED (owner, 2026-10-20)
+
+**Owner (2026-10-20):** *"Our startup is live in Harare and Bulawayo now. We need to do changes on the landing page copy,
+apps and any gates in the software."* Decisions, asked in session: keep the nationwide service area (D-99); keep parcels
+between towns as today; push a new parcel only to bikers within about 25 km of its pickup; change the website now as
+launch edits.
+
+- **Where we serve is unchanged** (D-99): all of Zimbabwe. Out-of-area lines still say "Zimbabwe". A Harare → Bulawayo
+  parcel is still allowed, at any fare.
+- **Parcel reach, amending D-99's "every rider sees every order".** A new parcel is pushed and shown on the board only to
+  online bikers within `PARCEL_REACH_M` (25 km) of its pickup (`BROADCAST.baseRadiusM`). Bikers join their own geo cell
+  on the board and a card goes to the cells within the reach; the REST board lists the same disc. Venue jobs keep
+  their 15 km cap (D-99 amendment). Ops can widen the reach without a release (`BROADCAST_BASE_RADIUS_M`, up to all of
+  Zimbabwe).
+- **Copy.** Three handoff strings that named Harare alone name both live towns, from one label (`liveTownsLabel()`,
+  `packages/shared/src/service-area.ts`): Browse v2 `summaryNoLoc` "{n} places in Harare and Bulawayo" (and its unused
+  `kindNone.s`), Empty states v2 `noCategory` "We’re adding them in Harare and Bulawayo.", and Own bikers `pub1B` "Jobs
+  from shops, kitchens and customers across Harare and Bulawayo." Same slots, only the place name changes. The admin
+  console's "Harare pilot" subtitles read "Harare · Bulawayo".
+- **The app follows the user's town, not Harare** (`apps/mobile/src/logic/user-area.ts`). The last known point (Home's
+  location, the Send pickup fix, the biker's fix) biases Places search (50 km around it; none before it is known), names
+  the town the device-geocoder retry appends (Bulawayo or Harare), and is where a map with nothing of its own to show
+  opens (Harare's centre until a point is known). The merchant web's delivery search ranks places near the shop's own
+  pin; sign-up and branch search have no town bias. Timezone code stays `Africa/Harare`: it is Zimbabwe's one zone.
+- **Website (D-42 launch edits).** Title, description, OG tags, hero line and the "Live in" heading name both towns;
+  the map gets a Bulawayo dot drawn like Harare's and the chip reads "Harare · Bulawayo" (`LAUNCH_EDITS` `live-*`). The
+  illustrations' alt text describes the drawings and is unchanged.
+- **Upstream:** the kits and the website handoff should name both towns and draw the second dot. The kit is not edited.
+

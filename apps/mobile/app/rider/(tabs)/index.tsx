@@ -79,6 +79,7 @@ import { RiderErrorState } from "../../../src/ui/rider/RiderErrorState";
 import { useReduceMotion } from "../../../src/ui/useReduceMotion";
 import { RiderSetupPending, RiderVerified } from "../../../src/ui/onboarding/rider";
 import { withTimeout } from "../../../src/util";
+import { noteUserPoint } from "../../../src/logic/user-area";
 
 // GPS fix bound: a cold fix can hang forever, and the server records a broadcast-eligible position only
 // `if (online && location)` — so race the fix and fall back to the last-known one.
@@ -142,6 +143,8 @@ export default function RiderHome(): React.ReactElement {
   // B5: bumped to make the auto-online effect re-test (a retry tick, focus, resume, network back).
   const [activationNudge, setActivationNudge] = useState(0);
   const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
+  // D-120: the biker's fix also steers address search and the maps' opening view (user-area.ts).
+  useEffect(() => noteUserPoint(loc), [loc]);
   const [locDenied, setLocDenied] = useState(false);
   // FR-H1: not granted but still askable (never asked — a C1 "Ride" signup — or denied once). Not a wall while
   // R3 is held: R3's "Go online" runs the flow, whose P1 explains and asks again (P5 after a second no).

@@ -1,4 +1,5 @@
 import { isInServiceArea } from "@lynia/shared";
+import { noteUserPoint } from "./user-area";
 import * as Location from "expo-location";
 import { useEffect, useRef } from "react";
 import type { PickedPoint } from "../ui/MapPicker";
@@ -133,7 +134,11 @@ async function landmarkFor(p: PickedPoint): Promise<string> {
 
 /** D-116: a customer abroad (sending for family at home) gets no pickup pin from a fix outside the
  *  service area; the slot stays empty for them to fill, instead of a pin Send would refuse. */
-const inArea = (p: PickedPoint | null): PickedPoint | null => (p && isInServiceArea(p) ? p : null);
+const inArea = (p: PickedPoint | null): PickedPoint | null => {
+  if (!p || !isInServiceArea(p)) return null;
+  noteUserPoint(p); // D-120: the fix also steers address search and the maps (user-area.ts).
+  return p;
+};
 
 export function usePickupAutolocate({ enabled, onPoint, onLandmark }: PickupAutolocateOptions): void {
   // The callbacks are read through a ref at call time so the effect below can depend on `enabled`

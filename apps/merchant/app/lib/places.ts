@@ -23,8 +23,8 @@ export function placesEnabled(): boolean {
 
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const DETAILS_URL = "https://places.googleapis.com/v1/places/";
-/** Harare, and the API's maximum bias radius — local places first, Zimbabwe only. */
-const BIAS = { circle: { center: { latitude: -17.8292, longitude: 31.0522 }, radius: 50_000 } };
+/** The API's maximum bias radius: places within 50 km of `near` rank first (Zimbabwe only either way). */
+const BIAS_RADIUS_M = 50_000;
 const TIMEOUT_MS = 8_000;
 
 export interface PlaceSuggestion {
@@ -109,13 +109,19 @@ async function getJson(url: string, init: RequestInit): Promise<unknown | null> 
   }
 }
 
-export async function searchPlaces(input: string, sessionToken: string): Promise<PlaceSuggestion[]> {
+/**
+ * Places rows for a query, from Zimbabwe only. `near` (the shop's own pin, when there is one) ranks the places
+ * around it first, so a Bulawayo shop sees Bulawayo streets before Harare's (D-120). Without it there is no bias:
+ * a business signing up could be in any town.
+ */
+export async function searchPlaces(input: string, sessionToken: string, near?: LatLng | null): Promise<PlaceSuggestion[]> {
   const q = input.trim();
   if (!GOOGLE_PLACES_KEY || q.length < 3) return [];
+  const locationBias = near ? { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: BIAS_RADIUS_M } } : undefined;
   const body = await getJson(AUTOCOMPLETE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_PLACES_KEY },
-    body: JSON.stringify({ input: q, includedRegionCodes: ["zw"], locationBias: BIAS, sessionToken }),
+    body: JSON.stringify({ input: q, includedRegionCodes: ["zw"], ...(locationBias ? { locationBias } : {}), sessionToken }),
   });
   return mapSuggestions(body);
 }

@@ -1201,8 +1201,8 @@ describe("OrdersService.listOpen", () => {
     expect(JSON.stringify(rows[0])).not.toContain("+263");
   });
 
-  it("geo path shows every open order nationwide, fresh or not (owner 2026-10-12, D-99)", async () => {
-    const mkRow = (id: string, createdAt: Date) => ({
+  it("geo path shows open orders within the 25 km reach, fresh or not, and drops one in another town (D-120)", async () => {
+    const mkRow = (id: string, createdAt: Date, pickupDistanceM: number) => ({
       id,
       pickup: { point: { lat: -17.83, lng: 31.05 }, landmark: "Eastgate" },
       dropoff: { point: { lat: -17.82, lng: 31.06 }, landmark: "Avenues" },
@@ -1211,19 +1211,20 @@ describe("OrdersService.listOpen", () => {
       proposed_fare: { toString: () => "2.50" },
       distance_km: 1.5,
       created_at: createdAt,
-      // Mutare from Harare: ~230 km, far past the caller's own 5 km.
-      pickup_distance_m: 230_000,
+      pickup_distance_m: pickupDistanceM,
     });
     const queryRaw = vi.fn(async () => [
-      mkRow("o-fresh", new Date()),
-      mkRow("o-older", new Date(Date.now() - 61_000)),
+      mkRow("o-fresh", new Date(), 3_000),
+      mkRow("o-older", new Date(Date.now() - 61_000), 24_000),
+      // Bulawayo from Harare: ~440 km, past the reach.
+      mkRow("o-bulawayo", new Date(), 440_000),
     ]);
     const prisma = { order: { findMany: vi.fn(async () => []) }, $queryRaw: queryRaw };
     const svc = new OrdersService(prisma as unknown as PrismaService, {} as OfferExpiryService, noTracking, noNotifications, noGateway);
 
-    const rows = await svc.listOpen(-17.83, 31.05, 5000);
-
-    expect(rows.map((r) => r.id)).toEqual(["o-fresh", "o-older"]);
+    expect((await svc.listOpen(-17.83, 31.05, 5000)).map((r) => r.id)).toEqual(["o-fresh", "o-older"]);
+    // A caller's radius never widens the board past the reach.
+    expect((await svc.listOpen(-17.83, 31.05, 2_000_000)).map((r) => r.id)).toEqual(["o-fresh", "o-older"]);
   });
 
   it("without lat/lng falls back to the city-wide findMany path", async () => {

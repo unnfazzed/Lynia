@@ -6,9 +6,9 @@ import type { Env } from "../config/env";
 import type { TokenService } from "../auth/token.service";
 import type { MetricsService } from "../observability/metrics.service";
 import type { TrackingService } from "./tracking.service";
-import { boardCellNeighborhood } from "@lynia/shared";
+import { boardCell } from "@lynia/shared";
 import { BOARD_ROOM, boardGeoRoom, merchantQueueRoom, orderRoom } from "./tracking.constants";
-import { POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
+import { BOARD_CELL_FANOUT_MAX, POSITION_COALESCE_MS, POSITION_ROOM_TTL_MS, TrackingGateway } from "./tracking.gateway";
 
 /** DS20-02: riderLocation now validates orderId as a uuid, so its tests need a real one. */
 const ORD_UUID = "22222222-2222-4222-8222-222222222222";
@@ -99,15 +99,15 @@ describe("TrackingGateway.boardSubscribe", () => {
     expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
   });
 
-  it("with lat/lng: still joins the one nationwide board room, no geo cells (owner 2026-10-12, D-99)", async () => {
+  it("with lat/lng: joins the board room and its own geo cell, where nearby parcels land (D-120)", async () => {
     const g = gateway({ isBoardEligible: vi.fn(async () => true) });
     const client = fakeSocket({ sub: "rider-1", role: "rider" });
-    const res = await g.boardSubscribe(client as never, { lat: -18.97, lng: 32.67 }); // Mutare
+    const res = await g.boardSubscribe(client as never, { lat: -20.15, lng: 28.58 }); // Bulawayo
 
     expect(res).toEqual({ joined: "board" });
-    expect(client.join).toHaveBeenCalledTimes(1);
+    expect(client.join).toHaveBeenCalledTimes(2);
     expect(client.join).toHaveBeenCalledWith(BOARD_ROOM);
-    for (const room of boardCellNeighborhood(-18.97, 32.67).map(boardGeoRoom)) expect(client.join).not.toHaveBeenCalledWith(room);
+    expect(client.join).toHaveBeenCalledWith(boardGeoRoom(boardCell(-20.15, 28.58)));
   });
 
   it("re-subscribe on move leaves the prior board rooms before joining the fresh set", async () => {
@@ -688,15 +688,30 @@ describe("TrackingGateway.emitBoardNewOrder", () => {
     createdAt: "2026-06-26T00:00:00Z",
   };
 
-  it("emits board:new-order to the nationwide BOARD_ROOM, where every biker is (D-99)", () => {
+  it("emits board:new-order to the geo cells within 25 km of the pickup, not the whole board (D-120)", () => {
     const { server, to, emit } = fakeServer();
     const g = gateway();
     g.server = server as never;
     const pickup = payload.pickup.point;
     g.emitBoardNewOrder(payload, pickup.lat, pickup.lng);
     expect(to).toHaveBeenCalledTimes(1);
-    expect(to).toHaveBeenCalledWith(BOARD_ROOM);
+    const rooms = (to.mock.calls[0] as unknown[])[0] as string[];
+    expect(rooms).not.toContain(BOARD_ROOM);
+    // A Harare-centre biker and one 20 km out get it; a Bulawayo biker does not.
+    expect(rooms).toContain(boardGeoRoom(boardCell(-17.83, 31.05)));
+    expect(rooms).toContain(boardGeoRoom(boardCell(-17.83 + 0.18, 31.05)));
+    expect(rooms).not.toContain(boardGeoRoom(boardCell(-20.15, 28.58)));
+    expect(rooms.length).toBeLessThanOrEqual(BOARD_CELL_FANOUT_MAX);
     expect(emit).toHaveBeenCalledWith(WS_EVENTS.boardNewOrder, payload);
+  });
+
+  it("a reach too wide for cell rooms (an ops override) goes to the whole board room", () => {
+    const { server, to } = fakeServer();
+    const g = gateway();
+    g.server = server as never;
+    const pickup = payload.pickup.point;
+    g.emitBoardNewOrderToCells(payload, pickup.lat, pickup.lng, 1_500_000);
+    expect(to).toHaveBeenCalledWith(BOARD_ROOM);
   });
 
   it("never throws when the server is undefined (best-effort)", () => {

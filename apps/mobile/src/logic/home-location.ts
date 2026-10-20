@@ -1,4 +1,5 @@
 import { isInServiceArea } from "@lynia/shared";
+import { noteUserPoint, resetUserArea } from "./user-area";
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
@@ -337,6 +338,8 @@ const stores: Record<Face, Store> = { customer: newStore(), detect: newStore() }
 
 function publish(store: Store, patch: Partial<Snapshot>): void {
   store.snap = { ...store.snap, ...patch };
+  // D-120: where the user is steers address search and the maps' opening view (user-area.ts).
+  if (patch.place) noteUserPoint(patch.place);
   for (const listener of store.listeners) listener();
 }
 
@@ -346,6 +349,7 @@ function publish(store: Store, patch: Partial<Snapshot>): void {
  * test seam.
  */
 export function resetHomeLocationCache(): void {
+  resetUserArea();
   for (const store of Object.values(stores)) {
     store.gen += 1;
     store.pickSeq += 1;

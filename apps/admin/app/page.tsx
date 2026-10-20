@@ -86,7 +86,7 @@ export default async function OverviewPage({
     <main className="content">
       <header className="page">
         <h1>Overview</h1>
-        <span className="sub">Harare pilot · monitor &amp; support console</span>
+        <span className="sub">Harare · Bulawayo · monitor &amp; support console</span>
         <Conn connected={connected} reason={reason} />
       </header>
 

@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LyniaGo — On-demand delivery in Harare</title>
-<meta name="description" content="On-demand delivery for local businesses in Harare.">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LyniaGo — On-demand delivery in Harare and Bulawayo</title>
+<meta name="description" content="On-demand delivery for local businesses in Harare and Bulawayo.">
 <meta name="theme-color" content="#00B14F">
 <link rel="canonical" href="https://lyniago.com/">
 <link rel="icon" type="image/svg+xml" href="assets/brand/lyniago-mark.svg">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://lyniago.com/">
-<meta property="og:title" content="LyniaGo — On-demand delivery in Harare">
-<meta property="og:description" content="Parcels and deliveries across Harare, tracked to your door.">
+<meta property="og:title" content="LyniaGo — On-demand delivery in Harare and Bulawayo">
+<meta property="og:description" content="Parcels and deliveries across Harare and Bulawayo, tracked to your door.">
 <meta property="og:image" content="https://lyniago.com/assets/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preload" href="assets/fonts/inter-700.woff2" as="font" type="font/woff2" crossorigin>
@@ -260,7 +260,7 @@ html.qrm-lock{overflow:hidden}
 <section class="hero" id="top"><div class="wrap">
 <div>
 <h1>Stay home.<br><span>We'll bring it.</span></h1>
-<p>Parcels and deliveries across Harare, tracked to your door.</p>
+<p>Parcels and deliveries across Harare and Bulawayo, tracked to your door.</p>
 <div class="btns"><a class="btn b-yel" href="/download" data-download><i data-i="play"></i>Send a parcel</a><a class="btn b-line" href="#business">Deliver for my business</a></div>
 </div>
 <div class="hero-art">
@@ -341,12 +341,12 @@ html.qrm-lock{overflow:hidden}
 
 <section class="call"><div class="wrap">
 <div>
-<h2><i data-i="pin" class="pin"></i>Live in Harare</h2>
+<h2><i data-i="pin" class="pin"></i>Live in Harare and Bulawayo</h2>
 <p class="lead">Need help getting started? Leave your number — we'll call you.</p>
 <form class="form" id="cb"><input type="tel" placeholder="Your phone number" aria-label="Your phone number" required><button class="btn b-g" type="submit"><i data-i="phone"></i>Call me back</button></form>
 <p class="or">Or WhatsApp us on <a href="https://wa.me/263778831938" target="_blank" rel="noopener">077 883 1938</a></p>
 </div>
-<div class="zmap" id="zmap" role="img" aria-label="Map of Zimbabwe with Harare highlighted"></div>
+<div class="zmap" id="zmap" role="img" aria-label="Map of Zimbabwe with Harare and Bulawayo highlighted"></div>
 </div></section>
 
 <section class="app" id="app"><div class="wrap">
@@ -400,11 +400,11 @@ document.querySelectorAll('i[data-i]').forEach(e=>{e.innerHTML=`<svg viewBox="0 
 document.getElementById('cb').addEventListener('submit',e=>{e.preventDefault();const n=e.target.querySelector('input').value.trim();window.open('https://wa.me/263778831938?text='+encodeURIComponent('Hi LyniaGo, please call me back on '+n),'_blank')});
 {const ZW=[[31.19,-22.25],[30.66,-22.15],[30.32,-22.27],[29.84,-22.10],[29.43,-22.09],[28.79,-21.64],[28.02,-21.49],[27.73,-20.85],[27.72,-20.50],[27.30,-20.39],[26.16,-19.29],[25.85,-18.71],[25.65,-18.54],[25.26,-17.74],[26.38,-17.85],[26.71,-17.96],[27.04,-17.94],[27.60,-17.29],[28.47,-16.47],[28.83,-16.39],[28.95,-16.04],[29.52,-15.64],[30.27,-15.51],[30.34,-15.88],[31.17,-15.86],[31.64,-16.07],[31.85,-16.32],[32.33,-16.39],[32.85,-16.71],[32.85,-17.98],[32.65,-18.67],[32.61,-19.42],[32.77,-19.72],[32.66,-20.30],[32.51,-20.39],[32.24,-21.12],[31.19,-22.25]];
 const minX=25.2,maxX=32.9,minY=-22.3,maxY=-15.45,k=Math.cos(19*Math.PI/180),W=400,H=Math.round(W*(maxY-minY)/((maxX-minX)*k));
-const pr=([x,y])=>[(x-minX)/(maxX-minX)*W,(maxY-y)/(maxY-minY)*H],poly=ZW.map(pr),[hx,hy]=pr([31.05,-17.83]);
+const pr=([x,y])=>[(x-minX)/(maxX-minX)*W,(maxY-y)/(maxY-minY)*H],poly=ZW.map(pr),[hx,hy]=pr([31.05,-17.83]),[bx,by]=pr([28.58,-20.15]);
 const inside=(x,y)=>{let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[a,b]=poly[i],[d,e]=poly[j];if((b>y)!=(e>y)&&x<(d-a)*(y-b)/(e-b)+a)c=!c}return c};
 const bands=['#14181B','#FFD23F','#FF6B4A','#00B14F'];let d='';
 for(let y=5.5;y<H;y+=11)for(let x=5.5;x<W;x+=11)if(inside(x,y))d+=`<circle cx="${x}" cy="${y}" r="3.8" fill="${bands[Math.min(3,Math.floor(y/H*4))]}"/>`;
-document.getElementById('zmap').innerHTML=`<svg viewBox="-10 -10 ${W+20} ${H+20}">${d}<circle cx="${hx}" cy="${hy}" r="6" fill="#00B14F" class="zpulse"/><circle cx="${hx}" cy="${hy}" r="11" fill="#fff"/><circle cx="${hx}" cy="${hy}" r="7" fill="#00B14F"/></svg><div class="chip"><span class="dot" style="background:#FFD23F;box-shadow:0 0 0 4px rgba(255,210,63,.25)"></span>Harare</div>`;}
+document.getElementById('zmap').innerHTML=`<svg viewBox="-10 -10 ${W+20} ${H+20}">${d}<circle cx="${hx}" cy="${hy}" r="6" fill="#00B14F" class="zpulse"/><circle cx="${hx}" cy="${hy}" r="11" fill="#fff"/><circle cx="${hx}" cy="${hy}" r="7" fill="#00B14F"/><circle cx="${bx}" cy="${by}" r="6" fill="#00B14F" class="zpulse"/><circle cx="${bx}" cy="${by}" r="11" fill="#fff"/><circle cx="${bx}" cy="${by}" r="7" fill="#00B14F"/></svg><div class="chip"><span class="dot" style="background:#FFD23F;box-shadow:0 0 0 4px rgba(255,210,63,.25)"></span>Harare · Bulawayo</div>`;}
 </script>
 <div class="qrm" id="qrm" hidden>
 <div class="qrm-scrim" data-qr-close></div>

@@ -715,7 +715,8 @@ export class OrdersService {
    */
   async listOpen(lat?: number, lng?: number, radiusM?: number) {
     if (lat !== undefined && lng !== undefined) {
-      return this.listOpenNearby(lat, lng, radiusM ?? baseBroadcastRadiusM());
+      // D-120: a caller's radius never widens the board past the broadcast reach.
+      return this.listOpenNearby(lat, lng, Math.min(radiusM ?? baseBroadcastRadiusM(), maxBroadcastRadiusM()));
     }
     const orders = await this.prisma.order.findMany({
       // A-3 (status-keyed-query-audit): the Express bid board is a parcel-only surface — a merchant
