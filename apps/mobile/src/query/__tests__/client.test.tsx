@@ -1,7 +1,8 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, create } from "react-test-renderer";
 import { ApiError } from "../../api/client";
 import { queryRetryDelayMs } from "../../net/network-policy";
-import { DEFAULT_STALE_TIME_MS, invalidateIfStale, pendingOrQueued, queryClient, shouldRetry } from "../client";
+import { DEFAULT_STALE_TIME_MS, invalidateIfStale, pendingOrQueued, queryClient, shouldRetry, useRetryWhileEnabled } from "../client";
 
 describe("ApiError.retryable (the per-error half of the retry taxonomy)", () => {
   it("is true for a dropped link (status 0) and any 5xx", () => {
@@ -27,6 +28,41 @@ describe("mutation retry policy (writes are non-retryable by default)", () => {
 describe("query retry delay (C-O2 central network policy)", () => {
   it("wires the jittered, RTT-tuned backoff instead of TanStack's un-tuned default", () => {
     expect(queryClient.getDefaultOptions().queries?.retryDelay).toBe(queryRetryDelayMs);
+  });
+});
+
+describe("useRetryWhileEnabled (QA-B06: a kill switch that reads off stops the retries)", () => {
+  type Retry = (failureCount: number, error: unknown) => boolean;
+  function harness(client: QueryClient, base?: number) {
+    let retry: Retry = () => false;
+    function Probe({ enabled }: { enabled: boolean }) {
+      retry = useRetryWhileEnabled(enabled, base);
+      return null;
+    }
+    let root!: ReturnType<typeof create>;
+    act(() => {
+      root = create(<QueryClientProvider client={client}><Probe enabled /></QueryClientProvider>);
+    });
+    return {
+      retry: (n: number, e: unknown) => retry(n, e),
+      setEnabled: (enabled: boolean) => act(() => root.update(<QueryClientProvider client={client}><Probe enabled={enabled} /></QueryClientProvider>)),
+    };
+  }
+  const flagOff = new ApiError(503, "Restaurants is not available yet");
+
+  it("applies the client's policy while enabled, and stops once the query is disabled mid-fetch", () => {
+    const h = harness(new QueryClient({ defaultOptions: { queries: { retry: shouldRetry } } }));
+    expect(h.retry(0, flagOff)).toBe(true);
+    expect(h.retry(2, flagOff)).toBe(false);
+    h.setEnabled(false);
+    expect(h.retry(0, flagOff)).toBe(false);
+  });
+
+  it("keeps a client that doesn't retry at no retries, and honours an explicit count", () => {
+    expect(harness(new QueryClient({ defaultOptions: { queries: { retry: false } } })).retry(0, flagOff)).toBe(false);
+    const once = harness(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 1);
+    expect(once.retry(0, flagOff)).toBe(true);
+    expect(once.retry(1, flagOff)).toBe(false);
   });
 });
 

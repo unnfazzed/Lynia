@@ -1,6 +1,7 @@
 import type { RestaurantListItem, RestaurantMenuResponse, RestaurantReopenReminderResponse } from "@lynia/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearReopenReminder, getReopenReminder, getRestaurantMenu, getRestaurants, setReopenReminder } from "../api/restaurants";
+import { useRetryWhileEnabled } from "./client";
 
 export const RESTAURANTS_KEY = ["restaurants"] as const;
 export const restaurantMenuKey = (id: string): readonly ["restaurants", string, "menu"] => ["restaurants", id, "menu"];
@@ -44,12 +45,14 @@ export interface RestaurantListFeed {
  * callers already consumed; `loadMore`/`hasMore`/`isLoadingMore` are additive.
  */
 export function useRestaurantListFeed(enabled: boolean): RestaurantListFeed {
+  const retry = useRetryWhileEnabled(enabled);
   const q = useInfiniteQuery({
     queryKey: RESTAURANTS_KEY,
     queryFn: ({ pageParam }: { pageParam: string | undefined }) => getRestaurants(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled,
+    retry,
   });
 
   const restaurants = q.data?.pages.flatMap((p) => p.restaurants) ?? null;

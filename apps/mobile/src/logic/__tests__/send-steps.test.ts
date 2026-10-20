@@ -6,6 +6,7 @@ import {
   firstIncompleteStep,
   isDefinitiveSendFailure,
   kmLabel,
+  mapTapStop,
   MIN_TRIP_KM,
   money,
   priceOk,
@@ -131,5 +132,16 @@ describe("send-steps — reviewed list 2026-10-07 (U47, U61, U45, U16)", () => {
   it("the draft's stop-name cap matches the flow's", () => {
     // send-draft.ts keeps its own copy so it stays a leaf module (sign-out imports its key).
     expect(STOP_NAME_MAX).toBe(DRAFT_STOP_NAME_MAX);
+  });
+});
+
+describe("mapTapStop (QA-B07: typed text survives \"Tap the map to set the pin\")", () => {
+  it("names the pin by what was typed, so a reverse geocode doesn't replace it and re-editing shows it", () => {
+    expect(mapTapStop(-17.82, 31.05, "  Samora Machel Ave ")).toEqual({ lat: -17.82, lng: 31.05, name: "Samora Machel Ave", source: "search" });
+  });
+
+  it("is a plain map pin named by its coordinates when nothing was typed", () => {
+    expect(mapTapStop(-17.82, 31.05, null)).toEqual({ lat: -17.82, lng: 31.05, name: coordName(-17.82, 31.05), source: "map" });
+    expect(mapTapStop(-17.82, 31.05, "   ")).toEqual({ lat: -17.82, lng: 31.05, name: coordName(-17.82, 31.05), source: "map" });
   });
 });
