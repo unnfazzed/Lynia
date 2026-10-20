@@ -266,18 +266,18 @@ bounded live re-probe of the merchant hold card.
 
 | Item | Proposal | Status |
 |---|---|---|
-| QA-B01 | Notify me: send interest to server or fix copy | pending |
-| QA-B02 | Overview Needs-attention agrees with Live breach monitor | pending |
-| QA-B03 | Overview live count agrees with Live active count | pending |
+| QA-B01 | Notify me: send interest to server or fix copy | parked as a feature (`TODOS.md` QA-1) |
+| QA-B02 | Overview Needs-attention agrees with Live breach monitor | **fixed** (#1282) |
+| QA-B03 | Overview live count agrees with Live active count | **fixed** (#1282) |
 | QA-B04 | Merchant Keep searching feedback | **retracted (false positive, see SC-1)** |
-| FN-01 | Server fare sanity bound | pending |
-| FN-02 / R-3 | Shared idempotency helper that checks the request body | pending |
-| R-6 | One stuck/active definition for admin | pending (merged into B02/B03) |
-| R-2/R-1 | One error body shape, consistent statuses | pending (scope question) |
-| Hotspots | Split food-order.service.ts / rider.service.ts / contracts.ts | pending (scope question) |
-| R-4 | API vs mobile flag defaults | pending (scope question) |
-| QA-S01/S02 | Seed + QA harness fixes | pending |
-| QA-B05–B07 | Web focus ring, duplicate boot fetches, lost typed pickup | pending |
+| FN-01 | Server fare sanity bound | parked as a feature (`TODOS.md` QA-2) |
+| FN-02 / R-3 | Shared idempotency helper that checks the request body | helper + key-scope bugs **done** (#1283); body check parked (`TODOS.md` QA-3) |
+| R-6 | One stuck/active definition for admin | **done** with B02/B03 (#1282) |
+| R-2/R-1 | One error body shape, consistent statuses | shape **done** (#1284); status fixes parked (`TODOS.md` QA-4) |
+| Hotspots | Split food-order.service.ts / rider.service.ts / contracts.ts | **done** (#1288, #1289, #1290) |
+| R-4 | API vs mobile flag defaults | closed: by design (harness note in S02) |
+| QA-S01/S02 | Seed + QA harness fixes | **fixed** (this PR) |
+| QA-B05–B07 | Web focus ring, duplicate boot fetches, lost typed pickup | **fixed** (#1287) |
 
 ## Scope Challenge — A. Assessment
 
