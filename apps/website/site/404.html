@@ -56,7 +56,7 @@ section{position:relative}
 .dot{width:12px;height:12px;border-radius:50%;background:var(--g);box-shadow:0 0 0 5px var(--mint)}
 .ic{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:14px;flex:none}
 .hero-art .c1{left:-4%;bottom:12%}
-.hero-art .c2{right:-2%;top:16%;transform:rotate(4deg);background:var(--ink);color:#fff}
+.hero-art .c2{right:-2%;top:16%;transform:rotate(4deg);background:var(--ink);color:#fff}.hero-art .c1 .dot{position:relative;flex:none}.hero-art .c1 .dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--g);animation:zpulse 2s ease-out infinite}@media (prefers-reduced-motion:reduce){.hero-art .c1 .dot::after{animation:none;opacity:0}}
 .wave{position:absolute;left:0;right:0;bottom:-1px;height:56px;background:#fff;border-radius:56px 56px 0 0}
 /* deliver for */
 .for{padding:56px 0 104px}
@@ -122,7 +122,7 @@ section{position:relative}
 .form input{flex:1;min-width:0;border:0;outline:0;font:500 18px Inter;padding:0 20px;background:transparent;color:var(--ink)}
 .form .btn{height:52px}
 .or{margin-top:18px;font-size:16px;color:var(--mut)}
-.zmap{position:relative;background:#fff;border-radius:32px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 50px -24px rgba(0,80,40,.3)}.zmap svg{width:84%;height:auto;overflow:visible}.zmap .chip{right:auto;background:var(--ink);color:#fff;font-size:13px;gap:7px;padding:6px 11px 6px 9px;border-radius:999px;box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}.zmap .chip .dot{width:7px;height:7px}@keyframes zpulse{0%{r:6;opacity:.7}100%{r:26;opacity:0}}.zpulse{animation:zpulse 2s ease-out infinite}
+.zmap{position:relative;background:#fff;border-radius:32px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 50px -24px rgba(0,80,40,.3)}.zmap svg{width:84%;height:auto;overflow:visible}.zmap .chip{right:auto;background:var(--ink);color:#fff;font-size:13px;gap:7px;padding:6px 11px 6px 9px;border-radius:999px;box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}.zmap .chip .dot{width:7px;height:7px}@keyframes zpulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(4.333);opacity:0}}.zpulse{animation:zpulse 2s ease-out infinite;transform-box:fill-box;transform-origin:center}@media (prefers-reduced-motion:reduce){.zpulse{animation:none;opacity:0}}
 /* app */
 .app{padding:120px 0 0;overflow:hidden}
 .appbox{background:var(--g);color:#fff;border-radius:48px;display:grid;grid-template-columns:.9fr 1.1fr;gap:24px;align-items:center;padding:72px 0 0 72px;overflow:hidden;position:relative}

@@ -216,6 +216,31 @@ export const LAUNCH_EDITS = [
     from: "<div class=\"chip\"><span class=\"dot\" style=\"background:#FFD23F;box-shadow:0 0 0 4px rgba(255,210,63,.25)\"></span>Harare</div>",
     to: "<div class=\"chip\" style=\"left:${hl}%;top:${ht}%;transform:translate(-50%,calc(-100% - 14px))\"><span class=\"dot\" style=\"background:#FFD23F;box-shadow:0 0 0 3px rgba(255,210,63,.25)\"></span>Harare</div>",
   },
+  // One green pulse, the same on phones and desktops (owner 2026-10-20: "same web and mobile pulsing green even on the
+  // map"). The handoff animated the map ring's SVG `r`, which iOS Safari does not animate, so iPhones saw no pulse;
+  // zpulse now scales the ring instead (same 6 -> 26 growth, same 2 s fade). The hero's "Biker 4 min away" dot gets the
+  // same ring. Still for visitors who ask for reduced motion.
+  {
+    id: "hero-dot-pulse",
+    todo: "not a README TODO: Bulawayo launch polish (owner 2026-10-20)",
+    decision: "owner 2026-10-20: the hero's \"Biker 4 min away\" dot pulses like the map's town dots, on phone and desktop (D-42, D-120)",
+    from: ".hero-art .c2{right:-2%;top:16%;transform:rotate(4deg);background:var(--ink);color:#fff}",
+    to: ".hero-art .c2{right:-2%;top:16%;transform:rotate(4deg);background:var(--ink);color:#fff}.hero-art .c1 .dot{position:relative;flex:none}.hero-art .c1 .dot::after{content:\"\";position:absolute;inset:0;border-radius:50%;background:var(--g);animation:zpulse 2s ease-out infinite}@media (prefers-reduced-motion:reduce){.hero-art .c1 .dot::after{animation:none;opacity:0}}",
+  },
+  {
+    id: "map-pulse-keyframes",
+    todo: "not a README TODO: Bulawayo launch polish (owner 2026-10-20)",
+    decision: "owner 2026-10-20: one pulsing green on the map and the hero, the same on phone and desktop (D-42, D-120)",
+    from: "@keyframes zpulse{0%{r:6;opacity:.7}100%{r:26;opacity:0}}",
+    to: "@keyframes zpulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(4.333);opacity:0}}",
+  },
+  {
+    id: "map-pulse-transform",
+    todo: "not a README TODO: Bulawayo launch polish (owner 2026-10-20)",
+    decision: "owner 2026-10-20: one pulsing green on the map and the hero, the same on phone and desktop (D-42, D-120)",
+    from: ".zpulse{animation:zpulse 2s ease-out infinite}",
+    to: ".zpulse{animation:zpulse 2s ease-out infinite;transform-box:fill-box;transform-origin:center}@media (prefers-reduced-motion:reduce){.zpulse{animation:none;opacity:0}}",
+  },
   {
     id: "download-qr-css",
     todo: "not a README TODO: handoff download-qr-install-tip-2026-10 §1 (popup CSS)",
