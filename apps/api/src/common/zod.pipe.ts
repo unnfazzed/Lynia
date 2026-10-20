@@ -28,7 +28,8 @@ export class ZodBody<T> implements PipeTransform {
     const result = this.schema.safeParse(value);
     if (!result.success) {
       const flat = result.error.flatten();
-      throw new BadRequestException({ message: firstZodMessage(flat), ...flat });
+      // R-2: `invalid_request` names a body that failed its schema (formErrors / fieldErrors say where).
+      throw new BadRequestException({ statusCode: 400, reason: "invalid_request", message: firstZodMessage(flat), ...flat });
     }
     return result.data;
   }

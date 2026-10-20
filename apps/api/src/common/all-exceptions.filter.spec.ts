@@ -61,7 +61,27 @@ describe("AllExceptionsFilter", () => {
     filter.catch(new HttpException("Too many requests — try again later", HttpStatus.TOO_MANY_REQUESTS), host);
 
     expect(captured.status).toBe(HttpStatus.TOO_MANY_REQUESTS);
-    expect(captured.body).toEqual({ statusCode: 429, message: "Too many requests — try again later" });
+    expect(captured.body).toEqual({ statusCode: 429, reason: "rate_limited", message: "Too many requests — try again later" });
+  });
+
+  // R-2 (QA 2026-10-20): every error body is { statusCode, reason, message }. Additive only: nothing a thrower set moves.
+  it("adds the status's default reason to a body that has none, and keeps everything else", () => {
+    const filter = new AllExceptionsFilter();
+    const { host, captured } = makeHost();
+
+    filter.catch(new ForbiddenException("nope"), host);
+
+    expect(captured.body).toEqual({ statusCode: 403, reason: "forbidden", message: "nope", error: "Forbidden" });
+  });
+
+  it("never overwrites a thrower's own reason, status or extra fields", () => {
+    const filter = new AllExceptionsFilter();
+    const { host, captured } = makeHost();
+
+    filter.catch(new HttpException({ reason: "already_taken", message: "Someone took it", retryAfter: 9 }, HttpStatus.CONFLICT), host);
+
+    expect(captured.status).toBe(409);
+    expect(captured.body).toEqual({ statusCode: 409, reason: "already_taken", message: "Someone took it", retryAfter: 9 });
   });
 
   it("coerces a plain Error to a safe generic 500 with no internal detail leaked", () => {
