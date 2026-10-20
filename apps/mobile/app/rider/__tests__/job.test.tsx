@@ -232,7 +232,7 @@ describe("Biker v2 parcel job stages (A1 → A2, ledger D-54)", () => {
     expect(mockAdvanceStatus).toHaveBeenCalledWith("order-1", "confirmed");
   });
 
-  it("I'm at pickup turns the sheet into the check, and the collect waits for a ticked item AND a photo", async () => {
+  it("I'm at pickup turns the sheet into the check, and the collect waits for a ticked item — the photo is optional (D-118)", async () => {
     secureStore = {};
     mockGetActiveOrder.mockResolvedValue(baseOrder({ status: "en_route_pickup", items: [{ description: "Documents envelope", quantity: 1 }] }));
     const tree = await render();
@@ -244,10 +244,17 @@ describe("Biker v2 parcel job stages (A1 → A2, ledger D-54)", () => {
 
     expect(JSON.parse(secureStore["lynia.riderJobArrival"]!)).toEqual({ orderId: "order-1", at: "pickup" });
     expect(tree.root.findAll((n) => n.props.children === "Check before you leave").length).toBeGreaterThan(0);
-    const collect = tree.root.findAll((n) => n.props.label === "I've collected the parcel" && typeof n.props.onPress === "function")[0]!;
-    expect(collect.props.disabled).toBe(true);
-    // The hint says what's missing.
-    expect(tree.root.findAll((n) => n.props.hint === "Tick the item and add a photo to continue.").length).toBe(1);
+    expect(tree.root.findAll((n) => n.props.children === "Take a pickup photo (optional)").length).toBeGreaterThan(0);
+    const collect = (): renderer.ReactTestInstance => tree.root.findAll((n) => n.props.label === "I've collected the parcel" && typeof n.props.onPress === "function")[0]!;
+    expect(collect().props.disabled).toBe(true);
+    // No hint under the button: the photo isn't asked for (D-118).
+    expect(tree.root.findAll((n) => typeof n.props.hint === "string" && /photo/i.test(n.props.hint)).length).toBe(0);
+
+    const tick = tree.root.findAll((n) => n.props.accessibilityLabel === "Documents envelope × 1" && typeof n.props.onPress === "function")[0]!;
+    act(() => tick.props.onPress());
+    await settle();
+    // Ticked, no photo taken: the collect is open.
+    expect(collect().props.disabled).toBe(false);
   });
 });
 

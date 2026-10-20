@@ -5912,3 +5912,21 @@ delivery fee, a phone booking's suggested fare), so the console departs from OB-
 - A disabled business offers **"Turn on"** ("Turn Chicken Inn's Own bikers back on?"), which the handoff doesn't draw:
   with no admin switch-on, it is the only way back from a Disable.
 - The two lane D notes above about the fee's Save and its audit note no longer apply.
+
+---
+
+## D-118 · The parcel pickup photo is optional — APPROVED (owner, 2026-10-20)
+
+**Owner instruction (2026-10-20):** "make photos on parcels optional". Rider v2 (D-54) A2 draws "I've collected the
+parcel" disabled until the item is ticked **and** a pickup photo is taken (hint `needPhoto`). The parcel pickup now
+waits on the item check alone, the same as every venue pickup since D-100.
+
+- **Rider (A2/A6).** The photo row stays as drawn, titled **"Take a pickup photo (optional)"** (the handoff's
+  `photoNeed` is "Take a pickup photo"). The collect button opens once the item is ticked (or when there are no
+  items). The hint under it is removed: no hint shows while the item is unticked (owner choice). No "collect without
+  a photo?" confirm.
+- **Server.** Unchanged: the API never required the parcel photo (`attachPickupPhoto` is an optional attach).
+- **Unchanged.** A photo, when taken, is still uploaded (queued offline, PJ-H1) and shown to the customer; with
+  none, the customer's order screen simply shows no photo row. The camera (A3), preview (A4) and saving (A5) screens
+  stay as drawn.
+- **Upstream:** Rider v2 should draw A2 without the photo gate. The kit is not edited.

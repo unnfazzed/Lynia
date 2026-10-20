@@ -1116,7 +1116,8 @@ export default function RiderJob(): React.ReactElement {
   };
   const nav = (to: { lat: number; lng: number }): void => void Linking.openURL(navUrl(prefs.navApp, to)).catch(() => undefined);
   const itemsOk = items.length === 0 || checkedItems.size > 0;
-  const collectOk = itemsOk && !!photo.uri && order.status === "en_route_pickup";
+  // D-118: the photo is optional — the collect waits on the item check alone.
+  const collectOk = itemsOk && order.status === "en_route_pickup";
   const collect = (): void => {
     // PJ-H1: send a shot that hasn't gone up yet now, ahead of the status change (never blocks the collect).
     void photo.flush();
@@ -1360,7 +1361,7 @@ export default function RiderJob(): React.ReactElement {
       </>
     );
     bar = (
-      <CtaBar hint={collectOk || (itemsOk && photo.uri) ? undefined : R.needPhoto}>
+      <CtaBar>
         <CtaButton label={R.collectedCta} disabled={!collectOk} loading={!!pendingOrQueued(advanceM)} onPress={collect} />
       </CtaBar>
     );
