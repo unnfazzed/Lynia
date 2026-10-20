@@ -1,6 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
-import { RIDER_ADD_ACTION, RIDER_REMOVE_ACTION } from "../merchant/merchant-riders.service";
 import { TEAM_DECLINE_ACTION, TEAM_JOIN_ACTION } from "../merchant/merchant-invites.service";
 import {
   TEAM_INVITE_ACTION,
@@ -140,8 +139,9 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
   // and two of them are counted for daily limits, so a forged row would also spend a business's allowance.
   it("reserves every action the merchant Bikers and Team endpoints write", () => {
     const merchantActions = [
-      RIDER_ADD_ACTION,
-      RIDER_REMOVE_ACTION,
+      // Preferred riders (retired 2026-10-20): its rows stay in the log, so the actions stay reserved.
+      "merchant.rider.add",
+      "merchant.rider.remove",
       TEAM_INVITE_ACTION,
       TEAM_INVITE_CANCEL_ACTION,
       TEAM_REMOVE_ACTION,

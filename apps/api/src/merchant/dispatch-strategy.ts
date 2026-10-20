@@ -8,17 +8,7 @@ import { TrackingService } from "../tracking/tracking.service";
 export interface DispatchCandidate {
   riderId: string;
   distanceM: number;
-  /** One of the restaurant's own riders, chosen ahead of the nearest (merchant web upgrade L3). */
-  preferred?: boolean;
 }
-
-/**
- * How much farther than the nearest eligible rider one of the restaurant's own riders may be and still be
- * offered first (design doc L3: food goes cold). Beyond it, the nearest rider is offered, as today.
- */
-export const PREFERRED_DISPATCH_SLACK_M = 2_000;
-/** Riders of the restaurant's own at about the same distance (this close) are ordered by rating. */
-const PREFERRED_DISTANCE_BUCKET_M = 100;
 
 /**
  * The pluggable "who gets offered" decision (plan §0b/P4 "DispatchStrategy seam"). A food order is
@@ -30,14 +20,12 @@ const PREFERRED_DISTANCE_BUCKET_M = 100;
 export interface DispatchStrategy {
   /** Eligible riders within `radiusM` of `(lat, lng)`, best first, excluding `excludeRiderIds` (dropped it,
    *  passed on it within the decline cooldown, or on the business's own team) and anyone busy/ineligible;
-   *  at most `limit` of them (all when null). `preferredRiderIds` (L3) are the restaurant's own riders:
-   *  they only reorder riders who are already eligible, never let anyone else in. */
+   *  at most `limit` of them (all when null). */
   pickCandidates(params: {
     lat: number;
     lng: number;
     radiusM: number;
     excludeRiderIds: readonly string[];
-    preferredRiderIds?: readonly string[];
     limit: number | null;
   }): Promise<DispatchCandidate[]>;
 }
@@ -64,7 +52,6 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
     lng: number;
     radiusM: number;
     excludeRiderIds: readonly string[];
-    preferredRiderIds?: readonly string[];
     limit: number | null;
   }): Promise<DispatchCandidate[]> {
     // The permissive push heartbeat cutoff (~15 min), as the parcel broadcast uses: a rider with the app
@@ -105,34 +92,7 @@ export class NearestRiderDispatchStrategy implements DispatchStrategy {
 
     // `nearby` is nearest-first, so `eligible` is too.
     const eligible = nearby.filter((r) => !exclude.has(r.profileId) && !busyIds.has(r.profileId) && !owingIds.has(r.profileId));
-    const nearest = eligible[0];
-    if (!nearest) return [];
-
-    // L3 (design doc "Restaurant auto-dispatch"): the restaurant's own riders go first — among the
-    // eligible, so KYC, standing, holds, one active ride and the debt lock all still apply — unless
-    // they're more than 2 km farther than the nearest. Several: by distance, then rating.
-    const preferred = new Set(params.preferredRiderIds ?? []);
-    const own = eligible.filter((r) => preferred.has(r.profileId) && r.distanceM - nearest.distanceM <= PREFERRED_DISPATCH_SLACK_M);
-    let ordered: DispatchCandidate[] = eligible.map((r) => ({ riderId: r.profileId, distanceM: r.distanceM }));
-    if (own.length > 0) {
-      const ratings =
-        own.length > 1
-          ? new Map(
-              (await this.prisma.rider.findMany({ where: { profileId: { in: own.map((r) => r.profileId) } }, select: { profileId: true, ratingAvg: true } })).map(
-                (r) => [r.profileId, r.ratingAvg],
-              ),
-            )
-          : new Map<string, number>();
-      const bucket = (m: number) => Math.floor(m / PREFERRED_DISTANCE_BUCKET_M);
-      const first = [...own].sort(
-        (a, b) => bucket(a.distanceM) - bucket(b.distanceM) || (ratings.get(b.profileId) ?? 0) - (ratings.get(a.profileId) ?? 0) || a.distanceM - b.distanceM,
-      );
-      const firstIds = new Set(first.map((r) => r.profileId));
-      ordered = [
-        ...first.map((r) => ({ riderId: r.profileId, distanceM: r.distanceM, preferred: true })),
-        ...ordered.filter((c) => !firstIds.has(c.riderId)),
-      ];
-    }
+    const ordered: DispatchCandidate[] = eligible.map((r) => ({ riderId: r.profileId, distanceM: r.distanceM }));
     return params.limit == null ? ordered : ordered.slice(0, params.limit);
   }
 }

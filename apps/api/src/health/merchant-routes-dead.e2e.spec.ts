@@ -45,8 +45,6 @@ import { FoodOrderController } from "../merchant/food-order.controller";
 import { FoodOrderService } from "../merchant/food-order.service";
 import { MerchantBookingController } from "../merchant/merchant-booking.controller";
 import { MerchantBookingService } from "../merchant/merchant-booking.service";
-import { MerchantRidersController } from "../merchant/merchant-riders.controller";
-import { MerchantRidersService } from "../merchant/merchant-riders.service";
 import { MerchantInvitesService } from "../merchant/merchant-invites.service";
 import { MerchantInvitesController, MerchantTeamController } from "../merchant/merchant-team.controller";
 import { MerchantBranchesController } from "../merchant/merchant-branches.controller";
@@ -118,9 +116,8 @@ const prismaStub = {
 // an unexercised param, since a 3-arg constructor with a 1-entry paramtypes array is fragile.
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDebtService], FoodOrderController);
 Reflect.defineMetadata("design:paramtypes", [FoodOrderService, FoodDispatchService, FoodDebtService], MerchantOrderController);
-// Merchant web upgrade L2: Book a rider, same patch shape. L3: Your riders. L4: Team (both sides).
+// Merchant web upgrade L2: Book a rider, same patch shape. L4: Team (both sides).
 Reflect.defineMetadata("design:paramtypes", [MerchantBookingService], MerchantBookingController);
-Reflect.defineMetadata("design:paramtypes", [MerchantRidersService], MerchantRidersController);
 Reflect.defineMetadata("design:paramtypes", [MerchantTeamService], MerchantTeamController);
 Reflect.defineMetadata("design:paramtypes", [MerchantInvitesService], MerchantInvitesController);
 // Multi-branch owners (docs/plans/2026-09-30-multi-branch-owners.md): list, switch, open a branch.
@@ -168,11 +165,6 @@ const foodOrderServiceStub = {
 const foodDispatchServiceStub = { getOfferForRider: async () => null };
 /** L2: only the member leg below calls through. */
 const merchantBookingServiceStub = { list: async () => [] };
-/** L3: only the member and owner legs below call through. */
-const merchantRidersServiceStub = {
-  list: async () => ({ riders: [], cap: 20 }),
-  add: async () => ({ id: "r1" }),
-};
 /** L4: only the owner, staff-leave and invitee legs below call through. */
 const merchantTeamServiceStub = {
   team: async () => ({ members: [], invites: [] }),
@@ -200,7 +192,6 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       FoodOrderController,
       MerchantOrderController,
       MerchantBookingController,
-      MerchantRidersController,
       MerchantTeamController,
       MerchantInvitesController,
       MerchantBranchesController,
@@ -220,7 +211,6 @@ async function bootMerchantApp(envOverrides: Partial<Env>): Promise<INestApplica
       { provide: FoodDispatchService, useValue: foodDispatchServiceStub },
       { provide: FoodDebtService, useValue: foodDebtServiceStub },
       { provide: MerchantBookingService, useValue: merchantBookingServiceStub },
-      { provide: MerchantRidersService, useValue: merchantRidersServiceStub },
       { provide: MerchantTeamService, useValue: merchantTeamServiceStub },
       { provide: MerchantInvitesService, useValue: merchantInvitesServiceStub },
       { provide: MerchantBranchesService, useValue: merchantBranchesServiceStub },
@@ -285,7 +275,6 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "MerchantFleetController",
       "MerchantInvitesController",
       "MerchantOrderController",
-      "MerchantRidersController",
       "MerchantTeamController",
       "OrderFlowCustomerController",
       "OrderFlowMerchantController",
@@ -310,10 +299,9 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "/merchant/orders",
       "/restaurants/orders/11111111-1111-1111-1111-111111111111",
       "/merchant/orders/dispatch/offer",
-      // Merchant web upgrade L2: the kill switch stops shop bookings too (plan §11 F1.4, CEO-4). L3: riders.
+      // Merchant web upgrade L2: the kill switch stops shop bookings too (plan §11 F1.4, CEO-4).
       // L4: the team, and the invites waiting for a number.
       "/merchant/bookings",
-      "/merchant/riders",
       "/merchant/team",
       // Own bikers (D-117): the owner's roster and the biker's side are dead with the vertical too.
       "/merchant/fleet",
@@ -403,22 +391,6 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       const asMember = await request(app.getHttpServer()).get("/merchant/bookings").set("Authorization", bearer("member-1", "customer"));
       expect(asMember.status).toBe(200);
       expect(asMember.body).toEqual([]);
-    });
-
-    it("L3: /merchant/riders — the team reads it, only the owner changes it", async () => {
-      const noAuth = await request(app.getHttpServer()).get("/merchant/riders");
-      expect(noAuth.status).toBe(401);
-      const notMember = await request(app.getHttpServer()).get("/merchant/riders").set("Authorization", bearer("p1", "merchant"));
-      expect(notMember.status).toBe(403);
-      const staffRead = await request(app.getHttpServer()).get("/merchant/riders").set("Authorization", bearer("staff-1", "customer"));
-      expect(staffRead.status).toBe(200);
-      expect(staffRead.body).toEqual({ riders: [], cap: 20 });
-      const body = { label: "Blessing", phone: "0772223333" };
-      const staffAdd = await request(app.getHttpServer()).post("/merchant/riders").set("Authorization", bearer("staff-1", "customer")).send(body);
-      expect(staffAdd.status).toBe(403);
-      expect(staffAdd.body.reason).toBe("owner_only");
-      const ownerAdd = await request(app.getHttpServer()).post("/merchant/riders").set("Authorization", bearer("member-1", "customer")).send(body);
-      expect(ownerAdd.status).toBe(201);
     });
 
     it("L4: /merchant/team is the owner's; staff may only leave", async () => {

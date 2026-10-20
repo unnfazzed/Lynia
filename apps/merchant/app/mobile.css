@@ -1205,11 +1205,6 @@
   font-family: inherit;
   cursor: pointer;
 }
-/* E4: an online rider's mint avatar. */
-.m-av.m-av-on {
-  background: var(--accent-wash);
-  color: var(--accent-text);
-}
 /* A whole-row tap target that still lets a link inside the row take its own tap (E2 invites, E4). */
 .m-li {
   position: relative;
@@ -1413,11 +1408,6 @@
 .m-fare > button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-/* D4 offer cards: the business's own rider with a 2px accent border. */
-.m-offer.m-pref {
-  border: 2px solid var(--accent);
-  padding: 13px;
 }
 /* D5's sheet over the map, and the grey buyer's-code card (24px accent-text digits, spaced). */
 .m-over {

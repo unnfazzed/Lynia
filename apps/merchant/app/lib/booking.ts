@@ -1,6 +1,5 @@
 import {
   type LatLng,
-  MERCHANT_OFFER_WEIGHTS,
   type MerchantBookingOffer,
   type MerchantBookingResponse,
   type MerchantBookingState,
@@ -82,8 +81,8 @@ export function pollIntervalMs(state: MerchantBookingState): number | null {
 }
 
 /**
- * The offers in the order the business should read them (L3): the usual fare/rating/ETA blend plus the
- * bonus for the business's own riders, and a teammate's offer (which can't be picked) last.
+ * The offers in the order the business should read them: the usual fare/rating/ETA blend, and a teammate's
+ * offer (which can't be picked) last.
  */
 export function orderOffers(offers: readonly MerchantBookingOffer[]): MerchantBookingOffer[] {
   const ranked = rankOffers(
@@ -92,9 +91,7 @@ export function orderOffers(offers: readonly MerchantBookingOffer[]): MerchantBo
       ratingAvg: o.rider.ratingAvg ?? 0,
       ratingCount: o.rider.ratingCount,
       etaMinutes: o.etaMinutes,
-      preferred: o.preferred,
     })),
-    MERCHANT_OFFER_WEIGHTS,
   ).map((r) => offers[r.index]!);
   return [...ranked.filter((o) => !o.ownMember), ...ranked.filter((o) => o.ownMember)];
 }

@@ -26,8 +26,6 @@ import { MerchantOrderController } from "./merchant-order.controller";
 import { MerchantOrderProofService } from "./merchant-order-proof.service";
 import { OrderSubstitutionService } from "./order-substitution.service";
 import { VenueRatingService } from "./venue-rating.service";
-import { MerchantRidersController } from "./merchant-riders.controller";
-import { MerchantRidersService } from "./merchant-riders.service";
 import { MerchantService } from "./merchant.service";
 import { MerchantInvitesController, MerchantTeamController } from "./merchant-team.controller";
 import { MerchantTeamService } from "./merchant-team.service";
@@ -67,7 +65,7 @@ import { PrescriptionService } from "./prescription.service";
  * business's booking account, so MatchingModule (selectOffer) and OffersModule (the offer list) join
  * the imports — the same sanctioned merchant → Send direction (plan §11 F1.3).
  *
- * L3 adds Your riders (MerchantRidersService); L4 adds Team: MerchantTeamService (the owner's side and
+ * L3's Your riders is retired (Own bikers replaces it); L4 adds Team: MerchantTeamService (the owner's side and
  * a staff member's Leave, which evicts the person's devices from the queue room through TrackingGateway)
  * and MerchantInvitesService (Join / Not me, for a caller who isn't on a business yet).
  *
@@ -92,7 +90,6 @@ import { PrescriptionService } from "./prescription.service";
     FoodOrderController,
     MerchantOrderController,
     MerchantBookingController,
-    MerchantRidersController,
     MerchantTeamController,
     MerchantInvitesController,
     MerchantBranchesController,
@@ -106,7 +103,6 @@ import { PrescriptionService } from "./prescription.service";
   providers: [
     MerchantService,
     MerchantBookingService,
-    MerchantRidersService,
     MerchantTeamService,
     MerchantInvitesService,
     MerchantBranchesService,
