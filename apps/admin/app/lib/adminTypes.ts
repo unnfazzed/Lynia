@@ -376,7 +376,7 @@ export interface Merchant {
 export type MerchantApplicationAction = "review" | "approve" | "reject" | "go_live" | "suspend" | "resume";
 
 export interface MerchantChecklistRow {
-  key: "location" | "hours" | "owner" | "menu" | "team" | "licence" | "call";
+  key: "location" | "hours" | "owner" | "menu" | "shopfront" | "team" | "licence" | "call";
   label: string;
   ok: boolean;
   required: boolean;
