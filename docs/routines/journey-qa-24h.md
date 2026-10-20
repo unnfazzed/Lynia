@@ -95,6 +95,10 @@ export NODE_ENV=development
 export DATABASE_URL='postgresql://lynia:lynia@localhost:5432/lynia?schema=public'
 export REDIS_URL=redis://localhost:6379
 export OTP_CHANNEL=console KYC_PROVIDER=stub KYC_MODE=auto PAYMENT_RAIL=stub PUSH_PROVIDER=noop
+# QA-S02: the API defaults every vertical OFF; production (and the app's fail-open default) has them ON.
+export RESTAURANTS_ENABLED=true SHOPS_ENABLED=true PHARMACY_ENABLED=true
+# QA-S02: browser surfaces need their origins allowed (empty = every browser origin refused).
+export CORS_ALLOWED_ORIGINS=http://localhost:8081,http://localhost:8082,http://localhost:3100,http://localhost:3200
 # Dev defaults for the JWT/PII secrets are fine (only refused in production). Commission defaults to 10% after 10 free jobs.
 pnpm --filter @lynia/api prisma:generate && pnpm db:migrate
 pnpm --filter @lynia/api test:int src/<lane>.int.spec.ts      # BEFORE seeding: int specs deleteMany profiles/riders/orders
@@ -143,6 +147,12 @@ ADMIN_JWT=$(cd apps/api && node -e 'console.log(require("jsonwebtoken").sign({ro
   - `POST /orders/:id/deliver` with the 6-digit code makes the order `delivered`.
   - It becomes `completed` when the customer rates it (`POST /orders/:id/rating`) or when it auto-closes.
   - Commission is charged at completion (`wallet.service.ts:292`, `order-lifecycle.transitions.ts:306-324`).
+- **Postgres in Docker (QA-S02):** if `docker compose up -d postgres` holds `:5432` (postgis, `lynia/lynia`),
+  use it; don't also start the native cluster. `up.sh` checks for the container first.
+- **Customer web build (QA-S02):** a release-mode web build refuses a loopback API URL (`src/config.ts`), so
+  point it at the Docker bridge, and clear Metro's cache or it can serve an older bundle:
+  `cd apps/mobile && EXPO_PUBLIC_LYNIA_WEB=1 EXPO_NO_WEB_SETUP=1 EXPO_PUBLIC_API_URL=http://172.17.0.1:3000 pnpm exec expo export --clear --platform web --output-dir <dir>`,
+  then `EXPO_PUBLIC_API_URL=http://172.17.0.1:3000 node apps/customer-web/finish-build.mjs <dir>` and serve `<dir>` on `:8081`.
 - **Upload URLs** (`/uploads/*`) will probably 500 locally, because there are no storage credentials.
   Treat photo upload as static-only.
 - **Socket lifetime:** the server closes a socket when its access token expires (15 min,

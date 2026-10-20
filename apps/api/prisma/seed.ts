@@ -4,7 +4,7 @@
  *   pnpm db:seed   (after db:up + db:migrate)
  */
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { type Prisma, PrismaClient } from "@prisma/client";
 
 // Prisma 7: the client needs a driver adapter; the pool is lazy so a missing DATABASE_URL
 // still fails at first query (with a clear pg error), not at import time.
@@ -138,43 +138,65 @@ async function main(): Promise<void> {
       ],
     });
 
-    // Food orders spanning the merchant queue board (E2 listQueue visible statuses) across each
-    // MerchantPhase, so RM.board / RM.two_orders / queue states render with real rows.
-    const phases: ReadonlyArray<readonly [phase: "awaiting_accept" | "awaiting_payment" | "preparing" | "ready_for_pickup", goods: number]> = [
-      ["awaiting_accept", 9.0],
-      ["awaiting_payment", 13.5],
-      ["preparing", 7.5],
-      ["ready_for_pickup", 11.0],
+    // Food orders spanning the merchant board across the phases a cash order passes through (order flow
+    // v2 is cash-only, so none waits on a wallet payment). QA-S01 (2026-10-20): each order's lines are
+    // real dishes at their menu prices and its totals are what placeOrder would write — goods = the lines,
+    // customer total = goods + delivery fee (this kitchen doesn't fund delivery) — so the merchant board,
+    // order detail and Money all show the same amounts. Before, every order had one "beef stew ×2" line
+    // ($9.00) whatever its goods total, and was paid by wallet.
+    const dishes = new Map(
+      (await prisma.merchantDish.findMany({ where: { merchantId: merchant.id }, select: { id: true, name: true, priceUsd: true } })).map((d) => [d.name, d]),
+    );
+    const now = Date.now();
+    const minAgo = (m: number) => new Date(now - m * 60_000);
+    const deliveryFee = 2.5;
+    const orders: ReadonlyArray<{ lines: ReadonlyArray<readonly [dish: string, quantity: number]>; phase: Partial<Prisma.OrderUncheckedCreateInput> }> = [
+      { lines: [["Sadza & beef stew", 2]], phase: { merchantPhase: "awaiting_accept", acceptDeadlineAt: new Date(now + 3 * 60_000) } },
+      {
+        lines: [["Sadza & road runner chicken", 1], ["Sadza & mazondo", 1]],
+        phase: { merchantPhase: "preparing", merchantAcceptedAt: minAgo(6), prepStartedAt: minAgo(6), prepMinutes: 18 },
+      },
+      {
+        lines: [["Sadza & beef stew", 1], ["Sadza & road runner chicken", 1], ["Sadza & mazondo", 1]],
+        phase: { merchantPhase: "ready_for_pickup", merchantAcceptedAt: minAgo(25), prepStartedAt: minAgo(25), prepMinutes: 18, readyAt: minAgo(2) },
+      },
     ];
-    for (const [merchantPhase, goods] of phases) {
-      const grandTotal = goods + 2.5;
+    for (const { lines, phase } of orders) {
+      const items = lines.map(([name, quantity]) => {
+        const dish = dishes.get(name);
+        if (!dish) throw new Error(`seed: no dish named ${name}`);
+        return { dishId: dish.id, nameSnapshot: dish.name, priceUsd: dish.priceUsd, quantity };
+      });
+      const goods = Math.round(items.reduce((sum, i) => sum + Number(i.priceUsd) * i.quantity, 0) * 100) / 100;
+      const total = goods + deliveryFee;
       await prisma.order.create({
         data: {
           customerId: customer.id,
           orderType: "merchant",
           merchantId: merchant.id,
           status: "requested", // merchant orders stay pre-dispatch (requested) through the merchant phases
-          merchantPhase,
-          merchantPaymentMethod: "wallet",
+          ...phase,
+          merchantPaymentMethod: "cash",
+          merchantCashRule: "collect_and_return", // D-48: every cash food order, as placeOrder writes it
           merchantGoodsTotal: goods,
-          deliveryFee: 2.5,
-          // Order carries the parcel-shaped money fields too; food placeOrder sets suggested/proposed
-          // to the grand total and declaredValue 0 (mirrored here). agreedFare is the grand total.
-          itemDesc: "Sadza & beef stew ×2",
+          deliveryFee,
+          // Order carries the parcel-shaped money fields too; food placeOrder sets suggested/proposed/agreed
+          // to the customer total and declaredValue 0 (mirrored here).
+          itemDesc: items.map((i) => `${i.quantity}x ${i.nameSnapshot}`).join(" · "),
           declaredValue: 0,
-          suggestedFare: grandTotal,
-          proposedFare: grandTotal,
-          agreedFare: grandTotal,
+          suggestedFare: total,
+          proposedFare: total,
+          agreedFare: total,
           pickup: { point: CORRIDOR, landmark: "Sadza Republic, First Street, CBD", contactPhone: "+263773333333" },
           dropoff: { point: { lat: CORRIDOR.lat + 0.01, lng: CORRIDOR.lng + 0.01 }, landmark: "14 Glenara Ave, Avenues", contactPhone: "+263771111111" },
-          merchantItems: { create: [{ nameSnapshot: "Sadza & beef stew", priceUsd: 4.5, quantity: 2 }] },
+          merchantItems: { create: items },
           events: { create: { status: "requested" } },
         },
       });
     }
   }
 
-  console.log(`Seeded: 1 admin, 1 customer, ${riders.length} verified online riders, 1 open parcel order, 1 pilot merchant (Sadza Republic) + 3 dishes + 4 food orders across merchant phases.`);
+  console.log(`Seeded: 1 admin, 1 customer, ${riders.length} verified online riders, 1 open parcel order, 1 pilot merchant (Sadza Republic) + 3 dishes + 3 cash food orders (awaiting accept, preparing, ready for pickup).`);
 }
 
 main()

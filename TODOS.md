@@ -319,3 +319,51 @@ starts from reasoning, not archaeology.
   gate.
 - **Effort:** human XL / CC L. **Priority:** P2.
 - **Trigger / blocked by:** Own bikers v1 live with at least one chain.
+
+## QA follow-ups parked as features (from /qa-only + /plan-eng-review 2026-10-20, `docs/reports/qa-2026-10-20/00-QA-REPORT.md`)
+
+The owner scoped that wave to "refactor plus bugs" (2026-10-20). These four were designed and approved in the
+review, then parked because each adds behaviour rather than fixing a defect.
+
+### QA-1 · Keep the "Notify me" promise: a server-side interest list (QA-B01, R1/R10)
+
+- **What:** `POST /service-interest` (service + area), synced once after sign-in from the on-device list, plus
+  an admin export per service and area. The WhatsApp send at launch stays a manual ops step until a Bird
+  template exists.
+- **Why:** the coming-soon sheet says "We'll message you on WhatsApp the day they open in your area", but the
+  tap is stored only on the phone (D-28), so nobody can ever send that message.
+- **Pros:** keeps the mock's copy verbatim and makes the promise keepable; gives ops a real launch list.
+- **Cons:** a new endpoint, table and sync for a list that only matters at a launch.
+- **Trigger:** before the next service (Shops, Pharmacy or a new city) is switched on, or if the owner would
+  rather change the copy (that route needs a `docs/DESIGN-DEVIATIONS.md` entry).
+
+### QA-2 · A sane upper bound on a parcel fare (FN-01, R3)
+
+- **What:** a relative cap on `POST /orders` fares (a multiple of the suggested fare, shared with the app's
+  "did you add a digit?" nudge) instead of the flat `FareUsd` max of $100,000.
+- **Why:** the API accepts a $99,999 fare. The app nudges but doesn't stop it, so a typo can reach riders.
+- **Pros:** stops fat-finger fares server-side; one rule for the app and the API.
+- **Cons:** a new refusal that old builds can't explain except by its message.
+- **Trigger:** the first real order priced far above its band, or before fares can be paid by wallet.
+
+### QA-3 · Compare the request body on an idempotent replay (FN-02, R4)
+
+- **What:** store a fingerprint of the request body with the idempotency key (the five endpoints in
+  `apps/api/src/common/idempotency.ts`) and answer a replay whose body differs with 422
+  `idempotency_key_reused` instead of the original row.
+- **Why:** a replay today returns the first row whatever the body says. The app makes a fresh key for each
+  attempt, so no live path hits this, but a buggy client could get a silent wrong answer.
+- **Pros:** the standard Stripe-style contract; a buggy client fails loudly.
+- **Cons:** a migration per table that holds a key, and a new refusal.
+- **Trigger:** any client that reuses keys across different requests, or a third-party API consumer.
+
+### QA-4 · Versioned status-code fixes (R-1, R5)
+
+- **What:** correct the statuses that carry the wrong meaning (a wrong delivery code is 401, a wallet amount
+  bound is 403 while the schema answers 400) for new builds only, keyed on the app version, then remove the
+  old branch once Play shows under 2% of active installs below that version.
+- **Why:** the error body now has one shape with a `reason` (R-2, additive), but the statuses themselves
+  still mislead, and changing them outright would break installed apps that branch on status.
+- **Pros:** correct HTTP semantics without breaking vc 47/48.
+- **Cons:** a version branch in the error path until old builds age out.
+- **Trigger:** a client (or partner) that needs to branch on status rather than `reason`.
