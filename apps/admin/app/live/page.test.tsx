@@ -70,6 +70,13 @@ function mockApi(orders: unknown, fl: unknown) {
 }
 
 describe("Live page", () => {
+  it("QA-B03: shows every not-ended order as Active, and how many the monitor can't time", async () => {
+    mockApi({ data: { ...live, counts: { ...live.counts, active: 4, untimed: 2 } } }, { data: fleet });
+    render(await LivePage());
+    expect(screen.getByText("Active orders").closest(".kpi")?.textContent).toContain("4");
+    expect(screen.getByText(/No timer: 2/)).toBeTruthy();
+  });
+
   it("lists active orders past the limit first, with the step, the clock and a link to the order", async () => {
     mockApi({ data: live }, { data: fleet });
     render(await LivePage());

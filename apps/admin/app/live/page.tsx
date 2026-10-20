@@ -90,7 +90,7 @@ export default async function LivePage() {
       {!connected ? <OfflineBanner reason={reason} /> : null}
 
       <div className="panels" style={{ marginBottom: "var(--space-lg)" }}>
-        <KpiCard label="Active orders" value={live ? live.counts.total : "—"} />
+        <KpiCard label="Active orders" value={live ? (live.counts.active ?? live.counts.total) : "—"} />
         <KpiCard label="Past the time limit" value={live ? live.counts.breach : "—"} hint={live && live.counts.breach > 0 ? "Top of the list" : undefined} />
         <KpiCard label="Close to the limit" value={live ? live.counts.warn : "—"} />
         <KpiCard label="Bikers online" value={fleet ? fleet.riders.length : "—"} hint={fleet ? `${ridersWithFix} sent a position in the last 2 min` : undefined} />
@@ -99,7 +99,11 @@ export default async function LivePage() {
       <section className="card" style={{ marginBottom: "var(--space-lg)" }}>
         <div className="block-title">
           Orders
-          <span className="right">{live ? `as of ${fmtDateTime(live.generatedAt)}` : "—"}</span>
+          <span className="right">
+            {live ? `as of ${fmtDateTime(live.generatedAt)}` : "—"}
+            {/* QA-B03: active orders the monitor has no clock for (delivered, fleet searching, scheduled). */}
+            {live && (live.counts.untimed ?? 0) > 0 ? ` · No timer: ${live.counts.untimed}` : null}
+          </span>
         </div>
         <DataTable
           columns={orderColumns}

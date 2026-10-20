@@ -925,7 +925,8 @@ export interface LiveOrderRow {
 
 export interface LiveOrders {
   generatedAt: string;
-  counts: { total: number; breach: number; warn: number };
+  /** `total` = timed rows; `active` = every not-ended order (QA-B03); `untimed` = active orders with no clock. */
+  counts: { total: number; breach: number; warn: number; active?: number; untimed?: number };
   rows: LiveOrderRow[];
 }
 

@@ -10,7 +10,6 @@ import {
   customerRatingCarriesWeight,
   broadcastRadiusAtMs,
   BROADCAST,
-  STUCK_AFTER_MINUTES,
   estimatePickupEtaMinutes,
   PICKUP_ETA,
 } from "./policy";
@@ -56,15 +55,6 @@ describe("canCoverJobCommission — a biker can't take a job whose commission is
   });
   it("commission off → always", () => {
     expect(canCoverJobCommission({ ratePct: 0, tripsCount: 99, balance: 0, commission: 1 })).toBe(true);
-  });
-});
-
-// WD-028: apps/api's STUCK_AFTER_MS (admin.shared.ts) and apps/admin's needs-attention copy
-// (app/page.tsx) both derive from this ONE constant now, precisely so they can't drift to different
-// minute figures again (they did once: 25 in the admin console's hardcoded prose vs 20 here/API-side).
-describe("STUCK_AFTER_MINUTES", () => {
-  it("pins the current threshold both the API and admin console derive from", () => {
-    expect(STUCK_AFTER_MINUTES).toBe(20);
   });
 });
 

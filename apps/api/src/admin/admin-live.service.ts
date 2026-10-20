@@ -11,48 +11,16 @@ import { REVERSAL_CAP_USD } from "../wallet/wallet.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminMoneyService } from "./admin-money.service";
 import { applicationsPastSlaWhere } from "./admin.service";
-import {
-  breachOf,
-  compareLive,
-  LIVE_ORDER_STATUSES,
-  LIVE_STAGE_LABELS,
-  type LiveBreach,
-  type LiveStage,
-  slaTable,
-  stageOf,
-} from "./live-ops";
+import { LIVE_ORDER_STATUSES, type LiveBreach, slaTable } from "./live-ops";
+import { LIVE_ORDER_CAP, type LiveOrders, OrderHealthService } from "./order-health";
 
-/** The monitor's read cap. A pilot has a handful of live orders; this only bounds a flood. */
-const LIVE_ORDER_CAP = 300;
+export type { LiveOrderRow, LiveOrders } from "./order-health";
 /** The fleet read's cap on online bikers. */
 const FLEET_RIDER_CAP = 500;
 /** A position older than this is drawn as stale (the live-position key's own TTL). */
 export const FLEET_FRESH_MS = 2 * 60_000;
 /** How long one instance reuses the alert counts. The strip renders on every page. */
 export const ALERTS_CACHE_MS = 15_000;
-
-export interface LiveOrderRow {
-  id: string;
-  orderType: string;
-  status: string;
-  merchantPhase: string | null;
-  stage: LiveStage;
-  stageLabel: string;
-  stageStartedAt: string;
-  limitMs: number;
-  elapsedMs: number;
-  breach: LiveBreach;
-  createdAt: string;
-  customer: { id: string; name: string };
-  rider: { id: string; name: string } | null;
-  merchant: { id: string; name: string } | null;
-}
-
-export interface LiveOrders {
-  generatedAt: string;
-  counts: { total: number; breach: number; warn: number };
-  rows: LiveOrderRow[];
-}
 
 export interface FleetPoint {
   lat: number;
@@ -118,100 +86,12 @@ export class AdminLiveService {
     private readonly tracking: TrackingService,
     private readonly kitchen: AdminKitchenService,
     private readonly money: AdminMoneyService,
+    private readonly health: OrderHealthService,
   ) {}
 
-  /** Every active order with its stage, the stage's clock and limit, and breach status. Breach first, then age. */
-  async liveOrders(): Promise<LiveOrders> {
-    const now = Date.now();
-    const orders = await this.prisma.order.findMany({
-      where: { status: { in: [...LIVE_ORDER_STATUSES] } },
-      orderBy: { createdAt: "desc" },
-      take: LIVE_ORDER_CAP,
-      select: {
-        id: true,
-        orderType: true,
-        status: true,
-        merchantPhase: true,
-        createdAt: true,
-        riderId: true,
-        assignedAt: true,
-        merchantAcceptedAt: true,
-        acceptDeadlineAt: true,
-        autoAccepted: true,
-        kitchenConfirmedAt: true,
-        prepStartedAt: true,
-        prepMinutes: true,
-        dispatchStartedAt: true,
-        readyAt: true,
-        collectedAt: true,
-        customerId: true,
-        customer: { select: { firstName: true, lastName: true } },
-        rider: { select: { profile: { select: { firstName: true, lastName: true } } } },
-        merchant: { select: { id: true, name: true } },
-      },
-    });
-    const ids = orders.map((o) => o.id);
-    const parcelOpen = orders.filter((o) => o.orderType === "parcel" && o.status === "open_for_offers").map((o) => o.id);
-    const [bids, lastEvents, assignedEvents] = ids.length
-      ? await Promise.all([
-          parcelOpen.length
-            ? this.prisma.offer.groupBy({
-                by: ["orderId"],
-                where: { orderId: { in: parcelOpen }, status: "pending" },
-                _count: { _all: true },
-                _min: { createdAt: true },
-              })
-            : Promise.resolve([]),
-          this.prisma.orderEvent.groupBy({ by: ["orderId"], where: { orderId: { in: ids } }, _max: { createdAt: true } }),
-          this.prisma.orderEvent.groupBy({
-            by: ["orderId"],
-            where: { orderId: { in: ids }, status: "assigned" },
-            _max: { createdAt: true },
-          }),
-        ])
-      : [[], [], []];
-    const bidsBy = new Map(bids.map((b) => [b.orderId, { n: b._count._all, first: b._min.createdAt }]));
-    const lastBy = new Map(lastEvents.map((e) => [e.orderId, e._max.createdAt]));
-    const assignedBy = new Map(assignedEvents.map((e) => [e.orderId, e._max.createdAt]));
-
-    const rows: LiveOrderRow[] = [];
-    for (const o of orders) {
-      const b = bidsBy.get(o.id);
-      const s = stageOf(o, {
-        bids: b?.n ?? 0,
-        firstBidAt: b?.first ?? null,
-        lastEventAt: lastBy.get(o.id) ?? null,
-        assignedEventAt: assignedBy.get(o.id) ?? null,
-      });
-      if (!s) continue;
-      const elapsedMs = Math.max(0, now - s.startedAt.getTime());
-      rows.push({
-        id: o.id,
-        orderType: o.orderType,
-        status: o.status,
-        merchantPhase: o.merchantPhase,
-        stage: s.stage,
-        stageLabel: LIVE_STAGE_LABELS[s.stage],
-        stageStartedAt: s.startedAt.toISOString(),
-        limitMs: s.limitMs,
-        elapsedMs,
-        breach: breachOf(elapsedMs, s.limitMs),
-        createdAt: o.createdAt.toISOString(),
-        customer: { id: o.customerId, name: nameOf(o.customer, "Customer") },
-        rider: o.riderId ? { id: o.riderId, name: nameOf(o.rider?.profile, "Biker") } : null,
-        merchant: o.merchant ? { id: o.merchant.id, name: o.merchant.name } : null,
-      });
-    }
-    rows.sort(compareLive);
-    return {
-      generatedAt: new Date(now).toISOString(),
-      counts: {
-        total: rows.length,
-        breach: rows.filter((r) => r.breach === "breach").length,
-        warn: rows.filter((r) => r.breach === "warn").length,
-      },
-      rows,
-    };
+  /** The order monitor (QA-B02: owned by OrderHealthService so the Overview card reads the same rule). */
+  liveOrders(): Promise<LiveOrders> {
+    return this.health.liveOrders();
   }
 
   /**

@@ -5930,3 +5930,16 @@ waits on the item check alone, the same as every venue pickup since D-100.
   none, the customer's order screen simply shows no photo row. The camera (A3), preview (A4) and saving (A5) screens
   stay as drawn.
 - **Upstream:** Rider v2 should draw A2 without the photo gate. The kit is not edited.
+
+## D-119 · Admin late-order copy and the Live "No timer" count — APPROVED (owner, 2026-10-20)
+
+**Owner decisions (eng review of the 2026-10-20 QA, `docs/reports/qa-2026-10-20/00-QA-REPORT.md`, D9 and D10):** one
+per-step late rule for every admin screen, and one "active orders" meaning (not ended).
+
+- **Overview · Needs attention.** The kit row ("… may be stuck — no GPS update from Tendai M. for 22 min en route to
+  drop-off", `ui_kits/admin/index.html:72`) keeps its title and shape; its detail line now names the oldest late
+  order's step and limit ("no biker yet past its 6 min limit."), because the card now also lists orders that have no
+  biker to be silent.
+- **Live · Orders card.** Its title's right-hand text gains " · No timer: N" when some active orders have no stage
+  clock (delivered, fleet searching, a scheduled order not rung). Not drawn in the kit.
+- **Upstream:** the admin kit should draw the per-step detail line and the untimed count. The kit is not edited.

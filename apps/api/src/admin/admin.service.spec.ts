@@ -1,13 +1,16 @@
-import { STUCK_AFTER_MINUTES } from "@lynia/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService } from "./admin.service";
-import { STUCK_AFTER_MS } from "./admin.shared";
+import type { OrderHealthService } from "./order-health";
 
 /** Decimal-like stub — Prisma returns Decimal objects the service serializes via toString(). */
 const dec = (s: string) => ({ toString: () => s });
 const envStub = (COMMISSION_RATE_PCT?: string) => ({ COMMISSION_RATE_PCT } as unknown as Env);
+/** The per-step late rule (order-health.ts), stubbed: its own spec covers the rule itself. */
+type LateSummary = Awaited<ReturnType<OrderHealthService["lateSummary"]>>;
+const healthStub = (late: LateSummary = { count: 0, oldest: null }) =>
+  ({ lateSummary: vi.fn(async () => late) }) as unknown as OrderHealthService;
 
 describe("AdminService.overview", () => {
   it("adds today throughput, needs-attention signals, and enriched recent orders", async () => {
@@ -23,7 +26,6 @@ describe("AdminService.overview", () => {
           if (w.status === "expired") return 10; // expired
           if (w.status === "completed" && w.completedAt) return 9; // completedToday
           if (w.status === "undelivered" && w.undeliveredAt) return 1; // undeliveredToday
-          if (w.status && typeof w.status === "object" && w.updatedAt) return 2; // stuck (in-flight + stale)
           // LC-D-T1: this used to be `if (Object.keys(w).length === 0) return 100`, which never
           // matches the real `{ orderType: "parcel" }` where clause below — totalBroadcasts silently
           // evaluated to 0 and nothing caught it because nothing asserted on `metrics` before.
@@ -36,7 +38,6 @@ describe("AdminService.overview", () => {
           if (w.status === "completed" && w.completedAt && w.orderType === "merchant") return { _sum: { deliveryFee: dec("3.60") } };
           return { _sum: { agreedFare: null } };
         },
-        findFirst: async () => ({ id: "stuck-1" }),
         findMany: async () => [
           {
             id: "ord_1",
@@ -68,13 +69,23 @@ describe("AdminService.overview", () => {
       $queryRaw: async () => [{ count: 1 }],
     };
 
-    const out = await new AdminService(prisma as unknown as PrismaService, envStub("10")).overview();
+    const health = healthStub({ count: 2, oldest: { id: "stuck-1", stageLabel: "No biker yet", limitMs: 6 * 60_000 } });
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub("10"), health).overview();
 
     // Today throughput drives the two headline KPIs the kit design shows.
     // Fares = parcel agreed fares + merchant delivery fees.
     expect(out.today).toEqual({ completed: 9, completionRatePct: 90, fares: "90.00" });
     // Needs-attention signals for the overview queue.
-    expect(out.attention).toEqual({ kycPending: 3, openIssues: 2, stuckOrders: 2, stuckOrderId: "stuck-1" });
+    // QA-B02: the late-order signal is the per-step rule's summary, the same one the alert strip counts.
+    expect(out.attention).toEqual({
+      kycPending: 3,
+      openIssues: 2,
+      stuckOrders: 2,
+      stuckOrderId: "stuck-1",
+      stuckOrderStage: { label: "No biker yet", limitMinutes: 6 },
+    });
+    // QA-B03: not-ended orders (open_for_offers 3 + assigned 5), the Live page's "Active orders" number.
+    expect(out.activeOrders).toBe(8);
     // UX20-02: the live commission rate, resolved from env — the console's needs-attention "Commission
     // is 0%" row must read this instead of a hardcoded literal.
     expect(out.commissionRatePct).toBe(10);
@@ -119,7 +130,7 @@ describe("AdminService.overview", () => {
       $queryRaw: async () => [{ count: 7 }],
     };
 
-    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub(), healthStub()).overview();
     expect(out.metrics.pctBroadcastsWithOffer).toBe(70); // round(7 / 10 * 100)
   });
 
@@ -137,7 +148,7 @@ describe("AdminService.overview", () => {
       issue: { count: async () => 0 },
       $queryRaw: async () => [{ count: 0 }],
     };
-    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub(), healthStub()).overview();
     expect(out.today.completionRatePct).toBeNull();
     expect(out.today.fares).toBe("0.00");
     expect(out.attention.stuckOrderId).toBeNull();
@@ -174,7 +185,7 @@ describe("AdminService.overview", () => {
       $queryRaw: async () => [{ count: 0 }],
     };
 
-    await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    await new AdminService(prisma as unknown as PrismaService, envStub(), healthStub()).overview();
 
     // A cancelled-post-delivery order (status "cancelled", deliveredAt still set from before the cancel)
     // must NOT satisfy the completed-today where-clause — it has to require the CURRENT status too.
@@ -223,7 +234,7 @@ describe("AdminService.overview", () => {
       $queryRaw: async () => [{ count: 0 }],
     };
 
-    const out = await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub(), healthStub()).overview();
 
     expect(out.today).toEqual({ completed: 7, completionRatePct: 70, fares: "34.50" });
     expect(seenCountWheres.find((w) => "completedAt" in w)).not.toHaveProperty("orderType");
@@ -254,7 +265,7 @@ describe("AdminService.overview", () => {
     try {
       // 23:30 UTC on the 12th is 01:30 Harare on the 13th.
       vi.setSystemTime(new Date("2026-10-12T23:30:00Z"));
-      await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
+      await new AdminService(prisma as unknown as PrismaService, envStub(), healthStub()).overview();
     } finally {
       vi.useRealTimers();
     }
@@ -262,12 +273,10 @@ describe("AdminService.overview", () => {
     expect(completed.completedAt.gte.toISOString()).toBe("2026-10-12T22:00:00.000Z");
   });
 
-  // DS20-01: the ops-dashboard stuck-order query and the per-order detail badge (admin-orders.service)
-  // must be governed by ONE shared threshold. admin.service used to redeclare its own 25-min literal
-  // while admin.shared exported 20 min, so the same order could read "stuck" on its detail page yet not
-  // appear in the dashboard alert. Assert the dashboard's `updatedAt` cutoff is exactly `now -
-  // STUCK_AFTER_MS` (the shared constant admin-orders.service also imports), proving the drift is gone.
-  it("keys the stuck-order dashboard query off the SHARED STUCK_AFTER_MS threshold (no drift)", async () => {
+  // QA-B02: the card used a flat 20-minute updatedAt rule over in-flight statuses, so a food order with no biker was
+  // "past the time limit" in the alert strip and missing here. It now reads the shared per-step rule and runs no
+  // updatedAt query of its own.
+  it("reads the late orders from the shared per-step rule, not a flat updatedAt cutoff", async () => {
     const seenCountWheres: Record<string, unknown>[] = [];
     const prisma = {
       order: {
@@ -277,7 +286,6 @@ describe("AdminService.overview", () => {
           return 0;
         },
         aggregate: async () => ({ _sum: { agreedFare: null } }),
-        findFirst: async () => null,
         findMany: async () => [],
       },
       offer: { count: async () => 0 },
@@ -285,25 +293,14 @@ describe("AdminService.overview", () => {
       issue: { count: async () => 0 },
       $queryRaw: async () => [{ count: 0 }],
     };
+    const health = healthStub({ count: 1, oldest: { id: "food-1", stageLabel: "No biker yet", limitMs: 6 * 60_000 } });
 
-    const before = Date.now();
-    await new AdminService(prisma as unknown as PrismaService, envStub()).overview();
-    const after = Date.now();
+    const out = await new AdminService(prisma as unknown as PrismaService, envStub(), health).overview();
 
-    // The stuck query is the in-flight-status count that also bounds `updatedAt`.
-    const stuckWhere = seenCountWheres.find((w) => "updatedAt" in w) as
-      | { updatedAt: { lt: Date } }
-      | undefined;
-    expect(stuckWhere).toBeTruthy();
-    const cutoffMs = stuckWhere!.updatedAt.lt.getTime();
-    // cutoff == now - STUCK_AFTER_MS, with `now` captured somewhere in [before, after].
-    expect(cutoffMs).toBeGreaterThanOrEqual(before - STUCK_AFTER_MS);
-    expect(cutoffMs).toBeLessThanOrEqual(after - STUCK_AFTER_MS);
-    // And the shared constant is the 20-min A-04 value, not the old 25-min drift.
-    expect(STUCK_AFTER_MS).toBe(20 * 60 * 1000);
-    // WD-028: STUCK_AFTER_MS derives from the SAME @lynia/shared constant the admin console's
-    // needs-attention copy reads for its "N+ min" prose, so the two can't independently drift again.
-    expect(STUCK_AFTER_MS).toBe(STUCK_AFTER_MINUTES * 60 * 1000);
+    expect(health.lateSummary).toHaveBeenCalledTimes(1);
+    expect(seenCountWheres.some((w) => "updatedAt" in w)).toBe(false);
+    expect(out.attention.stuckOrders).toBe(1);
+    expect(out.attention.stuckOrderId).toBe("food-1");
   });
 });
 
@@ -334,7 +331,7 @@ describe("AdminService.utilization", () => {
       merchantRidesPerActiveRider: 0.5,
       heartbeatArmIncluded: true,
     };
-    const out = await new AdminService(prismaStub(capture, [row]), envStub()).utilization();
+    const out = await new AdminService(prismaStub(capture, [row]), envStub(), healthStub()).utilization();
 
     expect(capture.days).toBe(14);
     expect(out).toEqual([{ ...row, day: "2026-07-31" }]);
@@ -342,7 +339,7 @@ describe("AdminService.utilization", () => {
 
   it("clamps an out-of-range or non-finite days value into [1, 90]", async () => {
     const capture: { days?: unknown } = {};
-    const svc = new AdminService(prismaStub(capture, []), envStub());
+    const svc = new AdminService(prismaStub(capture, []), envStub(), healthStub());
 
     await svc.utilization(500);
     expect(capture.days).toBe(90);
@@ -376,7 +373,7 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
         },
       },
     };
-    const svc = new AdminService(prisma as unknown as PrismaService, envStub());
+    const svc = new AdminService(prisma as unknown as PrismaService, envStub(), healthStub());
     const out = await svc.navCounts();
     expect(out.foodDisputes).toBe(9);
     // Both order-vertical queries are scoped to merchant orders only — never mix in parcel counts.
@@ -391,7 +388,7 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
       merchant: { count: async () => 0 },
       order: { count: async () => 0 },
     };
-    const svc = new AdminService(prisma as unknown as PrismaService, envStub());
+    const svc = new AdminService(prisma as unknown as PrismaService, envStub(), healthStub());
     expect((await svc.navCounts()).foodDisputes).toBe(0);
   });
 
@@ -409,7 +406,7 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
         },
       },
     };
-    const svc = new AdminService(prisma as unknown as PrismaService, envStub());
+    const svc = new AdminService(prisma as unknown as PrismaService, envStub(), healthStub());
     // Frozen clock: comparing against a second Date.now() read flaked under full-suite load.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

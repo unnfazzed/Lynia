@@ -5,7 +5,8 @@ import { heartbeatMaxAgeMs } from "../common/broadcast-policy";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
-import { computeFunnel, fmtDate, harareDayStart, routeOf, STUCK_AFTER_MS } from "./admin.shared";
+import { computeFunnel, fmtDate, harareDayStart, routeOf } from "./admin.shared";
+import { activeOrderCount, OrderHealthService } from "./order-health";
 
 /** One day's row from the utilization() raw query, before day formatting. */
 type RawUtilizationRow = {
@@ -21,15 +22,6 @@ type RawUtilizationRow = {
 };
 
 export type UtilizationRow = Omit<RawUtilizationRow, "day"> & { day: string };
-
-/** In-flight (assigned…drop-off) statuses — an order here that hasn't changed in a while is "stuck". */
-const IN_FLIGHT_STATUSES = [
-  "assigned",
-  "confirmed",
-  "en_route_pickup",
-  "picked_up",
-  "en_route_dropoff",
-] as const;
 
 /** Merchant applications still waiting on ops past the 24h SLA (the Merchants badge and the alert strip). */
 export function applicationsPastSlaWhere(now: number = Date.now()): Prisma.MerchantWhereInput {
@@ -50,6 +42,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(ENV) private readonly env: Env,
+    private readonly health: OrderHealthService,
   ) {}
 
   /** Cheap counts for the sidebar attention badges (KYC backlog, open disputes, un-acked SOS). Kept
@@ -57,8 +50,7 @@ export class AdminService {
   async navCounts() {
     // X1: foodDisputes = R-05 frozen doorstep handshakes (need admin resolveHandshake) + N-12
     // refund-overdue orders past the 2h SLA. Approximates "past SLA" off `updatedAt` (the same cheap
-    // single-column-index style STUCK_AFTER_MS uses for the overview dashboard — see admin.shared.ts's
-    // comment on why the badge and the detail queue are allowed to use different clocks) rather than
+    // single-column-index style the other badges use) rather than
     // admin-merchants.service.ts's precise per-row cancelledAt/undeliveredAt computation — a nav badge
     // only needs to be a cheap, roughly-right attention signal, not the authoritative queue itself.
     const refundOverdueCutoff = new Date(Date.now() - RESTAURANTS_DEBT.refundSlaMs);
@@ -98,12 +90,6 @@ export class AdminService {
     // "Today" = since 00:00 Harare (UTC+2, no DST) — the day ops actually work in.
     const now = new Date();
     const startOfDay = harareDayStart(now);
-    // DS20-01: shared threshold (admin.shared.STUCK_AFTER_MS) so this dashboard aggregate and the
-    // per-order detail badge (admin-orders.service) can't drift to different minutes. The dashboard
-    // deliberately keys off `order.updatedAt` — one cheap indexed range query, no per-order OrderEvent
-    // join — while the detail page uses the last OrderEvent.createdAt (more precise, already loaded).
-    // Same threshold, different data source on purpose: don't "unify" the clock into an N+1 here.
-    const stuckCutoff = new Date(now.getTime() - STUCK_AFTER_MS);
     const [
       byStatus,
       totalOrders,
@@ -120,8 +106,7 @@ export class AdminService {
       merchantFaresTodayAgg,
       kycPending,
       openIssues,
-      stuckCount,
-      stuckOldest,
+      late,
     ] = await Promise.all([
       this.prisma.order.groupBy({ by: ["status"], _count: { _all: true } }),
       // A-8 (status-keyed-query-audit): the pilot funnel (computeFunnel below) reads these as "Express
@@ -182,13 +167,11 @@ export class AdminService {
       // Needs-attention signals.
       this.prisma.rider.count({ where: { kycStatus: "pending" } }),
       this.prisma.issue.count({ where: { status: { in: ["open", "investigating"] } } }),
-      this.prisma.order.count({ where: { status: { in: [...IN_FLIGHT_STATUSES] }, updatedAt: { lt: stuckCutoff } } }),
-      this.prisma.order.findFirst({
-        where: { status: { in: [...IN_FLIGHT_STATUSES] }, updatedAt: { lt: stuckCutoff } },
-        orderBy: { updatedAt: "asc" },
-        select: { id: true },
-      }),
+      // QA-B02: the same per-step rule as the alert strip and the Live page (order-health.ts), so a food order
+      // waiting on a biker is late here too — the old flat 20-minute updatedAt rule only saw orders with a biker.
+      this.health.lateSummary(),
     ]);
+    const ordersByStatus = Object.fromEntries(byStatus.map((r) => [r.status, r._count._all]));
 
     const completionRatePct =
       deliveredToday + undeliveredToday > 0
@@ -196,7 +179,9 @@ export class AdminService {
         : null;
 
     return {
-      ordersByStatus: Object.fromEntries(byStatus.map((r) => [r.status, r._count._all])),
+      ordersByStatus,
+      // QA-B03: not-ended orders, the same number the Live page shows as "Active orders".
+      activeOrders: activeOrderCount(ordersByStatus),
       riders: { total: ridersTotal, online: ridersOnline, verified: ridersVerified },
       metrics: computeFunnel({
         totalBroadcasts: totalOrders,
@@ -218,8 +203,10 @@ export class AdminService {
       attention: {
         kycPending,
         openIssues,
-        stuckOrders: stuckCount,
-        stuckOrderId: stuckOldest?.id ?? null,
+        stuckOrders: late.count,
+        stuckOrderId: late.oldest?.id ?? null,
+        // The oldest late order's stage and limit, for the card's line ("No biker yet over its 6 min").
+        stuckOrderStage: late.oldest ? { label: late.oldest.stageLabel, limitMinutes: Math.round(late.oldest.limitMs / 60_000) } : null,
       },
       // UX20-02: the live, server-authoritative commission rate — the needs-attention "Commission is 0%"
       // row used to be a hardcoded literal that could never reflect the real (operator-flippable) rate.

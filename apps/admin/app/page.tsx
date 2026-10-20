@@ -1,4 +1,4 @@
-import { OrderStatus, STUCK_AFTER_MINUTES, tokens } from "@lynia/shared";
+import { OrderStatus, tokens } from "@lynia/shared";
 import { adminFetch, adminFetchResult } from "./lib/api";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "./components/states";
 import { KpiCard } from "./components/KpiCard";
@@ -28,7 +28,16 @@ interface Overview {
     expiryRatePct: number;
   };
   today: { completed: number; completionRatePct: number | null; fares: string };
-  attention: { kycPending: number; openIssues: number; stuckOrders: number; stuckOrderId: string | null };
+  /** QA-B03: not-ended orders, the same count the Live page shows. Absent from an older API. */
+  activeOrders?: number;
+  attention: {
+    kycPending: number;
+    openIssues: number;
+    /** QA-B02: orders past their step's limit (the Live page's rule), not a flat 20 minutes. */
+    stuckOrders: number;
+    stuckOrderId: string | null;
+    stuckOrderStage?: { label: string; limitMinutes: number } | null;
+  };
   commissionRatePct: number;
   recentOrders: Array<{
     id: string;
@@ -86,7 +95,7 @@ export default async function OverviewPage({
 
       {/* Headline KPIs — the two the design leads with (completed + fares today) sit beside live supply. */}
       <section className="panels" style={{ marginBottom: tokens.space.md }}>
-        <KpiCard label="Live orders" value={data ? liveOrders(data.ordersByStatus) : "—"} hint="all types, not yet finished" />
+        <KpiCard label="Live orders" value={data ? (data.activeOrders ?? liveOrders(data.ordersByStatus)) : "—"} hint="all types, not yet finished" />
         <KpiCard label="Bikers online" value={data ? `${data.riders.online}/${data.riders.verified}` : "—"} hint="online / verified" />
         <KpiCard
           label="Completed today"
@@ -257,14 +266,15 @@ interface AttentionRow {
 /** Compose the needs-attention queue from the overview's attention signals — only surface live problems. */
 function buildAttention(data: Overview): AttentionRow[] {
   const rows: AttentionRow[] = [];
-  const { stuckOrders, stuckOrderId, openIssues, kycPending } = data.attention;
+  const { stuckOrders, stuckOrderId, stuckOrderStage, openIssues, kycPending } = data.attention;
   if (stuckOrders > 0) {
     rows.push({
       title: `${stuckOrders} order${stuckOrders === 1 ? "" : "s"} may be stuck`,
-      // WD-028: sourced from the same STUCK_AFTER_MINUTES the API's stuck-order aggregate + per-order
-      // detail badge derive their threshold from (admin.shared.ts) — this app can't import server-side
-      // code directly, but the copy must still name the SAME number so it can't drift stale again.
-      detail: `no status update in ${STUCK_AFTER_MINUTES}+ min while in delivery.`,
+      // QA-B02: the API names the oldest late order's step and its limit (the Live page's per-step rule), so the
+      // copy can't drift from the threshold that put the order here.
+      detail: stuckOrderStage
+        ? `${stuckOrderStage.label.toLowerCase()} past its ${stuckOrderStage.limitMinutes} min limit.`
+        : "past its step's time limit on Live.",
       action: "Review order",
       href: stuckOrderId ? `/orders/${stuckOrderId}` : "/orders",
       icon: <IconAlert />,
