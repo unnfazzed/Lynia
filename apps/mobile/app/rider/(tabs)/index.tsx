@@ -6,6 +6,7 @@ import * as Notifications from "expo-notifications";
 import { useFocusEffect, usePathname, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Text, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, currentProfileId } from "../../../src/api/client";
 import { getMe, type Me } from "../../../src/api/auth";
 import { withdrawOffer } from "../../../src/api/offers";
@@ -57,6 +58,7 @@ import { useFeatureFlags } from "../../../src/net/use-feature-flags";
 import { pushOnce } from "../../../src/push/push";
 import { pendingOrQueued } from "../../../src/query/client";
 import { useMyFleet } from "../../../src/query/use-my-fleet";
+import { forgetFleetShop, recalledFleetShop, rememberFleetShop } from "../../../src/logic/fleet-memory";
 import { useSentOffers, useSkippedJobs } from "../../../src/query/use-sent-offers";
 import { useTabTop } from "../../../src/query/use-tab-top";
 import { useWallet, useWalletConfig } from "../../../src/query/use-wallet";
@@ -70,7 +72,7 @@ import { OrderSheet, type OrderSheetHandle } from "../../../src/ui/order/OrderSh
 import { Notice } from "../../../src/ui/send/kit";
 import { type BoardJob, BoardJobCard, BoardMap, fleetBoardJob, Gate, type GateAction, RToast } from "../../../src/ui/rider/board";
 import { RIDER_COPY as R, RF, usd } from "../../../src/ui/rider/copy";
-import { FleetCountRow, FleetIdPending, FleetInviteWaiting, FleetJoinCard, FleetLoadFail, FleetRingsHint, FleetSkeletonCard } from "../../../src/ui/rider/fleet";
+import { FleetCountRow, FleetEndedPage, FleetIdPending, FleetInviteWaiting, FleetJoinCard, FleetLoadFail, FleetRingsHint, FleetSkeletonCard } from "../../../src/ui/rider/fleet";
 import { OBB } from "../../../src/ui/rider/fleet-copy";
 import { MintTop, MSheet, RLabel } from "../../../src/ui/rider/kit";
 import { RiderErrorState } from "../../../src/ui/rider/RiderErrorState";
@@ -343,6 +345,23 @@ export default function RiderHome(): React.ReactElement {
   // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
   // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
   const profileId = meQ.data?.profileId ?? null;
+  // OB-R13 (Own bikers): the phone remembers the shop this account rides for; an answer with no fleet after that
+  // means the business stopped using Own bikers — "You're a public biker now", once.
+  const [fleetEnded, setFleetEnded] = useState<string | null>(null);
+  useEffect(() => {
+    if (!profileId || !myFleet.answered) return;
+    if (fleet) {
+      void rememberFleetShop(profileId, fleet.shop);
+      return;
+    }
+    let off = false;
+    void recalledFleetShop(profileId).then((shop) => {
+      if (!off && shop) setFleetEnded(shop);
+    });
+    return () => {
+      off = true;
+    };
+  }, [profileId, myFleet.answered, fleet]);
   const verified = rider?.kycStatus === "verified";
   // Seeded from what this process already read (a remount draws its answer on the first frame).
   const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(() => (profileId ? riderWelcomeSeenCached(profileId) : null));
@@ -897,7 +916,7 @@ export default function RiderHome(): React.ReactElement {
   // ── ID check (First Run v2 F / G, ledger D-82) ───────────────────────────────────────────────────
   const kycScreen = kycScreenFor({ gate, kyc: kycGate, launch: freshKycLaunch(kycLaunch, Date.now()), declineReason: rider?.kycDeclineReason });
   // F1–F8 are full screens: no tab bar (D-82 §2 #3).
-  useHideTabBar(kycScreen?.kind === "outcome");
+  useHideTabBar(kycScreen?.kind === "outcome" || fleetEnded != null);
   // ✕ switches to the customer side (Home), as the Account toggle does; reopening the rider side re-resolves
   // the same page from the server's state (G3).
   const exitToCustomer = useCallback((): void => {
@@ -1212,6 +1231,20 @@ export default function RiderHome(): React.ReactElement {
   if (!launchRead && kycScreen?.kind === "outcome" && kycScreen.id === "F3") return <View testID="rider-reading" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
   // G1: on the way to R1 — nothing of the board under it.
   if (kycScreen?.kind === "become") return <View testID="rider-to-become" style={{ flex: 1, backgroundColor: tokens.color.bg }} />;
+  if (fleetEnded) {
+    return (
+      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+        <FleetEndedPage
+          shop={fleetEnded}
+          floor={usd(walletConfig?.floor ?? COMMISSION.lowBalanceBlockBelow)}
+          onDone={() => {
+            if (profileId) void forgetFleetShop(profileId);
+            setFleetEnded(null);
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
   // F1–F8 (First Run v2, D-82): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
   // check that "Try again" / "Finish ID check" / "Re-verify my ID" reopen.
   if (kycScreen?.kind === "outcome") {

@@ -1,4 +1,4 @@
-import { type AdvanceStatusRequest, haversineKm, SOS_POLICY, UndeliveredReason } from "@lynia/shared";
+import { type AdvanceStatusRequest, haversineKm, orderShortId, SOS_POLICY, UndeliveredReason } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { onlineManager, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -68,7 +68,9 @@ import { IconDisc, SmBtn, Stars, Tags } from "../../src/ui/order/kit";
 import { OrderMap } from "../../src/ui/order/OrderMap";
 import { ORDER_COPY as A } from "../../src/ui/order/copy";
 import { Notice } from "../../src/ui/send/kit";
-import { RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { km, RIDER_COPY as R, RF, usd } from "../../src/ui/rider/copy";
+import { FleetDoneCard, FleetTag } from "../../src/ui/rider/fleet";
+import { OBB } from "../../src/ui/rider/fleet-copy";
 import { CashLine, MSheet, Progress } from "../../src/ui/rider/kit";
 import {
   CodeBoxes,
@@ -998,6 +1000,18 @@ export default function RiderJob(): React.ReactElement {
   // A13 — delivery confirmed. Frozen locally — a `delivered` order leaves the active-job feed.
   if (deliveredDone) {
     const snap = lastOrder.current && lastOrder.current.id === deliveredDone ? lastOrder.current : null;
+    // OB-R9 (Own bikers): a business's booking carried by its own biker — no fare, no commission; the cash on delivery
+    // goes back to the branch, or there's nothing to return.
+    if (snap?.fleetShop) {
+      const owed = parcelCashOnDelivery(snap);
+      const at = new Date();
+      const meta = [`#${orderShortId(snap.id)}`, km(haversineKm(snap.pickup.point, snap.dropoff.point)), `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`].join(" · ");
+      return (
+        <JobPage title={R.tDone} header={false} onBack={backToJobs} bar={<CtaBar><CtaButton label={OBB.nextJobs} onPress={backToJobs} /></CtaBar>}>
+          <FleetDoneCard shop={snap.fleetShop} owed={owed} meta={meta} />
+        </JobPage>
+      );
+    }
     const fare = snap ? Number(snap.agreedFare ?? snap.proposedFare) : null;
     const rate = walletConfig?.ratePct ?? 0;
     const name = senderName || R.theSender;
@@ -1081,6 +1095,16 @@ export default function RiderJob(): React.ReactElement {
   const beforePickup = RIDER_CANCELLABLE.includes(order.status);
   const fare = Number(order.agreedFare ?? order.proposedFare);
   const cod = parcelCashOnDelivery(order);
+  // Own bikers (D-117): a business's booking carried by one of its own bikers — no fare, no strike; the cash on
+  // delivery is the branch's (OB-R8: "Collect $14.00 cash at the door", "Bring $14.00 back to Chicken Inn Avondale").
+  const fleetShop = order.fleetShop ?? null;
+  const fleetCash = (atDrop: boolean): React.ReactNode =>
+    fleetShop && cod !== null ? (
+      <>
+        <CashLine text={OBB.collectLine(usd(cod))} />
+        {atDrop ? <CashLine text={OBB.bringLine(usd(cod), fleetShop)} /> : null}
+      </>
+    ) : null;
   const pickupPhone = (order.pickup as { contactPhone?: string | null }).contactPhone ?? order.counterpartyPhone;
   const dropPhone = (order.dropoff as { contactPhone?: string | null }).contactPhone ?? null;
   const name = senderName || R.theSender;
@@ -1125,7 +1149,8 @@ export default function RiderJob(): React.ReactElement {
       ) : null}
       {isActive && customerStale ? <Notice icon="triangle-alert" text="The customer's app looks offline — they may not be seeing live updates. Call them if you need to reach the sender." /> : null}
       {isActive && locationDenied ? <Notice icon="map-pin" tone="warn" text="Location is off — the customer can't see where you are." /> : null}
-      {isActive && cod !== null ? <Notice icon="banknote" text={`Collect $${cod.toFixed(2)} cash from the buyer. It's the shop's money: take it back to the shop within 30 minutes of delivering.`} /> : null}
+      {isActive && cod !== null && !fleetShop ? <Notice icon="banknote" text={`Collect $${cod.toFixed(2)} cash from the buyer. It's the shop's money: take it back to the shop within 30 minutes of delivering.`} /> : null}
+      {fleetShop ? <FleetTag shop={fleetShop} /> : null}
     </>
   );
 
@@ -1135,6 +1160,7 @@ export default function RiderJob(): React.ReactElement {
         visible={sheet === "problem"}
         onClose={() => setSheet(null)}
         beforePickup={beforePickup}
+        fleet={fleetShop != null}
         onCancel={() => setSheet("cancel")}
         onReach={() => {
           if (!reach) setReach({ orderId: order.id, startedAt: Date.now(), calls: 0, wa: 0 });
@@ -1152,16 +1178,23 @@ export default function RiderJob(): React.ReactElement {
       <MSheet
         visible={sheet === "cancel"}
         onClose={() => setSheet(null)}
-        title={R.cxT}
-        body={RF.cxB(name)}
+        title={fleetShop ? OBB.cxT : R.cxT}
+        // OB-R11: a fleet cancel tells the branch and costs the biker nothing — no strike line.
+        body={fleetShop ? OBB.cxB(fleetShop) : RF.cxB(name)}
         buttons={
           <>
-            <CtaButton label={R.cxKeep} onPress={() => setSheet(null)} />
-            <CtaButton ghost danger label={finalStrike ? R.cxYesFinal : R.cxYes} loading={!!pendingOrQueued(cancelM)} onPress={() => cancelM.mutate(undefined, { onSettled: () => setSheet(null) })} />
+            <CtaButton label={fleetShop ? OBB.cxKeep : R.cxKeep} onPress={() => setSheet(null)} />
+            <CtaButton
+              ghost
+              danger
+              label={fleetShop ? OBB.cxYes : finalStrike ? R.cxYesFinal : R.cxYes}
+              loading={!!pendingOrQueued(cancelM)}
+              onPress={() => cancelM.mutate(undefined, { onSettled: () => setSheet(null) })}
+            />
           </>
         }
       >
-        {finalStrike ? <DangerNote text={R.cxFinal} /> : <Notice icon="circle-alert" text={RF.cxStrike(strikes, 3)} />}
+        {fleetShop ? null : finalStrike ? <DangerNote text={R.cxFinal} /> : <Notice icon="circle-alert" text={RF.cxStrike(strikes, 3)} />}
       </MSheet>
       <MSheet
         visible={sheet === "undeliver"}
@@ -1232,7 +1265,7 @@ export default function RiderJob(): React.ReactElement {
               <Text style={{ fontSize: 13, color: tokens.color.muted }}>{R.offlineCode}</Text>
             </View>
           ) : null}
-          <CashLine text={RF.cashParcel(fare)} />
+          {fleetShop ? fleetCash(true) : <CashLine text={RF.cashParcel(fare)} />}
         </ScrollView>
       </JobPage>
     );
@@ -1241,7 +1274,7 @@ export default function RiderJob(): React.ReactElement {
   // A1 / A2 / A6 / A7 / X3 — the map and the stage sheet.
   const reachElapsed = reach ? Math.max(0, Math.floor((now - reach.startedAt) / 1000)) : 0;
   const reachOpen = reach != null && reachElapsed * 1000 >= REACH_WAIT_MS;
-  const title = reach ? R.tArriving : stage === "toPickup" ? R.tToPickup : stage === "atPickup" ? R.tAtPickup : R.tToDrop;
+  const title = reach ? R.tArriving : stage === "toPickup" ? (fleetShop ? OBB.tToKitchen(fleetShop) : R.tToPickup) : stage === "atPickup" ? R.tAtPickup : fleetShop ? OBB.tToDrop : R.tToDrop;
   let content: React.ReactNode;
   let bar: React.ReactNode;
   if (reach) {
@@ -1348,7 +1381,7 @@ export default function RiderJob(): React.ReactElement {
           onWhatsApp={phone ? () => wa(phone) : null}
           onNavigate={() => nav(target.point)}
         />
-        <CashLine text={RF.cashParcel(fare)} />
+        {fleetShop ? fleetCash(!pick) : <CashLine text={RF.cashParcel(fare)} />}
         <ProblemLink onPress={() => setSheet("problem")} />
       </>
     );

@@ -37,12 +37,17 @@ export function foodOfferVariant(offer: { merchantPaymentMethod: string | null; 
  *  Only meaningful when {@link foodOfferVariant} (or the live order's own fields) is "cash_collect".
  *  D-71: on a free-delivery order the customer pays only the goods; the rider still keeps the whole fee,
  *  so less goes back to the venue ("$13.00 collected → $2.50 kept → $10.50 owed"). */
-export function foodCashBreakdown(order: { merchantGoodsTotal: number | null; deliveryFee: number | null; merchantDeliveryShare?: number | null }): {
+export function foodCashBreakdown(
+  order: { merchantGoodsTotal: number | null; deliveryFee: number | null; merchantDeliveryShare?: number | null },
+  opts: { fleet?: boolean } = {},
+): {
   collected: number;
   kept: number;
   owed: number;
 } {
   const m = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee: order.deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
+  // Own bikers (D-117, OV-F5): the business pays its own biker, so they keep nothing — all of it goes back.
+  if (opts.fleet) return { collected: m.customerTotal, kept: 0, owed: m.customerTotal };
   return { collected: m.customerTotal, kept: m.riderFare, owed: m.merchantNet };
 }
 

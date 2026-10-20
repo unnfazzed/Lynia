@@ -1,4 +1,4 @@
-import type { FleetJobOffer, FleetJobOffersResponse, MyFleetResponse } from "@lynia/shared";
+import type { FleetJobOffer, FleetJobOffersResponse, FleetMoneyResponse, MyFleetResponse } from "@lynia/shared";
 import { apiFetch } from "./client";
 
 /**
@@ -35,4 +35,9 @@ export function acceptFleetJob(orderId: string): Promise<{ orderId: string; stat
 /** OB-R7 "Not this one": passing never counts against them. */
 export function declineFleetJob(orderId: string): Promise<{ orderId: string; declined: true }> {
   return apiFetch(`/fleet/jobs/${orderId}/decline`, { method: "POST" });
+}
+
+/** OB-R10: the cash the biker holds for the business, and its recent movements. */
+export function getFleetMoney(): Promise<FleetMoneyResponse> {
+  return apiFetch<FleetMoneyResponse>("/fleet/money");
 }

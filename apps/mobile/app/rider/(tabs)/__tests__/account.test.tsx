@@ -33,6 +33,11 @@ jest.mock("../../../../src/api/auth", () => ({ getMe: () => mockGetMe() }));
 jest.mock("../../../../src/api/orders", () => ({ getActiveOrder: (...a: unknown[]) => mockGetActiveOrder(...a) }));
 jest.mock("../../../../src/api/notifications", () => ({ getNotificationsUnreadCount: () => Promise.resolve({ count: 3 }) }));
 jest.mock("../../../../src/api/riders", () => ({ setOnline: (online: boolean) => mockSetOnline(online) }));
+// Own bikers (D-117): no fleet unless a test sets one.
+let mockFleet: { shop: string; paused: boolean; joinedAt: string } | null = null;
+jest.mock("../../../../src/query/use-my-fleet", () => ({ useMyFleet: () => ({ fleet: mockFleet, invites: [], loaded: true, answered: true }) }));
+const mockLeaveFleet = jest.fn(async () => ({ ok: true }));
+jest.mock("../../../../src/api/fleet", () => ({ leaveFleet: () => mockLeaveFleet() }));
 
 import { Linking } from "react-native";
 import RiderAccountTabScreen from "../account";
@@ -216,5 +221,48 @@ describe("the Customer | Biker toggle (C4 / C5)", () => {
     await settle();
     expect(mockSetOnline).not.toHaveBeenCalled();
     expect(mockReplace).toHaveBeenCalledWith("/home");
+  });
+});
+
+describe("Own bikers OB-R12 (D-117): the business they ride for, and leaving it", () => {
+  const SHOP = "Chicken Inn Avondale";
+  afterEach(() => {
+    mockFleet = null;
+  });
+
+  it("a fleet biker sees the business's row first; it opens Leave, which leaves", async () => {
+    mockFleet = { shop: SHOP, paused: false, joinedAt: "2026-10-01T10:00:00Z" };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    tree = renderScreen();
+    await settle();
+    expect(has(tree, `${SHOP} bikers`)).toBe(true);
+    press(tree, `${SHOP} bikers`);
+    const sheet = tree.root.findAll((n) => n.props.title === `Leave ${SHOP}'s bikers?` && n.props.visible === true);
+    expect(sheet.length).toBeGreaterThan(0);
+    expect(sheet[0]!.props.body).toBe("You'll become a public biker and need a commission top-up to take jobs.");
+    press(tree, "Leave");
+    await settle();
+    expect(mockLeaveFleet).toHaveBeenCalledTimes(1);
+  });
+
+  it("during a delivery Leave is held: 'You can leave after this delivery.'", async () => {
+    mockFleet = { shop: SHOP, paused: false, joinedAt: "2026-10-01T10:00:00Z" };
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue({ id: "o1", status: "en_route_dropoff", orderType: "parcel", pickup: { landmark: "A" }, dropoff: { landmark: "B" } });
+    tree = renderScreen();
+    await settle();
+    press(tree, `${SHOP} bikers`);
+    expect(has(tree, "You can leave after this delivery.")).toBe(true);
+    const leave = tree.root.findAll((n) => n.props.label === "Leave" && typeof n.props.onPress === "function");
+    expect(leave[0]!.props.disabled).toBe(true);
+  });
+
+  it("a public biker has no such row", async () => {
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    tree = renderScreen();
+    await settle();
+    expect(texts(tree).some((t) => t.endsWith(" bikers"))).toBe(false);
   });
 });

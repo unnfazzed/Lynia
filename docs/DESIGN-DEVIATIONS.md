@@ -5855,3 +5855,21 @@ react-native-web from the `ob_*` fixtures). What still differs, and why:
   kit's `--cta-fill`; the secondaries are the kit's `btn2` (48, 1px line, ink).
 - The harness draws no map tiles (grey), the drop-off square is the app's stop mark, and the offer screen is a pushed
   screen, so F4 has no tab bar. The pins show the distance from the fixture's position.
+
+**Evidence, lane C PR 2 (biker: the fleet job, Done, Money, Cancel, Leave, public biker; OB-R8–R13):**
+`docs/parity/OWN-BIKERS-V1-BIKER-JOB-MONEY-2026-10-20.png` (`shoot-own-bikers-v1-biker.mjs --set job`, 11 frames, the
+real screens from the `ob_job_*`, `ob_money`, `ob_account*` and `ob_fleet_ended` fixtures). What still differs, and why:
+- The job frames draw the fleet deltas on Rider v2's active-job layout (title + tag in a top band, the stepper, the map,
+  the stop). The app's food job is Order flow v2's RD layout (D-59: map, then the sheet), shared with public bikers, so
+  the deltas sit in that layout: the title names the branch, the tag opens the sheet instead of sitting beside the
+  title, the cash lines are the drawn `cashLine`s. Re-laying the food job screen belongs to its own handoff, not this one.
+- Done (OB-R9) has no top bar, as drawn (`JobPage header={false}`); "Back to jobs" is the way on. It now comes straight
+  after delivery: OV-F3 lifted the cash lock for own bikers, so the waiting "Return the cash" page (OB-R8) shows only
+  for a job reopened before the counter confirmed. The two frames are drawn in R8 → R9 order; a page that blocks the
+  biker while their own shop's counter gets round to a tap is what OV-F3 decided against.
+- Money (OB-R10) and Account (OB-R12) sit in the rider tabs' shared shell: the greeting MintTop and Rider v2's Account
+  body (profile card, side toggle, standing), which the handoff simplifies to a title band. The fleet row comes first in
+  the rows card; its "Avondale" value is left out (one name per branch, P7-1, already in the label).
+- The danger ghost ("Cancel job", the disabled "Leave") is the app's shared `CtaButton ghost danger` (outlined), where the
+  kit fills it pale red; the same button the public drop and cancel sheets use.
+- R13's floor is the live wallet floor (`walletConfig.floor`, falling back to `COMMISSION.lowBalanceBlockBelow`).

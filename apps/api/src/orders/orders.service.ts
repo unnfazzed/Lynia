@@ -1153,6 +1153,8 @@ export class OrdersService {
         autoAccepted: true,
         kitchenConfirmedAt: true,
         merchant: { select: { name: true } },
+        // Own bikers (D-117): the branch an Own biker carries this for (OB-R8/R9's "Chicken Inn Avondale").
+        fleetMerchant: { select: { name: true } },
         agreedFare: true,
         proposedFare: true,
         customerId: true,
@@ -1351,6 +1353,9 @@ export class OrdersService {
       // additive for old clients. merchantPhase drives the food 7-step progress strip's two
       // pre-dispatch steps (see mobile foodCustomerStepIndex).
       merchantName: order.merchant?.name ?? null,
+      // Own bikers (D-117): the rider carrying it is one of this business's own bikers (rider view only): no fare,
+      // no commission, every dollar collected goes back to this branch. Omitted otherwise.
+      ...(order.fleetMerchant && callerId === order.riderId ? { fleetShop: order.fleetMerchant.name } : {}),
       merchantPhase: order.merchantPhase ?? null,
       merchantPaymentMethod: order.merchantPaymentMethod ?? null,
       // Order flow v2 (BRIEF §4, D-59): a merchant order's four-step track, derived server-side with the

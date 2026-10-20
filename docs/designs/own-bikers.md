@@ -2078,6 +2078,18 @@ the handoff wins for screens and copy, and these product changes apply:
      offers, demand) never run for a fleet biker. The Join card sits on the public board for an invited, verified biker;
      OB-R1 shows the invite above "Your ID is under review". `/rider/fleet-offer` rings full screen (OB-R7) and opens the
      food job screen for an app order, the Send job screen for a booking.
+17. **Lane C PR 2 (2026-10-20): the fleet job, Done, Money, Leave and the end of the fleet.**
+   - **API:** the rider's reads of a fleet order carry `fleetShop` (the home branch's name: `GET /orders/mine/active` for the
+     rider only, `GET /merchant/orders/:id/mine`); `GET /fleet/money` returns the cash the biker holds for the business
+     (its open debts) and the last 50 collected / returned lines at its branches (`not_in_fleet` 409 otherwise).
+   - **App:** the food and Send job screens name the branch ("Heading to Chicken Inn Avondale"), wear the tag, and say
+     whose money it is ("Collect $14.00 cash at the door", "Bring $14.00 back to …"), with no fare split (OV-F5: the biker
+     keeps nothing). Cancelling tells the branch and costs no strike (OB-R11). Because OV-F3 lifts the cash lock, Done
+     (OB-R9) comes straight after delivery and leads with the return; the waiting "Return the cash" page (OB-R8) is only
+     for a job reopened after an app kill before the counter confirmed. Money (OB-R10) is the gold "Cash with you" hero
+     and the history; Account (OB-R12) has the fleet row and Leave, which waits while a delivery runs. The phone remembers
+     the branch, so when the server later answers with no fleet the board shows "You're a public biker now" once
+     (OB-R13); leaving on purpose forgets it first, and with the flag off it never shows.
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

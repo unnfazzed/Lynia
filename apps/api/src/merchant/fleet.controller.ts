@@ -9,6 +9,7 @@ import {
   type FleetRidesResponse,
   type FleetJobOffersResponse,
   type MerchantBookingResponse,
+  type FleetMoneyResponse,
   type MyFleetResponse,
   OpenFleetInviteRequest,
   type OwnerFleetResponse,
@@ -162,6 +163,12 @@ export class RiderFleetController {
   @Throttle({ limit: 20, windowSec: 60, keyPrefix: "fleet-invite-join" })
   join(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() profileId: string): Promise<MyFleetResponse> {
     return this.fleet.join(profileId, id);
+  }
+
+  /** OB-R10: the cash the biker holds for the business, and its recent movements. */
+  @Get("money")
+  money(@CurrentUser() profileId: string): Promise<FleetMoneyResponse> {
+    return this.fleet.money(profileId);
   }
 
   @Post("leave")

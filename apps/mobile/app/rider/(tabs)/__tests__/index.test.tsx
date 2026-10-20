@@ -2724,4 +2724,52 @@ describe("Own bikers v1 (D-117): the fleet board, the Join card and the invite w
     expect(text).toContain(`${SHOP} invited you · finish your ID check to join`);
     expect(text).toContain("Your ID is under review");
   });
+
+  it("OB-R13: riding for a shop, the phone remembers it; once the server answers with no fleet, 'You're a public biker now' shows once", async () => {
+    inFleet();
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(mockStore["lynia.fleetShop.v1.p1"]).toBe(SHOP);
+    expect(treeText(activeTree)).not.toContain("You're a public biker now");
+    act(() => activeTree!.unmount());
+
+    // The business stopped using Own bikers.
+    mockGetMyFleet.mockImplementation(async () => ({ fleet: null, invites: [] }));
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const text = treeText(activeTree);
+    expect(text).toContain("You're a public biker now");
+    expect(text).toContain(`${SHOP} has stopped using Own bikers. You can take jobs from anyone near you.`);
+    // No wallet config read here: the floor is the shared default (COMMISSION.lowBalanceBlockBelow).
+    expect(text).toContain("Keep at least $0.00 commission balance to take jobs.");
+    const cta = activeTree.root.findAll((n) => n.props.label === "See jobs near me" && typeof n.props.onPress === "function");
+    expect(cta).toHaveLength(1);
+    await act(async () => cta[0]!.props.onPress());
+    await settle();
+    expect(treeText(activeTree)).not.toContain("You're a public biker now");
+    expect(mockStore["lynia.fleetShop.v1.p1"]).toBeUndefined();
+    act(() => activeTree!.unmount());
+
+    // Once only.
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).not.toContain("You're a public biker now");
+  });
+
+  it("OB-R13: with Own bikers switched off the remembered shop never turns into 'You're a public biker now'", async () => {
+    mockStore["lynia.fleetShop.v1.p1"] = SHOP;
+    mockFleetLive = false;
+    mockGetMe.mockResolvedValue(meFixture());
+    mockGetActiveOrder.mockResolvedValue(null);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    expect(treeText(activeTree)).not.toContain("You're a public biker now");
+    expect(mockStore["lynia.fleetShop.v1.p1"]).toBe(SHOP);
+  });
 });

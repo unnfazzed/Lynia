@@ -1755,6 +1755,8 @@ export const MerchantOrderResponse = z
     /** Own bikers (D-117): one of the business's own bikers carries it, so the delivery fee comes back to the
      *  shop with the food (OB-M13 K5 "food $12.00 + delivery $2.00"). Merchant view only; omitted otherwise. */
     ownBiker: z.literal(true).optional(),
+    /** Own bikers (D-117): the branch whose own biker carries it, on the rider's own read (OB-R8/R9). Omitted otherwise. */
+    fleetShop: z.string().optional(),
     dispatchAttempt: z.number().int(),
     dispatchOfferExpiresAt: z.string().nullable(),
     noRiderHoldAt: z.string().nullable(),
@@ -2729,6 +2731,25 @@ export const MyFleetResponse = z.object({
 export type MyFleetResponse = z.infer<typeof MyFleetResponse>;
 
 /** Join refusals (OB-R3), as `reason` on the 403/409 body. */
+/** One row of a fleet biker's Money (OB-R10): cash collected at a door ("Collected · #B204 +$14.00") or handed back to
+ *  the counter ("Returned to Chicken Inn −$9.50"). None of it is the biker's, so the app draws it in ink. */
+export const FleetMoneyLine = z.object({
+  kind: z.enum(["collected", "returned"]),
+  /** "#B204" (`orderShortId`). */
+  ref: z.string(),
+  amount: z.string(),
+  at: z.string().datetime(),
+});
+export type FleetMoneyLine = z.infer<typeof FleetMoneyLine>;
+
+/** `GET /fleet/money` (OB-R10): the cash the biker holds for the business now, and its recent movements, newest first. */
+export const FleetMoneyResponse = z.object({
+  shop: z.string(),
+  cashHeld: z.string(),
+  lines: z.array(FleetMoneyLine),
+});
+export type FleetMoneyResponse = z.infer<typeof FleetMoneyResponse>;
+
 export const FleetJoinRefusal = z.enum(["id_check_pending", "works_at_shop", "in_another_fleet", "invite_ended", "on_a_job"]);
 export type FleetJoinRefusal = z.infer<typeof FleetJoinRefusal>;
 

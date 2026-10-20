@@ -96,6 +96,7 @@ export function JobPage({
   centred,
   toast,
   overlays,
+  header = true,
 }: {
   title: string;
   help?: boolean;
@@ -106,10 +107,12 @@ export function JobPage({
   centred?: boolean;
   toast?: JobToast | null;
   overlays?: React.ReactNode;
+  /** `false`: no top bar — a page whose only way on is its bar (Own bikers OB-R9 Done draws none). */
+  header?: boolean;
 }): React.ReactElement {
   return (
     <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
-      <OrderHeader title={title} help={!!help} onBack={onBack} onHelp={onHelp ?? (() => undefined)} />
+      {header ? <OrderHeader title={title} help={!!help} onBack={onBack} onHelp={onHelp ?? (() => undefined)} /> : null}
       <View style={{ flex: 1 }}>
         {centred ? (
           // Centred, but scrollable: on a 320×640 phone or a large font scale the disc + title + body (+ the
@@ -428,6 +431,7 @@ export function ProblemSheet({
   onClose,
   beforePickup,
   food,
+  fleet,
   onCancel,
   onReach,
   onDeliver,
@@ -439,6 +443,8 @@ export function ProblemSheet({
   onClose: () => void;
   beforePickup: boolean;
   food?: boolean;
+  /** Own bikers (D-117): a fleet job's cancel costs the biker nothing, so the row doesn't say "Counts as a strike". */
+  fleet?: boolean;
   onCancel?: (() => void) | null;
   onReach?: (() => void) | null;
   onDeliver?: (() => void) | null;
@@ -446,8 +452,8 @@ export function ProblemSheet({
   onReport: () => void;
   onSos: () => void;
 }): React.ReactElement {
-  const rows: { icon: IconName; label: string; sub: string; onPress: () => void }[] = [];
-  if (beforePickup && onCancel) rows.push({ icon: "x", label: food ? R.pDrop : R.pCancel, sub: food ? R.pDropS : R.pCancelS, onPress: onCancel });
+  const rows: { icon: IconName; label: string; sub?: string; onPress: () => void }[] = [];
+  if (beforePickup && onCancel) rows.push({ icon: "x", label: food ? R.pDrop : R.pCancel, sub: food ? R.pDropS : fleet ? undefined : R.pCancelS, onPress: onCancel });
   if (!beforePickup && onReach) rows.push({ icon: "phone-off", label: R.pReach, sub: R.pReachS, onPress: onReach });
   if (!beforePickup && onDeliver) rows.push({ icon: "package", label: R.pDeliver, sub: R.pDeliverS, onPress: onDeliver });
   rows.push({ icon: "message-circle", label: R.pHelp, sub: R.pHelpS, onPress: onHelp });

@@ -813,6 +813,31 @@ describe("T7b the merchant's fleet money", () => {
   });
 });
 
+describe("OB-R10 the biker's fleet money", () => {
+  it("the cash held for the business is its open cash debts; the lines are what was collected and handed back, newest first", async () => {
+    const f = await fleetOwner();
+    const a = await biker({ fleet: f });
+    const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+    await dispatch.accept(booking.id, a);
+    await prisma.order.update({ where: { id: booking.id }, data: { debtStatus: "open", debtAmount: 14, debtOpenedAt: new Date() } });
+    await prisma.merchantDebtLedger.create({ data: { orderId: booking.id, merchantId: f.branchId, riderId: a, type: "opened", amount: 14, actor: "system", createdAt: new Date(Date.now() - 60_000) } });
+    const first = await fleetSvc.money(a);
+    expect(first).toMatchObject({ cashHeld: "14.00", lines: [{ kind: "collected", amount: "14.00" }] });
+    expect(first.lines[0]!.ref).toMatch(/^#[0-9A-F]{4}$/);
+
+    // Handed back at the counter: nothing held, and the return is the newest line.
+    await prisma.order.update({ where: { id: booking.id }, data: { debtStatus: "settled_cash" } });
+    await prisma.merchantDebtLedger.create({ data: { orderId: booking.id, merchantId: f.branchId, riderId: a, type: "settled_cash", amount: -14, actor: "system" } });
+    const after = await fleetSvc.money(a);
+    expect(after.cashHeld).toBe("0.00");
+    expect(after.lines.map((l) => [l.kind, l.amount])).toEqual([["returned", "14.00"], ["collected", "14.00"]]);
+
+    // A public biker has no fleet money.
+    const pub = await biker();
+    await expect(fleetSvc.money(pub)).rejects.toMatchObject({ response: { reason: "not_in_fleet" } });
+  });
+});
+
 describe("T9 the business's own app orders", () => {
   const OPS = "ops@lyniago.com";
   /** Well beyond `RESTAURANTS_DISPATCH.pickupReachM` (15 km) of Avondale. */

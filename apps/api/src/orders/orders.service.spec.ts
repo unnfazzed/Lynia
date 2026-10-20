@@ -762,6 +762,13 @@ describe("OrdersService.getSnapshot", () => {
     expect(snap).toMatchObject({ merchantName: "Sadza Republic", merchantPhase: "preparing", merchantPaymentMethod: "cash" });
   });
 
+  it("Own bikers (D-117): the biker carrying a fleet job is told the branch it's for; the customer isn't", async () => {
+    const fleetRow = row({ fleetMerchant: { name: "Chicken Inn Avondale" } });
+    expect((await svc(fleetRow).getSnapshot("ord-1", "rider-1")) as { fleetShop?: string }).toMatchObject({ fleetShop: "Chicken Inn Avondale" });
+    expect(await svc(fleetRow).getSnapshot("ord-1", "cust-1")).not.toHaveProperty("fleetShop");
+    expect(await svc(row()).getSnapshot("ord-1", "rider-1")).not.toHaveProperty("fleetShop");
+  });
+
   it("nulls the food-order card fields on a parcel snapshot (additive for old clients)", async () => {
     const snap = await svc(row()).getSnapshot("ord-1", "cust-1");
     expect(snap.merchantName).toBeNull();
