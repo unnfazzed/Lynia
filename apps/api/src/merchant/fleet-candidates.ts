@@ -76,18 +76,28 @@ export async function businessFleet(prisma: PrismaService, merchantId: string | 
   });
   const owner = merchant?.ownerProfileId ?? null;
   if (!owner) return null;
+  // Every business has Own bikers (owner, 2026-10-20): no row yet reads as on; only admin's Disable turns it off.
   const fleet = await prisma.ownerFleet.findUnique({ where: { ownerProfileId: owner }, select: { enabled: true, pausedAt: true } });
-  if (!fleet) return null;
-  return { owner, enabled: fleet.enabled, active: fleet.enabled && fleet.pausedAt == null };
+  const enabled = fleet?.enabled ?? true;
+  return { owner, enabled, active: enabled && (fleet?.pausedAt ?? null) == null };
 }
 
 /**
  * OV5 (owner D7): what LyniaGo bills the business for one of its app orders carried by its own biker, snapshotted
  * on the order at assignment: the configured commission rate × the order's delivery fee (what a public biker would
- * have paid). A phone booking is billed the owner's flat ride fee instead.
+ * have paid).
  */
 export function marketplaceFleetFee(deliveryFee: Prisma.Decimal | number | null): number {
   return jobCommission({ orderType: "merchant", deliveryFee });
+}
+
+/**
+ * A phone booking carried by the business's own biker (owner, 2026-10-20): the same commission rate × the ride's
+ * cost, where a booking's cost is the suggested fare for the trip (it carries no fare of its own). Snapshotted on the
+ * order when it's booked.
+ */
+export function bookingFleetFee(suggestedFare: Prisma.Decimal | number): number {
+  return jobCommission({ orderType: "parcel", agreedFare: suggestedFare, suggestedFare });
 }
 
 /**

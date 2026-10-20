@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { adjustFleet, markFleetBillPaid, setFleetFee, switchFleet } from "./actions";
+import { adjustFleet, enableFleet, markFleetBillPaid, switchFleet } from "./actions";
 
 /**
  * Own bikers' console writes (OB-A2/A3): each goes through the real admin client to its endpoint with the operator
@@ -34,13 +34,11 @@ afterEach(() => {
 });
 
 describe("Own bikers console writes", () => {
-  it("fee: the new fee and a note saying what changed", async () => {
-    expect(await setFleetFee("own-1", 1.75, "1.50")).toEqual({ ok: true });
-    expect(lastCall()).toMatchObject({
-      url: "https://api.test/admin/fleets/own-1/fee",
-      method: "POST",
-      body: { rideFee: 1.75, note: "Fee per ride 1.50 → 1.75" },
-    });
+  it("turn on: the branch's business, no fee, and the note only when there is one", async () => {
+    expect(await enableFleet("branch-1", "  ")).toEqual({ ok: true });
+    expect(lastCall()).toMatchObject({ url: "https://api.test/admin/merchants/branch-1/fleet", method: "POST", body: {} });
+    expect(await enableFleet("branch-1", " paid up ")).toEqual({ ok: true });
+    expect(lastCall()).toMatchObject({ body: { note: "paid up" } });
     expect(lastCall().headers["X-Operator"]).toBe("tsitsi@lyniago.com");
     expect(revalidateMock).toHaveBeenCalledWith("/own-bikers");
   });

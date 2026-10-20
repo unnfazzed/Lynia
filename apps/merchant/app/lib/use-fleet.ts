@@ -7,8 +7,8 @@ import { getFleet } from "./fleet-api";
 
 /**
  * The business's Own bikers (D-117) for the screens that change with it: Book (My bikers | Any biker) and the
- * kitchen's Orders (the Book card). `undefined` while reading; `null` = no Own bikers here (none switched on, or
- * the feature isn't live yet: the API answers 503); `"unreachable"` = the read didn't reach LyniaGo.
+ * kitchen's Orders (the Book card). `undefined` while reading; `null` = no Own bikers here (admin disabled it, or
+ * the merchant vertical off: the API answers 503); `"unreachable"` = the read didn't reach LyniaGo.
  */
 export type FleetRead = OwnerFleetResponse | null | undefined | "unreachable";
 

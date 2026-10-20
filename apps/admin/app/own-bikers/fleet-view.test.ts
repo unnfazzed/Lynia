@@ -17,8 +17,6 @@ describe("the console's Own bikers strings are the handoff's (OB.admin)", () => 
       "stUnpaid",
       "stPaid",
       "stPaused",
-      "fee",
-      "save",
       "pause",
       "unpause",
       "disable",
@@ -42,8 +40,16 @@ describe("the console's Own bikers strings are the handoff's (OB.admin)", () => 
     expect([...OBA.cols]).toEqual(A.cols);
   });
 
+  it("the fee strings follow the owner's billing decision, not the handoff (2026-10-20, ledger D-117)", () => {
+    // Every business pays the commission rate on its rides: no "Fee per ride" to edit, nothing to Save.
+    expect(A.fee).toBe("Fee per ride");
+    expect(OBA.fee).toBe("Fee");
+    expect(OBA.feeLine(10)).toBe("10% of each ride");
+    expect(A.sub).toBe("3 fleets · fee per ride billed weekly");
+    expect(OBA.sub(3)).toBe("3 fleets · commission billed weekly");
+  });
+
   it("templates read the same with the handoff's sample data", () => {
-    expect(OBA.sub(3)).toBe(A.sub);
     expect(OBA.overdueN(9)).toBe((A.overdueN as (n: number) => string)(9));
     expect(OBA.pauseT("Chicken Inn")).toBe(A.pauseT);
     expect(OBA.pauseB("Chicken Inn", 4)).toBe((A.pauseB as (n: number) => string)(4));

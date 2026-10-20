@@ -739,7 +739,7 @@ export type ServiceFlagsResponse = z.infer<typeof ServiceFlagsResponse>;
  *  drop them to their defaults. Deliberately NOT strict, so a later switch is an additive key here. */
 export const OrderFlagsResponse = z.object({
   rxEnabled: z.boolean(),
-  /** Own bikers T9 (`PREFERRED_RETIRED`): Preferred riders is gone, so the merchant app hides its row and screen. */
+  /** Own bikers T9: Preferred riders is retired, so this is always true (2026-10-20); installed apps still read it. */
   preferredRetired: z.boolean().optional(),
   /** Own bikers (`FLEET_UI_LIVE`): the `/fleet` routes answer, so the biker app asks `GET /fleet/me`. */
   fleetLive: z.boolean().optional(),
@@ -2883,6 +2883,8 @@ export const AdminFleetDetail = z.object({
   bills: z.array(AdminFleetBill),
   /** The last 5 weeks' billed rides, newest first (at most 100): what Adjust can correct. Older APIs leave it out. */
   recentRides: z.array(AdminFleetRide).optional(),
+  /** What a ride is billed at (owner, 2026-10-20): this % of its cost, the commission rate. Older APIs leave it out. */
+  feePct: z.number().min(0).max(100).optional(),
 });
 export type AdminFleetDetail = z.infer<typeof AdminFleetDetail>;
 
@@ -2927,11 +2929,15 @@ export const FleetBillsResponse = z.object({
 });
 export type FleetBillsResponse = z.infer<typeof FleetBillsResponse>;
 
-/** `POST /admin/merchants/:id/fleet`: switch Own bikers on for the branch's owner. A fee is required (OV-F4). */
-export const EnableFleetRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01), note: z.string().trim().max(2000).optional() }).strict();
+/**
+ * `POST /admin/merchants/:id/fleet`: turn Own bikers back on for the branch's owner after a Disable. Every business
+ * has it by default and pays the commission rate on each ride (owner, 2026-10-20), so there is no fee to set;
+ * `rideFee`, which older consoles send, is ignored.
+ */
+export const EnableFleetRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01).optional(), note: z.string().trim().max(2000).optional() }).strict();
 export type EnableFleetRequest = z.infer<typeof EnableFleetRequest>;
 
-/** `POST /admin/fleets/:ownerId/fee`: the per-ride fee for new phone bookings (rides already booked keep theirs). */
+/** @deprecated The flat per-ride fee is retired (owner, 2026-10-20); `POST /admin/fleets/:ownerId/fee` is gone. */
 export const SetFleetFeeRequest = z.object({ rideFee: z.number().positive().max(100).multipleOf(0.01), note: z.string().trim().min(3).max(2000) }).strict();
 export type SetFleetFeeRequest = z.infer<typeof SetFleetFeeRequest>;
 

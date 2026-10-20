@@ -138,7 +138,7 @@ starts from reasoning, not archaeology.
 - **Trigger / blocked by:** the next planned rider-app release after L3 ships.
 - **Partly superseded (2026-10-19):** the consent half ("{Business} calls you their rider" with an opt-out) is
   replaced by Own bikers, where a biker joins a business only by accepting its invite link, and leaves any time
-  (`docs/designs/own-bikers.md`, ledger D-117). Preferred riders itself is retired behind `PREFERRED_RETIRED`. The
+  (`docs/designs/own-bikers.md`, ledger D-117). Preferred riders itself is retired (2026-10-20). The
   prohibited-goods refusal and the declared value on the job card are still open.
 
 ### TODO-4 · Web Push for bookings and orders
@@ -212,16 +212,16 @@ starts from reasoning, not archaeology.
 
 ### Delete the Preferred riders code
 
-- **What:** Remove Preferred riders: `merchant/preferred-riders.ts`, the preferred-first block in
-  `NearestRiderDispatchStrategy`, `PREFERRED_OFFER_BONUS` and the offer `preferred` flag, `merchant-riders.*` and its
-  routes, `PreferredRetirementService`, the `PREFERRED_RETIRED` flag, and the `merchant_preferred_riders` table (a
-  migration; the OB-M5 invite suggestions read it, so move those to their own source or drop them first).
-- **Why:** Own bikers replaces it (owner decision D6). The code stays only so unsetting the flag can roll the
-  retirement back.
-- **Pros:** One way a business has its own bikers; less dispatch code. **Cons:** Rollback is gone after this.
-- **Context:** T9 shipped the retirement behind `PREFERRED_RETIRED` (plan amendment 14, Distribution Plan).
-- **Effort:** human S / CC S. **Priority:** P2.
-- **Trigger / blocked by:** `PREFERRED_RETIRED=true` in production for two weeks with no rollback.
+- **What:** Remove what's left of Preferred riders: the preferred-first block in `NearestRiderDispatchStrategy`,
+  `PREFERRED_OFFER_BONUS` and the offer `preferred` flag (always false now), `merchant-riders.*` and its routes (list
+  and Remove still answer; add is 410), and the `merchant_preferred_riders` table (a migration; the OB-M5 invite
+  suggestions read it, so move those to their own source or drop them first).
+- **Why:** Own bikers replaces it (owner decision D6). Retired outright on 2026-10-20 (no flag, no owner message);
+  the data stays only as a record.
+- **Pros:** One way a business has its own bikers; less dispatch code.
+- **Context:** own-bikers.md amendment 19.
+- **Effort:** human S / CC S. **Priority:** P3.
+- **Trigger / blocked by:** nothing.
 
 ### Fleet batching: multi-order trips for Own bikers
 

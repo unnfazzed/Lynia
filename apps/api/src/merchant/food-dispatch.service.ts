@@ -16,7 +16,6 @@ import { FLEET_DROP_ACTION, FLEET_SCOPE_REFUSAL, rethrowFleetScope } from "../co
 import { hasOpenMerchantObligation } from "../common/merchant-debt-lock";
 import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
-import { preferredRetired } from "../common/preferred-retired";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
 import { pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
@@ -30,7 +29,6 @@ import { TrackingGateway } from "../tracking/tracking.gateway";
 import { DISPATCH_STRATEGY, type DispatchStrategy } from "./dispatch-strategy";
 import { notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
 import { appFleetOffer, businessFleet, marketplaceFleetFee, ownBikersFor } from "./fleet-candidates";
-import { preferredRiderIds } from "./preferred-riders";
 import { cancelAttribution } from "../common/cancel-attribution";
 import { domainEvents } from "../common/domain-events";
 
@@ -359,9 +357,6 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // Own bikers T9: a business whose owner runs Own bikers rings them first. Not best effort, like the team: an
     // offer must never go out on a wrong reading of who may take it.
     const fleet = await businessFleet(this.prisma, order.merchantId);
-    // Preferred riders (L3) is retired by Own bikers: a business with a fleet skips it now, every business once
-    // PREFERRED_RETIRED is on.
-    const preferred = fleet?.enabled || preferredRetired() ? [] : await this.preferredFor(order.merchantId);
     const limit = dispatchRoundSize(attempt);
     // Owner 2026-10-12: a rider whose wallet doesn't cover this job's commission (10% of the delivery fee,
     // once their free jobs are used) isn't offered it. They're dropped from this round only — a top-up
@@ -392,16 +387,13 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // A biker who ordered this food themselves is never offered the job of delivering it to themselves
       // (the parcel twin is selectOffer's self-offer refusal).
       const excluded = [...new Set([...order.dispatchExcludedRiderIds, order.customerId, ...teamIds, ...cooling, ...skipped])];
-      const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, preferredRiderIds: preferred, limit: publicLimit });
+      const picked = await this.strategy.pickCandidates({ lat: point.lat, lng: point.lng, radiusM, excludeRiderIds: excluded, limit: publicLimit });
       const covering = await ridersWhoCoverCommission(this.prisma, picked.map((c) => c.riderId), commission);
       candidates = picked.filter((c) => covering.has(c.riderId));
       for (const c of picked) if (!covering.has(c.riderId)) skipped.add(c.riderId);
       if (candidates.length > 0 || picked.length === covering.size) break;
     }
     if (skipped.size > 0) this.logger.log(`merchant.dispatch.commission_skip order=${orderId} riders=${skipped.size} commission=${commission}`);
-    for (const c of candidates) {
-      if (c.preferred) this.logger.log(`merchant.dispatch.preferred order=${orderId} rider=${c.riderId} distanceM=${Math.round(c.distanceM)}`);
-    }
     const now = new Date();
     // A fresh budget after cooking is a new search, stamped like one after "Keep searching" or a drop.
     const startedAt = freshAfterCooking ? now : (order.dispatchStartedAt ?? now);
@@ -530,18 +522,6 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** The restaurant's own riders (L3), read once per tick. Best effort: a failed read logs and dispatch
-   *  carries on nearest-first, exactly as before L3 (plan §8 "preferred lookup error"). */
-  private async preferredFor(merchantId: string | null): Promise<string[]> {
-    if (!merchantId) return [];
-    try {
-      return await preferredRiderIds(this.prisma, merchantId);
-    } catch (err) {
-      this.logger.warn(`merchant.dispatch.preferred lookup failed for merchant ${merchantId}: ${(err as Error).message}`);
-      return [];
-    }
-  }
-
   /**
    * Riders who passed on this order within `RESTAURANTS_DISPATCH.declineCooldownMs` (owner 2026-10-12: a
    * pass is "not right now", not "never"). Read from their own `FoodDispatchAttempt` row — `declined`
@@ -558,8 +538,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     return rows.map((r) => r.riderId);
   }
 
-  /** MJ-RM18: everyone on the business's own team (owner, manager, staff), whatever their role. Unlike
-   *  `preferredFor` this is NOT best effort: a failed read throws, the tick fails, and the next sweep
+  /** MJ-RM18: everyone on the business's own team (owner, manager, staff), whatever their role. This is NOT
+   *  best effort: a failed read throws, the tick fails, and the next sweep
    *  retries — an offer must never go out without the team excluded. */
   private async teamProfileIds(merchantId: string | null): Promise<string[]> {
     if (!merchantId) return [];

@@ -403,8 +403,8 @@ describe("billing and invite constraints", () => {
     await expect(prisma.fleetInvite.update({ where: { id: first.id }, data: { joinedAt: new Date() } })).rejects.toThrow(/one_ending/);
   });
 
-  it("refuses enabling a fleet without its fee", async () => {
+  it("a fleet is on by default and needs no fee (owner, 2026-10-20: billed at the commission rate)", async () => {
     const ownerId = await makeProfile("merchant");
-    await expect(prisma.ownerFleet.create({ data: { ownerProfileId: ownerId, enabled: true } })).rejects.toThrow(/enabled_needs_fee/);
+    await expect(prisma.ownerFleet.create({ data: { ownerProfileId: ownerId } })).resolves.toMatchObject({ enabled: true, rideFee: null });
   });
 });

@@ -6,7 +6,6 @@ import {
   FleetAdjustRequest,
   FleetAdminActionRequest,
   MarkFleetBillPaidRequest,
-  SetFleetFeeRequest,
 } from "@lynia/shared";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -16,8 +15,7 @@ import { FleetAdminService } from "./fleet-admin.service";
 
 /**
  * Own bikers in the console (handoff own-bikers-v1 OB-A1–A3, T7): the fleets table, a fleet's side panel, and the
- * switches and money actions. Same guards as AdminController. Not behind FLEET_UI_LIVE: ops set a fleet up before
- * the merchant and biker screens go live.
+ * switches and money actions. Same guards as AdminController.
  */
 @Controller("admin")
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -36,7 +34,7 @@ export class AdminFleetsController {
     return this.fleets.detail(ownerId);
   }
 
-  /** Switch Own bikers on for this business's owner, with the per-ride fee. */
+  /** Turn Own bikers back on for this business's owner after a Disable (on by default; no fee to set). */
   @Post("merchants/:id/fleet")
   @HttpCode(200)
   enable(
@@ -45,16 +43,6 @@ export class AdminFleetsController {
     @AdminActor() actor: string,
   ): Promise<AdminFleetDetail> {
     return this.fleets.enable(actor, merchantId, body);
-  }
-
-  @Post("fleets/:ownerId/fee")
-  @HttpCode(200)
-  setFee(
-    @Param("ownerId", ParseUUIDPipe) ownerId: string,
-    @Body(new ZodBody(SetFleetFeeRequest)) body: SetFleetFeeRequest,
-    @AdminActor() actor: string,
-  ): Promise<AdminFleetDetail> {
-    return this.fleets.setFee(actor, ownerId, body);
   }
 
   /** OB-A3 Pause. */

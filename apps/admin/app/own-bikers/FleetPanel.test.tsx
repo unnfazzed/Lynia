@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adjustFleet, markFleetBillPaid, setFleetFee, switchFleet } from "./actions";
-import { BORROWDALE, CHICKEN, DETAIL, RIDE, ROWS } from "./fixtures.test-data";
+import { adjustFleet, enableFleet, markFleetBillPaid, switchFleet } from "./actions";
+import { AVONDALE, BORROWDALE, CHICKEN, DETAIL, RIDE, ROWS } from "./fixtures.test-data";
 import { FleetPanel } from "./FleetPanel";
 
 /** OB-A2 side panel and OB-A3 confirms: what each control sends, and that a refusal is shown in the API's words. */
-vi.mock("./actions", () => ({ setFleetFee: vi.fn(), switchFleet: vi.fn(), markFleetBillPaid: vi.fn(), adjustFleet: vi.fn() }));
+vi.mock("./actions", () => ({ enableFleet: vi.fn(), switchFleet: vi.fn(), markFleetBillPaid: vi.fn(), adjustFleet: vi.fn() }));
 vi.mock("../actions/audit", () => ({ submitAdminAction: vi.fn() }));
 
 afterEach(() => {
@@ -23,7 +23,9 @@ describe("OB-A2 · the side panel", () => {
     panel();
     expect(screen.getByRole("heading", { name: "Chicken Inn" })).toBeTruthy();
     expect(screen.getByText("Overdue")).toBeTruthy();
-    expect(screen.getByLabelText("Fee per ride")).toHaveProperty("value", "$1.50");
+    // Owner 2026-10-20: the commission rate on each ride, read-only (no fee per ride to edit).
+    expect(screen.getByText("10% of each ride")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Disable" }).className).toContain("danger-wash");
     expect(screen.getByText("Weekly bills")).toBeTruthy();
@@ -40,21 +42,6 @@ describe("OB-A2 · the side panel", () => {
       ["21–27 Sep", "24", "$36.00", "2 days overdue", "Mark paidAdjust"],
       ["14–20 Sep", "22", "$33.00", "Paid", ""],
     ]);
-  });
-
-  it("Save sends the new fee, saying what changed", async () => {
-    vi.mocked(setFleetFee).mockResolvedValue({ ok: true });
-    panel();
-    const save = screen.getByRole("button", { name: "Save" });
-    expect(save).toHaveProperty("disabled", true); // unchanged
-    fireEvent.change(screen.getByLabelText("Fee per ride"), { target: { value: "$1.75" } });
-    fireEvent.click(save);
-    await vi.waitFor(() => expect(setFleetFee).toHaveBeenCalledWith(CHICKEN, 1.75, "1.50"));
-    // Whole cents that floating point can't hold exactly still count.
-    fireEvent.change(screen.getByLabelText("Fee per ride"), { target: { value: "1.15" } });
-    expect(save).toHaveProperty("disabled", false);
-    fireEvent.change(screen.getByLabelText("Fee per ride"), { target: { value: "1.155" } });
-    expect(save).toHaveProperty("disabled", true);
   });
 
   it("Mark paid marks that bill; a refusal shows in the API's words", async () => {
@@ -88,14 +75,25 @@ describe("OB-A2 · the side panel", () => {
     await vi.waitFor(() => expect(screen.queryByText("Adjust · 28 Sep–4 Oct · $34.50")).toBeNull());
   });
 
-  it("a paused fleet offers Unpause; a disabled one has no switches", () => {
+  it("a paused fleet offers Unpause; a disabled one offers only Turn on", () => {
     panel({ ...DETAIL, paused: true });
     expect(screen.getByRole("button", { name: "Unpause" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     cleanup();
     panel({ ...DETAIL, enabled: false });
     expect(screen.queryByRole("button", { name: "Disable" })).toBeNull();
-    expect(screen.getByLabelText("Fee per ride")).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Turn on" })).toBeTruthy();
+  });
+
+  it("Turn on brings a disabled business back through its first branch", async () => {
+    vi.mocked(enableFleet).mockResolvedValue({ ok: true });
+    panel({ ...DETAIL, enabled: false });
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Turn Chicken Inn's Own bikers back on?")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on" }));
+    await vi.waitFor(() => expect(enableFleet).toHaveBeenCalledWith(AVONDALE, ""));
   });
 
   it("is inert offline", () => {

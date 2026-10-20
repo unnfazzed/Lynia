@@ -1,9 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
-import { AddMerchantRiderRequest, type MerchantPreferredRiderResponse, type MerchantRidersResponse } from "@lynia/shared";
+import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
+import type { MerchantRidersResponse } from "@lynia/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Throttle } from "../common/throttle.guard";
-import { ZodBody } from "../common/zod.pipe";
 import type { MerchantAccess } from "./merchant-access";
 import { MerchantRidersService } from "./merchant-riders.service";
 import { CurrentMerchantAccess, MerchantGuard, OwnerOnly } from "./merchant.guard";
@@ -23,16 +22,12 @@ export class MerchantRidersController {
     return this.riders.list(access);
   }
 
-  // The business-wide daily limit lives in the service; this only stops a burst from one person.
+  // Preferred riders is retired (Own bikers T9): every add is 410 Gone, so there's no body to read.
   @Post()
   @OwnerOnly()
   @Throttle({ limit: 20, windowSec: 60, keyPrefix: "merchant-rider-add" })
-  add(
-    @Body(new ZodBody(AddMerchantRiderRequest)) body: AddMerchantRiderRequest,
-    @CurrentMerchantAccess() access: MerchantAccess,
-    @CurrentUser() profileId: string,
-  ): Promise<MerchantPreferredRiderResponse> {
-    return this.riders.add(access, profileId, body);
+  add(): never {
+    return this.riders.add();
   }
 
   @Delete(":id")

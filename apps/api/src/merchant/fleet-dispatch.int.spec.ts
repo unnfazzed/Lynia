@@ -22,10 +22,9 @@ import type { TrackingGateway } from "../tracking/tracking.gateway";
 import { TrackingService } from "../tracking/tracking.service";
 import { WalletService } from "../wallet/wallet.service";
 import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
-import { marketplaceFleetFee } from "./fleet-candidates";
+import { bookingFleetFee, marketplaceFleetFee } from "./fleet-candidates";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FoodDispatchService } from "./food-dispatch.service";
-import { PREFERRED_RETIRED_NOTE, PreferredRetirementService } from "./preferred-retirement.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
 import { FleetService } from "./fleet.service";
@@ -140,7 +139,7 @@ type Fleet = { ownerId: string; branchId: string; access: MerchantAccess };
 async function fleetOwner(opts: { paused?: boolean; enabled?: boolean } = {}): Promise<Fleet> {
   const ownerId = await profile("merchant", "Owner");
   await prisma.ownerFleet.create({
-    data: { ownerProfileId: ownerId, enabled: opts.enabled ?? true, rideFee: 1.5, pausedAt: opts.paused ? new Date() : null },
+    data: { ownerProfileId: ownerId, enabled: opts.enabled ?? true, pausedAt: opts.paused ? new Date() : null },
   });
   const m = await prisma.merchant.create({
     data: { name: "Chicken Inn Avondale", ownerProfileId: ownerId, location: { point: AVONDALE, landmark: "Avondale shops", contactPhone: "+263770000001" } },
@@ -189,7 +188,7 @@ afterAll(async () => {
 });
 
 describe("Ring my bikers (create + first round)", () => {
-  it("makes one order + booking at fleet_searching with no fare and the fee snapshot, and rings only the owner's online bikers", async () => {
+  it("makes one order + booking at fleet_searching with no fare and the fee snapshot (the commission rate × the trip's suggested fare), and rings only the owner's online bikers", async () => {
     const f = await fleetOwner();
     const near = await biker({ fleet: f });
     const far = await biker({ fleet: f, at: FAR });
@@ -202,7 +201,10 @@ describe("Ring my bikers (create + first round)", () => {
     const order = await prisma.order.findUniqueOrThrow({ where: { id: res.booking.id } });
     expect(order).toMatchObject({ status: "fleet_searching", fleetMerchantId: f.branchId, riderId: null, orderType: "parcel" });
     expect(Number(order.proposedFare)).toBe(0);
-    expect(Number(order.fleetFee)).toBe(1.5);
+    // Owner, 2026-10-20: the commission rate (10% by default) × the ride's cost, a booking's being its suggested fare.
+    expect(Number(order.fleetFee)).toBe(bookingFleetFee(Number(order.suggestedFare)));
+    expect(Number(order.fleetFee)).toBeCloseTo(Number(order.suggestedFare) * 0.1, 2);
+    expect(Number(order.fleetFee)).toBeGreaterThan(0);
     expect(order.otpHash).toBe(tokens.hash(res.deliveryCode));
     expect(await prisma.merchantBooking.count({ where: { orderId: order.id, merchantId: f.branchId, collectCash: true } })).toBe(1);
 
@@ -386,7 +388,7 @@ describe("giving it back and cancelling", () => {
     expect(res).toMatchObject({ status: "fleet_searching", cancelledBy: "rider", cooldownUntil: null });
     const order = await prisma.order.findUniqueOrThrow({ where: { id: booking.id } });
     expect(order).toMatchObject({ status: "fleet_searching", riderId: null, fleetMerchantId: f.branchId, otpHash: tokens.hash(deliveryCode) });
-    expect(Number(order.fleetFee)).toBe(1.5);
+    expect(Number(order.fleetFee)).toBe(bookingFleetFee(Number(order.suggestedFare)));
     expect(order.dispatchExcludedRiderIds).toEqual([a]);
     const rider = await prisma.rider.findUniqueOrThrow({ where: { profileId: a } });
     expect(rider.cancelStrikes).toBe(0);
@@ -537,15 +539,22 @@ describe("T5 the fleet bill", () => {
 
   it("a completed ride is billed once, at the fee snapshotted on the order, to its branch and owner", async () => {
     const { f, rider, orderId } = await takenBooking();
-    // The owner raises the fee afterwards: the ride keeps the fee it was booked at.
-    await prisma.ownerFleet.update({ where: { ownerProfileId: f.ownerId }, data: { rideFee: 3 } });
-    await prisma.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
-    await lifecycle.completeOrder(orderId);
-    await lifecycle.completeOrder(orderId);
+    const { fleetFee } = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { fleetFee: true } });
+    // The commission rate changes afterwards: the ride keeps the fee it was booked at.
+    const before = process.env.COMMISSION_RATE_PCT;
+    process.env.COMMISSION_RATE_PCT = "50";
+    try {
+      await prisma.order.update({ where: { id: orderId }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+      await lifecycle.completeOrder(orderId);
+      await lifecycle.completeOrder(orderId);
+    } finally {
+      if (before === undefined) delete process.env.COMMISSION_RATE_PCT;
+      else process.env.COMMISSION_RATE_PCT = before;
+    }
     const billed = await rows(orderId);
     expect(billed).toHaveLength(1);
     expect(billed[0]).toMatchObject({ kind: "booking", merchantId: f.branchId, ownerProfileId: f.ownerId, riderId: rider, statementId: null });
-    expect(Number(billed[0].fee)).toBe(1.5);
+    expect(Number(billed[0].fee)).toBe(Number(fleetFee));
   });
 
   it("an undelivered ride is billed (the ride happened)", async () => {
@@ -631,17 +640,17 @@ describe("E4: another business's booking", () => {
 describe("T7a the console", () => {
   const OPS = "ops@lyniago.com";
 
-  it("enable needs a fee, sets it for every branch of the owner, and shows on the fleets table", async () => {
+  it("enable (after a Disable) needs no fee, turns it on for every branch of the owner, and shows on the fleets table", async () => {
     const ownerId = await profile("merchant", "Rudo");
     const m = await prisma.merchant.create({
       data: { name: "Pizza Inn Avondale", ownerProfileId: ownerId, location: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263770000009" } },
       select: { id: true },
     });
-    const detail = await admin.enable(OPS, m.id, { rideFee: 1.25 });
-    expect(detail).toMatchObject({ enabled: true, paused: false, rideFee: "1.25", branches: [{ merchantId: m.id }] });
+    const detail = await admin.enable(OPS, m.id, {});
+    expect(detail).toMatchObject({ enabled: true, paused: false, rideFee: null, feePct: 10, branches: [{ merchantId: m.id }] });
     expect((await admin.list()).find((r) => r.ownerProfileId === ownerId)).toMatchObject({
       status: "paid",
-      rideFee: "1.25",
+      rideFee: null,
       branches: 1,
       branchNames: ["Pizza Inn Avondale"],
       bikers: 0,
@@ -756,6 +765,32 @@ describe("T7a the console", () => {
   });
 });
 
+describe("Own bikers for every business (owner, 2026-10-20)", () => {
+  it("a business with no fleet row is on: its roster makes the row, and it can book its bikers", async () => {
+    const ownerId = await profile("merchant", "Tariro");
+    const m = await prisma.merchant.create({
+      data: { name: "Mama's Kitchen Avondale", ownerProfileId: ownerId, location: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263770000011" } },
+      select: { id: true },
+    });
+    await prisma.merchantMember.create({ data: { merchantId: m.id, profileId: ownerId, role: "owner", displayName: "Tariro" } });
+    const access = { merchantId: m.id, role: "owner", businessType: "restaurant" } as MerchantAccess;
+    expect(await prisma.ownerFleet.count({ where: { ownerProfileId: ownerId } })).toBe(0);
+
+    // No row yet: a booking still goes to "My bikers" (none online, so it holds) instead of "Own bikers isn't on".
+    const res = await bookings.createFleet(access, ownerId, book());
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: res.booking.id }, select: { status: true } })).status).not.toBe("cancelled");
+
+    expect(await fleetSvc.roster(access)).toMatchObject({ enabled: true, paused: false });
+    expect(await prisma.ownerFleet.findUniqueOrThrow({ where: { ownerProfileId: ownerId } })).toMatchObject({ enabled: true, rideFee: null });
+  });
+
+  it("admin's Disable still turns a business off", async () => {
+    const f = await fleetOwner({ enabled: false });
+    expect(await fleetSvc.roster(f.access)).toMatchObject({ enabled: false });
+    await expect(bookings.createFleet(f.access, f.ownerId, book())).rejects.toMatchObject({ response: { reason: "fleet_off" } });
+  });
+});
+
 describe("T7b the merchant's fleet money", () => {
   it("staff and owner see the branch's rides this week (corrections included); only the week asked for", async () => {
     const f = await fleetOwner();
@@ -764,11 +799,12 @@ describe("T7b the merchant's fleet money", () => {
     await dispatch.accept(booking.id, a);
     await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
     await lifecycle.completeOrder(booking.id);
-    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, fee: -0.5, reason: "wrong fee" });
+    const fee = Number((await prisma.order.findUniqueOrThrow({ where: { id: booking.id }, select: { fleetFee: true } })).fleetFee);
+    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, fee: -0.01, reason: "wrong fee" });
 
     const staff = { ...f.access, role: "staff" } as MerchantAccess;
     const rides = await fleetSvc.rides(staff);
-    expect(rides).toMatchObject({ rides: 1, total: "1.00" });
+    expect(rides).toMatchObject({ rides: 1, total: (fee - 0.01).toFixed(2) });
     expect(rides.lines.map((l) => l.kind).sort()).toEqual(["adjustment", "booking"]);
     expect(rides.lines.find((l) => l.kind === "booking")?.ref).toMatch(/^#[0-9A-F]{4}$/);
     expect((await fleetSvc.rides(staff, "2020-01-06")).lines).toEqual([]);
@@ -798,20 +834,23 @@ describe("T7b the merchant's fleet money", () => {
       await lifecycle.completeOrder(booking.id);
       ids.push(booking.id);
     }
-    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, orderId: ids[0], fee: -1.5, reason: "wrong fee" });
+    // Each booking is billed the commission on its suggested fare (the same trip twice, so the same fee).
+    const fee = Number((await prisma.order.findUniqueOrThrow({ where: { id: ids[0] }, select: { fleetFee: true } })).fleetFee);
+    const one = fee.toFixed(2);
+    await ledger.adjust("ops@lyniago.com", { merchantId: f.branchId, orderId: ids[0], fee: -fee, reason: "wrong fee" });
 
     const rides = await fleetSvc.rides(f.access);
-    expect(rides).toMatchObject({ rides: 1, total: "1.50" });
+    expect(rides).toMatchObject({ rides: 1, total: one });
     const { firstName } = await prisma.profile.findUniqueOrThrow({ where: { id: a }, select: { firstName: true } });
     expect(rides.lines.filter((l) => l.kind === "booking").map((l) => l.biker)).toEqual([firstName, firstName]);
     expect(rides.lines.find((l) => l.kind === "adjustment")).toMatchObject({ biker: null, reason: "wrong fee" });
 
     const bills = await fleetSvc.bills(f.access);
-    expect(bills.thisWeek).toMatchObject({ rides: 1, total: "1.50", branches: [{ merchantId: f.branchId, rides: 1, total: "1.50" }] });
+    expect(bills.thisWeek).toMatchObject({ rides: 1, total: one, branches: [{ merchantId: f.branchId, rides: 1, total: one }] });
     // The closed bill counts the same way.
     await ledger.closeWeeks(new Date(Date.now() + 8 * 24 * 60 * 60 * 1000));
     const closed = await fleetSvc.bills(f.access);
-    expect(closed.bills[0]).toMatchObject({ total: "1.50", branches: [{ merchantId: f.branchId, rides: 1, total: "1.50" }] });
+    expect(closed.bills[0]).toMatchObject({ total: one, branches: [{ merchantId: f.branchId, rides: 1, total: one }] });
   });
 
   it("alerts: a bill over 7 days overdue tells the owner once a day; a business cancelling most accepted bookings is flagged once", async () => {
@@ -1015,29 +1054,5 @@ describe("T9 the business's own app orders", () => {
     // The parcel cancel route refuses a restaurant order outright: it is never turned into a ringing booking.
     await expect(lifecycle.cancel(orderId, own)).rejects.toThrow();
     expect(await row(orderId)).toEqual({ status: "assigned", riderId: own, fleetMerchantId: f.branchId, fleetFee: expect.anything() });
-  });
-});
-
-describe("T9 retiring Preferred riders", () => {
-  const notes = new PreferredRetirementService(prisma, notifications as unknown as NotificationsService);
-
-  it("once PREFERRED_RETIRED is on, each business that kept preferred riders tells its owners, once", async () => {
-    const f = await fleetOwner();
-    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230000", label: "Blessing", addedByProfileId: f.ownerId } });
-    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230001", label: "Tino", addedByProfileId: f.ownerId } });
-    await fleetOwner(); // kept none: not told
-
-    expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 }); // the flag is off
-    vi.stubEnv("PREFERRED_RETIRED", "true");
-    try {
-      expect(await notes.sendNotes()).toEqual({ businesses: 1, owners: 1 });
-      expect(notifications.notifyProfiles).toHaveBeenCalledWith([f.ownerId], expect.objectContaining({ title: PREFERRED_RETIRED_NOTE.title }));
-      expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 });
-      expect(notifications.notifyProfiles).toHaveBeenCalledTimes(1);
-      // The list stays (rollback is unsetting the flag).
-      expect(await prisma.merchantPreferredRider.count({ where: { merchantId: f.branchId } })).toBe(2);
-    } finally {
-      vi.unstubAllEnvs();
-    }
   });
 });

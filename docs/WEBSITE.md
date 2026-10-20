@@ -95,6 +95,15 @@ A code that isn't one (wrong length, look-alike letters) still reaches the plain
 is pinned on both sides: `apps/website/worker.test.mjs` and `packages/shared/src/referral.test.ts`. No page,
 copy or asset changes, so this is not a launch edit.
 
+## Own bikers invite links: `/j/<code>`
+
+The link a business shares with a biker it invites (owner, 2026-10-20, ledger D-117): the merchant app builds it
+(`FLEET_INVITE_LINK_BASE`) and the owner sends it on WhatsApp or copies it. `apps/website/invite.js` answers it with a
+`302` to the plain Google Play listing, on every device. It carries nothing: the invite is bound to the biker's phone
+number, so the Join card is on their board as soon as they open LyniaGo with that number. No install referrer, so a
+fleet code can never be read back as a biker referral code. No page, copy or asset changes, so this is not a launch
+edit. Pinned by `apps/website/worker.test.mjs`.
+
 ## Search and AI visibility
 
 The plan for ranking lyniago.com in Harare, and for getting it cited by AI assistants, is in
@@ -107,7 +116,7 @@ forms:
 
 ## Hosting
 
-- **Static assets first.** Every request except `/download` is a free, unmetered static-asset
+- **Static assets first.** Every request except `/download`, `/r/<code>` and `/j/<code>` is a free, unmetered static-asset
   request served from Cloudflare's edge (including Harare). Unknown paths get `404.html` from the
   asset layer and never reach the script either. `www` traffic runs its own script (the redirect).
 - **Caching** (`_headers`, from the handoff README): `/` and `/index.html` get `no-cache`, and every

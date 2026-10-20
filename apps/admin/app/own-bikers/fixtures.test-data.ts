@@ -56,7 +56,8 @@ export const DETAIL: AdminFleetDetail = {
   phone: "+263772000111",
   enabled: true,
   paused: false,
-  rideFee: "1.50",
+  rideFee: null,
+  feePct: 10,
   branches: [
     { merchantId: AVONDALE, name: "Chicken Inn Avondale" },
     { merchantId: BORROWDALE, name: "Chicken Inn Borrowdale" },

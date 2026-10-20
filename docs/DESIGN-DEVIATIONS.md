@@ -5902,3 +5902,13 @@ runs a stub API with the handoff's data set and switches it per frame). What sti
   from 14:02"; it shows the console's offline banner (API unreachable) over the error row instead of dimmed data.
 - The OB-A4 tile counts fleets with a bill overdue (`ownBikers.overdueFleets`, added here), so its "2 overdue" matches the
   table's Overdue chip.
+
+**Owner-approved (2026-10-20): live for every business, billed at the commission rate** (plan amendment 19). Every
+business has Own bikers with no admin switch-on, and LyniaGo bills the commission rate × each ride's cost (an app order's
+delivery fee, a phone booking's suggested fare), so the console departs from OB-A2 where it drew a flat fee:
+- "Fee per ride" + Save is replaced by a read-only line, **"Fee · 10% of each ride"** (the live commission rate,
+  `AdminFleetDetail.feePct`). The title line reads "3 fleets · commission billed weekly" (handoff `sub`: "fee per ride
+  billed weekly"). Both pinned in `apps/admin/app/own-bikers/fleet-view.test.ts`.
+- A disabled business offers **"Turn on"** ("Turn Chicken Inn's Own bikers back on?"), which the handoff doesn't draw:
+  with no admin switch-on, it is the only way back from a Disable.
+- The two lane D notes above about the fee's Save and its audit note no longer apply.

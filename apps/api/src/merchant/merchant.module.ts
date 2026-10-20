@@ -1,7 +1,5 @@
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
-import { FleetEnabledGuard } from "./fleet-enabled.guard";
 import { AdminFleetsController } from "./admin-fleets.controller";
-import { PreferredRetirementService } from "./preferred-retirement.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
@@ -80,7 +78,7 @@ import { PrescriptionService } from "./prescription.service";
  * PrescriptionService (Rx behind RX_ENABLED) and their two controllers (order-flow-v2-b.controller.ts).
  *
  * Own bikers (docs/designs/own-bikers.md, D-117) adds FleetService and its two controllers (fleet.controller.ts):
- * the owner's roster and invite links, and the biker's invites, Join and Leave, all behind FLEET_UI_LIVE. T3b adds
+ * the owner's roster and invite links, and the biker's invites, Join and Leave (live for every business). T3b adds
  * FleetDispatchService: "My bikers" bookings ringing the owner's bikers in rounds, the biker's accept and decline,
  * and the business's retry and "Send to any biker". T5 adds FleetLedgerService: the fleet bill's reconciliation
  * and its corrections (each ride's row is written by its terminal transaction, common/fleet-ledger.ts).
@@ -112,14 +110,11 @@ import { PrescriptionService } from "./prescription.service";
     MerchantTeamService,
     MerchantInvitesService,
     MerchantBranchesService,
-    // Own bikers (D-117, T3a): invites, Join, Leave, Remove; behind FLEET_UI_LIVE.
+    // Own bikers (D-117, T3a): invites, Join, Leave, Remove.
     FleetService,
     FleetDispatchService,
     FleetLedgerService,
     FleetAdminService,
-    // T9: the one-time "Preferred riders is gone" note once PREFERRED_RETIRED is on.
-    PreferredRetirementService,
-    FleetEnabledGuard,
     MerchantGuard,
     RestaurantsEnabledGuard,
     ShopsEnabledGuard,

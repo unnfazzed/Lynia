@@ -2,8 +2,8 @@ import type { FleetJobOffer, FleetJobOffersResponse, FleetMoneyResponse, MyFleet
 import { apiFetch } from "./client";
 
 /**
- * Own bikers (ledger D-117): the biker's side, under `/fleet` (fleet.controller.ts `RiderFleetController`). The
- * routes answer 503 until Own bikers is live (`FLEET_UI_LIVE`), so callers ask only while `useOrderFlags().fleetLive`.
+ * Own bikers (ledger D-117): the biker's side, under `/fleet` (fleet.controller.ts `RiderFleetController`), live for
+ * every business since 2026-10-20.
  */
 
 /** The fleet they ride for, and live invites to their number (OB-R1/R2). */

@@ -16,9 +16,7 @@ import { supportWhatsAppUrl } from "../../lib/config";
 import { firstName, initials, ROLE_LABEL } from "../../lib/team";
 import { getTeam, leaveBusiness, listMyInvites, noBusinessPath } from "../../lib/team-api";
 import { dayKeyFor } from "../../lib/hours";
-import { listRiders } from "../../lib/riders-api";
 import { getFleet } from "../../lib/fleet-api";
-import { usePreferredRetired } from "../../lib/order-flags";
 import { ownBikersRow, type OwnBikersRow } from "../../lib/own-bikers";
 import { OBM } from "../../lib/own-bikers-copy";
 
@@ -43,10 +41,8 @@ export default function AccountPage() {
   const toast = useToast();
   const [pendingInvites, setPendingInvites] = useState(0);
   const [invitedBy, setInvitedBy] = useState<string | null>(null);
-  const [riderCount, setRiderCount] = useState<number | null>(null);
   // Own bikers (OB-M1, D-117): undefined while the roster is read; null = this business has none.
   const [ownBikers, setOwnBikers] = useState<OwnBikersRow | undefined>(undefined);
-  const preferredRetired = usePreferredRetired();
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +81,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     let alive = true;
-    // 503 while Own bikers isn't live, or any failure: no row, as for a business without a fleet.
+    // 503 (the merchant vertical switched off), or any failure: no row, as for a business admin disabled.
     getFleet()
       .then((fleet) => {
         if (alive) setOwnBikers(ownBikersRow(fleet));
@@ -98,17 +94,6 @@ export default function AccountPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    listRiders()
-      .then((r) => {
-        if (alive) setRiderCount(r.riders.length);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   async function leave() {
     if (busy) return;
@@ -163,8 +148,7 @@ export default function AccountPage() {
         <div className="m-group">
           {!owner && <Row href="/hours" icon="clock" label="Opening hours" value={hoursValue} />}
           {owner && <Row href="/ordering" icon="inbox" label="Taking orders" value={takingValue} />}
-          {/* OB-M1: "Own bikers" replaces Preferred riders for a business with a fleet; Preferred stays for the
-              others until it is retired (PREFERRED_RETIRED), and waits for the fleet read so it never flashes. */}
+          {/* OB-M1: "Own bikers" replaces Preferred riders, which is retired (owner, 2026-10-20). */}
           {ownBikers ? (
             <Row
               href="/own-bikers"
@@ -173,8 +157,6 @@ export default function AccountPage() {
               value={ownBikers.kind === "value" ? ownBikers.text : undefined}
               badge={ownBikers.kind === "paused" ? OBM.ownBikersPaused : undefined}
             />
-          ) : ownBikers === null && !preferredRetired ? (
-            <Row href="/riders" icon="bike" label="Preferred bikers" value={riderCount !== null ? String(riderCount) : undefined} />
           ) : null}
           {owner && <Row href="/team" icon="user" label="Team" badge={pendingInvites > 0 ? `${pendingInvites} invite${pendingInvites === 1 ? "" : "s"} open` : undefined} />}
         </div>
