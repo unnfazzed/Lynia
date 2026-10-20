@@ -13,10 +13,10 @@ import { type KycMintPath } from "../observability/metrics.service";
 import { auditData } from "../admin/admin.shared";
 import { domainEvents } from "../common/domain-events";
 import { FIXABLE_DECLINE_REASONS, FORCED_KYC_REPLACEMENT_WINDOW_MS, KYC_DAILY_FIXABLE_DECLINE_LIMIT, KYC_DAILY_LIMIT_WINDOW_MS, KYC_ID_EXPIRY_ACTOR, KYC_MINT_CLAIM_PREFIX, KYC_MINT_CLAIM_TTL_MS, KYC_PAID_MINT_LIMIT, KYC_PAID_MINT_WINDOW_MS, KYC_RESOLVED_BY_SYSTEM, KYC_WEBHOOK_ACTOR, type Kyc, SELFIE_CHECK_RECHECK_REQUESTED, SELFIE_RECHECK_DAILY_LIMIT, kycInProgress, mintClaimAt } from "./rider.helpers";
-import type { RiderService } from "./rider.service";
+import type { RiderHost } from "./rider.host";
 
 export class RiderKycSessions {
-  constructor(private readonly svc: RiderService) {}
+  constructor(private readonly svc: RiderHost) {}
   /**
    * Re-run KYC for an existing rider whose check is pending or failed. RESUMES the live session when
    * there is one (free), and only mints a fresh — paid — session when there isn't. Verified riders are

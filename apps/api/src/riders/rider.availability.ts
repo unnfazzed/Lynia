@@ -8,10 +8,10 @@ import { baseBroadcastRadiusM } from "../common/broadcast-policy";
 import { penaltiesSuspended } from "../common/penalties";
 import { onlineRefusalReason, REFUSAL_MESSAGE } from "./online-gate";
 import { domainEvents } from "../common/domain-events";
-import type { RiderService } from "./rider.service";
+import type { RiderHost } from "./rider.host";
 
 export class RiderAvailability {
-  constructor(private readonly svc: RiderService) {}
+  constructor(private readonly svc: RiderHost) {}
   async setOnline(
     profileId: string,
     online: boolean,

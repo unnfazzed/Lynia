@@ -12,10 +12,10 @@ import { auditData } from "../admin/admin.shared";
 import { domainEvents } from "../common/domain-events";
 import { ownerAlertText } from "../owner-alerts/owner-alerts.service";
 import { type Kyc } from "./rider.helpers";
-import type { RiderService } from "./rider.service";
+import type { RiderHost } from "./rider.host";
 
 export class RiderOnboarding {
-  constructor(private readonly svc: RiderService) {}
+  constructor(private readonly svc: RiderHost) {}
   /**
    * How many OTHER accounts (INCLUDING erased tombstones — DS15-02b keeps their hash) carry this
    * national ID. This is the A-04 REVIEWER signal: it feeds `duplicateIdFlag`, which survives for

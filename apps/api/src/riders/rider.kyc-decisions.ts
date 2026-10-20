@@ -10,10 +10,10 @@ import { KYC_PUSH_COPY, type KycPushVariant } from "../kyc/kyc-push-copy";
 import { auditData } from "../admin/admin.shared";
 import { domainEvents } from "../common/domain-events";
 import { KYC_RESOLVED_BY_ADMIN, KYC_RESOLVED_BY_VENDOR, KYC_UNREADABLE_DECLINES_BEFORE_REVIEW, KYC_WEBHOOK_ACTOR, type Kyc, SELFIE_CHECK_UNVERIFIED, declineAttemptsWrite, reviewStale, verifiedIdInUse } from "./rider.helpers";
-import type { RiderService } from "./rider.service";
+import type { RiderHost } from "./rider.host";
 
 export class RiderKycDecisions {
-  constructor(private readonly svc: RiderService) {}
+  constructor(private readonly svc: RiderHost) {}
   /**
    * Vendor callback result → flip the rider's KYC status. Monotonic by `eventAt`: the update only
    * applies when this webhook is newer than the last applied one (kycResolvedAt null or older), so a
