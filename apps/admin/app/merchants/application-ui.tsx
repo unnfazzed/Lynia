@@ -32,16 +32,36 @@ export function rejectReasonLabel(code: string | null): string {
 
 const ROW_ACTIONS = ["review", "approve", "reject", "go_live", "resume"] as const;
 
+/** "A", "A and B", "A, B and C". */
+function listOf(items: string[]): string {
+  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Why there's no Approve button yet, naming what's in the way: the review hasn't started, or these required
+ * checks still fail. Null once Approve is (or no longer can be) on the card.
+ */
+export function approveHint(app: Pick<MerchantApplication, "status" | "canApprove" | "checklist">): string | null {
+  const labels = app.checklist.filter((r) => r.required && !r.ok).map((r) => r.label);
+  const failing = labels.length ? `${listOf(labels)} ${labels.length === 1 ? "passes" : "pass"}` : null;
+  if (app.status === "applied") return failing ? `Approve shows after Start review, once ${failing}.` : "Approve shows after Start review.";
+  if (app.status === "reviewing" && !app.canApprove) return failing ? `Approve shows once ${failing}.` : "Approve shows once every required check passes.";
+  return null;
+}
+
 /**
  * The application card (admin console v2 §5): the data-backed checklist, the licence for a pharmacy, the
  * calls, and the actions the state allows. Shown at the top of the merchant page while it isn't live.
  */
 export function ApplicationCard({ app, name, connected }: { app: MerchantApplication; name: string; connected: boolean }) {
   const actions = app.actions.filter((a) => (ROW_ACTIONS as readonly string[]).includes(a));
+  const hint = approveHint(app);
+  // Required checks first; an optional one that isn't there yet is a dash, not a ❌, so it never reads as a blocker.
+  const rows = [...app.checklist.filter((r) => r.required), ...app.checklist.filter((r) => !r.required)];
   return (
     <section className="card" aria-label="Application" style={{ marginBottom: "var(--space-lg)" }}>
       <div className="block-title">
-        Application <span className="count">{`${app.score.passed}/${app.score.total} checks`}</span>
+        Application <span className="count">{`${app.score.passed}/${app.score.total} required checks`}</span>
         <span className="right" style={{ display: "flex", gap: "var(--space-xs)" }}>
           <ApplicationStatusPill status={app.status} />
           {app.sla ? <SlaPill sla={app.sla} since={app.appliedAt} /> : null}
@@ -53,11 +73,20 @@ export function ApplicationCard({ app, name, connected }: { app: MerchantApplica
         </p>
       ) : null}
       <KeyValue
-        rows={app.checklist.map((r) => ({
+        rows={rows.map((r) => ({
           label: r.required ? r.label : `${r.label} (optional)`,
           value: (
             <span>
-              <span aria-label={r.ok ? "Passes" : "Fails"}>{r.ok ? "✅" : "❌"}</span> {r.detail}
+              {r.ok ? (
+                <span aria-label="Passes">✅</span>
+              ) : r.required ? (
+                <span aria-label="Fails">❌</span>
+              ) : (
+                <span aria-label="Not yet (optional)" className="mut">
+                  –
+                </span>
+              )}{" "}
+              {r.detail}
               {r.warning ? (
                 <span style={{ display: "block", color: "var(--danger)", fontSize: 12 }}>{r.warning}</span>
               ) : null}
@@ -74,9 +103,9 @@ export function ApplicationCard({ app, name, connected }: { app: MerchantApplica
           <ApplicationActionButton key={a} merchantId={app.merchantId} name={name} action={a} connected={connected} />
         ))}
       </div>
-      {app.status === "reviewing" && !app.canApprove ? (
+      {hint ? (
         <p className="mut" style={{ fontSize: 12, margin: "var(--space-sm) 0 0" }}>
-          Approve shows once every required check passes.
+          {hint}
         </p>
       ) : null}
       {app.calls.length > 0 ? (

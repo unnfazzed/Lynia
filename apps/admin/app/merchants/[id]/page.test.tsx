@@ -151,15 +151,40 @@ describe("Merchant profile: the application (admin console v2 §5)", () => {
   it("while not live, the application card sits at the top with the checklist, score and allowed actions", async () => {
     await open(detail(), { app: application() });
     const card = screen.getByRole("region", { name: "Application" });
-    expect(card.textContent).toContain("1/2 checks");
+    expect(card.textContent).toContain("1/2 required checks");
     expect(card.textContent).toContain("In review");
     expect(card.textContent).toContain("Opposite Mbare market");
     expect(card.textContent).toContain("No call logged");
-    expect(card.textContent).toContain("Approve shows once every required check passes.");
+    expect(card.textContent).toContain("Approve shows once Ops call passes.");
     expect(screen.getByRole("button", { name: "Log call…" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reject…" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve…" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Suspend…" })).toBeNull();
+  });
+
+  it("names every failing required check, lists required checks first, and never marks a missing optional one ❌", async () => {
+    await open(detail(), {
+      app: application({
+        checklist: [
+          { key: "hours", label: "Opening hours", ok: false, required: true, detail: "Not set" },
+          { key: "shopfront", label: "Shop front", ok: false, required: false, detail: "no logo · no cover · no about" },
+          { key: "menu", label: "Items", ok: false, required: true, detail: "0 categories · no items" },
+          { key: "call", label: "Ops call", ok: true, required: true, detail: "Spoke to the business" },
+        ],
+        score: { passed: 1, total: 3 },
+      }),
+    });
+    const card = screen.getByRole("region", { name: "Application" });
+    expect(card.textContent).toContain("Approve shows once Opening hours and Items pass.");
+    expect(card.textContent!.indexOf("Ops call")).toBeLessThan(card.textContent!.indexOf("Shop front (optional)"));
+    expect(screen.getAllByLabelText("Fails")).toHaveLength(2);
+    expect(screen.getByLabelText("Not yet (optional)")).toBeTruthy();
+  });
+
+  it("a new application says Approve comes after Start review", async () => {
+    await open(detail(), { app: application({ status: "applied", actions: ["review", "reject"] }) });
+    expect(screen.getByRole("region", { name: "Application" }).textContent).toContain("Approve shows after Start review, once Ops call passes.");
+    expect(screen.getByRole("button", { name: "Start review…" })).toBeTruthy();
   });
 
   it("a pharmacy's card offers the licence actions", async () => {
