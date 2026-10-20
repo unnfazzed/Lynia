@@ -127,6 +127,35 @@ developer editing the database by hand.
    **Default-deny for new endpoints.** Any endpoint added later that transfers ownership, deletes the
    business or changes a payout destination must carry `@SupportBlocked()`. A unit test fails if a
    route whose path matches `owner|transfer|payout|delete-business` lacks it.
+7. **Invisible on the merchant side** (owner, 2026-10-20: "merchant app should not see that we are
+   online"). No merchant-app surface may show that a support session exists or is live. Each leak
+   path is closed explicitly:
+   - **Team list.** A support session is not a `MerchantMember` and never creates one, so it never
+     appears in Team (`merchant-team.controller.ts`) or as a pending invite.
+   - **Devices and sessions.** No `Session` row is created and the OTP path is never touched. So there
+     is no "signed in on another device" signal and no new-device identity alert
+     (`auth.service.ts:803`).
+   - **Kitchen presence.** The support socket joins only that shop's order-update rooms, **never** the
+     kitchen queue/presence room that `TrackingGateway.isMerchantOnline` reads
+     (`tracking.gateway.ts:579`, `queue-socket.ts`). So the shop never looks "online" or "tablet
+     connected" because of you. That check has no live callers today (owner decision D1). The test
+     still asserts that a support socket is absent from the presence room, so a future caller can't
+     count you.
+   - **Cross-device sync.** Branch switching is blocked (premise 6), so the MJ-RM15 "another device
+     switched this branch" follow (`apps/merchant/app/(app)/layout.tsx:44`) never fires on the
+     owner's tablet.
+   - **Notifications.** Starting, using or ending a session sends no push, SMS, email or in-app
+     message to any merchant device.
+   - **Attribution.** Actions you take show in the merchant app as the shop's own actions. The order
+     moves, the dish changes, with no "by LyniaGo support" label. Where a merchant-visible record
+     names an actor (for example an order timeline), it shows the shop name, never the operator.
+   - **Audit.** `AuditLog` is read only by the admin console (`GET admin/audit`). No merchant endpoint
+     returns support rows.
+   - **What stays visible, unavoidably:** the *effects* of what you do. An accepted order, an edited
+     price and a closed shop all look the same as if the owner had done them.
+
+   Tests: a support session leaves Team, the sessions list and the presence room unchanged. No
+   notification is enqueued for any merchant member during a session.
 
 ## Approaches Considered
 
@@ -137,7 +166,35 @@ developer editing the database by hand.
 - **C) Admin-native editors.** Rebuild menu, hours, orders and team inside `apps/admin`. Rejected: it
   duplicates the merchant app and drifts from the design handoffs.
 
-## Recommended Approach: B — complete support session
+## Revision 2026-10-20: admin side only (owner, overrides the merchant-app parts below)
+
+Owner, 2026-10-20: *"no new features merchant side, only admin side is changed"*. That instruction
+changes the design as follows:
+
+- **`apps/merchant` is not changed at all.** The entry page, cookie, banner, "session ended" screen
+  and terms re-accept step described below are **not built**.
+- **You work from the admin console.** The console gets an **Open as owner** workspace for one shop:
+  - Orders (live board and actions);
+  - Menu (categories and items);
+  - Shop (open/closed, busy mode, hours);
+  - Team;
+  - Money (cash rule, weekly statement).
+  It calls the API's **existing** `merchant/*` endpoints, so every owner rule stays in one place.
+- **No support token.** The admin console's server calls `merchant/*` with its admin token plus
+  `X-Support-Session: <id>`. The API checks the session, then acts as the shop's owner pinned to that
+  one shop. The rules from the original design still hold:
+  - refused outside `merchant/*`;
+  - blocked routes (premise 6);
+  - every request audited, with the audit write fail-closed;
+  - one active session per shop.
+- **No socket.** The workspace refreshes on a timer, so the kitchen-presence leak (premise 7) cannot
+  happen.
+- **Terms gate dropped.** Re-accepting terms would be a merchant-side change. Silent access rests on
+  the audit log, and adding the terms clause stays an open question for a later export.
+- **The new admin screens** are designed by Claude (owner instruction) in the existing console style
+  and recorded as one `docs/DESIGN-DEVIATIONS.md` entry.
+
+## Recommended Approach: B — complete support session (original; see the revision above)
 
 ### Data
 New Prisma model `SupportSession`:
