@@ -166,7 +166,35 @@ developer editing the database by hand.
 - **C) Admin-native editors.** Rebuild menu, hours, orders and team inside `apps/admin`. Rejected: it
   duplicates the merchant app and drifts from the design handoffs.
 
-## Recommended Approach: B — complete support session
+## Revision 2026-10-20: admin side only (owner, overrides the merchant-app parts below)
+
+Owner, 2026-10-20: *"no new features merchant side, only admin side is changed"*. That instruction
+changes the design as follows:
+
+- **`apps/merchant` is not changed at all.** The entry page, cookie, banner, "session ended" screen
+  and terms re-accept step described below are **not built**.
+- **You work from the admin console.** The console gets an **Open as owner** workspace for one shop:
+  - Orders (live board and actions);
+  - Menu (categories and items);
+  - Shop (open/closed, busy mode, hours);
+  - Team;
+  - Money (cash rule, weekly statement).
+  It calls the API's **existing** `merchant/*` endpoints, so every owner rule stays in one place.
+- **No support token.** The admin console's server calls `merchant/*` with its admin token plus
+  `X-Support-Session: <id>`. The API checks the session, then acts as the shop's owner pinned to that
+  one shop. The rules from the original design still hold:
+  - refused outside `merchant/*`;
+  - blocked routes (premise 6);
+  - every request audited, with the audit write fail-closed;
+  - one active session per shop.
+- **No socket.** The workspace refreshes on a timer, so the kitchen-presence leak (premise 7) cannot
+  happen.
+- **Terms gate dropped.** Re-accepting terms would be a merchant-side change. Silent access rests on
+  the audit log, and adding the terms clause stays an open question for a later export.
+- **The new admin screens** are designed by Claude (owner instruction) in the existing console style
+  and recorded as one `docs/DESIGN-DEVIATIONS.md` entry.
+
+## Recommended Approach: B — complete support session (original; see the revision above)
 
 ### Data
 New Prisma model `SupportSession`:
