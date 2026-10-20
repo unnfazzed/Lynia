@@ -56,8 +56,8 @@ export function tracker(b: MerchantBookingResponse): Tracker {
 
 export type OfferSort = "best" | "cheapest" | "closest";
 
-/** D4's sort chips. Best match is the usual ranking with the business's own riders on top (as drawn);
- *  a teammate's offer, which can't be picked, always sits last. */
+/** D4's sort chips. Best match is the usual ranking; a teammate's offer, which can't be picked, always sits
+ *  last. (Preferred riders, which put the business's own on top, is retired.) */
 export function sortOffers(offers: readonly MerchantBookingOffer[], sort: OfferSort): MerchantBookingOffer[] {
   const ranked = orderOffers(offers);
   const pickable = ranked.filter((o) => !o.ownMember);
@@ -67,7 +67,7 @@ export function sortOffers(offers: readonly MerchantBookingOffer[], sort: OfferS
       ? [...pickable].sort((a, b) => Number(a.offeredFare) - Number(b.offeredFare))
       : sort === "closest"
         ? [...pickable].sort((a, b) => a.etaMinutes - b.etaMinutes)
-        : [...pickable.filter((o) => o.preferred), ...pickable.filter((o) => !o.preferred)];
+        : pickable;
   return [...sorted, ...team];
 }
 

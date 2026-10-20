@@ -50,8 +50,8 @@ export async function recordFleetRide(db: Db, orderId: string): Promise<boolean>
         merchantId: order.fleetMerchantId,
         orderId,
         riderId: order.riderId,
-        // A phone booking bills the flat ride fee; the business's own app order bills rate × delivery fee (OV5).
-        // Both are what was snapshotted into `fleet_fee` when the job became a fleet job.
+        // A phone booking bills the commission rate × its suggested fare; the business's own app order bills the rate
+        // × its delivery fee (OV5). Both are what was snapshotted into `fleet_fee` when the job became a fleet job.
         kind: order.orderType === "merchant" ? "marketplace" : "booking",
         fee: order.fleetFee,
       },

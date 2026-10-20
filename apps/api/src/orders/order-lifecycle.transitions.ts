@@ -614,9 +614,9 @@ export const TRANSITIONS: readonly OrderTransition[] = [
     event: "fleet_book",
     to: "fleet_searching",
     actor: "merchant",
-    guard: "member of the branch; the owner's OwnerFleet enabled, rideFee set and not paused; the branch has a pin; the business isn't on hold",
+    guard: "member of the branch; the owner's OwnerFleet on (a missing row reads as on) and not paused; the branch has a pin; the business isn't on hold",
     sideEffect:
-      "order + merchant_bookings row in ONE transaction: fleetMerchantId=branch, fleetFee=OwnerFleet.rideFee (snapshot), proposedFare=0, suggestedFare from quoteFare; the delivery code minted and sealed now (the business reads it at once); OrderEvent(fleet_searching); the first round runs at once",
+      "order + merchant_bookings row in ONE transaction: fleetMerchantId=branch, fleetFee=the commission rate × suggestedFare (bookingFleetFee, snapshot), proposedFare=0, suggestedFare from quoteFare; the delivery code minted and sealed now (the business reads it at once); OrderEvent(fleet_searching); the first round runs at once",
     source: "merchant/merchant-booking.service.ts:createFleet",
   },
   {

@@ -104,9 +104,9 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "merchant.licence_record",
   "merchant.licence_verify",
   // Merchant web upgrade L3 + L4: written by the business's own Riders and Team endpoints, each in the
-  // same transaction as its change. The daily limits COUNT `merchant.rider.add` and `merchant.team.invite`
-  // rows, so a forged one would also eat a business's allowance for the day. The admin spec cross-checks
-  // this list against the services' exported constants.
+  // same transaction as its change. The daily limit COUNTs `merchant.team.invite` rows, so a forged one would
+  // eat a business's allowance for the day. Riders (Preferred riders) is retired; its rows stay in the log, so
+  // its actions stay reserved. The admin spec cross-checks this list against the services' exported constants.
   "merchant.rider.add",
   "merchant.rider.remove",
   "merchant.team.invite",

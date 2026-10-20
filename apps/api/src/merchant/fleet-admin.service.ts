@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import {
   ACTIVE_RIDE_STATUSES,
   type AdminFleetDetail,
@@ -58,9 +59,22 @@ export class FleetAdminService {
     private readonly ledger: FleetLedgerService,
   ) {}
 
+  /** The owner's row, made (on) when a business they own has none yet; null when they own no business. */
+  private async ensureRow(db: Prisma.TransactionClient | PrismaService, ownerProfileId: string) {
+    if ((await db.merchant.count({ where: { ownerProfileId } })) === 0) return null;
+    return db.ownerFleet.upsert({ where: { ownerProfileId }, create: { ownerProfileId }, update: {} });
+  }
+
   // ── Reads (OB-A1 table, OB-A2 side panel) ─────────────────────────────────────────────────────────────────
 
   async list(now: Date = new Date()): Promise<AdminFleetRow[]> {
+    // Every business has Own bikers (owner, 2026-10-20): an owner added since migration 0114 has no row until its
+    // first fleet read, yet it is on. Give each its row first, so the console lists it and can pause or disable it.
+    await this.prisma.$executeRaw`
+      INSERT INTO "owner_fleets" ("owner_profile_id", "enabled", "created_at", "updated_at")
+      SELECT DISTINCT m."owner_profile_id", true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM "merchants" m
+      WHERE m."owner_profile_id" IS NOT NULL
+      ON CONFLICT ("owner_profile_id") DO NOTHING`;
     const fleets = await this.prisma.ownerFleet.findMany({ select: { ownerProfileId: true, enabled: true, pausedAt: true, rideFee: true } });
     if (fleets.length === 0) return [];
     const owners = fleets.map((f) => f.ownerProfileId);
@@ -112,7 +126,7 @@ export class FleetAdminService {
   }
 
   async detail(ownerProfileId: string, now: Date = new Date()): Promise<AdminFleetDetail> {
-    const fleet = await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId } });
+    const fleet = (await this.prisma.ownerFleet.findUnique({ where: { ownerProfileId } })) ?? (await this.ensureRow(this.prisma, ownerProfileId));
     if (!fleet) throw new NotFoundException("Fleet not found");
     const [owner, branches, riders, thisWeek, bills, rides] = await Promise.all([
       this.prisma.profile.findUnique({ where: { id: ownerProfileId }, select: { firstName: true, lastName: true, phone: true } }),
@@ -192,7 +206,7 @@ export class FleetAdminService {
   /** OB-A3 Pause. Idempotent: pausing a paused fleet changes nothing but still cancels any booking left ringing. */
   async pause(actor: string, ownerProfileId: string, body: FleetAdminActionRequest): Promise<AdminFleetDetail> {
     await this.prisma.$transaction(async (tx) => {
-      const fleet = await tx.ownerFleet.findUnique({ where: { ownerProfileId }, select: { pausedAt: true } });
+      const fleet = (await tx.ownerFleet.findUnique({ where: { ownerProfileId }, select: { pausedAt: true } })) ?? (await this.ensureRow(tx, ownerProfileId));
       if (!fleet) throw new NotFoundException("Fleet not found");
       if (!fleet.pausedAt) await tx.ownerFleet.update({ where: { ownerProfileId }, data: { pausedAt: new Date() } });
       await tx.auditLog.create({ data: { actor, action: FLEET_PAUSE_ACTION, target: ownerProfileId, reasonCode: body.reasonCode, note: body.note ?? null } });
@@ -204,7 +218,7 @@ export class FleetAdminService {
 
   async unpause(actor: string, ownerProfileId: string, body: FleetAdminActionRequest): Promise<AdminFleetDetail> {
     await this.prisma.$transaction(async (tx) => {
-      const fleet = await tx.ownerFleet.findUnique({ where: { ownerProfileId }, select: { enabled: true } });
+      const fleet = (await tx.ownerFleet.findUnique({ where: { ownerProfileId }, select: { enabled: true } })) ?? (await this.ensureRow(tx, ownerProfileId));
       if (!fleet) throw new NotFoundException("Fleet not found");
       if (!fleet.enabled) throw new ConflictException({ reason: "fleet_disabled", message: "This fleet is disabled. Enable it again instead." });
       await tx.ownerFleet.update({ where: { ownerProfileId }, data: { pausedAt: null } });
@@ -216,8 +230,8 @@ export class FleetAdminService {
   /** OB-A3 Disable: the business leaves Own bikers. Unpaid bills stay open. */
   async disable(actor: string, ownerProfileId: string, body: FleetAdminActionRequest): Promise<AdminFleetDetail> {
     await this.prisma.$transaction(async (tx) => {
-      const changed = await tx.ownerFleet.updateMany({ where: { ownerProfileId }, data: { enabled: false } });
-      if (changed.count === 0) throw new NotFoundException("Fleet not found");
+      if (!(await this.ensureRow(tx, ownerProfileId))) throw new NotFoundException("Fleet not found");
+      await tx.ownerFleet.update({ where: { ownerProfileId }, data: { enabled: false } });
       // Open invite links end with it: re-enabling needs fresh invites.
       await tx.fleetInvite.updateMany({ where: { ownerProfileId, revokedAt: null, joinedAt: null }, data: { revokedAt: new Date() } });
       await tx.auditLog.create({ data: { actor, action: FLEET_DISABLE_ACTION, target: ownerProfileId, reasonCode: body.reasonCode, note: body.note ?? null } });

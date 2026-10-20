@@ -294,18 +294,18 @@ starts from reasoning, not archaeology.
 - **Effort:** human XS / CC XS. **Priority:** P3.
 - **Trigger / blocked by:** a copy decision.
 
-### Delete the Preferred riders code
+### Delete the Preferred riders data
 
-- **What:** Remove what's left of Preferred riders: the preferred-first block in `NearestRiderDispatchStrategy`,
-  `PREFERRED_OFFER_BONUS` and the offer `preferred` flag (always false now), `merchant-riders.*` and its routes (list
-  and Remove still answer; add is 410), and the `merchant_preferred_riders` table (a migration; the OB-M5 invite
-  suggestions read it, so move those to their own source or drop them first).
-- **Why:** Own bikers replaces it (owner decision D6). Retired outright on 2026-10-20 (no flag, no owner message);
-  the data stays only as a record.
-- **Pros:** One way a business has its own bikers; less dispatch code.
+- **What:** Drop the `merchant_preferred_riders` table (a migration) and the offer contract's `preferred` field
+  (always false; removing it is a contract change, so it needs the `contract-change` label). The OB-M5 invite
+  suggestions read the table, so move them to their own source or drop them first (see "Rename the roster's
+  FROM YOUR PREFERRED RIDERS suggestions" above).
+- **Why:** Own bikers replaces Preferred riders (owner decision D6). It was retired on 2026-10-20 and its code
+  deleted the same day (dispatch ordering, the /merchant/riders routes, the offer bonus, the merchant tag); only
+  this data and the contract field remain.
 - **Context:** own-bikers.md amendment 19.
 - **Effort:** human S / CC S. **Priority:** P3.
-- **Trigger / blocked by:** nothing.
+- **Trigger / blocked by:** a decision on OB-M5's suggestions.
 
 ### Fleet batching: multi-order trips for Own bikers
 

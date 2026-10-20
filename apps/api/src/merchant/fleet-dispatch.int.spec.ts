@@ -789,6 +789,40 @@ describe("Own bikers for every business (owner, 2026-10-20)", () => {
     expect(await fleetSvc.roster(f.access)).toMatchObject({ enabled: false });
     await expect(bookings.createFleet(f.access, f.ownerId, book())).rejects.toMatchObject({ response: { reason: "fleet_off" } });
   });
+
+  it("admin lists, opens and disables a business that has no fleet row yet", async () => {
+    const ownerId = await profile("merchant", "Rudo");
+    await prisma.merchant.create({
+      data: { name: "Rudo's Pharmacy", ownerProfileId: ownerId, location: { point: AVONDALE, landmark: "Avondale", contactPhone: "+263770000012" } },
+    });
+    expect(await prisma.ownerFleet.count({ where: { ownerProfileId: ownerId } })).toBe(0);
+    expect((await admin.list()).find((r) => r.ownerProfileId === ownerId)).toMatchObject({ status: "paid", bikers: 0 });
+    await prisma.ownerFleet.delete({ where: { ownerProfileId: ownerId } });
+    expect(await admin.detail(ownerId)).toMatchObject({ enabled: true });
+    await prisma.ownerFleet.delete({ where: { ownerProfileId: ownerId } });
+    await admin.disable("ops@lyniago.com", ownerId, { reasonCode: "MERCHANT_REQUEST" });
+    expect(await prisma.ownerFleet.findUniqueOrThrow({ where: { ownerProfileId: ownerId } })).toMatchObject({ enabled: false });
+    // Someone who owns no business still has no fleet.
+    await expect(admin.detail(await profile("merchant", "Nobody"))).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("a ride billed at nothing (the rate at 0%) still counts as a ride", async () => {
+    const before = process.env.COMMISSION_RATE_PCT;
+    process.env.COMMISSION_RATE_PCT = "0";
+    try {
+      const f = await fleetOwner();
+      const a = await biker({ fleet: f });
+      const { booking } = await bookings.createFleet(f.access, f.ownerId, book());
+      expect(Number((await prisma.order.findUniqueOrThrow({ where: { id: booking.id }, select: { fleetFee: true } })).fleetFee)).toBe(0);
+      await dispatch.accept(booking.id, a);
+      await prisma.order.update({ where: { id: booking.id }, data: { status: "delivered", deliveredAt: new Date(), collectedAt: new Date() } });
+      await lifecycle.completeOrder(booking.id);
+      expect(await fleetSvc.rides(f.access)).toMatchObject({ rides: 1, total: "0.00" });
+    } finally {
+      if (before === undefined) delete process.env.COMMISSION_RATE_PCT;
+      else process.env.COMMISSION_RATE_PCT = before;
+    }
+  });
 });
 
 describe("T7b the merchant's fleet money", () => {

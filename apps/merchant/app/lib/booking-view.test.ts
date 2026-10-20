@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fareDelta, shortName, sortOffers, tracker, trackedBookings } from "./booking-view";
+import { orderOffers } from "./booking";
 import { merchantBooking } from "../testing/fixtures";
 
 describe("D1 trackers", () => {
@@ -61,8 +62,9 @@ describe("D4 offers", () => {
   });
   const offers = [offer("Kuda", "3.80", 4), offer("Tendai", "5.00", 3), offer("Farai", "4.20", 6, { preferred: true }), offer("Staff", "1.00", 1, { ownMember: true })];
 
-  it("sorts by best match (own bikers on top), cheapest and closest, a teammate always last", () => {
-    expect(sortOffers(offers, "best")[0]!.id).toBe("Farai");
+  it("sorts by best match (no Preferred bonus: retired), cheapest and closest, a teammate always last", () => {
+    expect(sortOffers(offers, "best").map((o) => o.id)).toEqual([...orderOffers(offers).filter((o) => !o.ownMember).map((o) => o.id), "Staff"]);
+    expect(sortOffers(offers, "best")[0]!.id).not.toBe("Farai");
     expect(sortOffers(offers, "cheapest").map((o) => o.id)).toEqual(["Kuda", "Farai", "Tendai", "Staff"]);
     expect(sortOffers(offers, "closest").map((o) => o.id)).toEqual(["Tendai", "Kuda", "Farai", "Staff"]);
   });

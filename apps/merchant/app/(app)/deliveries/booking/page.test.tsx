@@ -83,7 +83,7 @@ describe("D4 · Pick a biker (merchant mobile, D-48)", () => {
     expect(screen.getByText("On your team, so they can't take your own delivery.")).toBeTruthy();
   });
 
-  it("puts the business's own biker on top as the Preferred biker, and sorts by cheapest or closest", async () => {
+  it("shows no Preferred biker tag (retired) and sorts by cheapest or closest", async () => {
     vi.mocked(getBooking).mockResolvedValue(
       merchantBooking({
         expiresAt: new Date(Date.now() + 80_000).toISOString(),
@@ -95,12 +95,14 @@ describe("D4 · Pick a biker (merchant mobile, D-48)", () => {
     );
     render(<Page />);
     const picks = await screen.findAllByRole("button", { name: /^Pick / });
-    expect(picks.map((b) => b.textContent)).toEqual(["Pick Tino", "Pick Blessing"]);
+    expect(picks).toHaveLength(2);
     expect(picks[0]!.className).toBe("m-btn");
     expect(picks[1]!.className).toBe("m-gh");
-    expect(screen.getByText("Preferred biker")).toBeTruthy();
+    expect(screen.queryByText("Preferred biker")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Cheapest" }));
     expect(screen.getAllByRole("button", { name: /^Pick / }).map((b) => b.textContent)).toEqual(["Pick Blessing", "Pick Tino"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Closest" }));
+    expect(screen.getAllByRole("button", { name: /^Pick / }).map((b) => b.textContent)).toEqual(["Pick Tino", "Pick Blessing"]);
   });
 
   it("picking a biker goes to tracking with the buyer's code, kept in this browser, sent on WhatsApp", async () => {

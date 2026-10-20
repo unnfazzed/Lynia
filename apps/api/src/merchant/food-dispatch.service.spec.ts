@@ -99,29 +99,6 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
 /** A strategy that finds nobody — for the paths that never reach it. */
 const NONE: DispatchStrategy = { pickCandidates: async () => [] };
 
-describe("FoodDispatchService.sweepSearch — Preferred riders is retired (Own bikers T9)", () => {
-  it("never reads a business's preferred bikers or ranks one first", async () => {
-    const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
-    const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "rider-1", distanceM: 900 }]) };
-    const { svc } = build(
-      {
-        order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: vi.fn(async () => ({ count: 1 })) },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD }, ownerProfileId: null }) },
-        ownerFleet: { findUnique: async () => null },
-        $queryRaw: async () => [],
-        merchantPreferredRider: preferred,
-        profile: { findMany: async () => [] },
-        orderEvent: { create: async () => ({}) },
-        foodDispatchAttempt: { upsert: vi.fn(async () => ({})) },
-      },
-      strategy,
-    );
-    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.not.objectContaining({ preferredRiderIds: expect.anything() }));
-    expect(preferred.findMany).not.toHaveBeenCalled();
-  });
-});
-
 const one = (riderId: string, distanceM = 800) => [{ riderId, distanceM }];
 const pick = (list: Array<{ riderId: string; distanceM: number; preferred?: boolean }>): DispatchStrategy => ({ pickCandidates: vi.fn(async () => list) });
 

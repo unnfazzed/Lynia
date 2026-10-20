@@ -26,11 +26,13 @@ type Tally = { statementId: string | null; merchantId: string; rides: number; to
  * Rides and totals per (statement, branch) for the ledger rows `filter` picks, summed in the database so a busy
  * fleet is never cut off. A ride counts while it is still billed: one credited back to nothing by a correction in
  * the same set is not a ride (OB-M14: "#B190 was charged, then credited, so Avondale is 15 rides · $22.50 net").
+ * A ride billed at nothing (the commission rate at 0%, or an app order with no delivery fee) still counts: it was
+ * never charged, so nothing credited it away.
  */
 async function tally(prisma: PrismaService, filter: Prisma.Sql): Promise<Tally[]> {
   const rows = await prisma.$queryRaw<Array<{ statement_id: string | null; merchant_id: string; rides: number; total: Prisma.Decimal | string | null }>>`
     SELECT statement_id, merchant_id,
-           COUNT(*) FILTER (WHERE kind <> 'adjustment' AND net > 0)::int AS rides,
+           COUNT(*) FILTER (WHERE kind <> 'adjustment' AND (net > 0 OR (fee = 0 AND net = 0)))::int AS rides,
            SUM(fee) AS total
     FROM (SELECT statement_id, merchant_id, kind, fee,
                  SUM(fee) OVER (PARTITION BY statement_id, COALESCE(order_id, id)) AS net

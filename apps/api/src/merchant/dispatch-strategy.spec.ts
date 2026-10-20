@@ -8,7 +8,6 @@ function build(
   nearby: Array<{ profileId: string; distanceM: number }>,
   busyIds: string[] = [],
   owingDebtIds: string[] = [],
-  ratings: Record<string, number> = {},
 ) {
   const tracking = { nearbyRiders: vi.fn(async () => nearby) } as unknown as TrackingService;
   const prisma = {
@@ -17,80 +16,11 @@ function build(
       findMany: async (args: { where: Record<string, unknown> }) =>
         "OR" in args.where ? owingDebtIds.map((riderId) => ({ riderId })) : busyIds.map((riderId) => ({ riderId })),
     },
-    rider: {
-      findMany: async ({ where }: { where: { profileId: { in: string[] } } }) =>
-        where.profileId.in.map((profileId) => ({ profileId, ratingAvg: ratings[profileId] ?? 0 })),
-    },
   } as unknown as PrismaService;
   return Object.assign(new NearestRiderDispatchStrategy(tracking, prisma), { geo: tracking as unknown as { nearbyRiders: ReturnType<typeof vi.fn> } });
 }
 
 const ids = (list: Array<{ riderId: string }>) => list.map((c) => c.riderId);
-
-describe("NearestRiderDispatchStrategy.pickCandidates — the restaurant's own bikers (merchant web upgrade L3)", () => {
-  const at = { lat: 0, lng: 0, radiusM: 5000, excludeRiderIds: [] as string[], limit: null };
-
-  it("puts one of the restaurant's bikers first when they're within 2 km of the nearest", async () => {
-    const strategy = build([
-      { profileId: "near", distanceM: 300 },
-      { profileId: "mine", distanceM: 2200 },
-    ]);
-    expect(await strategy.pickCandidates({ ...at, preferredRiderIds: ["mine"] })).toEqual([
-      { riderId: "mine", distanceM: 2200, preferred: true },
-      { riderId: "near", distanceM: 300 },
-    ]);
-  });
-
-  it("keeps nearest-first when the restaurant's own is more than 2 km farther (food goes cold)", async () => {
-    const strategy = build([
-      { profileId: "near", distanceM: 300 },
-      { profileId: "mine", distanceM: 2400 },
-    ]);
-    expect(ids(await strategy.pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near", "mine"]);
-  });
-
-  it("never lets preferred bend eligibility: a busy, excluded or owing biker of the restaurant's is left out", async () => {
-    const nearby = [
-      { profileId: "near", distanceM: 300 },
-      { profileId: "mine", distanceM: 800 },
-    ];
-    expect(ids(await build(nearby, ["mine"]).pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near"]);
-    expect(ids(await build(nearby, [], ["mine"]).pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near"]);
-    expect(ids(await build(nearby).pickCandidates({ ...at, excludeRiderIds: ["mine"], preferredRiderIds: ["mine"] }))).toEqual(["near"]);
-    // Not nearby at all (offline, unverified, held: nearbyRiders never returns them) — nothing to prefer.
-    expect(ids(await build([{ profileId: "near", distanceM: 300 }]).pickCandidates({ ...at, preferredRiderIds: ["mine"] }))).toEqual(["near"]);
-  });
-
-  it("orders several of the restaurant's bikers by distance, then rating", async () => {
-    const nearby = [
-      { profileId: "near", distanceM: 200 },
-      { profileId: "a", distanceM: 900 },
-      { profileId: "b", distanceM: 950 },
-      { profileId: "c", distanceM: 1500 },
-    ];
-    // a and b are about as far (same 100 m band): the better-rated goes first.
-    expect(ids(await build(nearby, [], [], { a: 4.2, b: 4.9, c: 5 }).pickCandidates({ ...at, preferredRiderIds: ["a", "b", "c"] }))).toEqual(["b", "a", "c", "near"]);
-    // Otherwise the nearer goes first, whatever the rating.
-    expect(ids(await build(nearby, [], [], { a: 4.2, c: 5 }).pickCandidates({ ...at, preferredRiderIds: ["a", "c"] }))).toEqual(["a", "c", "near", "b"]);
-  });
-
-  it("is exactly nearest-first with no bikers of the restaurant's own", async () => {
-    const strategy = build([
-      { profileId: "near", distanceM: 300 },
-      { profileId: "far", distanceM: 900 },
-    ]);
-    expect(ids(await strategy.pickCandidates({ ...at, preferredRiderIds: [] }))).toEqual(["near", "far"]);
-    expect(ids(await strategy.pickCandidates(at))).toEqual(["near", "far"]);
-  });
-
-  it("caps the list at `limit` after ordering, so the restaurant's own bikers survive the cut", async () => {
-    const nearby = Array.from({ length: 12 }, (_, i) => ({ profileId: `r${i}`, distanceM: 100 + i * 100 }));
-    const top = await build(nearby).pickCandidates({ ...at, preferredRiderIds: ["r11"], limit: 10 });
-    expect(top).toHaveLength(10);
-    expect(top[0]).toEqual({ riderId: "r11", distanceM: 1200, preferred: true });
-    expect(ids(top).slice(1)).toEqual(["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8"]);
-  });
-});
 
 describe("NearestRiderDispatchStrategy.pickCandidates", () => {
   const at = { lat: 0, lng: 0, radiusM: 1000, excludeRiderIds: [] as string[], limit: null };
@@ -128,6 +58,11 @@ describe("NearestRiderDispatchStrategy.pickCandidates", () => {
   it("leaves out a biker owing an open merchant debt / mid-handshake", async () => {
     const strategy = build([{ profileId: "r1", distanceM: 400 }, { profileId: "r2", distanceM: 900 }], [], ["r1"]);
     expect(ids(await strategy.pickCandidates(at))).toEqual(["r2"]);
+  });
+
+  it("caps the list at `limit`, nearest first", async () => {
+    const nearby = Array.from({ length: 12 }, (_, i) => ({ profileId: `r${i}`, distanceM: 100 + i * 100 }));
+    expect(ids(await build(nearby).pickCandidates({ ...at, limit: 10 }))).toEqual(["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9"]);
   });
 
   it("returns nobody when every nearby biker is excluded/busy", async () => {

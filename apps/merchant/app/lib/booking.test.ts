@@ -90,16 +90,16 @@ describe("the delivery code", () => {
   });
 });
 
-describe("orderOffers (L3: the business's own bikers first)", () => {
+describe("orderOffers", () => {
   const rider = (name: string) => ({ name, photoUrl: null, ratingAvg: 4.5, ratingCount: 20, tripsCount: 50 });
 
-  it("lists the business's own biker first when another offer is only cheaper, and a teammate last", () => {
+  it("gives an offer flagged preferred no bonus (Preferred riders is retired), and lists a teammate last", () => {
     const offers = [
       bookingOffer({ id: "cheap", offeredFare: "3.00", etaMinutes: 6, rider: rider("Cheap") }),
       bookingOffer({ id: "mine", offeredFare: "3.80", etaMinutes: 6, rider: rider("Mine"), preferred: true }),
       bookingOffer({ id: "team", offeredFare: "2.50", etaMinutes: 2, rider: rider("Teammate"), ownMember: true }),
     ];
-    expect(orderOffers(offers).map((o) => o.id)).toEqual(["mine", "cheap", "team"]);
+    expect(orderOffers(offers).map((o) => o.id)).toEqual(["cheap", "mine", "team"]);
   });
 
   it("is the plain blend with none of the business's bikers", () => {

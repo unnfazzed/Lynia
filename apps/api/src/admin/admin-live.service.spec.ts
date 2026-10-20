@@ -68,10 +68,14 @@ function build(over: { orders?: unknown[]; riders?: unknown[]; live?: Record<str
         args.where.status ? [{ orderId: "o-quiet", _max: { createdAt: ago(45) } }] : [{ orderId: "o-quiet", _max: { createdAt: ago(30) } }],
       ),
     },
-    rider: { findMany: vi.fn(async () => over.riders ?? []), count: vi.fn(async () => 14) },
+    rider: {
+      findMany: vi.fn(async () => over.riders ?? []),
+      count: vi.fn(async () => 14),
+      // Switched-on fleets with bikers in them: one row per owner.
+      groupBy: vi.fn(async () => [{ fleetOwnerProfileId: "o-1" }, { fleetOwnerProfileId: "o-2" }, { fleetOwnerProfileId: "o-3" }]),
+    },
     sosEvent: { count: vi.fn(async () => 2) },
     merchant: { count: vi.fn(async () => 1) },
-    ownerFleet: { count: vi.fn(async () => 3) },
     // Two fleets past due, one of them with two bills.
     merchantFleetStatement: {
       groupBy: vi.fn(async () => [

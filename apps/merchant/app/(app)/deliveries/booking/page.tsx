@@ -274,16 +274,15 @@ function Offers({ booking, disabled, busy, error, onPick, onCancel }: Ctx) {
         {offers.length === 0 && <div className="m-hint">Waiting for bikers&apos; offers…</div>}
         {offers.map((o, i) => {
           const name = shortName(o.rider.name) ?? o.rider.name;
-          const first = o.preferred || (i === 0 && !o.ownMember && sort === "best" && !offers.some((x) => x.preferred));
+          const first = i === 0 && !o.ownMember && sort === "best";
           const delta = fareDelta(o.offeredFare, booking.proposedFare);
           return (
-            <div key={o.id} className={`m-card m-offer${o.preferred ? " m-pref" : ""}`}>
+            <div key={o.id} className="m-card m-offer">
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span className={`m-av${o.preferred ? " m-av-on" : ""}`}>{name.charAt(0).toUpperCase()}</span>
+                <span className="m-av">{name.charAt(0).toUpperCase()}</span>
                 <div className="m-t" style={{ flex: 1, minWidth: 0 }}>
                   <b style={{ fontSize: 15.5, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     {name}
-                    {o.preferred && <span className="m-pl m-wal">Preferred biker</span>}
                   </b>
                   <span className="m-hint m-num" style={{ fontSize: 13 }}>
                     {o.rider.ratingAvg != null ? `★ ${o.rider.ratingAvg.toFixed(1)} · ` : ""}
