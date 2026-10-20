@@ -79,6 +79,7 @@ import {
   PROOF_READ_URL_TTL_SECONDS,
   proofViews,
 } from "./merchant-order-proof.service";
+import { createOnce, replayFirst } from "../common/idempotency";
 import { MERCHANT_PHOTO_URL_CACHE_TTL_MS, PHOTO_READ_URL_TTL_SECONDS } from "./merchant.service";
 import { MicroCache } from "../common/micro-cache";
 import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
@@ -401,10 +402,9 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException({ reason: "cash_banned", message: "Food orders are cash on delivery, and cash is off for your account. Message LyniaGo on WhatsApp." });
     }
 
-    if (body.idempotencyKey) {
-      const existing = await this.findByIdempotencyKey(customerId, body.idempotencyKey);
-      if (existing) return this.toResponse(existing);
-    }
+    const key = body.idempotencyKey;
+    const existing = await replayFirst(key, () => this.findByIdempotencyKey(customerId, key));
+    if (existing) return this.toResponse(existing);
 
     // D-74 (owner, 2026-10-03): Order flow v2 is cash only (BRIEF §14), and the app has placed only cash
     // since D-48. An install from before then can still offer wallet, so a NEW order paying by wallet is
@@ -537,7 +537,7 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         }
       : { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: new Date(now.getTime() + RESTAURANTS_TIMING.acceptWindowMs) };
 
-    try {
+    {
       const create = (db: Pick<Prisma.TransactionClient, "order">) => db.order.create({
         data: {
           orderType: "merchant",
@@ -587,14 +587,24 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         },
         include: ORDER_WITH_ITEMS_INCLUDE,
       });
-      const created =
-        owed.entries.length === 0
-          ? await create(this.prisma)
-          : await this.prisma.$transaction(async (tx) => {
-              const order = await create(tx);
-              await carryBalance(tx, owed.entries, order.id);
-              return { ...order, carriedBalance: [{ amount: new Prisma.Decimal(owed.amount) }] };
-            });
+      // R-3: the (customer_id, idempotency_key) index is shared with parcel orders (migration 0021). A concurrent
+      // duplicate replays; a parcel order's key reused here is a 409 — it used to surface as a 500, because the
+      // merchant-only re-find found nothing (common/idempotency.ts).
+      const once = await createOnce<OrderWithItems>({
+        key,
+        find: () => this.findByIdempotencyKey(customerId, key),
+        heldElsewhere: async () => (await this.prisma.order.count({ where: { customerId, idempotencyKey: key } })) > 0,
+        create: () =>
+          owed.entries.length === 0
+            ? create(this.prisma)
+            : this.prisma.$transaction(async (tx) => {
+                const order = await create(tx);
+                await carryBalance(tx, owed.entries, order.id);
+                return { ...order, carriedBalance: [{ amount: new Prisma.Decimal(owed.amount) }] };
+              }),
+      });
+      if (!once.created) return this.toResponse(once.row);
+      const created = once.row;
       // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
       if (!slot) this.notifyQueue(merchantId, created.id);
       this.ownerAlerts?.notify(
@@ -613,19 +623,10 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
         }),
       );
       return this.toResponse(created);
-    } catch (err) {
-      // The idempotencyKey pre-check above races a concurrent duplicate submit; the
-      // (customer_id, idempotency_key) partial unique index (shared with parcel orders, migration
-      // 0021) is the real guard, so map its violation to the same replay instead of leaking a 500.
-      if (body.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        const existing = await this.findByIdempotencyKey(customerId, body.idempotencyKey);
-        if (existing) return this.toResponse(existing);
-      }
-      throw err;
     }
   }
 
-  private async findByIdempotencyKey(customerId: string, idempotencyKey: string): Promise<OrderWithItems | null> {
+  private async findByIdempotencyKey(customerId: string, idempotencyKey: string | undefined): Promise<OrderWithItems | null> {
     return this.prisma.order.findFirst({
       where: { customerId, orderType: "merchant", idempotencyKey },
       include: ORDER_WITH_ITEMS_INCLUDE,

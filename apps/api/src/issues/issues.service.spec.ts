@@ -110,6 +110,27 @@ describe("IssuesService.raise", () => {
     expect(res).toMatchObject({ id: "iss-2" });
   });
 
+  it("R-3: a key reused on ANOTHER order is a 409, never that order's issue", async () => {
+    const findFirst = vi.fn(async () => null);
+    const prisma = {
+      order: { findUnique: async () => order },
+      issue: {
+        findFirst,
+        // The opener's key already belongs to an issue on a different order, so the per-opener index refuses it.
+        count: async () => 1,
+        create: async () => {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "5.22.0" });
+        },
+      },
+    };
+    const svc = new IssuesService(prisma as unknown as PrismaService, noNotifications, fakeGateway());
+
+    const body: RaiseIssueRequest = { ...raiseBody, idempotencyKey: "key-used-elsewhere" };
+    await expect(svc.raise("ord-1", body, "rider-1")).rejects.toMatchObject({ response: { statusCode: 409, reason: "idempotency_key_reused" } });
+    // The replay is scoped to this order.
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ orderId: "ord-1" }) }));
+  });
+
   it("BH-22: two different keys (or no key) each create their own issue — no false-positive dedup", async () => {
     let n = 0;
     const create = vi.fn(async () => {

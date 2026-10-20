@@ -17,6 +17,7 @@ import { TrackingService } from "../tracking/tracking.service";
 import { customerSafeCancelReason } from "./cancel-reason";
 import { type BroadcastMeta, buildBoardNewOrderEvent, pickupPoint, publicWaypoint } from "./waypoints";
 import { domainEvents } from "../common/domain-events";
+import { createOnce, replayFirst } from "../common/idempotency";
 import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
 
 const REVEAL = new Set<string>(PHONE_REVEAL_STATUSES);
@@ -233,13 +234,13 @@ export class OrdersService {
     // Idempotent replay (BUG-HUNT): a client-generated key lets a timeout+retry or a double-tap on
     // "Broadcast" return the SAME order instead of opening a second live auction — and double-pushing
     // every nearby rider — for one physical trip. Checked before any other work so a replay is cheap.
-    if (input.idempotencyKey) {
-      const existing = await this.prisma.order.findFirst({
-        where: { customerId, idempotencyKey: input.idempotencyKey },
-        select: CREATE_RESPONSE_SELECT,
-      });
-      if (existing) return this.toCreateResponse(existing, null);
-    }
+    // R-3: scoped to parcel orders — the (customer_id, idempotency_key) index is shared with food orders, and a food
+    // order's key must never replay here as a parcel (common/idempotency.ts).
+    const key = input.idempotencyKey;
+    const findByKey = () =>
+      this.prisma.order.findFirst({ where: { customerId, orderType: "parcel", idempotencyKey: key }, select: CREATE_RESPONSE_SELECT });
+    const existing = await replayFirst(key, findByKey);
+    if (existing) return this.toCreateResponse(existing, null);
 
     // Q1: gate on the service corridor before doing any work — both waypoints must be in coverage.
     assertWithinServiceCorridor(input.pickup.point, input.dropoff.point);
@@ -274,45 +275,40 @@ export class OrdersService {
     const ridersNearby = await this.countNearbyForPickup(input.pickup as unknown as Prisma.JsonValue);
     const windowMs = offerWindowMsForSupply(ridersNearby);
 
-    let order;
-    try {
-      order = await this.prisma.order.create({
-        data: {
-          customerId,
-          orderType: "parcel",
-          pickup: input.pickup as unknown as Prisma.InputJsonValue,
-          dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
-          itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
-          items: items as unknown as Prisma.InputJsonValue,
-          note: input.note ?? null,
-          itemPhotoUrl: input.itemPhotoUrl ?? null,
-          declaredValue: input.declaredValue,
-          distanceKm,
-          suggestedFare,
-          proposedFare: input.proposedFare,
-          // A1-8: record the liability-disclaimer consent on the order (version + timestamp) so it
-          // survives with the order, not just as a client-side flag. Absent for old clients → null.
-          disclaimerVersion: input.disclaimerVersion ?? null,
-          disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
-          idempotencyKey: input.idempotencyKey ?? null,
-          offerWindowEndsAt: new Date(Date.now() + windowMs),
-          status: "open_for_offers",
-          events: { create: { status: "open_for_offers" } },
-        },
-        select: CREATE_RESPONSE_SELECT,
-      });
-    } catch (err) {
-      // A concurrent replay of the same idempotency key raced us and won (P2002 on the partial unique
-      // (customer_id, idempotency_key) index) — return their order instead of a spurious 5xx.
-      if (input.idempotencyKey && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        const winner = await this.prisma.order.findFirst({
-          where: { customerId, idempotencyKey: input.idempotencyKey },
+    const once = await createOnce({
+      key,
+      find: findByKey,
+      heldElsewhere: async () => (await this.prisma.order.count({ where: { customerId, idempotencyKey: key } })) > 0,
+      create: () =>
+        this.prisma.order.create({
+          data: {
+            customerId,
+            orderType: "parcel",
+            pickup: input.pickup as unknown as Prisma.InputJsonValue,
+            dropoff: input.dropoff as unknown as Prisma.InputJsonValue,
+            itemDesc: input.items ? summarizeItems(input.items) : (input.itemDescription ?? ""),
+            items: items as unknown as Prisma.InputJsonValue,
+            note: input.note ?? null,
+            itemPhotoUrl: input.itemPhotoUrl ?? null,
+            declaredValue: input.declaredValue,
+            distanceKm,
+            suggestedFare,
+            proposedFare: input.proposedFare,
+            // A1-8: record the liability-disclaimer consent on the order (version + timestamp) so it
+            // survives with the order, not just as a client-side flag. Absent for old clients → null.
+            disclaimerVersion: input.disclaimerVersion ?? null,
+            disclaimerAcceptedAt: input.disclaimerVersion ? new Date() : null,
+            idempotencyKey: input.idempotencyKey ?? null,
+            offerWindowEndsAt: new Date(Date.now() + windowMs),
+            status: "open_for_offers",
+            events: { create: { status: "open_for_offers" } },
+          },
           select: CREATE_RESPONSE_SELECT,
-        });
-        if (winner) return this.toCreateResponse(winner, null);
-      }
-      throw err;
-    }
+        }),
+    });
+    // A concurrent duplicate of the same key won the index: return its order instead of opening a second auction.
+    if (!once.created) return this.toCreateResponse(once.row, null);
+    const order = once.row;
 
     // Server-side window expiry (ET1). No-op if Redis isn't configured. Fire-and-forget, NOT awaited
     // (F-17): the order row has already committed, and with ioredis `maxRetriesPerRequest: null` a
