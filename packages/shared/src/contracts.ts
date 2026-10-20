@@ -739,7 +739,7 @@ export type ServiceFlagsResponse = z.infer<typeof ServiceFlagsResponse>;
  *  drop them to their defaults. Deliberately NOT strict, so a later switch is an additive key here. */
 export const OrderFlagsResponse = z.object({
   rxEnabled: z.boolean(),
-  /** Own bikers T9 (`PREFERRED_RETIRED`): Preferred riders is gone, so the merchant app hides its row and screen. */
+  /** Own bikers T9: Preferred riders is retired, so this is always true (2026-10-20); installed apps still read it. */
   preferredRetired: z.boolean().optional(),
   /** Own bikers (`FLEET_UI_LIVE`): the `/fleet` routes answer, so the biker app asks `GET /fleet/me`. */
   fleetLive: z.boolean().optional(),

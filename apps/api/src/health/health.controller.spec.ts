@@ -174,7 +174,7 @@ describe("HealthController — app/version-gate soft update (First Run v2 U1/U4,
 
 
 describe("HealthController — app/order-flags", () => {
-  it("Own bikers is live for everyone: fleetLive is always on for installed apps (owner, 2026-10-20, D-117)", () => {
-    expect(controllerWith(okReport).orderFlags()).toMatchObject({ preferredRetired: false, fleetLive: true });
+  it("Own bikers is live for everyone and Preferred riders is retired, for installed apps (owner, 2026-10-20, D-117)", () => {
+    expect(controllerWith(okReport).orderFlags()).toMatchObject({ preferredRetired: true, fleetLive: true });
   });
 });

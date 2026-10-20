@@ -99,71 +99,26 @@ const baseOrder = (over: Record<string, unknown> = {}) => ({
 /** A strategy that finds nobody — for the paths that never reach it. */
 const NONE: DispatchStrategy = { pickCandidates: async () => [] };
 
-describe("FoodDispatchService.sweepSearch — the restaurant's own bikers (merchant web upgrade L3)", () => {
-  function world(preferred: { findMany: () => Promise<Array<{ phone: string }>> }, opts: { fleet?: { enabled: boolean; pausedAt: Date | null } } = {}) {
-    const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "mine", distanceM: 900, preferred: true }]) };
+describe("FoodDispatchService.sweepSearch — Preferred riders is retired (Own bikers T9)", () => {
+  it("never reads a business's preferred bikers or ranks one first", async () => {
+    const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
+    const strategy: DispatchStrategy = { pickCandidates: vi.fn(async () => [{ riderId: "rider-1", distanceM: 900 }]) };
     const { svc } = build(
       {
         order: { findMany: async () => [{ id: orderId }], findUnique: async () => baseOrder(), updateMany: vi.fn(async () => ({ count: 1 })) },
-        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD }, ownerProfileId: opts.fleet ? "owner-1" : null }) },
-        ownerFleet: { findUnique: async () => opts.fleet ?? null },
-        // A fleet's own bikers: none online here, so only the Preferred handling is under test.
+        merchant: { findUnique: async () => ({ location: { point: HARARE_CBD }, ownerProfileId: null }) },
+        ownerFleet: { findUnique: async () => null },
         $queryRaw: async () => [],
         merchantPreferredRider: preferred,
-        profile: {
-          findMany: async () => [
-            { id: "mine", merchantMemberships: [] },
-            // On the restaurant's own team: never its rider (OV-5).
-            { id: "cook", merchantMemberships: [{ merchantId: MERCHANT_ID }] },
-          ],
-        },
+        profile: { findMany: async () => [] },
         orderEvent: { create: async () => ({}) },
         foodDispatchAttempt: { upsert: vi.fn(async () => ({})) },
       },
       strategy,
     );
-    return { svc, strategy };
-  }
-
-  it("hands the strategy the restaurant's bikers, matched by phone, never its own team", async () => {
-    const { svc, strategy } = world({ findMany: async () => [{ phone: "+263771230000" }, { phone: "+263771239999" }] });
     expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: ["mine"] }));
-  });
-
-  // Own bikers T9: Preferred riders is retired by Own bikers.
-  it.each([
-    ["a business with Own bikers", { enabled: true, pausedAt: null }],
-    ["a business whose Own bikers are paused", { enabled: true, pausedAt: new Date() }],
-  ])("skips the preferred-first order for %s, even with PREFERRED_RETIRED unset", async (_label, fleet) => {
-    const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
-    const { svc, strategy } = world(preferred, { fleet });
-    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
+    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.not.objectContaining({ preferredRiderIds: expect.anything() }));
     expect(preferred.findMany).not.toHaveBeenCalled();
-  });
-
-  it("skips it for every business once PREFERRED_RETIRED is on", async () => {
-    vi.stubEnv("PREFERRED_RETIRED", "true");
-    try {
-      const preferred = { findMany: vi.fn(async () => [{ phone: "+263771230000" }]) };
-      const { svc, strategy } = world(preferred);
-      expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-      expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
-      expect(preferred.findMany).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it("carries on nearest-first when the lookup fails", async () => {
-    const { svc, strategy } = world({
-      findMany: async () => {
-        throw new Error("connection reset");
-      },
-    });
-    expect(await svc.sweepSearch()).toEqual({ offered: 1, held: 0 });
-    expect(strategy.pickCandidates).toHaveBeenCalledWith(expect.objectContaining({ preferredRiderIds: [] }));
   });
 });
 

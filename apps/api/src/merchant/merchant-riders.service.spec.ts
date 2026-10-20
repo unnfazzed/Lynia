@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { MerchantAccess } from "./merchant-access";
-import { MerchantRidersService, RIDER_ADD_ACTION, RIDER_REMOVE_ACTION } from "./merchant-riders.service";
+import { MerchantRidersService, PREFERRED_GONE, RIDER_REMOVE_ACTION } from "./merchant-riders.service";
 
 /* ── An in-memory slice of the tables Your riders touches ─────────────────────────────────────── */
 
@@ -162,67 +162,13 @@ describe("MerchantRidersService.list (merchant web upgrade L3)", () => {
   });
 });
 
-describe("MerchantRidersService.add (owner only; the controller's @OwnerOnly)", () => {
-  it("keeps the number in +263 form under the business's label, audit-logged, and answers with its status", async () => {
-    w.people.set("r", w.person({ id: "r", phone: "+263772223333" }));
-
-    const added = await w.svc.add(OWNER, "owner", { label: "Blessing", phone: "0772 223 333" });
-
-    expect(w.rows).toEqual([expect.objectContaining({ merchantId: "m1", phone: "+263772223333", label: "Blessing", addedByProfileId: "owner" })]);
-    expect(added).toMatchObject({ label: "Blessing", status: "on_lyniago", invitePhone: null });
-    expect(w.audit).toEqual([expect.objectContaining({ actor: "owner", action: RIDER_ADD_ACTION, target: "m1", note: added.id })]);
-    // Serialised per business, so two adds at once can't both pass the limits.
-    expect(w.prisma.$executeRaw).toHaveBeenCalled();
-  });
-
-  it("Own bikers T9: adds nobody once PREFERRED_RETIRED is on (410), and the list and Remove still work", async () => {
-    const kept = await w.svc.add(OWNER, "owner", { label: "Blessing", phone: "0772223333" });
-    vi.stubEnv("PREFERRED_RETIRED", "true");
-    try {
-      await expect(w.svc.add(OWNER, "owner", { label: "Tino", phone: "0772224444" })).rejects.toMatchObject({ status: 410, response: { reason: "preferred_retired" } });
-      expect((await w.svc.list(OWNER)).riders).toHaveLength(1);
-      await w.svc.remove(OWNER, "owner", kept.id);
-      expect(w.rows).toHaveLength(0);
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it("refuses a number that isn't a phone number", async () => {
-    await expect(w.svc.add(OWNER, "owner", { label: "X", phone: "12ab" })).rejects.toMatchObject({ status: 400, response: { reason: "bad_phone" } });
-  });
-
-  it("refuses someone on the business's own team (they'd deliver its own jobs)", async () => {
-    w.people.set("cook", w.person({ id: "cook", phone: "+263772223333", merchantMemberships: [{ merchantId: "m1" }] }));
-    await expect(w.svc.add(OWNER, "owner", { label: "Cook", phone: "0772223333" })).rejects.toMatchObject({ status: 409, response: { reason: "team_member" } });
+describe("MerchantRidersService.add — Preferred riders is retired (Own bikers T9)", () => {
+  it("adds nobody (410), and the list and Remove still work", async () => {
+    keep("+263772223333", "Blessing");
+    expect(() => w.svc.add()).toThrow(expect.objectContaining({ status: 410, response: { reason: "preferred_retired", message: PREFERRED_GONE } }));
+    expect((await w.svc.list(OWNER)).riders).toHaveLength(1);
+    await w.svc.remove(OWNER, "owner", w.rows[0]!.id);
     expect(w.rows).toHaveLength(0);
-  });
-
-  it("keeps at most 20", async () => {
-    for (let i = 0; i < 20; i++) keep(`+2637710100${String(i).padStart(2, "0")}`, `R${i}`);
-    await expect(w.svc.add(OWNER, "owner", { label: "One more", phone: "0772223333" })).rejects.toMatchObject({
-      status: 409,
-      response: { reason: "cap_reached", message: "You can keep up to 20 bikers. Remove one to add another." },
-    });
-  });
-
-  it("adds at most 10 a day, removals don't give adds back", async () => {
-    for (let i = 0; i < 10; i++) {
-      const r = await w.svc.add(OWNER, "owner", { label: `R${i}`, phone: `07710100${String(i).padStart(2, "0")}` });
-      if (i < 5) await w.svc.remove(OWNER, "owner", r.id);
-    }
-    await expect(w.svc.add(OWNER, "owner", { label: "Eleventh", phone: "0772223333" })).rejects.toMatchObject({
-      status: 429,
-      response: { reason: "too_many_adds" },
-    });
-  });
-
-  it("says so when the number is already on the list", async () => {
-    await w.svc.add(OWNER, "owner", { label: "Blessing", phone: "0772223333" });
-    await expect(w.svc.add(OWNER, "owner", { label: "Again", phone: "+263 77 222 3333" })).rejects.toMatchObject({
-      status: 409,
-      response: { reason: "already_added" },
-    });
   });
 });
 

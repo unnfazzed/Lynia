@@ -1,26 +1,22 @@
-import { BadRequestException, ConflictException, GoneException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
+import { GoneException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
-  type AddMerchantRiderRequest,
   MERCHANT_PREFERRED_RIDER_CAP,
-  MERCHANT_PREFERRED_RIDER_DAILY_ADDS,
   type MerchantPreferredRiderResponse,
   type MerchantRiderStatus,
   type MerchantRidersResponse,
-  normalizePhone,
 } from "@lynia/shared";
 import { maskPhone } from "../common/phone-mask";
-import { preferredRetired } from "../common/preferred-retired";
 import { PrismaService } from "../prisma/prisma.service";
 import { findBookingAccountId } from "./booking-account";
 import type { MerchantAccess } from "./merchant-access";
-import { PREFERRED_RETIRED_NOTE } from "./preferred-retirement.service";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** What a request to add a preferred biker is told now that Preferred riders is gone. */
+export const PREFERRED_GONE = "Preferred riders is gone. Invite your own bikers from Own bikers.";
 /** D-48 E4: a rider reads Online only while their app still heartbeats (matching's own TTL is 60s;
  *  this allows a couple of missed beats on a slow network). */
 const ONLINE_FRESH_MS = 3 * 60_000;
-/** The audit actions this list writes; the daily add limit counts the first. */
+/** The audit actions this list wrote (adds stopped when Preferred riders was retired); admin's audit log still reads both. */
 export const RIDER_ADD_ACTION = "merchant.rider.add";
 export const RIDER_REMOVE_ACTION = "merchant.rider.remove";
 
@@ -93,56 +89,10 @@ export class MerchantRidersService {
     };
   }
 
-  async add(access: MerchantAccess, profileId: string, body: AddMerchantRiderRequest): Promise<MerchantPreferredRiderResponse> {
-    // Own bikers T9: Preferred riders is retired once PREFERRED_RETIRED is on. The list and Remove keep working
-    // (the data stays for a rollback); nobody new is added.
-    if (preferredRetired()) {
-      throw new GoneException({ reason: "preferred_retired", message: PREFERRED_RETIRED_NOTE.body });
-    }
-    const phone = normalizePhone(body.phone);
-    if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the number the biker signs in with, like 0771234567." });
-    const onTeam = await this.prisma.merchantMember.count({ where: { merchantId: access.merchantId, profile: { phone } } });
-    if (onTeam > 0) {
-      throw new ConflictException({ reason: "team_member", message: "That number is on your team, so it can't be one of your bikers." });
-    }
-
-    let id: string;
-    try {
-      id = await this.prisma.$transaction(async (tx) => {
-        // One add at a time per business, so two at once can't both slip under the cap or the daily limit.
-        await tx.$executeRaw`SELECT 1 FROM merchants WHERE id = ${access.merchantId}::uuid FOR UPDATE`;
-        const kept = await tx.merchantPreferredRider.count({ where: { merchantId: access.merchantId } });
-        if (kept >= MERCHANT_PREFERRED_RIDER_CAP) {
-          throw new ConflictException({
-            reason: "cap_reached",
-            message: `You can keep up to ${MERCHANT_PREFERRED_RIDER_CAP} bikers. Remove one to add another.`,
-          });
-        }
-        const addedToday = await tx.auditLog.count({
-          where: { action: RIDER_ADD_ACTION, target: access.merchantId, createdAt: { gte: new Date(Date.now() - DAY_MS) } },
-        });
-        if (addedToday >= MERCHANT_PREFERRED_RIDER_DAILY_ADDS) {
-          throw new HttpException(
-            { statusCode: 429, reason: "too_many_adds", message: `You've added ${MERCHANT_PREFERRED_RIDER_DAILY_ADDS} bikers today. Add more tomorrow.` },
-            429,
-          );
-        }
-        const row = await tx.merchantPreferredRider.create({
-          data: { merchantId: access.merchantId, phone, label: body.label, addedByProfileId: profileId },
-          select: { id: true },
-        });
-        await tx.auditLog.create({ data: { actor: profileId, action: RIDER_ADD_ACTION, target: access.merchantId, note: row.id } });
-        return row.id;
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException({ reason: "already_added", message: "That number is already one of your bikers." });
-      }
-      throw err;
-    }
-    const added = (await this.list(access)).riders.find((r) => r.id === id);
-    if (!added) throw new NotFoundException("Biker not found");
-    return added;
+  /** Own bikers T9: Preferred riders is retired (owner, 2026-10-20). The list and Remove keep working until the data
+   *  is deleted (TODOS.md); nobody new is added. */
+  add(): never {
+    throw new GoneException({ reason: "preferred_retired", message: PREFERRED_GONE });
   }
 
   async remove(access: MerchantAccess, profileId: string, id: string): Promise<{ ok: true }> {

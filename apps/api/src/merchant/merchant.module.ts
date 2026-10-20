@@ -1,6 +1,5 @@
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { AdminFleetsController } from "./admin-fleets.controller";
-import { PreferredRetirementService } from "./preferred-retirement.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
@@ -116,8 +115,6 @@ import { PrescriptionService } from "./prescription.service";
     FleetDispatchService,
     FleetLedgerService,
     FleetAdminService,
-    // T9: the one-time "Preferred riders is gone" note once PREFERRED_RETIRED is on.
-    PreferredRetirementService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     ShopsEnabledGuard,

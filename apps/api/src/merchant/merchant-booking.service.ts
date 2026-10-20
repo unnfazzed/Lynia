@@ -40,8 +40,6 @@ import { bookingFleetFee } from "./fleet-candidates";
 import { FleetDispatchService, fleetSearchEndsAt } from "./fleet-dispatch.service";
 import { resolveMapLink } from "./map-link-resolver";
 import type { MerchantAccess } from "./merchant-access";
-import { preferredRetired } from "../common/preferred-retired";
-import { preferredRiderIds } from "./preferred-riders";
 
 /** A business cancels only before pickup (design doc L2: after pickup the goods are with the rider). Own bikers
  *  (D-117): a "My bikers" booking still ringing is cancelled the same way (OB-M9 "Cancel"). */
@@ -503,14 +501,11 @@ export class MerchantBookingService {
 
   /** Pending offers, read through Send's own ownership- and block-gated list, marked for the business. */
   private async offersFor(merchantId: string, orderId: string, accountId: string): Promise<MerchantBookingOffer[]> {
-    const [offers, members, preferred] = await Promise.all([
+    const [offers, members] = await Promise.all([
       this.offers.listForOrder(orderId, accountId),
       this.prisma.merchantMember.findMany({ where: { merchantId }, select: { profileId: true } }),
-      // Preferred riders is retired by Own bikers (T9): once PREFERRED_RETIRED is on, no offer is marked.
-      preferredRetired() ? Promise.resolve<string[]>([]) : preferredRiderIds(this.prisma, merchantId),
     ]);
     const memberIds = new Set(members.map((m) => m.profileId));
-    const preferredIds = new Set(preferred);
     return offers.map((o) => ({
       id: o.id,
       type: o.type,
@@ -523,8 +518,8 @@ export class MerchantBookingService {
         ratingCount: o.rider.ratingCount,
         tripsCount: o.rider.tripsCount,
       },
-      // L3 ("Your riders"): the business's own riders carry a "Your rider" tag and rank first.
-      preferred: preferredIds.has(o.rider.profileId),
+      // Preferred riders is retired (Own bikers T9), so no offer carries the "Your rider" tag.
+      preferred: false,
       ownMember: memberIds.has(o.rider.profileId),
     }));
   }

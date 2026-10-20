@@ -91,8 +91,9 @@ export class HealthController {
   orderFlags(): OrderFlagsResponse {
     return {
       rxEnabled: this.env.RX_ENABLED === "true",
-      preferredRetired: this.env.PREFERRED_RETIRED === "true",
-      // Own bikers is live for everyone (owner, 2026-10-20); installed apps still read this.
+      // Own bikers is live for everyone and Preferred riders is retired (owner, 2026-10-20); installed apps still
+      // read both.
+      preferredRetired: true,
       fleetLive: true,
     };
   }

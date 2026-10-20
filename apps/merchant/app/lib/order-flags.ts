@@ -9,8 +9,6 @@ import { getOrderFlags } from "./orders-api";
  * - `rxEnabled` (Order flow v2, BRIEF §13, ledger D-59): prescriptions are behind a server flag, on by default
  *   since D-76 (its kill switch can turn it off). Every Rx control (the dish's "Prescription needed", the team's
  *   pharmacist switch) renders only once the server says it is on — fail-safe off, so a failed read hides them.
- * - `preferredRetired` (Own bikers T9, `PREFERRED_RETIRED`): Preferred riders is gone, so its Account row and
- *   screen go. Fail-safe off as well: a failed read keeps the row, which the API still serves until the switch.
  */
 let cached: Promise<OrderFlagsResponse | null> | null = null;
 
@@ -38,14 +36,9 @@ function useOrderFlag(pick: (f: OrderFlagsResponse) => boolean, enabled: boolean
 }
 
 const rx = (f: OrderFlagsResponse) => f.rxEnabled === true;
-const retired = (f: OrderFlagsResponse) => f.preferredRetired === true;
 
 export function useRxEnabled(enabled = true): boolean {
   return useOrderFlag(rx, enabled);
-}
-
-export function usePreferredRetired(enabled = true): boolean {
-  return useOrderFlag(retired, enabled);
 }
 
 /** Tests: forget the page-load read. */

@@ -2112,8 +2112,12 @@ the handoff wins for screens and copy, and these product changes apply:
    - **Invite links:** `lyniago.com/j/<code>` now answers (it served the 404 page): the website Worker sends every
      device to the plain Play listing. Joining never needed the link (the invite is bound to the biker's number);
      opening straight into the app (Android App Links) is not built.
-   - **Not changed:** `PREFERRED_RETIRED` stays as it is. With every business on Own bikers, Preferred is already
-     skipped in dispatch and replaced on Account; flipping it would also send the one-time retirement note.
+   - **Preferred riders retired, with no message (owner, 2026-10-20: "just retire preferred riders .. no need for
+     messages to merchants"):** the `PREFERRED_RETIRED` flag and `PreferredRetirementService` (the one-time note) are
+     gone. Dispatch and the booking's offer list never read preferred riders; `POST /merchant/riders` is always 410;
+     the merchant app's Preferred bikers row and screen are gone (`/riders` lands on Account). `/app/order-flags`
+     still answers `preferredRetired: true` for installed apps. The data stays until "Delete the Preferred riders
+     code" (TODOS.md).
 
 ## Eng Implementation Tasks
 Synthesized from this review's findings. These supersede the CEO T1–T13 estimates where they conflict.

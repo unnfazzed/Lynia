@@ -11,9 +11,8 @@ const state = vi.hoisted(() => ({
   branches: [] as unknown[],
   invites: [] as unknown[],
   replace: vi.fn(),
-  // Own bikers (OB-M1): the roster read, and whether Preferred riders is retired.
+  // Own bikers (OB-M1): the roster read.
   fleet: null as unknown,
-  retired: false,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: state.replace, push: vi.fn() }) }));
 vi.mock("../../lib/business", () => ({ useBusiness: () => state.business, clearBusinessCache: vi.fn() }));
@@ -24,14 +23,12 @@ vi.mock("../../lib/team-api", () => ({
   listMyInvites: vi.fn(async () => ({ invites: state.invites })),
   noBusinessPath: vi.fn(async () => (state.invites.length > 0 ? "/join" : "/onboarding")),
 }));
-vi.mock("../../lib/riders-api", () => ({ listRiders: vi.fn(async () => ({ riders: [{}, {}, {}, {}], cap: 20 })) }));
 vi.mock("../../lib/fleet-api", () => ({
   getFleet: vi.fn(async () => {
     if (!state.fleet) throw new Error("Own bikers isn't live yet");
     return state.fleet;
   }),
 }));
-vi.mock("../../lib/order-flags", () => ({ usePreferredRetired: () => state.retired }));
 const signOut = vi.fn();
 vi.mock("../../components/KitchenConnectionProvider", () => ({ useKitchenConnection: () => ({ signOut }) }));
 vi.mock("../../lib/config", () => ({ supportWhatsAppUrl: (text?: string) => `https://wa.me/263770000000${text ? `?text=${encodeURIComponent(text)}` : ""}` }));
@@ -42,7 +39,6 @@ afterEach(() => {
   vi.clearAllMocks();
   state.invites = [];
   state.fleet = null;
-  state.retired = false;
 });
 
 const ALL_DAY = { open: "08:00", close: "22:00" };
@@ -69,7 +65,6 @@ describe("T3 · Account (Merchant v2, D-77)", () => {
     expect(screen.getByRole("link", { name: /Opening hours/ }).textContent).toContain("08:00–22:00");
     expect(screen.getByRole("link", { name: /Taking orders/ }).textContent).toContain("Auto-accept off");
     expect((await screen.findByText("1 invite open")).closest("a")?.getAttribute("href")).toBe("/team");
-    expect((await screen.findByText("4")).closest("a")?.getAttribute("href")).toBe("/riders");
   });
 
   it("staff see neither the shop front nor Team; Sign out is the red pill behind the confirm sheet", async () => {
@@ -148,13 +143,8 @@ describe("OB-M1 · the Own bikers row (own-bikers-v1, D-117)", () => {
     expect(screen.queryByText(/invite open/)).toBeNull();
   });
 
-  it("without a fleet the row is gone; Preferred riders stays until it is retired", async () => {
+  it("when the fleet read fails the row is gone, and Preferred riders (retired) never shows", async () => {
     state.business = merchantProfile({ myRole: "owner", hours: WEEK });
-    show();
-    expect((await screen.findByRole("link", { name: /Preferred bikers/ })).getAttribute("href")).toBe("/riders");
-    expect(screen.queryByRole("link", { name: /Own bikers/ })).toBeNull();
-    cleanup();
-    state.retired = true;
     show();
     // Let the fleet read settle (it refuses: no fleet), so the row's absence isn't just the read still running.
     await vi.waitFor(() => expect(getFleet).toHaveBeenCalled());

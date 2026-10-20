@@ -25,7 +25,6 @@ import { NearestRiderDispatchStrategy } from "./dispatch-strategy";
 import { bookingFleetFee, marketplaceFleetFee } from "./fleet-candidates";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FoodDispatchService } from "./food-dispatch.service";
-import { PREFERRED_RETIRED_NOTE, PreferredRetirementService } from "./preferred-retirement.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
 import { FleetService } from "./fleet.service";
@@ -1055,29 +1054,5 @@ describe("T9 the business's own app orders", () => {
     // The parcel cancel route refuses a restaurant order outright: it is never turned into a ringing booking.
     await expect(lifecycle.cancel(orderId, own)).rejects.toThrow();
     expect(await row(orderId)).toEqual({ status: "assigned", riderId: own, fleetMerchantId: f.branchId, fleetFee: expect.anything() });
-  });
-});
-
-describe("T9 retiring Preferred riders", () => {
-  const notes = new PreferredRetirementService(prisma, notifications as unknown as NotificationsService);
-
-  it("once PREFERRED_RETIRED is on, each business that kept preferred riders tells its owners, once", async () => {
-    const f = await fleetOwner();
-    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230000", label: "Blessing", addedByProfileId: f.ownerId } });
-    await prisma.merchantPreferredRider.create({ data: { merchantId: f.branchId, phone: "+263771230001", label: "Tino", addedByProfileId: f.ownerId } });
-    await fleetOwner(); // kept none: not told
-
-    expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 }); // the flag is off
-    vi.stubEnv("PREFERRED_RETIRED", "true");
-    try {
-      expect(await notes.sendNotes()).toEqual({ businesses: 1, owners: 1 });
-      expect(notifications.notifyProfiles).toHaveBeenCalledWith([f.ownerId], expect.objectContaining({ title: PREFERRED_RETIRED_NOTE.title }));
-      expect(await notes.sendNotes()).toEqual({ businesses: 0, owners: 0 });
-      expect(notifications.notifyProfiles).toHaveBeenCalledTimes(1);
-      // The list stays (rollback is unsetting the flag).
-      expect(await prisma.merchantPreferredRider.count({ where: { merchantId: f.branchId } })).toBe(2);
-    } finally {
-      vi.unstubAllEnvs();
-    }
   });
 });

@@ -389,12 +389,12 @@ describe("the Deliveries list and a booking's detail", () => {
     ]);
   });
 
-  it("marks an offer from one of the business's own bikers (L3), matched by the number they sign in with", async () => {
+  it("Preferred riders is retired: a biker the business once kept is no longer marked", async () => {
     const booking = await w.svc.create(OWNER, "owner", form());
-    w.preferredRiders.push({ merchantId: "m1", phone: "+263774440000" }, { merchantId: "other", phone: "+263771113333" });
+    w.preferredRiders.push({ merchantId: "m1", phone: "+263774440000" });
     w.offers.push({ id: "offer-1", orderId: booking.id, riderId: "rider-1", status: "pending" });
     const detail = await w.svc.detail(OWNER, booking.id);
-    expect(detail.offers.map((o) => [o.rider.name, o.preferred])).toEqual([["Farai Chari", true]]);
+    expect(detail.offers.map((o) => [o.rider.name, o.preferred])).toEqual([["Farai Chari", false]]);
   });
 
   it("a biker's cancel shows as the cancelled booking pointing at Send's re-broadcast, which keeps the booker", async () => {
