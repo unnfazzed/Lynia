@@ -1,203 +1,29 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  type OnModuleDestroy,
-  type OnModuleInit,
-  Optional,
-  ServiceUnavailableException,
-} from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import {
-  addMoney,
-  DEFAULT_COUNTRY_CODE,
-  categoryServedNow,
-  isInServiceArea,
-  serviceTownsLabel,
-  DELIVERY_OTP_MAX_ATTEMPTS,
-  HANDOVER_CODE_MAX_REISSUES,
-  deliveryFeeForDistance,
-  deriveMerchantOrderTrack,
-  foodOrderMoney,
-  merchantDeliveryShareAtPlacement,
-  recomputeMerchantDeliveryShare,
-  type EditMerchantOrderItemsRequest,
-  merchantGoodsForSubtotal,
-  merchantAmountDueUsd,
-  orderShortId,
-  effectiveMerchantHours,
-  isMerchantOpenNow,
-  type LatLng,
-  type MerchantHours,
-  nextOpenDescription,
-  RESTAURANTS_AUTO_ACCEPT,
-  fromCents,
-  haversineKm,
-  BUSY_MODE_EXTRA_MIN,
-  type MerchantAcceptOrderRequest,
-  type MerchantConfirmPaymentRequest,
-  type MerchantOrderItemView,
-  type MerchantOrderResponse,
-  type LyniaCancelReason,
-  type MerchantRejectionReasonCode,
-  type PaymentPromptRail,
-  type PlaceMerchantOrderRequest,
-  rejectionCopy,
-  RESTAURANTS_DEBT,
-  RESTAURANTS_TIMING,
-  roundToCents,
-  smallOrderFeeForSubtotal,
-  toCents,
-  type Waypoint,
-  type CustomerBalanceResponse,
-  type FoodOfferResponse,
-  type MerchantOrderPrescriptionView,
-  type RxDeclineReason,
-  type HandoverFallbackResponse,
-  type HandoverLinkInfoResponse,
-} from "@lynia/shared";
+import { ConflictException, Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
+import { deriveMerchantOrderTrack, RESTAURANTS_TIMING } from "@lynia/shared";
 import { PAYMENT_RAIL, type PaymentRail } from "../adapters/payments/payment-rail.interface";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { TokenService } from "../auth/token.service";
-import { openHandoverCode, sealHandoverCode } from "../common/handover-code";
-import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
-import { pushCopy, PUSH_C, PUSH_C_STILL_WAITING } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { FoodDebtService } from "./food-debt.service";
-import { confirmKitchen, editOrderItems } from "./food-order-ops";
-import { harareWallClock } from "./harare-clock";
-import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, isDishOutOfStock, notifyFoodQueueChanged, resolveOwnMerchantId } from "./merchant-lookup.util";
-import {
-  PROOF_PHOTO_URL_CACHE_TTL_MS,
-  PROOF_READ_URL_TTL_SECONDS,
-  proofViews,
-} from "./merchant-order-proof.service";
-import { createOnce, replayFirst } from "../common/idempotency";
-import { MERCHANT_PHOTO_URL_CACHE_TTL_MS, PHOTO_READ_URL_TTL_SECONDS } from "./merchant.service";
+import { notifyFoodQueueChanged } from "./merchant-lookup.util";
 import { MicroCache } from "../common/micro-cache";
 import { MicroCacheL2Provider } from "../common/micro-cache-l2.provider";
 import { MetricsService } from "../observability/metrics.service";
-import { OrderSubstitutionService, SUBSTITUTION_ROUND_INCLUDE, toSubstitutionRoundView } from "./order-substitution.service";
+import { OrderSubstitutionService } from "./order-substitution.service";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
-import { carryBalance, customerBalance, openBalance } from "./customer-balance";
 import { OrderScheduleService } from "./order-schedule.service";
 import { PrescriptionService } from "./prescription.service";
-import { venueNoteOf } from "./venue-note";
-import { cancelAttribution } from "../common/cancel-attribution";
-import { domainEvents } from "../common/domain-events";
-import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
+import { OwnerAlertsService } from "../owner-alerts/owner-alerts.service";
+import { FoodOrderPlacing } from "./food-order.placing";
+import { FoodOrderLifecycle } from "./food-order.lifecycle";
+import { FoodOrderViews } from "./food-order.views";
 
-// D-24 manual rail: the customer needs the shop's OWN payment-receiving number to send mobile
-// money to (never masked — D-17's masking is for a THIRD PARTY's view of the merchant, e.g. a
-// rider's navigation card; the customer paying their own order needs the real number, exactly as
-// the design source shows it — packages/design/RESTAURANTS-DECISIONS.md D-24). Falls back to the
-// merchant account's own registered phone when no pickup-point contactPhone is set yet (toResponse).
-/** Merchant v2 K3 (D-77): "+5 min" adds this much prep, up to the cap. */
-export const PREP_EXTEND_MIN = 5;
-/** Merchant v2 (D-77): how long a hand-over fallback link lives. Long enough to send it and walk to the counter. */
-export const HANDOVER_LINK_TTL_S = 15 * 60;
-export const PREP_MAX_MIN = 120;
 
-const ORDER_WITH_ITEMS_INCLUDE = {
-  merchantItems: true,
-  merchant: {
-    select: {
-      location: true,
-      showPhoneToCustomers: true,
-      ownerProfile: { select: { phone: true } },
-      // Order flow v2 (D-59): the venue block (header, receipt "From", per-service copy).
-      name: true,
-      businessType: true,
-      shopKind: true,
-    },
-  },
-  // Order flow v2 (D-59): the latest substitution round (BRIEF §8) and the customer's venue rating (§11).
-  substitutionRounds: { orderBy: { createdAt: "desc" }, take: 1, include: SUBSTITUTION_ROUND_INCLUDE },
-  venueRating: { select: { score: true, tags: true, createdAt: true } },
-  // Order flow v2 (ledger D-59, backend B): the scheduled slot, the prescription, and the D3f owed balance
-  // (what this order left owed, and what earlier balance it carries).
-  schedule: true,
-  prescription: true,
-  owedBalance: { select: { amount: true } },
-  carriedBalance: { select: { amount: true } },
-  // Merchant v2 (ledger D-77): the customer's first name, for the merchant's own view only (forMerchant).
-  customer: { select: { firstName: true } },
-  // #671: the assigned rider's public identity for the food live tracker's "rider secured" card.
-  // Name lives on the Profile, everything else (plate=bike_reg, vehicle, rating, trips, KYC, photo)
-  // on the Rider. Null until dispatch assigns a rider — toResponse omits the whole block then.
-  rider: {
-    select: {
-      profileId: true,
-      bikeReg: true,
-      vehicleInfo: true,
-      ratingAvg: true,
-      ratingCount: true,
-      tripsCount: true,
-      kycStatus: true,
-      photoUrl: true,
-      // `phone` is read only by forMerchant (Merchant v2's call button, D-77); toResponse never maps it.
-      profile: { select: { firstName: true, lastName: true, phone: true } },
-    },
-  },
-} satisfies Prisma.OrderInclude;
-type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof ORDER_WITH_ITEMS_INCLUDE }>;
-
-/** No env injected (hand-built unit harnesses): both shop sections read as off. */
-const SECTIONS_OFF = { SHOPS_ENABLED: "false", PHARMACY_ENABLED: "false" } as const;
-
-/** D-48: the statuses after the rider has the food — when the merchant may close its side. */
-const AFTER_PICKUP_STATUSES: ReadonlySet<string> = new Set(["picked_up", "en_route_dropoff", "delivered", "completed", "undelivered"]);
-/** The reasons a venue itself turned the order down (G3a "{v} couldn’t take your order"). */
-/** A merchant's reason, or one only the server stamps (U33: N-18's `item_approval_expired`). */
-type StampedRejectionReason = MerchantRejectionReasonCode | LyniaCancelReason;
-
-const VENUE_DECLINED: ReadonlySet<string> = new Set(["out_of_ingredient", "out_of_stock", "too_busy", "closing_soon", "shop_closed", "ran_out", "kitchen_problem", "other"]);
-
-/** E2 listQueue visibility — see the doc comment on the call site. */
-const QUEUE_VISIBLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup"] as const;
-
-/** Sum of `priceUsd * quantity` across lines, exact (integer cents), never float accumulation error. */
-/** The pre-pickup statuses a rider holds an order in (assigned → confirmed → en route to the counter). */
-const RIDER_PRE_PICKUP_STATUSES = ["assigned", "confirmed", "en_route_pickup"] as const;
-
-/** LB-1 (E2E 2026-10-05): the CAS filter a pickup-code reveal may rotate under, or null when the order
- *  is in neither reveal window (see `revealPickupCode`). */
-export function pickupRevealWhere(
-  order: Pick<OrderWithItems, "status" | "merchantPhase" | "riderId" | "pickupCodeHash">,
-): Prisma.OrderWhereInput | null {
-  if (order.merchantPhase === "ready_for_pickup") return { merchantPhase: "ready_for_pickup" };
-  const riderHolds = (RIDER_PRE_PICKUP_STATUSES as readonly string[]).includes(order.status);
-  if (riderHolds && order.merchantPhase === null && order.riderId && order.pickupCodeHash) {
-    return { status: order.status, riderId: order.riderId, merchantPhase: null, pickupCodeHash: { not: null } };
-  }
-  return null;
-}
-
-/** U11: the D-34 no-rider hold: the food is ready, dispatch stopped after its last round, no rider has it. */
-export function noRiderHeld(order: Pick<OrderWithItems, "status" | "merchantPhase" | "noRiderHoldAt" | "riderId">): boolean {
-  return order.status === "requested" && order.merchantPhase === "ready_for_pickup" && order.noRiderHoldAt != null && order.riderId == null;
-}
-
-/** MJ-RM1: the kitchen phase a cooking order moves to when its food is ready: `ready_for_pickup` while
- *  dispatch is still looking (requested / a live round), null once a rider holds it (the hand-off out of
- *  the merchant-phase machine). Undefined for any other status: nothing to mark ready. */
-export function readyPhaseFor(status: string): "ready_for_pickup" | null | undefined {
-  if (status === "requested" || status === "open_for_offers") return "ready_for_pickup";
-  if ((RIDER_PRE_PICKUP_STATUSES as readonly string[]).includes(status)) return null;
-  return undefined;
-}
-
-function lineTotal(priceUsd: Prisma.Decimal | number, quantity: number): number {
-  return fromCents(toCents(Number(priceUsd)) * quantity);
-}
+export { PREP_EXTEND_MIN, HANDOVER_LINK_TTL_S, PREP_MAX_MIN, pickupRevealWhere, noRiderHeld, readyPhaseFor } from "./food-order.helpers";
 
 /**
  * C2 — food order lifecycle (pre-dispatch). Owns the `requested` phase of a merchant order end to
@@ -210,7 +36,7 @@ function lineTotal(priceUsd: Prisma.Decimal | number, quantity: number): number 
  */
 @Injectable()
 export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(FoodOrderService.name);
+  readonly logger = new Logger(FoodOrderService.name);
   private sweep?: ReturnType<typeof setInterval>;
 
   // C4 (MJ-P3 + P03): read-URL micro-caches for the single-order reads, keyed by OBJECT KEY — the
@@ -222,37 +48,43 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
   // retaken photo has a new uuid key, so it never inherits the old photo's URL. L2 prefixes match the
   // sibling caches on purpose — same key, same signed TTL — so the parcel snapshot, the menu and this
   // read hand a phone one URL per photo when the shared Redis L2 is on.
-  private readonly proofPhotoUrlCache = new MicroCache<string>(500, {
+  readonly proofPhotoUrlCache = new MicroCache<string>(500, {
     ttlJitterRatio: 0.1,
     onEvent: (o) => this.metricsSvc?.recordMicroCache("proof_photo_url", o),
     l2: () => this.l2?.resolve() ?? null,
     l2KeyPrefix: "mc:photo:",
   });
-  private readonly swapPhotoUrlCache = new MicroCache<string>(500, {
+  readonly swapPhotoUrlCache = new MicroCache<string>(500, {
     ttlJitterRatio: 0.1,
     onEvent: (o) => this.metricsSvc?.recordMicroCache("swap_photo_url", o),
     l2: () => this.l2?.resolve() ?? null,
     l2KeyPrefix: "mc:mphoto:",
   });
+  // R-6 (QA 2026-10-20): the methods live in three parts — placing (the customer's side up to the kitchen),
+  // lifecycle (the kitchen, the biker and the sweeps) and views (reads, the response shape, lookups, pushes).
+  // This class keeps the state and the Nest hooks and delegates, so every caller and spec is unchanged.
+  private readonly placing = new FoodOrderPlacing(this);
+  private readonly lifecycle = new FoodOrderLifecycle(this);
+  private readonly views = new FoodOrderViews(this);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly tokens: TokenService,
-    private readonly notifications: NotificationsService,
-    private readonly debt: FoodDebtService,
-    private readonly gateway: TrackingGateway,
+    readonly prisma: PrismaService,
+    readonly tokens: TokenService,
+    readonly notifications: NotificationsService,
+    readonly debt: FoodDebtService,
+    readonly gateway: TrackingGateway,
     // #670: the mobile-money rail seam (roadmap 2.5). Default binding is the inert StubPaymentRail —
     // it returns `pending` and never fabricates a `confirmed`, so wiring it here can never mark an
     // order paid without a real rail. The idempotency anchor is the order id (topUpId param).
-    @Inject(PAYMENT_RAIL) private readonly paymentRail: PaymentRail,
+    @Inject(PAYMENT_RAIL) readonly paymentRail: PaymentRail,
     // Order flow v2 (D-59). @Optional so the existing positional unit harnesses keep constructing the
     // service; Nest always injects both in production (StorageModule is @Global).
-    @Optional() private readonly substitutions?: OrderSubstitutionService,
-    @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
+    @Optional() readonly substitutions?: OrderSubstitutionService,
+    @Optional() @Inject(STORAGE) readonly storage?: StorageAdapter,
     // Order flow v2 (ledger D-59, backend B). Optional so the hand-built unit harnesses stay valid: without an env the
     // shop sections and RX_ENABLED read as off; without the two services, a placement that needs them
     // (a scheduled or prescription order) is refused.
-    @Optional() @Inject(ENV) private readonly env?: Env,
+    @Optional() @Inject(ENV) readonly env?: Env,
     @Optional() private readonly schedule?: OrderScheduleService,
     @Optional() private readonly prescriptions?: PrescriptionService,
     // C4: the photo-URL caches' metrics and shared L2 — both @Global-provided, optional like the rest.
@@ -260,51 +92,32 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly l2?: MicroCacheL2Provider,
     // D2 (owner 2026-10-07): seals the pickup code next to its hash so a reveal is repeatable. @Global in
     // the app; optional only for the positional unit harnesses (without it a row is hash-only, pre-D2).
-    @Optional() private readonly codeCrypto?: PiiCryptoService,
+    @Optional() readonly codeCrypto?: PiiCryptoService,
     // The owner's new-order alert. @Global (OwnerAlertsModule); optional like the rest.
-    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
+    @Optional() readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
-  /** The MICRO_CACHE_DISABLED kill-switch plus "TTL 0 disables it" — OrdersService.microCacheBypassed. */
-  private microCacheBypassed(ttlMs: number): boolean {
-    return this.env?.MICRO_CACHE_DISABLED === "true" || ttlMs <= 0;
+  microCacheBypassed(...args: Parameters<FoodOrderViews["microCacheBypassed"]>): ReturnType<FoodOrderViews["microCacheBypassed"]> {
+    return this.views.microCacheBypassed(...args);
   }
 
-  /** C4: one read URL per object key, reused until its cache entry expires (see the cache fields).
-   *  A rejected mint is never cached (MicroCache contract); callers map it to null. */
-  private signCached(cache: MicroCache<string>, key: string, signedTtlSeconds: number, cacheTtlMs: number): Promise<string> {
-    const storage = this.storage;
-    if (!storage) return Promise.reject(new Error("no storage"));
-    const mint = (): Promise<string> => storage.createReadUrl(key, signedTtlSeconds);
-    return this.microCacheBypassed(cacheTtlMs) ? mint() : cache.getOrLoad(key, cacheTtlMs, mint);
+  signCached(...args: Parameters<FoodOrderViews["signCached"]>): ReturnType<FoodOrderViews["signCached"]> {
+    return this.views.signCached(...args);
   }
 
-  /** Pickup / door proof photos (15-min URLs). The env override shares the parcel pickup photo's
-   *  bounded knob — same signed validity, same ≤600 s ceiling. */
-  private signProofPhoto(key: string): Promise<string | null> {
-    return this.signCached(
-      this.proofPhotoUrlCache,
-      key,
-      PROOF_READ_URL_TTL_SECONDS,
-      this.env?.MICRO_CACHE_TTL_MS_PICKUP_PHOTO_URL ?? PROOF_PHOTO_URL_CACHE_TTL_MS,
-    );
+  signProofPhoto(...args: Parameters<FoodOrderViews["signProofPhoto"]>): ReturnType<FoodOrderViews["signProofPhoto"]> {
+    return this.views.signProofPhoto(...args);
   }
 
-  /** Swap-dish photos (24 h URLs, the menu's dish-photo validity and its bounded env knob). */
-  private signSwapPhoto(key: string): Promise<string | null> {
-    return this.signCached(
-      this.swapPhotoUrlCache,
-      key,
-      PHOTO_READ_URL_TTL_SECONDS,
-      this.env?.MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL ?? MERCHANT_PHOTO_URL_CACHE_TTL_MS,
-    );
+  signSwapPhoto(...args: Parameters<FoodOrderViews["signSwapPhoto"]>): ReturnType<FoodOrderViews["signSwapPhoto"]> {
+    return this.views.signSwapPhoto(...args);
   }
 
   /** C5 kitchen socket queue: best-effort push telling the merchant's tablet(s) something on their
    *  queue changed, so a connected tablet doesn't wait out E2's 5s poll fallback. `merchantId` is
    *  nullable only defensively — every real merchant order carries one — so a miss is a silent no-op,
    *  never load-bearing for the mutation that already committed. */
-  private notifyQueue(merchantId: string | null | undefined, orderId: string): void {
+  notifyQueue(merchantId: string | null | undefined, orderId: string): void {
     notifyFoodQueueChanged(this.gateway, merchantId, orderId);
     void this.emitTrack(orderId);
   }
@@ -339,1952 +152,239 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     if (this.sweep) clearInterval(this.sweep);
   }
 
-  private async runSweeps(): Promise<void> {
-    try {
-      await this.sweepExpiredAcceptWindows();
-    } catch (err) {
-      this.logger.error(`sweepExpiredAcceptWindows failed: ${(err as Error).message}`);
-    }
-    try {
-      await this.sweepExpiredItemApprovals();
-    } catch (err) {
-      this.logger.error(`sweepExpiredItemApprovals failed: ${(err as Error).message}`);
-    }
-    try {
-      await this.sweepEndOfDayClose();
-    } catch (err) {
-      this.logger.error(`sweepEndOfDayClose failed: ${(err as Error).message}`);
-    }
-    try {
-      await this.sweepPaymentReminders();
-    } catch (err) {
-      this.logger.error(`sweepPaymentReminders failed: ${(err as Error).message}`);
-    }
-    try {
-      await this.sweepAutoAccepted();
-    } catch (err) {
-      this.logger.error(`sweepAutoAccepted failed: ${(err as Error).message}`);
-    }
-    try {
-      await this.sweepStillWaiting();
-    } catch (err) {
-      this.logger.error(`sweepStillWaiting failed: ${(err as Error).message}`);
-    }
+  private runSweeps(...args: Parameters<FoodOrderLifecycle["runSweeps"]>): ReturnType<FoodOrderLifecycle["runSweeps"]> {
+    return this.lifecycle.runSweeps(...args);
   }
 
-  // ── Customer ─────────────────────────────────────────────────────────────────────────────────────
-
-  /** `POST /restaurants/:merchantId/orders`. Price is always server-computed (D-35). */
-  async placeOrder(customerId: string, merchantId: string, body: PlaceMerchantOrderRequest): Promise<MerchantOrderResponse> {
-    // FOOD-STANDING-01: account standing, checked first and before any write — the same gate, in the
-    // same { reason, message } shape, as Send's OrdersService.create, so the app's ApiError.code
-    // pipeline routes it identically. A held customer, or a banned/suspended rider (F-01: not even as a
-    // sender), can't place a food order either. A cash ban (R-08) never blocks ordering: it only takes
-    // cash off the table for food, so it's checked against the chosen payment method.
-    const account = await this.prisma.profile.findUnique({
-      where: { id: customerId },
-      // The name and phone ride along for the owner's new-order alert, in the same round-trip.
-      select: { onHold: true, cashBanned: true, firstName: true, lastName: true, phone: true, rider: { select: { accountStatus: true } } },
-    });
-    if (account?.onHold) {
-      throw new ForbiddenException({ reason: "on_hold", message: "Your account is on hold." });
-    }
-    const accountStatus = account?.rider?.accountStatus;
-    if (accountStatus === "banned" || accountStatus === "suspended") {
-      throw new ForbiddenException({
-        reason: accountStatus === "banned" ? "account_banned" : "account_suspended",
-        message: "Your account is not in good standing.",
-      });
-    }
-    // Penalty suspension (common/penalties.ts): a cash ban on record is ignored, not cleared.
-    if (account?.cashBanned && body.paymentMethod === "cash" && !penaltiesSuspended()) {
-      // D-48: food is cash on delivery only now, so a cash ban means no food orders — say who to ask.
-      throw new ForbiddenException({ reason: "cash_banned", message: "Food orders are cash on delivery, and cash is off for your account. Message LyniaGo on WhatsApp." });
-    }
-
-    const key = body.idempotencyKey;
-    const existing = await replayFirst(key, () => this.findByIdempotencyKey(customerId, key));
-    if (existing) return this.toResponse(existing);
-
-    // D-74 (owner, 2026-10-03): Order flow v2 is cash only (BRIEF §14), and the app has placed only cash
-    // since D-48. An install from before then can still offer wallet, so a NEW order paying by wallet is
-    // refused — restaurant, shop or pharmacy alike. `MerchantPaymentMethod` keeps "wallet" so the orders
-    // those installs already placed still parse and can be finished; checked after the idempotency
-    // replay, so a retry of one of them still gets it back.
-    if (body.paymentMethod === "wallet") {
-      throw new BadRequestException({ reason: "wallet_not_accepted", message: "Orders are cash on delivery now. Choose cash to place your order." });
-    }
-
-    // Order flow v2 (ledger D-59): restaurants AND shops/pharmacies take orders here — a live restaurant,
-    // or a live shop whose section (SHOPS_ENABLED / PHARMACY_ENABLED) is on. Same rule as the browse lists.
-    const merchant = await this.prisma.merchant.findFirst({
-      where: { id: merchantId, OR: [CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop(this.env ?? SECTIONS_OFF)] },
-      select: {
-        id: true,
-        name: true,
-        // The venue's number for the owner's new-order alert (the same one customers see).
-        ownerProfile: { select: { phone: true } },
-        location: true,
-        closedUntil: true,
-        hours: true,
-        autoAccept: true,
-        busyMode: true,
-        prepBaselineMinutes: true,
-        businessType: true,
-        shopKind: true,
-        freeDelivery: true,
-      },
-    });
-    if (!merchant) {
-      // E2E 2026-10-05 P-5: a shop or pharmacy hidden by its section switch answered "Restaurant not
-      // found". Name what it is (error path only; an unknown id keeps the restaurant wording).
-      const kind = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { businessType: true, shopKind: true } }).catch(() => null);
-      const what = kind?.businessType === "shop" ? (kind.shopKind === "pharmacy" ? "Pharmacy" : "Shop") : "Restaurant";
-      throw new NotFoundException(`${what} not found`);
-    }
-    const noun = merchant.businessType === "shop" ? (merchant.shopKind === "pharmacy" ? "pharmacy" : "shop") : "restaurant";
-    const location = merchant.location as Waypoint | null;
-    if (!location) throw new ConflictException(`This ${noun} isn't ready to take orders yet`);
-    // The service area (owner 2026-10-02): the app checks the drop-off before Place, but the server is the
-    // authority — a stale or older client must not book a delivery outside the towns we serve. There is NO
-    // merchant-to-customer distance cap inside the area; the fee stays per km.
-    if (!isInServiceArea(body.dropoff.point)) {
-      throw new BadRequestException({
-        reason: "outside_service_area",
-        message: `That delivery address is outside our service area. We deliver across ${serviceTownsLabel()}.`,
-      });
-    }
-    const distanceKm = roundToCents(haversineKm(location.point, body.dropoff.point));
-    // BRIEF §12: a scheduled order names one of the venue's offered slots. It may be placed while the venue
-    // is closed ("Order for when they open") — the slot itself is inside its hours.
-    const slot = body.scheduledFor ? await this.scheduleService().resolveSlot(merchant, body.scheduledFor, distanceKm) : null;
-    // D-48: closed by hand from the merchant's Orders header. Auto-accept safeguard 3: the weekly hours
-    // are enforced here too, in Harare time — the app's own check is advisory and an auto-accepted order
-    // at a closed kitchen would be cooked by nobody. No hours set at all reads as open (same fail-open
-    // rule as every client, packages/shared restaurant-hours.ts).
-    const nowWall = harareWallClock(new Date());
-    const hours = effectiveMerchantHours((merchant.hours as MerchantHours | null) ?? null, merchant.closedUntil, new Date());
-    if (!slot && ((merchant.closedUntil && merchant.closedUntil.getTime() > Date.now()) || !isMerchantOpenNow(hours, nowWall))) {
-      const next = nextOpenDescription(hours, nowWall);
-      throw new ConflictException({
-        reason: "restaurant_closed",
-        message: next ? `This ${noun} is closed right now. ${next}.` : `This ${noun} is closed right now.`,
-      });
-    }
-
-    const dishIds = [...new Set(body.items.map((i) => i.dishId))];
-    const dishes = await this.prisma.merchantDish.findMany({
-      where: { id: { in: dishIds }, merchantId },
-      include: { category: { select: { hidden: true, availableFrom: true, availableTo: true } } },
-    });
-    if (dishes.length !== dishIds.length) throw new NotFoundException("One or more dishes are not on this menu");
-    const dishById = new Map(dishes.map((d) => [d.id, d]));
-    // MJ-RM12 / U25: a category is sellable only while it isn't hidden and is inside its serving window
-    // (Breakfast 07:00–11:00), in Harare time — at the slot for a scheduled order, else now. The app's
-    // storefront check is advisory: a saved basket or a search result could still carry such a dish.
-    const servedAt = slot ? harareWallClock(slot.scheduledFor) : nowWall;
-    for (const item of body.items) {
-      const dish = dishById.get(item.dishId)!;
-      if (dish.isDraft) throw new ConflictException(`${dish.name} isn't available yet`);
-      if (dish.category.hidden) throw new ConflictException(`${dish.name} isn't available right now`);
-      if (!categoryServedNow(dish.category.availableFrom, dish.category.availableTo, servedAt)) {
-        // True of "now" and of a scheduled slot alike. Review shows a 4xx message verbatim (its toast).
-        throw new ConflictException({ reason: "category_window", message: `${dish.name} isn't served at that time` });
-      }
-      if (isDishOutOfStock(dish)) throw new ConflictException(`${dish.name} is out of stock right now`);
-    }
-    // BRIEF §13: "Prescription needed" lines need RX_ENABLED, a pharmacy with a pharmacist, and a prescription.
-    const rxLines = body.items.filter((i) => dishById.get(i.dishId)!.rxRequired).length;
-    const prescription =
-      rxLines > 0 || body.prescription
-        ? await this.prescriptionService().prepareForPlacement(customerId, { id: merchant.id, shopKind: merchant.shopKind }, rxLines, body.prescription)
-        : null;
-    // BRIEF D3f: an earlier cancel-after-collection balance rides on this order as its own line.
-    const owed = await openBalance(this.prisma, customerId);
-
-    const rawSubtotal = addMoney(...body.items.map((i) => lineTotal(dishById.get(i.dishId)!.priceUsd, i.quantity)));
-    const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
-    const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
-    const deliveryFee = deliveryFeeForDistance(distanceKm);
-    // D-71: a free-delivery venue pays the rider's fee out of its own cash; the customer pays $0 delivery.
-    // Snapshotted here so flipping the switch later never reprices this order.
-    const merchantDeliveryShare = merchantDeliveryShareAtPlacement({
-      freeDelivery: merchant.freeDelivery,
-      paymentMethod: body.paymentMethod,
-      goodsTotal: merchantGoodsTotal,
-      deliveryFee,
-    });
-    const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
-    const itemDesc = summarizeMerchantItems(body.items.map((i) => ({ name: dishById.get(i.dishId)!.name, quantity: i.quantity })));
-    // Auto-accept: a cash order at an auto-accept restaurant skips the accept window and goes straight
-    // to cooking at the restaurant's usual prep time. No rider is sent until the kitchen is confirmed
-    // (sweepAutoAccepted). Wallet is refused above (D-74); the wallet orders placed before that keep
-    // their accept → payment path.
-    // Order flow v2 (README per-service table): shops and pharmacies are never auto-accept — 3 minutes to
-    // accept, like a manual restaurant. A scheduled order waits (awaiting_accept, no deadline) until the
-    // schedule sweep rings it at `ringsAt` (OrderScheduleService), which applies this same rule then.
-    const autoAccept = merchant.businessType !== "shop" && merchant.autoAccept && body.paymentMethod === "cash" && !slot;
-    const now = new Date();
-    const phase = slot
-      ? { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: null }
-      : autoAccept
-      ? {
-          merchantPhase: "preparing" as const,
-          acceptDeadlineAt: null,
-          prepMinutes: (merchant.prepBaselineMinutes ?? RESTAURANTS_AUTO_ACCEPT.defaultPrepMinutes) + (merchant.busyMode ? BUSY_MODE_EXTRA_MIN : 0),
-          prepStartedAt: now,
-          autoAccepted: true,
-        }
-      : { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: new Date(now.getTime() + RESTAURANTS_TIMING.acceptWindowMs) };
-
-    {
-      const create = (db: Pick<Prisma.TransactionClient, "order">) => db.order.create({
-        data: {
-          orderType: "merchant",
-          customerId,
-          merchantId,
-          pickup: location as unknown as Prisma.InputJsonValue,
-          dropoff: body.dropoff as unknown as Prisma.InputJsonValue,
-          itemDesc,
-          note: body.note ?? null,
-          declaredValue: 0,
-          distanceKm,
-          suggestedFare: agreedFare,
-          proposedFare: agreedFare,
-          agreedFare,
-          currency: "USD",
-          status: "requested",
-          ...phase,
-          merchantPaymentMethod: body.paymentMethod,
-          // R-03 snapshot, fixed at placement (C4). D-48: every cash food order is collect-and-return —
-          // the rider collects at the door and brings the cash back ("Cash back to you") — whatever the
-          // older per-shop rule says. Null only on the wallet orders placed before D-74: it never applied.
-          merchantCashRule: body.paymentMethod === "cash" ? "collect_and_return" : null,
-          merchantGoodsTotal,
-          deliveryFee,
-          merchantDeliveryShare,
-          idempotencyKey: body.idempotencyKey ?? null,
-          // Order flow v2 (BRIEF §7): null = never chosen = ask.
-          outOfStockPref: body.outOfStockPref ?? null,
-          events: { create: { status: "requested" } },
-          merchantItems: {
-            create: body.items.map((i) => {
-              const dish = dishById.get(i.dishId)!;
-              return {
-                dishId: dish.id,
-                nameSnapshot: dish.name,
-                priceUsd: dish.priceUsd,
-                quantity: i.quantity,
-                note: i.note ?? null,
-                // Auto-accepted lines are kept as ordered until the restaurant changes them by phone.
-                ...(autoAccept ? { available: true } : {}),
-                ...(dish.rxRequired ? { rxRequired: true } : {}),
-              };
-            }),
-          },
-          ...(slot ? { schedule: { create: { merchantId, scheduledFor: slot.scheduledFor, ringsAt: slot.ringsAt } } } : {}),
-          ...(prescription ? { prescription: { create: prescription } } : {}),
-        },
-        include: ORDER_WITH_ITEMS_INCLUDE,
-      });
-      // R-3: the (customer_id, idempotency_key) index is shared with parcel orders (migration 0021). A concurrent
-      // duplicate replays; a parcel order's key reused here is a 409 — it used to surface as a 500, because the
-      // merchant-only re-find found nothing (common/idempotency.ts).
-      const once = await createOnce<OrderWithItems>({
-        key,
-        find: () => this.findByIdempotencyKey(customerId, key),
-        heldElsewhere: async () => (await this.prisma.order.count({ where: { customerId, idempotencyKey: key } })) > 0,
-        create: () =>
-          owed.entries.length === 0
-            ? create(this.prisma)
-            : this.prisma.$transaction(async (tx) => {
-                const order = await create(tx);
-                await carryBalance(tx, owed.entries, order.id);
-                return { ...order, carriedBalance: [{ amount: new Prisma.Decimal(owed.amount) }] };
-              }),
-      });
-      if (!once.created) return this.toResponse(once.row);
-      const created = once.row;
-      // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
-      if (!slot) this.notifyQueue(merchantId, created.id);
-      this.ownerAlerts?.notify(
-        ownerAlertText.merchantOrder({
-          orderId: created.id,
-          merchantName: merchant.name,
-          merchantPhone: merchant.ownerProfile?.phone ?? null,
-          businessType: merchant.businessType,
-          shopKind: merchant.shopKind,
-          total: agreedFare,
-          items: itemDesc,
-          paymentMethod: body.paymentMethod,
-          merchantPhase: phase.merchantPhase,
-          scheduled: !!slot,
-          sender: { firstName: account?.firstName ?? "", lastName: account?.lastName ?? "", phone: account?.phone ?? null },
-        }),
-      );
-      return this.toResponse(created);
-    }
+  placeOrder(...args: Parameters<FoodOrderPlacing["placeOrder"]>): ReturnType<FoodOrderPlacing["placeOrder"]> {
+    return this.placing.placeOrder(...args);
   }
 
-  private async findByIdempotencyKey(customerId: string, idempotencyKey: string | undefined): Promise<OrderWithItems | null> {
-    return this.prisma.order.findFirst({
-      where: { customerId, orderType: "merchant", idempotencyKey },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
+  findByIdempotencyKey(...args: Parameters<FoodOrderPlacing["findByIdempotencyKey"]>): ReturnType<FoodOrderPlacing["findByIdempotencyKey"]> {
+    return this.placing.findByIdempotencyKey(...args);
   }
 
-  async getMyOrder(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    return this.withDetail(order, this.toResponse(order));
+  getMyOrder(...args: Parameters<FoodOrderViews["getMyOrder"]>): ReturnType<FoodOrderViews["getMyOrder"]> {
+    return this.views.getMyOrder(...args);
   }
 
-  /** Order flow v2 (D-59): what only single-order reads carry — the pickup/door proof with signed read
-   *  URLs, and the swap photos of the substitution round. Never on the queue poll. Best-effort. */
-  private async withDetail(order: OrderWithItems, response: MerchantOrderResponse): Promise<MerchantOrderResponse> {
-    const { pickupProof, doorProof } = await proofViews((key) => this.signProofPhoto(key), order);
-    const out: MerchantOrderResponse = { ...response };
-    if (pickupProof) out.pickupProof = pickupProof;
-    if (doorProof) out.doorProof = doorProof;
-    const round = order.substitutionRounds?.[0];
-    const swapDishIds = round ? [...new Set(round.lines.map((l) => l.swapDishId).filter((id): id is string => !!id))] : [];
-    if (round && swapDishIds.length > 0 && this.storage) {
-      try {
-        const dishes = await this.prisma.merchantDish.findMany({ where: { id: { in: swapDishIds } }, select: { id: true, photoUrl: true } });
-        const photos = new Map<string, string | null>(
-          await Promise.all(
-            dishes.map(async (d) => [d.id, d.photoUrl ? await this.signSwapPhoto(d.photoUrl).catch(() => null) : null] as const),
-          ),
-        );
-        out.substitution = toSubstitutionRoundView(round, { keptSubtotal: keptSubtotalOf(order), swapPhotos: photos });
-      } catch (err) {
-        this.logger.warn(`swap photos skipped for order ${order.id}: ${(err as Error).message}`);
-      }
-    }
-    return out;
+  withDetail(...args: Parameters<FoodOrderViews["withDetail"]>): ReturnType<FoodOrderViews["withDetail"]> {
+    return this.views.withDetail(...args);
   }
 
-  /** D-23: the customer's response to a shortened (item-level accept) order. */
-  async approveItems(orderId: string, customerId: string, approve: boolean): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    if (order.merchantPhase !== "awaiting_item_approval") {
-      throw new ConflictException("This order isn't waiting on an item approval");
-    }
-    if (order.itemApprovalDeadlineAt && order.itemApprovalDeadlineAt.getTime() < Date.now()) {
-      throw new ConflictException("The approval window has closed");
-    }
-    // Order flow v2 (D-59): an installed app answering a substitution round it can only see as a
-    // shortened order — approve keeps it with every swap declined (OrderSubstitutionService).
-    if (approve && (await this.substitutions?.handleLegacyApproval(orderId, customerId, true))) {
-      return this.toResponse(await this.mustFindWithItems(orderId));
-    }
-
-    if (!approve) {
-      const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "requested", merchantPhase: "awaiting_item_approval" },
-        data: {
-          status: "cancelled",
-          cancelledAt: new Date(),
-          cancelledBy: customerId,
-          merchantPhase: null,
-          ...cancelAttribution({ by: "customer", status: "requested", merchantPhase: "awaiting_item_approval", reasonCode: "items_declined" }),
-        },
-      });
-      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-      await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-      await this.substitutions?.closeRoundsForCancelledOrder(orderId);
-      this.notifyQueue(order.merchantId, orderId);
-      return this.toResponse(await this.mustFindWithItems(orderId));
-    }
-
-    const nextPhase = order.merchantPaymentMethod === "cash" ? "preparing" : "awaiting_payment";
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", merchantPhase: "awaiting_item_approval" },
-      data:
-        nextPhase === "preparing"
-          ? { merchantPhase: "preparing", prepStartedAt: new Date(), itemApprovalDeadlineAt: null }
-          : { merchantPhase: "awaiting_payment", itemApprovalDeadlineAt: null },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  approveItems(...args: Parameters<FoodOrderPlacing["approveItems"]>): ReturnType<FoodOrderPlacing["approveItems"]> {
+    return this.placing.approveItems(...args);
   }
 
-  /** R-17: free, any time before paying — once preparing/ready the kitchen has committed. Also free in the
-   *  no-rider hold (U11): nobody is coming for the food, so the customer is never stuck waiting on it. */
-  async cancelUnpaid(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    const cancellable = new Set(["awaiting_accept", "awaiting_item_approval", "awaiting_payment"]);
-    // Auto-accept: until the kitchen is confirmed, "cooking" hasn't really started — the customer may
-    // still cancel free, exactly as they could while waiting for a manual accept.
-    const unconfirmedAuto = order.autoAccepted && !order.kitchenConfirmedAt && order.merchantPhase === "preparing";
-    // BRIEF §13 "Cancel the rest — free": after the pharmacist declined the prescription, the customer may
-    // drop what's left while it's still being packed.
-    const rxDeclinedRest = order.prescription?.status === "declined" && order.merchantPhase === "preparing";
-    // Order flow v2 (BRIEF §8): while a substitution round is open, "Cancel the whole order — free" is
-    // always there, mid-prep included.
-    const openRound = order.merchantPhase === "preparing" && (await this.substitutions?.hasOpenRound(orderId)) === true;
-    // U11 (order flow v2 T11a/T11b "Cancel order · free"): dispatch gave up (the D-34 no-rider hold) and
-    // nobody is searching until the venue decides. The customer may leave free rather than wait on it.
-    const noRiderHold = noRiderHeld(order);
-    if (!unconfirmedAuto && !openRound && !rxDeclinedRest && !noRiderHold && (!order.merchantPhase || !cancellable.has(order.merchantPhase))) {
-      throw new ConflictException("This order can't be cancelled anymore — the kitchen has started");
-    }
-    const claimed = await this.prisma.order.updateMany({
-      where: {
-        id: orderId,
-        status: "requested",
-        merchantPhase: order.merchantPhase,
-        ...(unconfirmedAuto && !openRound && !rxDeclinedRest ? { kitchenConfirmedAt: null } : {}),
-        // Still held, still riderless: a "Keep searching" or a rider racing the cancel wins.
-        ...(noRiderHold ? { noRiderHoldAt: { not: null }, riderId: null } : {}),
-      },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-        cancelledBy: customerId,
-        merchantPhase: null,
-        ...cancelAttribution({ by: "customer", status: "requested", merchantPhase: order.merchantPhase, reasonCode: noRiderHold ? "no_rider" : null }),
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.substitutions?.closeRoundsForCancelledOrder(orderId);
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  cancelUnpaid(...args: Parameters<FoodOrderPlacing["cancelUnpaid"]>): ReturnType<FoodOrderPlacing["cancelUnpaid"]> {
+    return this.placing.cancelUnpaid(...args);
   }
 
-  /** D-24 "I paid another way" manual rail — the customer's own submitted reference. */
-  async submitPaymentReference(orderId: string, customerId: string, reference: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
-    await this.prisma.order.update({ where: { id: orderId }, data: { merchantPaymentReference: reference } });
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  submitPaymentReference(...args: Parameters<FoodOrderPlacing["submitPaymentReference"]>): ReturnType<FoodOrderPlacing["submitPaymentReference"]> {
+    return this.placing.submitPaymentReference(...args);
   }
 
-  /** #670: push a mobile-money prompt to the customer's phone for this order (RC.pay_now → pay_wait).
-   *  Idempotent — a re-send while a prompt is already pending or confirmed returns the current state
-   *  rather than opening a second live charge. Coexists with the manual-reference path; cash orders
-   *  settle at the door and never take a prompt. Drives the PaymentRail seam — the default stub returns
-   *  `pending`, so this never marks an order paid on its own. */
-  async sendPaymentPrompt(orderId: string, customerId: string, rail: PaymentPromptRail): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
-    if (order.merchantPaymentMethod === "cash") throw new ConflictException("Cash orders are paid at the door, not by prompt");
-    // Idempotent: an in-flight (pending) or already-settled (confirmed) prompt is never re-pushed.
-    if (order.paymentPromptStatus === "pending" || order.paymentPromptStatus === "confirmed") {
-      return this.toResponse(order);
-    }
-    const profile = await this.prisma.profile.findUnique({ where: { id: customerId }, select: { phone: true } });
-    const amount = addMoney(Number(order.merchantGoodsTotal ?? 0), Number(order.deliveryFee ?? 0));
-    const result = await this.paymentRail.initiate({ topUpId: orderId, rail, amount, phone: profile?.phone ?? "" });
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        paymentPromptStatus: "pending",
-        paymentPromptRail: rail,
-        paymentPromptRef: result.providerRef ?? null,
-        paymentPromptSentAt: new Date(),
-        paymentPromptResolvedAt: null,
-      },
-    });
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  sendPaymentPrompt(...args: Parameters<FoodOrderPlacing["sendPaymentPrompt"]>): ReturnType<FoodOrderPlacing["sendPaymentPrompt"]> {
+    return this.placing.sendPaymentPrompt(...args);
   }
 
-  /** #670: poll the rail for a pending prompt and settle it (RC.pay_wait → pay_confirmed). On a
-   *  `confirmed` rail result the prompt's ref is written into merchantPaymentReference too, so the
-   *  merchant's existing own-statement confirm (confirmPayment) proceeds unchanged — a confirmed
-   *  prompt is just a reference the customer didn't have to type by hand. A `failed` result marks it
-   *  declined; `pending` leaves it untouched. No-op (returns current) when there is no pending prompt. */
-  async checkPaymentPrompt(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    if (order.paymentPromptStatus !== "pending" || !order.paymentPromptRef) return this.toResponse(order);
-    const result = await this.paymentRail.confirm(order.paymentPromptRef);
-    if (result.status === "confirmed") {
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          paymentPromptStatus: "confirmed",
-          paymentPromptResolvedAt: new Date(),
-          // Never overwrite a reference the customer already typed; otherwise adopt the rail's ref.
-          merchantPaymentReference: order.merchantPaymentReference ?? order.paymentPromptRef,
-        },
-      });
-      this.notifyQueue(order.merchantId, orderId);
-    } else if (result.status === "failed") {
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: { paymentPromptStatus: "declined", paymentPromptResolvedAt: new Date() },
-      });
-    }
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  checkPaymentPrompt(...args: Parameters<FoodOrderPlacing["checkPaymentPrompt"]>): ReturnType<FoodOrderPlacing["checkPaymentPrompt"]> {
+    return this.placing.checkPaymentPrompt(...args);
   }
 
-  // ── Merchant ─────────────────────────────────────────────────────────────────────────────────────
-
-  async listQueue(profileId: string): Promise<MerchantOrderResponse[]> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const orders = await this.prisma.order.findMany({
-      // E2 (queue board): an order must stay visible through the WHOLE pre-handoff lifecycle, not
-      // just while `status` is literally still "requested" — a flat "requested"-only filter drops an
-      // order the instant a candidate rider starts deciding (`open_for_offers`) or one accepts
-      // (`assigned`/`confirmed`/`en_route_pickup`), which is exactly the D-34 "keep cooking / hold /
-      // cancel" window the Ready column has to render. `picked_up` and every terminal status are
-      // deliberately excluded — that transition IS "handed over" for the board.
-      //
-      // E3 gap found and fixed: a collect-and-return debt (R-01) opens at `picked_up` — the exact
-      // status this filter drops — and can stay open through `en_route_dropoff`/`delivered`/
-      // `undelivered` until the merchant counts the returned cash (confirmReturnedCash) or writes it
-      // off. Without the OR below, an order the rider is still carrying cash for simply vanished from
-      // the tablet the moment it was handed over, with no way to ever confirm the return. `debtStatus:
-      // "open"` is included regardless of `status` so this lane never depends on guessing which
-      // terminal statuses a debt can outlive.
-      where: {
-        merchantId,
-        orderType: "merchant",
-        // D-48: an order the merchant closed its side of (no cash / mark completed) leaves the board.
-        OR: [{ status: { in: [...QUEUE_VISIBLE_STATUSES] } }, { debtStatus: "open", merchantClosedAt: null }],
-        // Order flow v2 (BRIEF §12): a scheduled order joins the live board when it rings, like a new
-        // order. Until then it's on the Scheduled list (listScheduled).
-        NOT: { schedule: { is: { rungAt: null } } },
-      },
-      orderBy: { createdAt: "asc" },
-      // PW-LC2: deliberately no `take`. Every row is one the board must show (a live order or a debt still
-      // to count), and oldest-first a cap would drop the NEWEST orders. The set is bounded by what's live;
-      // the 5s poll's cost is the merchant_id index (0071), not the row count.
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
-    return orders.map((o) => this.forMerchant(o));
+  listQueue(...args: Parameters<FoodOrderLifecycle["listQueue"]>): ReturnType<FoodOrderLifecycle["listQueue"]> {
+    return this.lifecycle.listQueue(...args);
   }
 
-  async getQueueOrder(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    // D-48: the tracking stepper's step times (B6/B7) — single-order reads only, never the queue poll.
-    const events = await this.prisma.orderEvent.findMany({
-      where: { orderId },
-      orderBy: { createdAt: "asc" },
-      select: { status: true, createdAt: true },
-      take: 50,
-    });
-    const detail = await this.withDetail(order, this.forMerchant(order));
-    return { ...detail, timeline: events.map((e) => ({ status: e.status, at: e.createdAt.toISOString() })) };
+  getQueueOrder(...args: Parameters<FoodOrderLifecycle["getQueueOrder"]>): ReturnType<FoodOrderLifecycle["getQueueOrder"]> {
+    return this.lifecycle.getQueueOrder(...args);
   }
 
-  /** Auto-accept: "Got it, we're making it" — the restaurant confirms an auto-accepted order in the
-   *  app, which lets the rider search start. Idempotent. */
-  async confirmKitchenAsMerchant(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (!order.autoAccepted) throw new ConflictException({ reason: "not_auto_accepted", message: "This order doesn't need confirming." });
-    await confirmKitchen(this.prisma, this.gateway, orderId, "merchant", merchantId);
-    return this.forMerchant(await this.mustFindWithItems(orderId));
+  confirmKitchenAsMerchant(...args: Parameters<FoodOrderLifecycle["confirmKitchenAsMerchant"]>): ReturnType<FoodOrderLifecycle["confirmKitchenAsMerchant"]> {
+    return this.lifecycle.confirmKitchenAsMerchant(...args);
   }
 
-  /** Change the items after agreeing it with the customer by phone (shared with ops, food-order-ops.ts). */
-  async editItems(profileId: string, orderId: string, body: EditMerchantOrderItemsRequest): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    await editOrderItems(this.prisma, this.notifications, this.gateway, orderId, body, merchantId);
-    return this.forMerchant(await this.mustFindWithItems(orderId));
+  editItems(...args: Parameters<FoodOrderLifecycle["editItems"]>): ReturnType<FoodOrderLifecycle["editItems"]> {
+    return this.lifecycle.editItems(...args);
   }
 
-  /**
-   * D-48 (merchant mobile B6/B7): the merchant closes its side of a food order after pickup without
-   * counting cash — "no_cash" (B7 "No cash on this one · mark completed") or "force" (B6 "Mark ride
-   * completed"). Only once the rider has the food (owner decision 2026-09-30: never before pickup, which
-   * would be a cancel). It never changes the delivery's status, the rider or the customer; it only
-   * stops the order showing as cash owed and takes it off the board. Idempotent: a second close keeps
-   * the first one's time and reason.
-   */
-  async closeOrder(profileId: string, orderId: string, reason: "no_cash" | "force"): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantClosedAt) return this.toResponse(order);
-    if (!AFTER_PICKUP_STATUSES.has(order.status)) {
-      throw new ConflictException({ reason: "not_picked_up", message: "You can close this once the biker has the food." });
-    }
-    if (order.debtStatus && order.debtStatus !== "open") return this.toResponse(order);
-    const updated = await this.prisma.order.update({
-      where: { id: order.id },
-      data: { merchantClosedAt: new Date(), merchantCloseReason: reason },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
-    this.notifyQueue(updated.merchantId!, updated.id);
-    return this.toResponse(updated);
+  closeOrder(...args: Parameters<FoodOrderLifecycle["closeOrder"]>): ReturnType<FoodOrderLifecycle["closeOrder"]> {
+    return this.lifecycle.closeOrder(...args);
   }
 
-  /** C4: the assigned rider's own read view — no MerchantGuard (party-checked below), mirrors
-   *  getMyOrder/getQueueOrder. Needed so a rider can see the C4 handshake/debt/PAID fields the
-   *  doorstep flow depends on (R-12 "the rider sees PAID at pickup and hand-off"). */
-  async getAsRider(orderId: string, riderId: string): Promise<MerchantOrderResponse> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, riderId, orderType: "merchant" },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
-    if (!order) throw new NotFoundException("Order not found");
-    const { venueRating: _venueRating, ...forRider } = await this.withDetail(order, this.toResponse(order));
-    // Own bikers (D-117, OB-R8/R9): carried by one of the business's own bikers — no fare, no commission, all the
-    // cash goes back to this branch, which the job screens name.
-    if (order.fleetMerchantId) {
-      const branch = order.fleetMerchantId === order.merchantId ? order.merchant?.name : (await this.prisma.merchant.findUnique({ where: { id: order.fleetMerchantId }, select: { name: true } }))?.name;
-      if (branch) return { ...forRider, fleetShop: branch };
-    }
-    return forRider;
+  getAsRider(...args: Parameters<FoodOrderLifecycle["getAsRider"]>): ReturnType<FoodOrderLifecycle["getAsRider"]> {
+    return this.lifecycle.getAsRider(...args);
   }
 
-  /** D-23: full accept when `unavailableDishIds` is empty, item-level accept otherwise. */
-  async acceptOrder(profileId: string, orderId: string, body: MerchantAcceptOrderRequest): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { busyMode: true } });
-    // N-17: busy mode bumps the chip at accept time — folded in once, not re-applied on every read.
-    const prepMinutes = body.prepMinutes + (merchant?.busyMode ? BUSY_MODE_EXTRA_MIN : 0);
-
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "awaiting_accept") throw new ConflictException("This order can no longer be accepted");
-    if (order.schedule && !order.schedule.rungAt) {
-      throw new ConflictException({ reason: "scheduled_not_started", message: "This scheduled order rings when it's time to start it." });
-    }
-
-    const unavailable = new Set(body.unavailableDishIds ?? []);
-    if (unavailable.size > 0) {
-      for (const dishId of unavailable) {
-        if (!order.merchantItems.some((it) => it.dishId === dishId)) {
-          throw new BadRequestException("One or more unavailableDishIds are not on this order");
-        }
-      }
-      const remaining = order.merchantItems.filter((it) => !unavailable.has(it.dishId ?? ""));
-      if (remaining.length === 0) {
-        throw new ConflictException("At least one item must remain available — reject the order instead");
-      }
-      const rawSubtotal = addMoney(...remaining.map((it) => lineTotal(it.priceUsd, it.quantity)));
-      const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
-      const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
-      const deliveryFee = Number(order.deliveryFee ?? 0);
-      // D-71: a funded order stays funded, capped by the smaller goods total.
-      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
-      const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
-
-      await this.prisma.$transaction(async (tx) => {
-        const claimed = await tx.order.updateMany({
-          where: { id: orderId, status: "requested", merchantPhase: "awaiting_accept" },
-          data: {
-            merchantPhase: "awaiting_item_approval",
-            itemApprovalDeadlineAt: new Date(Date.now() + RESTAURANTS_TIMING.itemApprovalWindowMs),
-            prepMinutes,
-            merchantGoodsTotal,
-            merchantDeliveryShare,
-            agreedFare,
-            // Admin console v2 §3: when the venue answered (accept time / missed orders).
-            merchantAcceptedAt: new Date(),
-          },
-        });
-        if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-        await domainEvents.merchantPhase(tx, {
-          orderId,
-          merchantId,
-          phase: "accept_partial",
-          actorId: profileId,
-          data: { prepMinutes, unavailableItems: unavailable.size },
-        });
-        await tx.merchantOrderItem.updateMany({ where: { orderId, dishId: { in: [...unavailable] } }, data: { available: false } });
-        await tx.merchantOrderItem.updateMany({ where: { orderId, dishId: { notIn: [...unavailable] } }, data: { available: true } });
-      });
-    } else {
-      const cash = order.merchantPaymentMethod === "cash";
-      const claimed = await this.prisma.order.updateMany({
-        where: { id: orderId, status: "requested", merchantPhase: "awaiting_accept" },
-        data: cash
-          ? { merchantPhase: "preparing", prepMinutes, prepStartedAt: new Date(), merchantAcceptedAt: new Date() }
-          : { merchantPhase: "awaiting_payment", prepMinutes, merchantAcceptedAt: new Date() },
-      });
-      if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-      await this.prisma.merchantOrderItem.updateMany({ where: { orderId }, data: { available: true } });
-      // Best-effort (no transaction on this path): the accept above is committed.
-      await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "accept", actorId: profileId, data: { prepMinutes, cash } });
-    }
-    this.notifyQueue(merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  acceptOrder(...args: Parameters<FoodOrderLifecycle["acceptOrder"]>): ReturnType<FoodOrderLifecycle["acceptOrder"]> {
+    return this.lifecycle.acceptOrder(...args);
   }
 
-  /** D-11: the reason IS the customer's copy. */
-  async rejectOrder(profileId: string, orderId: string, reason: MerchantRejectionReasonCode, note?: string): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    // Merchant v2 follow-ups (D-77, S2a): "Something else" may carry a one-line note the customer sees.
-    const said = note?.trim() || null;
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept" },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-        rejectionReason: reason,
-        merchantPhase: null,
-        cancelReason: said,
-        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "awaiting_accept", reasonCode: reason }),
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("This order can no longer be rejected");
-    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "reject", actorId: profileId, data: { reason } });
-    await this.notifyCancelledCustomer(orderId, reason, said);
-    this.notifyQueue(merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  rejectOrder(...args: Parameters<FoodOrderLifecycle["rejectOrder"]>): ReturnType<FoodOrderLifecycle["rejectOrder"]> {
+    return this.lifecycle.rejectOrder(...args);
   }
 
-  /**
-   * D-48 (merchant mobile B3 "Can't finish this order"): cancel a CASH order the kitchen already
-   * accepted and started, before it goes to dispatch. Nothing has been paid on a cash order, so there
-   * is nothing to refund; the customer is told why. A confirmed WALLET order still goes through the
-   * refund path (FoodDebtService.refundOrder), which needs the merchant's refund reference.
-   */
-  async cancelPreparing(
-    profileId: string,
-    orderId: string,
-    reason: MerchantRejectionReasonCode = "other",
-    note?: string,
-  ): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    // Merchant v2 follow-ups (D-77, K3b): why it can't be finished, and "Something else"'s note.
-    const said = note?.trim() || null;
-    // MJ-RM1: an auto-accepted order's rider search runs during the last minutes of cooking, so the K3
-    // "Problem with this order?" also covers a live round (no rider has it yet). Once a rider holds it,
-    // as before, it can't be cancelled here.
-    const claimed = await this.prisma.order.updateMany({
-      where: {
-        id: orderId,
-        merchantId,
-        orderType: "merchant",
-        status: { in: ["requested", "open_for_offers"] },
-        riderId: null,
-        merchantPhase: "preparing",
-        merchantPaymentMethod: "cash",
-      },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-        rejectionReason: reason,
-        merchantPhase: null,
-        cancelReason: said,
-        dispatchOfferedRiderId: null,
-        dispatchOfferExpiresAt: null,
-        dispatchNextCheckAt: null,
-        // Cooking (the CAS pins `preparing`), whether or not a rider round had started.
-        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "preparing", reasonCode: reason }),
-      },
-    });
-    if (claimed.count === 0) {
-      throw new ConflictException({ reason: "not_cancellable", message: "This order can no longer be cancelled here." });
-    }
-    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "cancel", actorId: profileId, data: { reason, stage: "preparing" } });
-    await this.closeOpenOffers(orderId);
-    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.notifyCancelledCustomer(orderId, reason, said);
-    this.notifyQueue(merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  cancelPreparing(...args: Parameters<FoodOrderLifecycle["cancelPreparing"]>): ReturnType<FoodOrderLifecycle["cancelPreparing"]> {
+    return this.lifecycle.cancelPreparing(...args);
   }
 
-  /** A cancelled order's riders still deciding on a live round: their offers end now and their alarms
-   *  stop (acceptDispatch already refuses a cancelled order; this only quiets the phones). Best effort. */
-  private async closeOpenOffers(orderId: string): Promise<void> {
-    try {
-      const where = { orderId, outcome: "pending" as const };
-      const open = await this.prisma.foodDispatchAttempt.findMany({ where, select: { riderId: true } });
-      if (open.length === 0) return;
-      await this.prisma.foodDispatchAttempt.updateMany({ where, data: { outcome: "expired", respondedAt: new Date() } });
-      for (const { riderId } of open) void this.gateway.emitDispatchOfferClosed(riderId, orderId);
-    } catch (err) {
-      this.logger.warn(`closing open offers failed for order ${orderId}: ${(err as Error).message}`);
-    }
+  closeOpenOffers(...args: Parameters<FoodOrderLifecycle["closeOpenOffers"]>): ReturnType<FoodOrderLifecycle["closeOpenOffers"]> {
+    return this.lifecycle.closeOpenOffers(...args);
   }
 
-  /** R-16: logged before the request-payment button unlocks. */
-  async logCall(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
-    await this.prisma.order.update({ where: { id: orderId }, data: { paymentCallLoggedAt: new Date() } });
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  logCall(...args: Parameters<FoodOrderLifecycle["logCall"]>): ReturnType<FoodOrderLifecycle["logCall"]> {
+    return this.lifecycle.logCall(...args);
   }
 
-  /** R-16: unlocked by a logged call, or the named override for regulars/in-person confirms. C5:
-   *  "merchant accepted — pay now" (RESTAURANTS-DECISIONS.md §3) is the customer's first of three
-   *  curated food pushes — high-signal, meant to persist on the lock screen until paid or expired;
-   *  the sticky/action-button rendering is a mobile client concern (Lane D), this call site's job is
-   *  just the data contract (`kind`, `orderId`) that lets that client work hook in. */
-  async requestPayment(profileId: string, orderId: string, overrideCallLog: boolean): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
-    if (!order.paymentCallLoggedAt && !overrideCallLog) {
-      throw new ConflictException("Log the call before requesting payment (or use the override)");
-    }
-    await this.prisma.order.update({ where: { id: orderId }, data: { paymentRequestedAt: new Date() } });
-    await this.notifyPaymentRequested(orderId, order.customerId, "Confirm your payment", "The kitchen accepted your order — pay now so they can start cooking.");
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  requestPayment(...args: Parameters<FoodOrderLifecycle["requestPayment"]>): ReturnType<FoodOrderLifecycle["requestPayment"]> {
+    return this.lifecycle.requestPayment(...args);
   }
 
-  /** R-11: matches the customer's rail reference against the merchant's own statement — a mismatched
-   *  amount blocks release and names the gap (D-06). THIS is what starts the prep clock. */
-  async confirmPayment(profileId: string, orderId: string, body: MerchantConfirmPaymentRequest): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "awaiting_payment") throw new ConflictException("This order isn't awaiting payment");
-    const expected = Number(order.merchantGoodsTotal ?? 0);
-    if (Math.round(body.amount * 100) !== Math.round(expected * 100)) {
-      throw new ConflictException(`Amount doesn't match — expected $${expected.toFixed(2)}, got $${body.amount.toFixed(2)}`);
-    }
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", merchantPhase: "awaiting_payment" },
-      data: {
-        merchantPhase: "preparing",
-        prepStartedAt: new Date(),
-        merchantPaymentConfirmedAt: new Date(),
-        merchantPaymentReference: body.reference,
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId: order.merchantId, phase: "payment_confirmed", actorId: profileId });
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  confirmPayment(...args: Parameters<FoodOrderLifecycle["confirmPayment"]>): ReturnType<FoodOrderLifecycle["confirmPayment"]> {
+    return this.lifecycle.confirmPayment(...args);
   }
 
-  /** R-17: no-penalty release — the zombie-order mitigation for a lane that never blocks the board. */
-  async releaseUnpaid(profileId: string, orderId: string, reason: MerchantRejectionReasonCode): Promise<MerchantOrderResponse> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantId, orderType: "merchant", status: "requested", merchantPhase: "awaiting_payment" },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-        rejectionReason: reason,
-        merchantPhase: null,
-        ...cancelAttribution({ by: "merchant", status: "requested", merchantPhase: "awaiting_payment", reasonCode: reason }),
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("This order can't be released");
-    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId, phase: "cancel", actorId: profileId, data: { reason, stage: "awaiting_payment" } });
-    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.notifyCancelledCustomer(orderId, reason);
-    this.notifyQueue(merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  releaseUnpaid(...args: Parameters<FoodOrderLifecycle["releaseUnpaid"]>): ReturnType<FoodOrderLifecycle["releaseUnpaid"]> {
+    return this.lifecycle.releaseUnpaid(...args);
   }
 
-  /** N-16: mints the 6-digit pickup code (hashed, mirrors otpHash) so it exists by the time C3's
-   *  dispatch assigns a rider and confirmPickup can verify it. */
-  async markReady(profileId: string, orderId: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "preparing") throw new ConflictException("This order isn't in prep");
-    // BRIEF §13: the pharmacist checks the prescription before packing ends.
-    if (order.prescription?.status === "pending") {
-      throw new ConflictException({ reason: "prescription_pending", message: "Check the prescription before marking the order packed." });
-    }
-    // Order flow v2 (BRIEF §8): the order can't go to a rider while the customer is answering changes.
-    await this.substitutions?.assertNoOpenRound(orderId);
-    // MJ-RM1: an auto-accepted order's rider search starts before the food is ready, so a cooking order
-    // may already be in a live round or held by its rider. Searching -> ready_for_pickup as before; a rider
-    // already holding it -> the phase clears (the same hand-off acceptDispatch makes for a ready order).
-    const next = readyPhaseFor(order.status);
-    if (next === undefined) throw new ConflictException("This order isn't in prep");
-    const pickupCode = this.tokens.randomPickupCode();
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: order.status, merchantPhase: "preparing" },
-      data: {
-        merchantPhase: next,
-        readyAt: new Date(),
-        // A search parked until the planned ready time (the early search hit its cap while cooking) must
-        // resume now the food is ready, not at the old ready time (review of wave 1 C2).
-        ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: new Date() } : {}),
-        pickupCodeHash: this.tokens.hash(pickupCode),
-        pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
-        pickupCodeAttempts: 0,
-        // A restaurant tapping "Food is ready" plainly knows about the order: that confirms the kitchen.
-        ...(order.autoAccepted && !order.kitchenConfirmedAt ? { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: "merchant" } : {}),
-        // An auto-accepted order the kitchen never confirmed: "Food is ready" is also the venue's answer.
-        ...(order.merchantAcceptedAt ? {} : { merchantAcceptedAt: new Date() }),
-      },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    await domainEvents.merchantPhase(this.prisma, { orderId, merchantId: order.merchantId, phase: "ready", actorId: profileId });
-    this.notifyQueue(order.merchantId, orderId);
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  markReady(...args: Parameters<FoodOrderLifecycle["markReady"]>): ReturnType<FoodOrderLifecycle["markReady"]> {
+    return this.lifecycle.markReady(...args);
   }
 
-  /**
-   * Merchant v2 K3 "+5 min" (ledger D-77): the kitchen pushes the ready time back five minutes without
-   * cancelling. The ready time is prep start + prep minutes, so this moves the dispatch lead too. The
-   * customer gets a silent push with the new time (owner decision 2026-10-04). A cap keeps a slow order
-   * from drifting for ever: past it, the kitchen calls the customer.
-   */
-  async extendPrep(profileId: string, orderId: string, expectedPrepMinutes?: number): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.merchantPhase !== "preparing" || !order.prepStartedAt) throw new ConflictException("This order isn't in prep");
-    // MJ-RM19: the page says which prep time it was adding five to. A retry of a tap that already landed
-    // (2G: the client timed out, the POST still arrived) finds it moved and adds nothing — the CAS below
-    // pins the same value, so two racing taps can't both land either. An older page sends none.
-    if (expectedPrepMinutes !== undefined && (order.prepMinutes ?? 0) !== expectedPrepMinutes) {
-      throw new ConflictException({ reason: "prep_changed", message: "The ready time already moved. Check it before adding more." });
-    }
-    const prepMinutes = (order.prepMinutes ?? 0) + PREP_EXTEND_MIN;
-    if (prepMinutes > PREP_MAX_MIN) {
-      throw new ConflictException({ reason: "prep_too_long", message: "That’s as late as it can go. Call the customer if it needs longer." });
-    }
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, merchantPhase: "preparing", prepMinutes: order.prepMinutes },
-      data: { prepMinutes },
-    });
-    if (claimed.count === 0) throw new ConflictException("Order changed, retry");
-    this.notifyQueue(order.merchantId, orderId);
-    const readyAt = new Date(order.prepStartedAt.getTime() + prepMinutes * 60_000).toISOString();
-    await this.notifications.notifyProfiles([order.customerId], {
-      title: "",
-      body: "",
-      silent: true,
-      collapseKey: `food-ready-${orderId}`,
-      data: { orderId, status: "preparing", to: "customer", orderType: "merchant", kind: "food_ready_time", readyAt },
-    });
-    return this.forMerchant(await this.mustFindWithItems(orderId));
+  extendPrep(...args: Parameters<FoodOrderLifecycle["extendPrep"]>): ReturnType<FoodOrderLifecycle["extendPrep"]> {
+    return this.lifecycle.extendPrep(...args);
   }
 
-  /** N-16 reveal: the ONLY way the tablet learns (or re-learns, after a reload or on a second staff phone)
-   *  the current code to read out to the rider at the counter.
-   *
-   *  D2 (owner 2026-10-07, MJ-H1): idempotent. The code is stored sealed next to its hash (markReady /
-   *  sweepAutoAccepted), so every reveal returns the SAME code and leaves the attempt counter alone — a
-   *  second phone or Back-and-reopen no longer kills the code the first phone is showing. A new code is
-   *  minted only:
-   *   - on a lockout re-issue: the rider used every try (`pickupCodeAttempts` at the cap; confirmPickup tells
-   *     the rider to "ask the kitchen to re-check the code"), which also resets the counter. Capped per order
-   *     at HANDOVER_CODE_MAX_REISSUES (D2 review: otherwise every reveal at the cap bought the rider 5 more
-   *     guesses); past it, 409 `pickup_code_reissue_limit`;
-   *   - on a legacy row with no (or an unreadable) ciphertext: mint once, store both, stable from then on.
-   *     The tries are NOT reset by this (only a capped lockout re-issue resets them).
-   *  A mint is CAS-guarded on the hash it replaces (and a lockout one on the lock and the re-issue count), so
-   *  two phones racing it both show the winner's code and only one re-issue happens.
-   *
-   *  Two windows: `ready_for_pickup` while dispatch searches, and — once a rider accepts, which clears
-   *  `merchantPhase` (`FoodDispatchService.acceptDispatch`) — any pre-pickup rider status with a minted
-   *  code. The second window is the one the merchant web actually asks in (it reveals only once a rider is
-   *  assigned); without it no shop, pharmacy or hand-accepted kitchen order could be collected (E2E
-   *  2026-10-05 LB-1). It only ever re-mints an existing code: an order with no code stays codeless. */
-  async revealPickupCode(profileId: string, orderId: string): Promise<{ pickupCode: string }> {
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    const where = pickupRevealWhere(order);
-    if (!where) throw new ConflictException("This order isn't ready for pickup yet");
-    const locked = order.pickupCodeAttempts >= DELIVERY_OTP_MAX_ATTEMPTS;
-    const stored = openHandoverCode(this.codeCrypto, this.tokens, "pickup", orderId, order.pickupCodeCipher, order.pickupCodeHash);
-    if (stored && !locked) return { pickupCode: stored };
-    if (locked && order.pickupCodeReissues >= HANDOVER_CODE_MAX_REISSUES) {
-      throw new ConflictException({
-        reason: "pickup_code_reissue_limit",
-        message: "The biker used every try on this code. Call LyniaGo support to hand this order over.",
-      });
-    }
-    const minted = await this.mintPickupCode(orderId, where, order.pickupCodeHash, locked ? order.pickupCodeReissues : null);
-    if (minted) return { pickupCode: minted };
-    // Lost the mint race (another phone minted first): show the code it minted, while it still stands.
-    const fresh = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { pickupCodeHash: true, pickupCodeCipher: true, pickupCodeAttempts: true },
-    });
-    const winner =
-      fresh && fresh.pickupCodeAttempts < DELIVERY_OTP_MAX_ATTEMPTS
-        ? openHandoverCode(this.codeCrypto, this.tokens, "pickup", orderId, fresh.pickupCodeCipher, fresh.pickupCodeHash)
-        : null;
-    if (winner) return { pickupCode: winner };
-    throw new ConflictException("Order changed, retry");
+  revealPickupCode(...args: Parameters<FoodOrderLifecycle["revealPickupCode"]>): ReturnType<FoodOrderLifecycle["revealPickupCode"]> {
+    return this.lifecycle.revealPickupCode(...args);
   }
 
-  /** D2: a fresh pickup code (hash + ciphertext), CAS-guarded on the reveal window AND on the hash it
-   *  replaces. `lockoutReissues` (the count read with the lock) makes it a lockout re-issue: pinned on the
-   *  lock and that count, it resets the tries and counts the re-issue. Without it (the legacy one-time mint)
-   *  the tries stay as they are. Null when the row moved under us. */
-  private async mintPickupCode(
-    orderId: string,
-    where: Prisma.OrderWhereInput,
-    replacesHash: string | null,
-    lockoutReissues: number | null,
-  ): Promise<string | null> {
-    const pickupCode = this.tokens.randomPickupCode();
-    const lockout = lockoutReissues != null;
-    const claimed = await this.prisma.order.updateMany({
-      where: {
-        id: orderId,
-        ...where,
-        pickupCodeHash: replacesHash,
-        ...(lockoutReissues != null ? { pickupCodeAttempts: { gte: DELIVERY_OTP_MAX_ATTEMPTS }, pickupCodeReissues: lockoutReissues } : {}),
-      },
-      data: {
-        pickupCodeHash: this.tokens.hash(pickupCode),
-        pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", orderId, pickupCode),
-        ...(lockout ? { pickupCodeAttempts: 0, pickupCodeReissues: { increment: 1 } } : {}),
-      },
-    });
-    return claimed.count === 0 ? null : pickupCode;
+  mintPickupCode(...args: Parameters<FoodOrderLifecycle["mintPickupCode"]>): ReturnType<FoodOrderLifecycle["mintPickupCode"]> {
+    return this.lifecycle.mintPickupCode(...args);
   }
 
-  // ── Rider (N-16 pickup — mechanic only; C3's dispatch owns getting a rider assigned) ───────────────
-
-  /** Mirrors order-lifecycle.service.ts:confirmDelivery's shape one hop earlier. Reachable once C3's
-   *  dispatch (`FoodDispatchService.acceptDispatch`) sets `Order.riderId` and moves the order to
-   *  `en_route_pickup` — wired live at `POST /merchant/orders/:orderId/confirm-pickup`. */
-  async confirmPickup(orderId: string, riderId: string, code: string): Promise<{ orderId: string; status: "picked_up" }> {
-    const expectedHash = this.tokens.hash(code);
-    const outcome = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<
-        Array<{
-          status: string;
-          rider_id: string | null;
-          pickup_code_hash: string | null;
-          pickup_code_attempts: number;
-          merchant_id: string | null;
-          merchant_payment_method: string | null;
-          merchant_cash_rule: string | null;
-          merchant_goods_total: Prisma.Decimal | null;
-          delivery_fee: Prisma.Decimal | null;
-          merchant_delivery_share: Prisma.Decimal | null;
-        }>
-      >`SELECT status, rider_id, pickup_code_hash, pickup_code_attempts, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const o = rows[0];
-      if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
-      if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
-      if (o.pickup_code_attempts >= DELIVERY_OTP_MAX_ATTEMPTS) {
-        throw new ForbiddenException("Too many attempts — ask the kitchen to re-check the code");
-      }
-      const ok = !!o.pickup_code_hash && this.tokens.safeEqualHex(expectedHash, o.pickup_code_hash);
-      if (!ok) {
-        await tx.order.update({ where: { id: orderId }, data: { pickupCodeAttempts: { increment: 1 } } });
-        return { ok: false as const, attemptsUsed: o.pickup_code_attempts + 1 };
-      }
-      await this.commitPickup(tx, orderId, riderId, o);
-      return { ok: true as const, merchantId: o.merchant_id };
-    });
-    if (!outcome.ok) {
-      const remaining = Math.max(0, DELIVERY_OTP_MAX_ATTEMPTS - outcome.attemptsUsed);
-      throw new BadRequestException(
-        remaining > 0 ? `That code doesn't match. ${remaining} attempt${remaining === 1 ? "" : "s"} left.` : "That code doesn't match — no attempts left.",
-      );
-    }
-    this.notifyQueue(outcome.merchantId, orderId);
-    return { orderId, status: "picked_up" };
+  confirmPickup(...args: Parameters<FoodOrderLifecycle["confirmPickup"]>): ReturnType<FoodOrderLifecycle["confirmPickup"]> {
+    return this.lifecycle.confirmPickup(...args);
   }
 
-  // ── Merchant v2 (ledger D-77): the offline-rider hand-over fallback ────────────────────────────────
-
-  /** The signature binds the order, its assigned rider, the expiry and the CURRENT pickup-code hash, so a
-   *  link dies when it expires, when the rider changes, and when the code is re-minted (a fresh reveal).
-   *  Domain-separated HMAC over the server's hash key (TokenService.hash). */
-  private handoverSig(orderId: string, riderId: string, exp: number, pickupCodeHash: string): string {
-    return this.tokens.hash(`handover-link:v1:${orderId}:${riderId}:${exp}:${pickupCodeHash}`).slice(0, 32);
+  handoverSig(...args: Parameters<FoodOrderLifecycle["handoverSig"]>): ReturnType<FoodOrderLifecycle["handoverSig"]> {
+    return this.lifecycle.handoverSig(...args);
   }
 
-  /** `POST /merchant/orders/:orderId/handover-fallback`: a signed link for the assigned rider, while the
-   *  rider is on the way to the counter. Audit-logged (who asked, for which order). */
-  async createHandoverLink(profileId: string, orderId: string, now: Date = new Date()): Promise<HandoverFallbackResponse> {
-    const base = this.env?.MERCHANT_WEB_URL;
-    if (!base) throw new ServiceUnavailableException({ reason: "handover_link_unavailable", message: "This isn't available yet." });
-    const order = await this.findOwnAsMerchant(profileId, orderId);
-    if (order.status !== "en_route_pickup" || !order.riderId || !order.pickupCodeHash) {
-      throw new ConflictException({ reason: "not_at_handover", message: "There's no biker on the way for this order." });
-    }
-    const exp = Math.floor(now.getTime() / 1000) + HANDOVER_LINK_TTL_S;
-    const token = `${orderId}.${exp}.${this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash)}`;
-    await this.prisma.auditLog.create({ data: { actor: profileId, action: "order.handover_link", target: orderId } });
-    return {
-      // `/h?t=<token>`: the merchant web is a static export, so the token rides in the query string
-      // (apps/merchant/app/lib/routes.ts); the old `/h/<token>` form still forwards there.
-      link: `${base.replace(/\/+$/, "")}/h?t=${encodeURIComponent(token)}`,
-      expiresAt: new Date(exp * 1000).toISOString(),
-      riderPhone: order.rider?.profile?.phone || null,
-    };
+  createHandoverLink(...args: Parameters<FoodOrderLifecycle["createHandoverLink"]>): ReturnType<FoodOrderLifecycle["createHandoverLink"]> {
+    return this.lifecycle.createHandoverLink(...args);
   }
 
-  /** A hand-over link's order, when the token is well-formed, unexpired and still matches the order's
-   *  current rider and pickup code; otherwise one uniform 404 (nothing about why leaks to the holder). */
-  private async verifyHandoverLink(token: string, now: Date) {
-    const m = /^([0-9a-f-]{36})\.(\d{10})\.([0-9a-f]{32})$/.exec(token);
-    const gone = new NotFoundException({ reason: "handover_link_invalid", message: "This link has expired. Ask the counter for a new one." });
-    if (!m) throw gone;
-    const [, orderId, expRaw, sig] = m as unknown as [string, string, string, string];
-    const exp = Number(expRaw);
-    if (exp * 1000 <= now.getTime()) throw gone;
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, status: true, riderId: true, pickupCodeHash: true, merchant: { select: { name: true } } },
-    });
-    if (!order || order.status !== "en_route_pickup" || !order.riderId || !order.pickupCodeHash) throw gone;
-    if (!this.tokens.safeEqualHex(sig, this.handoverSig(orderId, order.riderId, exp, order.pickupCodeHash))) throw gone;
-    return { order: order as typeof order & { riderId: string }, exp };
+  verifyHandoverLink(...args: Parameters<FoodOrderLifecycle["verifyHandoverLink"]>): ReturnType<FoodOrderLifecycle["verifyHandoverLink"]> {
+    return this.lifecycle.verifyHandoverLink(...args);
   }
 
-  /** `GET /handover/:token` (public): the order and venue the rider's page names. */
-  async handoverLinkInfo(token: string, now: Date = new Date()): Promise<HandoverLinkInfoResponse> {
-    const { order, exp } = await this.verifyHandoverLink(token, now);
-    return { orderLabel: `#${order.id.slice(0, 4).toUpperCase()}`, venueName: order.merchant?.name ?? "the counter", expiresAt: new Date(exp * 1000).toISOString() };
+  handoverLinkInfo(...args: Parameters<FoodOrderLifecycle["handoverLinkInfo"]>): ReturnType<FoodOrderLifecycle["handoverLinkInfo"]> {
+    return this.lifecycle.handoverLinkInfo(...args);
   }
 
-  /** `POST /handover/:token/confirm` (public): the rider types the code the counter reads out. Exactly the
-   *  in-app pickup (confirmPickup): same code check, same attempt cap, same debt opening and queue ping.
-   *  Single use by construction — after pickup the order is no longer `en_route_pickup`. Audit-logged. */
-  async confirmHandoverLink(token: string, code: string, now: Date = new Date()): Promise<{ orderId: string; status: "picked_up" }> {
-    const { order } = await this.verifyHandoverLink(token, now);
-    const res = await this.confirmPickup(order.id, order.riderId, code);
-    await this.prisma.auditLog.create({ data: { actor: order.riderId, action: "order.handover_link_used", target: order.id } });
-    return res;
+  confirmHandoverLink(...args: Parameters<FoodOrderLifecycle["confirmHandoverLink"]>): ReturnType<FoodOrderLifecycle["confirmHandoverLink"]> {
+    return this.lifecycle.confirmHandoverLink(...args);
   }
 
-  /**
-   * Auto-accept safeguard 2: "Collected" — the rider's no-code pickup at an auto-accept restaurant (the
-   * kitchen may not be in the app to read a code out). Accepted only when the rider's position is within
-   * RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM of the restaurant's pin, so a rider can't mark food collected
-   * from down the road. Everything else is the code path's: same guards, same debt opening, same event.
-   */
-  async confirmCollected(orderId: string, riderId: string, point: LatLng): Promise<{ orderId: string; status: "picked_up" }> {
-    const merchantId = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<
-        Array<{
-          status: string;
-          rider_id: string | null;
-          auto_accepted: boolean;
-          merchant_id: string | null;
-          merchant_payment_method: string | null;
-          merchant_cash_rule: string | null;
-          merchant_goods_total: Prisma.Decimal | null;
-          delivery_fee: Prisma.Decimal | null;
-          merchant_delivery_share: Prisma.Decimal | null;
-        }>
-      >`SELECT status, rider_id, auto_accepted, merchant_id, merchant_payment_method, merchant_cash_rule, merchant_goods_total, delivery_fee, merchant_delivery_share FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const o = rows[0];
-      if (!o) throw new NotFoundException("Order not found");
-      if (o.rider_id !== riderId) throw new ForbiddenException("Not the assigned biker");
-      if (o.status !== "en_route_pickup") throw new ConflictException("Order is not ready for pickup");
-      if (!o.auto_accepted) {
-        throw new ConflictException({ reason: "code_required", message: "Ask the kitchen for the pickup code." });
-      }
-      const merchant = o.merchant_id ? await tx.merchant.findUnique({ where: { id: o.merchant_id }, select: { location: true } }) : null;
-      const pin = (merchant?.location as Waypoint | null)?.point;
-      if (!pin) throw new ConflictException("This restaurant has no location");
-      const distanceM = haversineKm(pin, point) * 1000;
-      if (distanceM > RESTAURANTS_AUTO_ACCEPT.pickupGeofenceM) {
-        throw new ConflictException({
-          reason: "not_at_restaurant",
-          message: "You're not at the restaurant yet. Move closer and try again.",
-          distanceM: Math.round(distanceM),
-        });
-      }
-      await this.commitPickup(tx, orderId, riderId, o);
-      return o.merchant_id;
-    });
-    this.notifyQueue(merchantId, orderId);
-    return { orderId, status: "picked_up" };
+  confirmCollected(...args: Parameters<FoodOrderLifecycle["confirmCollected"]>): ReturnType<FoodOrderLifecycle["confirmCollected"]> {
+    return this.lifecycle.confirmCollected(...args);
   }
 
-  /** The food left the counter: status, event and (C4/R-01) the debt, in the caller's transaction and
-   *  under its row lock so they commit atomically with the pickup. The debt no-ops for anything other
-   *  than a collect-and-return CASH order. */
-  private async commitPickup(
-    tx: Prisma.TransactionClient,
-    orderId: string,
-    riderId: string,
-    o: {
-      merchant_id: string | null;
-      merchant_payment_method: string | null;
-      merchant_cash_rule: string | null;
-      merchant_goods_total: Prisma.Decimal | null;
-      delivery_fee?: Prisma.Decimal | null;
-      merchant_delivery_share?: Prisma.Decimal | null;
-    },
-  ): Promise<void> {
-    // merchantPhase: an order collected while its kitchen phase still read `preparing` (an auto-accepted
-    // order found early, "Collected" before anyone tapped "Food is ready") leaves the kitchen's machine
-    // here, so the board moves it to ON THE WAY instead of keeping a cooking ticket (MJ-RM1).
-    // D2: the code has done its job — its ciphertext goes, so it can never be shown again.
-    const picked = await tx.order.update({
-      where: { id: orderId },
-      data: { status: "picked_up", collectedAt: new Date(), merchantPhase: null, pickupCodeCipher: null },
-      select: { fleetMerchantId: true },
-    });
-    await tx.orderEvent.create({ data: { orderId, status: "picked_up" } });
-    await this.debt.openDebtIfNeeded(tx, {
-      id: orderId,
-      merchantId: o.merchant_id,
-      riderId,
-      merchantPaymentMethod: o.merchant_payment_method,
-      merchantCashRule: o.merchant_cash_rule,
-      merchantGoodsTotal: o.merchant_goods_total,
-      // D-71: the debt is the venue's net (goods less its delivery share), never the goods alone.
-      deliveryFee: o.delivery_fee ?? null,
-      merchantDeliveryShare: o.merchant_delivery_share ?? null,
-      // OV-F5: an Own biker of this venue's owner brings the delivery fee back too.
-      fleetMerchantId: picked?.fleetMerchantId ?? null,
-    });
+  commitPickup(...args: Parameters<FoodOrderLifecycle["commitPickup"]>): ReturnType<FoodOrderLifecycle["commitPickup"]> {
+    return this.lifecycle.commitPickup(...args);
   }
 
-  // ── Reconciler sweeps (DB-only, RESTAURANTS_TIMING.sweepIntervalMs) ─────────────────────────────────
-
-  /**
-   * N-03 + owner decision D1 (2026-10-07): an order the venue never answers is cancelled `shop_closed` —
-   * never a silent hang (D-13) — but only RESTAURANTS_TIMING.merchantWaitCapMs (24 h) after its answer
-   * window opened, not when the drawn 3:00 countdown (`acceptDeadlineAt`) reaches 0:00. Until then it
-   * keeps ringing and the customer keeps a free cancel (cancelUnpaid) and is nudged (sweepStillWaiting).
-   *
-   * C1 = MJ-H2 + U31: this used to pause an OFFLINE merchant's clock by pushing `acceptDeadlineAt` one
-   * sweep tick (20 s) forward. A tablet back online then had at most 20 s to answer, and the customer's
-   * countdown looped 0:20 → 0:00. D1 folds the offline case into the one 24 h cap, so presence is no
-   * longer read here and `acceptDeadlineAt` is never moved after it is stamped.
-   *
-   * The window opened at `acceptDeadlineAt − acceptWindowMs` (placement; a scheduled order's ring), so
-   * the cap is reached once `acceptDeadlineAt < now − (merchantWaitCapMs − acceptWindowMs)`.
-   */
-  async sweepExpiredAcceptWindows(now: Date = new Date()): Promise<{ cancelled: number }> {
-    let cancelled = 0;
-    const capCutoff = new Date(now.getTime() - (RESTAURANTS_TIMING.merchantWaitCapMs - RESTAURANTS_TIMING.acceptWindowMs));
-    const stale = await this.prisma.order.findMany({
-      where: { orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: { lt: capCutoff } },
-      select: { id: true, merchantId: true, acceptDeadlineAt: true },
-      take: 200,
-    });
-    for (const o of stale) {
-      try {
-        if (
-          await this.commitStaleCancellation(
-            o.id,
-            o.merchantId,
-            { merchantPhase: "awaiting_accept", acceptDeadlineAt: o.acceptDeadlineAt },
-            "shop_closed",
-          )
-        ) {
-          cancelled++;
-        }
-      } catch (err) {
-        this.logger.error(`sweepExpiredAcceptWindows failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    return { cancelled };
+  sweepExpiredAcceptWindows(...args: Parameters<FoodOrderLifecycle["sweepExpiredAcceptWindows"]>): ReturnType<FoodOrderLifecycle["sweepExpiredAcceptWindows"]> {
+    return this.lifecycle.sweepExpiredAcceptWindows(...args);
   }
 
-  /**
-   * Owner decision D1 (2026-10-07), ledger D-87: while the venue hasn't accepted — a ringing order
-   * (`awaiting_accept`, rung) or an auto-accepted one the kitchen hasn't confirmed — the customer is
-   * pushed "Still waiting for {v}" RESTAURANTS_TIMING.stillWaitingPushAfterMs (3 and 15 min) after the
-   * venue's wait started: placement, or a scheduled order's ring (a scheduled order is not late before
-   * it rings). `merchantWaitNudges` is the idempotency guard, claimed by compare-and-swap before the
-   * push, so each push goes once per order; an order first seen past 15 min (sweeps were down) gets only
-   * the 15-min one. A crash between the claim and the push drops that push rather than repeating it —
-   * the softer failure for a nudge (the N-22 precedent). An accepted, declined or cancelled order no
-   * longer matches the query or the claim, so nothing is pushed after the venue answers.
-   */
-  async sweepStillWaiting(now: Date = new Date()): Promise<{ pushed: number }> {
-    let pushed = 0;
-    const steps = RESTAURANTS_TIMING.stillWaitingPushAfterMs;
-    // Latest step first: an order already past 15 min is claimed at step 2 and skips step 1.
-    for (let step = steps.length; step >= 1; step--) {
-      const waitedMs = steps[step - 1]!;
-      const due = await this.prisma.order.findMany({
-        where: {
-          orderType: "merchant",
-          status: "requested",
-          merchantWaitNudges: { lt: step },
-          OR: [
-            // Ringing: the wait started acceptWindowMs before acceptDeadlineAt (null = scheduled, not rung).
-            { merchantPhase: "awaiting_accept", acceptDeadlineAt: { lte: new Date(now.getTime() - waitedMs + RESTAURANTS_TIMING.acceptWindowMs) } },
-            // Auto-accepted, kitchen not confirmed: the wait started at prepStartedAt (placement or ring).
-            { merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null, prepStartedAt: { lte: new Date(now.getTime() - waitedMs) } },
-          ],
-        },
-        select: { id: true, customerId: true, merchant: { select: { name: true, businessType: true } } },
-        take: 200,
-      });
-      for (const o of due) {
-        try {
-          const claimed = await this.prisma.order.updateMany({
-            where: {
-              id: o.id,
-              status: "requested",
-              merchantWaitNudges: { lt: step },
-              OR: [{ merchantPhase: "awaiting_accept" }, { merchantPhase: "preparing", autoAccepted: true, kitchenConfirmedAt: null }],
-            },
-            data: { merchantWaitNudges: step },
-          });
-          if (claimed.count === 0) continue;
-          const fallback = o.merchant?.businessType === "shop" ? "the shop" : "the restaurant";
-          await this.notifications.notifyProfiles([o.customerId], {
-            ...pushCopy(PUSH_C_STILL_WAITING, { v: o.merchant?.name?.trim() || null }, { v: fallback }),
-            // to+orderType so the tap opens the order screen (and its free cancel); one tray slot per order.
-            data: { orderId: o.id, status: "requested", to: "customer", orderType: "merchant", kind: "food_still_waiting" },
-            collapseKey: `order:${o.id}:still_waiting`,
-          });
-          pushed++;
-        } catch (err) {
-          this.logger.error(`sweepStillWaiting failed for order ${o.id}: ${(err as Error).message}`);
-        }
-      }
-    }
-    return { pushed };
+  sweepStillWaiting(...args: Parameters<FoodOrderLifecycle["sweepStillWaiting"]>): ReturnType<FoodOrderLifecycle["sweepStillWaiting"]> {
+    return this.lifecycle.sweepStillWaiting(...args);
   }
 
-  /** N-18: unanswered 60s item-approval window — mocked default (surfaced in the PR): treated as a
-   *  decline, same as the customer declining explicitly. U33 (C8): it stamps its own reason, not the
-   *  venue's `other`, so the history, the feed, the push and the order screen don't blame the venue. */
-  async sweepExpiredItemApprovals(): Promise<{ cancelled: number }> {
-    return this.sweepExpiredPhase("awaiting_item_approval", "itemApprovalDeadlineAt", "item_approval_expired");
+  sweepExpiredItemApprovals(...args: Parameters<FoodOrderLifecycle["sweepExpiredItemApprovals"]>): ReturnType<FoodOrderLifecycle["sweepExpiredItemApprovals"]> {
+    return this.lifecycle.sweepExpiredItemApprovals(...args);
   }
 
-  private async sweepExpiredPhase(
-    phase: "awaiting_accept" | "awaiting_item_approval",
-    deadlineField: "acceptDeadlineAt" | "itemApprovalDeadlineAt",
-    reason: StampedRejectionReason,
-  ): Promise<{ cancelled: number }> {
-    let cancelled = 0;
-    const stale = await this.prisma.order.findMany({
-      where: {
-        orderType: "merchant",
-        status: "requested",
-        merchantPhase: phase,
-        [deadlineField]: { lt: new Date() },
-        // Order flow v2 (D-59): a substitution round's no-answer outcome is "carry on", not cancel — its
-        // own sweep (OrderSubstitutionService.sweepExpiredRounds) resolves it.
-        ...(phase === "awaiting_item_approval" ? { substitutionRounds: { none: { status: "open" } } } : {}),
-      },
-      select: { id: true, merchantId: true },
-      take: 200,
-    });
-    for (const o of stale) {
-      try {
-        if (await this.commitStaleCancellation(o.id, o.merchantId, { merchantPhase: phase }, reason)) {
-          cancelled++;
-        }
-      } catch (err) {
-        this.logger.error(`sweepExpiredPhase(${phase}) failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    return { cancelled };
+  sweepExpiredPhase(...args: Parameters<FoodOrderLifecycle["sweepExpiredPhase"]>): ReturnType<FoodOrderLifecycle["sweepExpiredPhase"]> {
+    return this.lifecycle.sweepExpiredPhase(...args);
   }
 
-  /** Shared CAS-cancel + notify commit for the reconciler sweeps above and below: claim the order via
-   *  a compare-and-swap `updateMany` scoped to `whereExtra` (each caller's own stale-read guard on top
-   *  of the common `status: "requested"` check), then on success write the cancellation event, the
-   *  customer notification, and the kitchen-queue push. Returns whether this call won the claim (false
-   *  = another sweep tick already claimed the row first, a normal race under concurrent ticks). */
-  private async commitStaleCancellation(
-    orderId: string,
-    merchantId: string | null | undefined,
-    whereExtra: Prisma.OrderWhereInput,
-    reason: StampedRejectionReason,
-    // Admin console v2 §3: the kitchen phase it was cancelled in — the CAS's own phase guard by default.
-    stage: string | null = typeof whereExtra.merchantPhase === "string" ? whereExtra.merchantPhase : null,
-  ): Promise<boolean> {
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, status: "requested", ...whereExtra },
-      data: {
-        status: "cancelled",
-        cancelledAt: new Date(),
-        rejectionReason: reason,
-        merchantPhase: null,
-        ...cancelAttribution({ by: "system", status: "requested", merchantPhase: stage, reasonCode: reason }),
-      },
-    });
-    if (claimed.count === 0) return false;
-    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
-    await this.notifyCancelledCustomer(orderId, reason);
-    this.notifyQueue(merchantId, orderId);
-    return true;
+  commitStaleCancellation(...args: Parameters<FoodOrderLifecycle["commitStaleCancellation"]>): ReturnType<FoodOrderLifecycle["commitStaleCancellation"]> {
+    return this.lifecycle.commitStaleCancellation(...args);
   }
 
-  /** N-23: end-of-day close is the only automatic exit for an unpaid WALLET order (R-17 — no payment
-   *  clocks otherwise). Nothing charged; customer notified. */
-  async sweepEndOfDayClose(): Promise<{ cancelled: number }> {
-    let cancelled = 0;
-    const stale = await this.prisma.order.findMany({
-      where: { orderType: "merchant", status: "requested", merchantPhase: "awaiting_payment" },
-      select: { id: true, merchantId: true },
-      take: 200,
-    });
-    if (stale.length === 0) return { cancelled: 0 };
-    const merchantIds = [...new Set(stale.map((o) => o.merchantId).filter((id): id is string => !!id))];
-    const merchants = await this.prisma.merchant.findMany({ where: { id: { in: merchantIds } }, select: { id: true, hours: true } });
-    const hoursById = new Map(merchants.map((m) => [m.id, m.hours as Record<string, { open: string; close: string }> | null]));
-    for (const o of stale) {
-      if (!o.merchantId || !isPastClosingTime(hoursById.get(o.merchantId) ?? null)) continue;
-      try {
-        if (await this.commitStaleCancellation(o.id, o.merchantId, { merchantPhase: "awaiting_payment" }, "shop_closed")) {
-          cancelled++;
-        }
-      } catch (err) {
-        this.logger.error(`sweepEndOfDayClose failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    return { cancelled };
+  sweepEndOfDayClose(...args: Parameters<FoodOrderLifecycle["sweepEndOfDayClose"]>): ReturnType<FoodOrderLifecycle["sweepEndOfDayClose"]> {
+    return this.lifecycle.sweepEndOfDayClose(...args);
   }
 
-  /** N-22: one soft reminder push ~15 min after an unanswered payment request — no threat language,
-   *  nothing at risk (R-17 retired the payment clock; only end-of-day close, N-23, is automatic).
-   *  `paymentReminderSentAt` is the idempotency guard: a claimed row can never be reminded twice, and
-   *  a row already reminded is excluded from the next sweep's own query, so a crash between the
-   *  claim and the push (best-effort, never throws) at worst drops one reminder rather than repeating
-   *  it — the softer failure mode for a "soft, once" nudge. */
-  async sweepPaymentReminders(): Promise<{ reminded: number }> {
-    let reminded = 0;
-    const cutoff = new Date(Date.now() - RESTAURANTS_TIMING.paymentReminderWindowMs);
-    const due = await this.prisma.order.findMany({
-      where: {
-        orderType: "merchant",
-        status: "requested",
-        merchantPhase: "awaiting_payment",
-        paymentRequestedAt: { lt: cutoff },
-        paymentReminderSentAt: null,
-      },
-      select: { id: true, customerId: true },
-      take: 200,
-    });
-    for (const o of due) {
-      try {
-        const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, paymentReminderSentAt: null },
-          data: { paymentReminderSentAt: new Date() },
-        });
-        if (claimed.count > 0) {
-          await this.notifyPaymentRequested(
-            o.id,
-            o.customerId,
-            "Still waiting on your payment",
-            "Your order is on hold until payment lands — pay now, or cancel any time, free.",
-          );
-          reminded++;
-        }
-      } catch (err) {
-        this.logger.error(`sweepPaymentReminders failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    return { reminded };
+  sweepPaymentReminders(...args: Parameters<FoodOrderLifecycle["sweepPaymentReminders"]>): ReturnType<FoodOrderLifecycle["sweepPaymentReminders"]> {
+    return this.lifecycle.sweepPaymentReminders(...args);
   }
 
-  /**
-   * Auto-accept safeguard 1. Two jobs for auto-accepted orders still in the kitchen:
-   *  - Escalate: unconfirmed RESTAURANTS_AUTO_ACCEPT.escalateAfterMs after placement → marked urgent for
-   *    the ops call list (once).
-   *  - Cancel: still unconfirmed RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs after placement (24 h since
-   *    owner decision D1 — a merchant wait; it was 60 min) → cancelled, customer told nothing was
-   *    charged (a cash order has taken no money yet).
-   *  - Food is ready: once CONFIRMED and the prep time has run out with nobody tapping "Food is ready",
-   *    the order is marked ready (`ready_for_pickup` while dispatch looks, null once a rider holds it).
-   *    The rider search itself starts RESTAURANTS_AUTO_ACCEPT.dispatchLeadMs earlier, without touching
-   *    the kitchen's phase (FoodDispatchService.sweepSearch, MJ-RM1 / U32). An unconfirmed order never
-   *    reaches dispatch.
-   */
-  async sweepAutoAccepted(now: Date = new Date()): Promise<{ escalated: number; released: number; cancelled: number }> {
-    const escalated = await this.prisma.order.updateMany({
-      where: {
-        orderType: "merchant",
-        status: "requested",
-        autoAccepted: true,
-        kitchenConfirmedAt: null,
-        kitchenEscalatedAt: null,
-        // prepStartedAt, not createdAt: the same instant for an ASAP order, but a scheduled order starts
-        // cooking when it rings (OrderScheduleService), maybe a day after it was placed.
-        prepStartedAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.escalateAfterMs) },
-      },
-      data: { kitchenEscalatedAt: now },
-    });
-    if (escalated.count > 0) this.logger.warn(`auto-accept: ${escalated.count} order(s) unconfirmed — urgent on the ops call list`);
-
-    let cancelled = 0;
-    const abandoned = await this.prisma.order.findMany({
-      where: {
-        orderType: "merchant",
-        status: "requested",
-        autoAccepted: true,
-        kitchenConfirmedAt: null,
-        prepStartedAt: { lt: new Date(now.getTime() - RESTAURANTS_AUTO_ACCEPT.autoCancelAfterMs) },
-      },
-      select: { id: true, merchantId: true },
-      take: 200,
-    });
-    for (const o of abandoned) {
-      try {
-        if (await this.commitStaleCancellation(o.id, o.merchantId, { autoAccepted: true, kitchenConfirmedAt: null }, "kitchen_unconfirmed", "preparing")) {
-          cancelled++;
-        }
-      } catch (err) {
-        this.logger.error(`sweepAutoAccepted cancel failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    if (cancelled > 0) this.logger.warn(`auto-accept: ${cancelled} order(s) never confirmed by the kitchen — cancelled`);
-
-    // MJ-RM1 / U32: the rider search starts dispatchLeadMs early on its own (FoodDispatchService.
-    // sweepSearch, phase untouched); the kitchen's ticket only becomes "ready" once the ready time itself
-    // has passed and nobody tapped "Food is ready", so readyAt is the real ready time, not 8 min early.
-    let released = 0;
-    const cooking = await this.prisma.order.findMany({
-      where: {
-        orderType: "merchant",
-        status: { in: ["requested", "open_for_offers", ...RIDER_PRE_PICKUP_STATUSES] },
-        merchantPhase: "preparing",
-        autoAccepted: true,
-        kitchenConfirmedAt: { not: null },
-        // Order flow v2 (BRIEF §8): never to a rider while the customer is answering changes.
-        substitutionRounds: { none: { status: "open" } },
-      },
-      select: { id: true, merchantId: true, status: true, prepStartedAt: true, prepMinutes: true },
-      orderBy: { prepStartedAt: "asc" },
-      take: 200,
-    });
-    for (const o of cooking) {
-      const readyAt = (o.prepStartedAt?.getTime() ?? now.getTime()) + (o.prepMinutes ?? 0) * 60_000;
-      if (readyAt > now.getTime()) continue;
-      const status = o.status ?? "requested";
-      const next = readyPhaseFor(status);
-      if (next === undefined) continue;
-      try {
-        const pickupCode = this.tokens.randomPickupCode();
-        const claimed = await this.prisma.order.updateMany({
-          where: { id: o.id, status, merchantPhase: "preparing", kitchenConfirmedAt: { not: null } },
-          data: {
-            merchantPhase: next,
-            readyAt: now,
-            pickupCodeHash: this.tokens.hash(pickupCode),
-            pickupCodeCipher: sealHandoverCode(this.codeCrypto, "pickup", o.id, pickupCode),
-            pickupCodeAttempts: 0,
-            // As markReady: a parked search resumes now (and the D-34 cap then applies as usual).
-            ...(next === "ready_for_pickup" ? { dispatchNextCheckAt: now } : {}),
-          },
-        });
-        if (claimed.count > 0) {
-          released++;
-          this.notifyQueue(o.merchantId, o.id);
-        }
-      } catch (err) {
-        this.logger.error(`sweepAutoAccepted failed for order ${o.id}: ${(err as Error).message}`);
-      }
-    }
-    return { escalated: escalated.count, released, cancelled };
+  sweepAutoAccepted(...args: Parameters<FoodOrderLifecycle["sweepAutoAccepted"]>): ReturnType<FoodOrderLifecycle["sweepAutoAccepted"]> {
+    return this.lifecycle.sweepAutoAccepted(...args);
   }
 
   // ── Order flow v2 (ledger D-59, backend B) ──────────────────────────────────────────────────────────
 
-  private scheduleService(): OrderScheduleService {
+  scheduleService(): OrderScheduleService {
     if (!this.schedule) throw new ConflictException({ reason: "slot_unavailable", message: "Scheduled orders aren't available." });
     return this.schedule;
   }
 
-  private prescriptionService(): PrescriptionService {
+  prescriptionService(): PrescriptionService {
     if (!this.prescriptions) throw new ConflictException({ reason: "rx_unavailable", message: "Prescription medicines can't be ordered in the app yet." });
     return this.prescriptions;
   }
 
-  /** BRIEF §12 "Change time" (T13a): move a scheduled order to another offered slot, before it rings. */
-  async changeSchedule(orderId: string, customerId: string, scheduledFor: string): Promise<MerchantOrderResponse> {
-    const order = await this.findOwnAsCustomer(orderId, customerId);
-    if (!order.schedule) throw new ConflictException({ reason: "not_scheduled", message: "This order isn't scheduled." });
-    if (order.schedule.rungAt || order.status !== "requested" || order.merchantPhase !== "awaiting_accept") {
-      throw new ConflictException({ reason: "scheduled_started", message: "The order has started — its time can't change now." });
-    }
-    const venue = await this.prisma.merchant.findUnique({
-      where: { id: order.merchantId! },
-      select: { id: true, hours: true, closedUntil: true, prepBaselineMinutes: true, location: true },
-    });
-    if (!venue) throw new NotFoundException("Order not found");
-    const slot = await this.scheduleService().resolveSlot(venue, scheduledFor, order.distanceKm, orderId);
-    const moved = await this.prisma.orderSchedule.updateMany({
-      where: { orderId, rungAt: null },
-      data: { scheduledFor: slot.scheduledFor, ringsAt: slot.ringsAt },
-    });
-    if (moved.count === 0) throw new ConflictException({ reason: "scheduled_started", message: "The order has started — its time can't change now." });
-    return this.toResponse(await this.mustFindWithItems(orderId));
+  changeSchedule(...args: Parameters<FoodOrderPlacing["changeSchedule"]>): ReturnType<FoodOrderPlacing["changeSchedule"]> {
+    return this.placing.changeSchedule(...args);
   }
 
-  /** M7a: the merchant's Scheduled list — orders waiting for their ring time, soonest first. */
-  async listScheduled(profileId: string): Promise<MerchantOrderResponse[]> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const orders = await this.prisma.order.findMany({
-      where: { merchantId, orderType: "merchant", status: "requested", schedule: { is: { rungAt: null } } },
-      orderBy: { schedule: { scheduledFor: "asc" } },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-      take: 200,
-    });
-    return orders.map((o) => this.forMerchant(o));
+  listScheduled(...args: Parameters<FoodOrderPlacing["listScheduled"]>): ReturnType<FoodOrderPlacing["listScheduled"]> {
+    return this.placing.listScheduled(...args);
   }
 
-  /** RD1a–d: what the rider's offer card tags — venue kind, a scheduled slot, a prescription order. */
-  async offerJobInfo(orderId: string): Promise<NonNullable<FoodOfferResponse["job"]> | null> {
-    const o = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        merchant: { select: { businessType: true, shopKind: true } },
-        schedule: { select: { scheduledFor: true } },
-        prescription: { select: { status: true } },
-        carriedBalance: { select: { amount: true } },
-      },
-    });
-    if (!o?.merchant) return null;
-    // FJ-H5: the rider's "collect at the door" figure includes what this order carries.
-    const carried = addMoney(0, ...(o.carriedBalance ?? []).map((b) => Number(b.amount)));
-    return {
-      businessType: o.merchant.businessType,
-      shopKind: o.merchant.shopKind ?? null,
-      scheduledFor: o.schedule?.scheduledFor.toISOString() ?? null,
-      rx: o.prescription?.status === "approved",
-      ...(carried > 0 ? { carriedUsd: carried } : {}),
-    };
+  offerJobInfo(...args: Parameters<FoodOrderLifecycle["offerJobInfo"]>): ReturnType<FoodOrderLifecycle["offerJobInfo"]> {
+    return this.lifecycle.offerJobInfo(...args);
   }
 
-  /** BRIEF D3f: the customer's owed balance (`GET /restaurants/balance`). */
-  async myBalance(customerId: string): Promise<CustomerBalanceResponse> {
-    return customerBalance(this.prisma, customerId);
+  myBalance(...args: Parameters<FoodOrderViews["myBalance"]>): ReturnType<FoodOrderViews["myBalance"]> {
+    return this.views.myBalance(...args);
   }
 
-  // ── Shared lookups + mapping ─────────────────────────────────────────────────────────────────────
-
-  private async ownMerchantId(profileId: string): Promise<string> {
-    return resolveOwnMerchantId(this.prisma, profileId);
+  ownMerchantId(...args: Parameters<FoodOrderViews["ownMerchantId"]>): ReturnType<FoodOrderViews["ownMerchantId"]> {
+    return this.views.ownMerchantId(...args);
   }
 
-  private async findOwnAsMerchant(profileId: string, orderId: string): Promise<OrderWithItems> {
-    const merchantId = await this.ownMerchantId(profileId);
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, merchantId, orderType: "merchant" },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
-    if (!order) throw new NotFoundException("Order not found");
-    return order;
+  findOwnAsMerchant(...args: Parameters<FoodOrderViews["findOwnAsMerchant"]>): ReturnType<FoodOrderViews["findOwnAsMerchant"]> {
+    return this.views.findOwnAsMerchant(...args);
   }
 
-  private async findOwnAsCustomer(orderId: string, customerId: string): Promise<OrderWithItems> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, customerId, orderType: "merchant" },
-      include: ORDER_WITH_ITEMS_INCLUDE,
-    });
-    if (!order) throw new NotFoundException("Order not found");
-    return order;
+  findOwnAsCustomer(...args: Parameters<FoodOrderViews["findOwnAsCustomer"]>): ReturnType<FoodOrderViews["findOwnAsCustomer"]> {
+    return this.views.findOwnAsCustomer(...args);
   }
 
-  private async mustFindWithItems(orderId: string): Promise<OrderWithItems> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: ORDER_WITH_ITEMS_INCLUDE });
-    if (!order) throw new NotFoundException("Order not found");
-    return order;
+  mustFindWithItems(...args: Parameters<FoodOrderViews["mustFindWithItems"]>): ReturnType<FoodOrderViews["mustFindWithItems"]> {
+    return this.views.mustFindWithItems(...args);
   }
 
-  /** The restaurant's own view adds the customer's contact number, so it can call about changes
-   *  (auto-accept safeguard 5), and their first name (Merchant v2, D-77). Never on the rider's view. */
-  private forMerchant(order: OrderWithItems): MerchantOrderResponse {
-    const dropoff = order.dropoff as Waypoint | null;
-    // The customer's own venue rating stays on the customer's read.
-    const { venueRating: _venueRating, ...rest } = this.toResponse(order);
-    // Merchant v2 (D-77, owner decision): the customer's FIRST name only ("Rudo asked for 4 items").
-    const firstName = order.customer?.firstName?.trim() || null;
-    // Merchant v2 (D-77): the assigned rider's number, so the counter can call them (K4) and about late cash (T2).
-    const riderPhone = order.rider?.profile?.phone || null;
-    return {
-      ...rest,
-      customerPhone: dropoff?.contactPhone ?? null,
-      ...(firstName ? { customerFirstName: firstName } : {}),
-      ...(riderPhone ? { riderPhone } : {}),
-      // Own bikers (D-117, OB-M13): the shop's own biker carries it and brings the delivery fee back too.
-      ...(order.fleetMerchantId && order.riderId ? { ownBiker: true as const } : {}),
-      // Merchant v2 (D-77): "at your counter" and "arrives 07:38", from the rider's location pings.
-      ...(order.riderArrivedAt ? { riderArrivedAt: order.riderArrivedAt.toISOString() } : {}),
-      ...(order.riderEtaAt ? { riderEtaAt: order.riderEtaAt.toISOString() } : {}),
-    };
+  forMerchant(...args: Parameters<FoodOrderViews["forMerchant"]>): ReturnType<FoodOrderViews["forMerchant"]> {
+    return this.views.forMerchant(...args);
   }
 
-  private async notifyCancelledCustomer(orderId: string, reason: StampedRejectionReason, note: string | null = null): Promise<void> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, merchant: { select: { name: true } } } });
-    if (!order) return;
-    // Order flow v2 G3a (O.g.push.c[8]/[9]): the venue declined → "{v} couldn’t take your order"; no
-    // rider → "We couldn’t find a rider". Every other reason keeps its own sentence.
-    const venue = order.merchant?.name?.trim() || null;
-    const copy =
-      reason === "no_rider"
-        ? pushCopy(PUSH_C.noRider, {})
-        : venue && VENUE_DECLINED.has(reason)
-          ? pushCopy(PUSH_C.venueCouldnt, { v: venue })
-          : { title: "Your order was cancelled", body: rejectionCopy(reason) };
-    await this.notifications.notifyProfiles([order.customerId], {
-      ...copy,
-      // D-77 S2a: "Rudo sees this note" — the venue's own words follow the push's sentence.
-      ...(note ? { body: `${copy.body} “${note}”` } : {}),
-      // to+orderType so the tap opens the food tracker, not the parcel /order/:id. Additive.
-      data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
-    });
+  notifyCancelledCustomer(...args: Parameters<FoodOrderViews["notifyCancelledCustomer"]>): ReturnType<FoodOrderViews["notifyCancelledCustomer"]> {
+    return this.views.notifyCancelledCustomer(...args);
   }
 
-  /** C5 "merchant accepted — pay now": shared by the initial request (requestPayment) and the N-22
-   *  reminder sweep — same `kind` (the client renders both as the same persistent pay-now push),
-   *  different copy. */
-  private async notifyPaymentRequested(orderId: string, customerId: string, title: string, body: string): Promise<void> {
-    await this.notifications.notifyProfiles([customerId], {
-      title,
-      body,
-      data: { orderId, status: "awaiting_payment", to: "customer", kind: "food_pay_now", orderType: "merchant" },
-    });
+  notifyPaymentRequested(...args: Parameters<FoodOrderViews["notifyPaymentRequested"]>): ReturnType<FoodOrderViews["notifyPaymentRequested"]> {
+    return this.views.notifyPaymentRequested(...args);
   }
 
-  private toResponse(order: OrderWithItems): MerchantOrderResponse {
-    const items: MerchantOrderItemView[] = order.merchantItems.map((it) => ({
-      itemId: it.id,
-      dishId: it.dishId,
-      name: it.nameSnapshot,
-      priceUsd: Number(it.priceUsd),
-      quantity: it.quantity,
-      note: it.note,
-      available: it.available,
-      ...(it.rxRequired ? { rxRequired: true } : {}),
-      // Order flow v2: the line an accepted swap replaced — only on swap lines.
-      ...(it.replacesItemId ? { replacesItemId: it.replacesItemId } : {}),
-    }));
-    const merchantGoodsTotal = order.merchantGoodsTotal != null ? Number(order.merchantGoodsTotal) : null;
-    const deliveryFee = order.deliveryFee != null ? Number(order.deliveryFee) : null;
-    const money = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare });
-    const merchantLocation = order.merchant?.location as Waypoint | null;
-    // The owner's sign-in number stands in only when it is a Zimbabwe one: since D-116 an owner can sign
-    // in from abroad, and customers and riders in Zimbabwe must not be sent to pay or call a +44 number.
-    const ownerPhone = order.merchant?.ownerProfile?.phone ?? null;
-    const shopPhone = merchantLocation?.contactPhone ?? (ownerPhone?.startsWith(`+${DEFAULT_COUNTRY_CODE}`) ? ownerPhone : null);
-    // Safeguard 5: the shop's number is only for paying it directly (legacy WALLET orders), or when the
-    // restaurant agreed to show it to its customers.
-    const merchantPaymentPhone = order.merchantPaymentMethod === "wallet" ? shopPhone : null;
-    const restaurantPhone = order.merchant?.showPhoneToCustomers ? shopPhone : null;
-    // C9 (reviewed list 2026-10-07): the one amount due at the door — the agreed total plus any carried
-    // balance — the same figure the handshake (FoodDebtService.confirmCustomerCash), the pushes and the
-    // Orders history row use.
-    const amountDueUsd = merchantAmountDueUsd(order);
-    const response: MerchantOrderResponse = {
-      id: order.id,
-      merchantId: order.merchantId!,
-      status: order.status,
-      merchantPhase: order.merchantPhase,
-      items,
-      note: order.note,
-      paymentMethod: order.merchantPaymentMethod,
-      merchantPaymentPhone,
-      merchantGoodsTotal,
-      deliveryFee,
-      // D-71: the customer's total has the venue's delivery share taken off; the rider's fee doesn't.
-      total: merchantGoodsTotal != null && deliveryFee != null ? money.customerTotal : null,
-      // Both omitted (A-O14) on an order the venue doesn't fund — the customer then pays `deliveryFee`.
-      merchantDeliveryShare: order.merchantDeliveryShare != null ? Number(order.merchantDeliveryShare) : null,
-      customerDeliveryFee: order.merchantDeliveryShare != null && deliveryFee != null ? money.customerDeliveryFee : null,
-      acceptDeadlineAt: order.acceptDeadlineAt?.toISOString() ?? null,
-      itemApprovalDeadlineAt: order.itemApprovalDeadlineAt?.toISOString() ?? null,
-      prepMinutes: order.prepMinutes,
-      prepStartedAt: order.prepStartedAt?.toISOString() ?? null,
-      readyAt: order.readyAt?.toISOString() ?? null,
-      rejectionReason: order.rejectionReason,
-      // Brief 07 (U66, D-97): the venue's "Something else" note, for the customer's D3g ending.
-      venueNote: venueNoteOf(order),
-      paymentCallLoggedAt: order.paymentCallLoggedAt?.toISOString() ?? null,
-      paymentRequestedAt: order.paymentRequestedAt?.toISOString() ?? null,
-      merchantPaymentReference: order.merchantPaymentReference,
-      merchantPaymentConfirmedAt: order.merchantPaymentConfirmedAt?.toISOString() ?? null,
-      // #670: the payment-prompt lifecycle (null/omitted until a prompt is sent). rail/status are a
-      // controlled vocabulary the wire contract validates; stored as text on the order row.
-      paymentPromptStatus: (order.paymentPromptStatus as MerchantOrderResponse["paymentPromptStatus"]) ?? null,
-      paymentPromptRail: (order.paymentPromptRail as MerchantOrderResponse["paymentPromptRail"]) ?? null,
-      paymentPromptRef: order.paymentPromptRef,
-      paymentPromptSentAt: order.paymentPromptSentAt?.toISOString() ?? null,
-      // C3: dispatch view (see MerchantOrderResponse's docstring).
-      riderId: order.riderId,
-      // #671: the assigned rider's public identity for the food live tracker. Populated only once a
-      // rider is joined (order.rider is null pre-dispatch); omitted otherwise via the null-omit pass.
-      rider: order.rider
-        ? {
-            profileId: order.rider.profileId,
-            firstName: order.rider.profile.firstName,
-            lastName: order.rider.profile.lastName,
-            photoUrl: order.rider.photoUrl,
-            ratingAvg: order.rider.ratingAvg,
-            ratingCount: order.rider.ratingCount,
-            tripsCount: order.rider.tripsCount,
-            vehicleInfo: order.rider.vehicleInfo,
-            plate: order.rider.bikeReg,
-            kycVerified: order.rider.kycStatus === "verified",
-          }
-        : null,
-      dispatchAttempt: order.dispatchAttempt,
-      dispatchOfferExpiresAt: order.dispatchOfferExpiresAt?.toISOString() ?? null,
-      noRiderHoldAt: order.noRiderHoldAt?.toISOString() ?? null,
-      // N-16: mirrors deliveryOtpAttempts's resync purpose for the pickup code (D5).
-      pickupCodeAttempts: order.pickupCodeAttempts,
-      // C4: doorstep handshake (R-04/R-05/N-19).
-      cashHandshakeAmount: order.cashHandshakeAmount != null ? Number(order.cashHandshakeAmount) : null,
-      customerCashConfirmedAt: order.customerCashConfirmedAt?.toISOString() ?? null,
-      riderCashConfirmedAt: order.riderCashConfirmedAt?.toISOString() ?? null,
-      cashHandshakeDeadlineAt: order.cashHandshakeDeadlineAt?.toISOString() ?? null,
-      cashHandshakeFrozenAt: order.cashHandshakeFrozenAt?.toISOString() ?? null,
-      // N-10: the rider's logged pre-no-show call attempts (D5).
-      noShowCallTimestamps: order.noShowCallTimestamps.map((t) => t.toISOString()),
-      // C4: the collect-and-return merchant-debt ledger's derived state.
-      merchantCashRule: order.merchantCashRule,
-      debtStatus: order.debtStatus,
-      debtAmount: order.debtAmount != null ? Number(order.debtAmount) : null,
-      debtOpenedAt: order.debtOpenedAt?.toISOString() ?? null,
-      debtSettledAt: order.debtSettledAt?.toISOString() ?? null,
-      // C4/D-12: merchant-issued refund.
-      refundReference: order.refundReference,
-      refundAmount: order.refundAmount != null ? Number(order.refundAmount) : null,
-      refundedAt: order.refundedAt?.toISOString() ?? null,
-      // D-48: the Orders screens' times and the cash-back due time.
-      // Optional in the contract; a row always has it.
-      createdAt: (order.createdAt as Date | undefined)?.toISOString(),
-      deliveredAt: order.deliveredAt?.toISOString() ?? null,
-      cashDueAt:
-        order.debtStatus === "open" && order.deliveredAt
-          ? new Date(order.deliveredAt.getTime() + RESTAURANTS_DEBT.cashReturnWindowMs).toISOString()
-          : null,
-      merchantClosedAt: order.merchantClosedAt?.toISOString() ?? null,
-      merchantCloseReason: (order.merchantCloseReason as MerchantOrderResponse["merchantCloseReason"]) ?? null,
-      autoAccepted: order.autoAccepted,
-      kitchenConfirmedAt: order.kitchenConfirmedAt?.toISOString() ?? null,
-      kitchenConfirmedBy: (order.kitchenConfirmedBy as MerchantOrderResponse["kitchenConfirmedBy"]) ?? null,
-      itemsEditedAt: order.itemsEditedAt?.toISOString() ?? null,
-      // D5 (U10): the rider's "I'm here" at the drop-off — a hint for the customer's door card, never a gate.
-      riderAtDropoffAt: order.riderAtDropoffAt?.toISOString() ?? null,
-      restaurantPhone,
-      ...orderFlowV2Fields(order),
-      ...orderFlowV2BFields(order),
-    };
-    // C9 (U35/U37): `total` is that same amount, so the order screen, the receipt and the handshake can't
-    // disagree (it used to rebuild goods + fee + carried and miss an `agreedFare` correction).
-    if (response.total != null && amountDueUsd != null) response.total = amountDueUsd;
-    response.amountDueUsd = amountDueUsd;
-    // A-O14 (LC-A06): the doorstep-handshake/debt-ledger/refund fields above are `null` on the
-    // overwhelming majority of polls (wallet orders never touch the handshake/debt fields at all;
-    // refund fields only ever populate on a merchant-issued refund) — omit rather than send an
-    // explicit `null`, since every consumer already reads these fields via `??`/truthy/`===` and
-    // treats a missing key identically to `null` (see contracts.ts's A-O14 comment).
-    for (const field of RESPONSE_NULL_OMIT_FIELDS) {
-      if (response[field] === null) delete response[field];
-    }
-    return response;
+  toResponse(...args: Parameters<FoodOrderViews["toResponse"]>): ReturnType<FoodOrderViews["toResponse"]> {
+    return this.views.toResponse(...args);
   }
-}
-
-/** A-O14 (LC-A06): fields `toResponse()` omits from the JSON payload, rather than serializing as an
- *  explicit `null`, whenever they don't apply to the order's current state. */
-const RESPONSE_NULL_OMIT_FIELDS = [
-  // #671: the rider-identity block is null on every poll before a rider is assigned — omit it, since
-  // the consumer reads it via `??`/truthy (same A-O14 rationale as the handshake/debt fields).
-  "rider",
-  // #670: the payment-prompt fields are null on every order that never used a pushed prompt (cash
-  // orders, manual-reference orders, all pre-#670 orders) — omit rather than send explicit nulls.
-  "paymentPromptStatus",
-  "paymentPromptRail",
-  "paymentPromptRef",
-  "paymentPromptSentAt",
-  "cashHandshakeAmount",
-  "customerCashConfirmedAt",
-  "riderCashConfirmedAt",
-  "cashHandshakeDeadlineAt",
-  "cashHandshakeFrozenAt",
-  "merchantCashRule",
-  "debtStatus",
-  "debtAmount",
-  "debtOpenedAt",
-  "debtSettledAt",
-  "refundReference",
-  "refundAmount",
-  "refundedAt",
-  "deliveredAt",
-  "cashDueAt",
-  "merchantClosedAt",
-  "merchantCloseReason",
-  "kitchenConfirmedAt",
-  "kitchenConfirmedBy",
-  "itemsEditedAt",
-  "riderAtDropoffAt",
-  "restaurantPhone",
-  // Brief 07 (D-97): absent unless the venue turned the order down with a note.
-  "venueNote",
-  // D-71: absent unless the venue funds this order's delivery.
-  "merchantDeliveryShare",
-  "customerDeliveryFee",
-  // Order flow v2: absent unless the order is scheduled / has a prescription / owes or carries a balance.
-  "scheduledFor",
-  "ringsAt",
-  "scheduleStartedAt",
-  "prescription",
-  "owedUsd",
-  "previousBalanceUsd",
-  "amountDueUsd",
-] as const satisfies readonly (keyof MerchantOrderResponse)[];
-
-/** Order flow v2 (ledger D-59, backend B): the additive order-read fields (scheduled, Rx, owed balance). Nulls are omitted by the
- *  A-O14 pass in toResponse. Tolerates a row read without the v2 includes (older test fixtures). */
-function orderFlowV2BFields(order: Partial<Pick<OrderWithItems, "merchant" | "schedule" | "prescription" | "owedBalance" | "carriedBalance">>): Partial<MerchantOrderResponse> {
-  const rx = order.prescription;
-  const carried = addMoney(0, ...(order.carriedBalance ?? []).map((b) => Number(b.amount)));
-  const prescription: MerchantOrderPrescriptionView | null = rx
-    ? {
-        status: rx.status as MerchantOrderPrescriptionView["status"],
-        patientName: rx.patientName,
-        pageCount: rx.photoKeys.length,
-        declineReason: (rx.declineReason as RxDeclineReason | null) ?? null,
-        declineNote: rx.declineNote,
-        checkedAt: rx.checkedAt?.toISOString() ?? null,
-        riderSawOriginalAt: rx.riderSawOriginalAt?.toISOString() ?? null,
-      }
-    : null;
-  return {
-    scheduledFor: order.schedule?.scheduledFor.toISOString() ?? null,
-    ringsAt: order.schedule?.ringsAt.toISOString() ?? null,
-    scheduleStartedAt: order.schedule?.rungAt?.toISOString() ?? null,
-    prescription,
-    owedUsd: order.owedBalance ? Number(order.owedBalance.amount) : null,
-    previousBalanceUsd: carried > 0 ? carried : null,
-  };
-}
-
-/** Compact one-line rendering of a food basket — "2x Sadza · 1x Chicken" — mirrors
- *  packages/shared summarizeItems' grammar for the generic `itemDesc` column every order carries. */
-function summarizeMerchantItems(items: readonly { name: string; quantity: number }[]): string {
-  return items.map((i) => `${i.quantity}x ${i.name}`).join(" · ");
-}
-
-/** N-23: true once "now" is at/after the shop's closing time for today, server-local calendar day
- *  (mirrors merchant.service.ts's endOfToday N-14 boundary). No hours set at all reads as "never
- *  auto-closes on hours" — the accept-window/item-approval sweeps still bound an order's lifetime. */
-function isPastClosingTime(hours: Record<string, { open: string; close: string }> | null): boolean {
-  if (!hours) return false;
-  // Harare wall clock: the API container runs in UTC, the hours are the shop's local times.
-  const now = harareWallClock(new Date());
-  const dayKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][now.getDay()]!;
-  const today = hours[dayKey];
-  if (!today) return false;
-  const [closeH, closeM] = today.close.split(":").map(Number);
-  const closeAt = new Date(now);
-  closeAt.setHours(closeH ?? 23, closeM ?? 59, 59, 999);
-  return now >= closeAt;
-}
-
-/** Items subtotal of the lines still on the order (`available !== false`), exact in cents. */
-function keptSubtotalOf(order: Pick<OrderWithItems, "merchantItems">): number {
-  return fromCents(order.merchantItems.filter((it) => it.available !== false).reduce((c, it) => c + toCents(Number(it.priceUsd)) * it.quantity, 0));
-}
-
-/**
- * Order flow v2 (ledger D-59) additive response fields — the receipt (D1), the venue, the four-step track
- * (BRIEF §4), the out-of-stock preference (§7), the substitution round (§8) and
- * the customer's venue rating (§11). Every key is optional in the contract; an installed app ignores them.
- */
-function orderFlowV2Fields(order: OrderWithItems): Partial<MerchantOrderResponse> {
-  const out: Partial<MerchantOrderResponse> = {
-    shortId: orderShortId(order.id),
-    track: deriveMerchantOrderTrack({ ...order, rxStatus: order.prescription?.status ?? null }),
-    outOfStockPref: order.outOfStockPref === "remove" ? "remove" : "ask",
-  };
-  if (order.merchant?.name) {
-    out.venue = { name: order.merchant.name, businessType: order.merchant.businessType, shopKind: order.merchant.shopKind ?? null };
-  }
-  const kept = keptSubtotalOf(order);
-  if (order.merchantItems.length > 0) {
-    const goods = merchantGoodsForSubtotal(kept);
-    out.itemsSubtotal = goods.itemsSubtotal;
-    // The fee actually charged: whatever the goods total carries above the items (a cancelled order's
-    // stored total may predate its last change, so derive from the stored goods total when present).
-    out.smallOrderFee =
-      order.merchantGoodsTotal != null ? Math.max(0, roundToCents(Number(order.merchantGoodsTotal) - kept)) : goods.smallOrderFee;
-  }
-  const round = order.substitutionRounds?.[0];
-  if (round) out.substitution = toSubstitutionRoundView(round, { keptSubtotal: kept });
-  if (order.venueRating) {
-    out.venueRating = { score: order.venueRating.score, tags: order.venueRating.tags, at: order.venueRating.createdAt.toISOString() };
-  }
-  return out;
 }
