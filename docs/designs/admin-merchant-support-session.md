@@ -80,7 +80,8 @@ developer editing the database by hand.
 3. **Bounded and audited.** Each session:
    - needs a typed reason;
    - expires after 60 minutes;
-   - writes every mutating request to the existing `AuditLog` as "operator X, acting for shop Y".
+   - writes every request, reads included, to the existing `AuditLog` as "operator X, acting for
+     shop Y".
 4. **Visible to the operator.** The merchant app shows a persistent "LyniaGo support in <shop>"
    banner with Exit, during support sessions only.
 5. **Silent to the merchant** (changed from "told, not asked" by founder decision). Must-ship
@@ -108,7 +109,15 @@ developer editing the database by hand.
    - `POST merchant/branches/switch` (`merchant-branches.controller.ts:32`);
    - `POST merchant/branches` (`merchant-branches.controller.ts:42`, which creates a new business
      under the owner's profile);
-   - join/decline invite.
+   - join/decline invite;
+   - the new terms re-accept endpoint this feature adds (`POST merchant/terms/accept`). Only the
+     real owner can stamp `termsVersion`. In a support session the merchant app shows the terms step
+     as a read-only notice ("The owner hasn't accepted the updated terms yet") and never offers
+     Accept, so an override session can't agree on the merchant's behalf. In a support session the
+     notice is non-blocking: an inline card above the board, with the board and every other
+     merchant-surface screen usable. A test asserts that an override session reaches the board while
+     the owner's termsVersion is still stale. `POST merchant/terms/accept` is the only writer of
+     `termsVersion`, and any existing writer of `termsAcceptedAt` is also `@SupportBlocked()`.
 
    **Money settings stay allowed:**
    - `PATCH merchant/cash-rule`;
@@ -195,16 +204,29 @@ Plus one migration.
    - **What gets logged:** rejected attempts, including `403 support_blocked`, and 4xx/5xx
      responses. Start, exit, expiry, kill and override are logged too.
    - **Volume** is fine because there is one operator.
-6. **Blocked actions.** `@SupportBlocked()` on the endpoints listed in premise 6 returns
-   `403 { reason: "support_blocked" }`. There is one test per blocked endpoint.
+6. **Blocked actions, enforced after the audit insert.** Nest runs guards before interceptors, so a
+   refusal made in a guard would never reach the audit row.
+   - **`@SupportBlocked()`** is therefore metadata only, and the **audit interceptor** enforces it:
+     1. insert the row;
+     2. if the route carries `@SupportBlocked()`, update the row to 403 and throw
+        `403 { reason: "support_blocked" }`.
+   - **`JwtAuthGuard` refusals** of a support token on a non-`@MerchantSurface()` route happen in the
+     guard, so the guard writes its own `AuditLog` row (`support.refused <route template>`) before it
+     throws. If that insert fails, the request is still refused.
+   - Both paths have tests that assert the row exists, with one test per blocked endpoint.
 7. **Live orders.** `tracking.gateway.ts handleConnection` (`:159`) accepts a support token and joins
    only that merchant's rooms. Disconnect has two mechanisms, both covered by tests:
    - **Expiry:** on connect, a per-socket `setTimeout` to `expiresAt` disconnects the socket.
-   - **Kill (cross-instance, ≤ 5 s):** every 5 s each API instance re-checks its connected support
+   - **Kill (cross-instance, ≤ 5 s):** every 2 s each API instance re-checks its connected support
      sockets against `SupportSession` with one query: `endedAt IS NOT NULL` for the ids it holds.
      It disconnects any that have ended. This needs no pub/sub and works on any number of
      instances.
-8. **Admin endpoints.**
+   - Socket connect and disconnect under a support token each write an `AuditLog` row with the
+     sessionId.
+8. **One session per shop.** Starting a session while one is active for that merchant returns
+   `409 session_active`. Concurrent founder and owner actions rely on the existing order-state
+   transition checks, which already refuse a second accept.
+9. **Admin endpoints.**
    - `GET admin/support-sessions?active=1` lists sessions.
    - `POST admin/support-sessions/:id/kill` ends one.
 
@@ -233,11 +255,18 @@ Plus one migration.
   - When the session ends (Exit, 401, expiry), the support cookie is cleared and the app shows the
     "Support session ended" screen. It **never** falls back to the real session or the OTP sign-in.
   - A test covers both cookies being present.
-- The persistent support banner shows the shop name, time left and Exit. Exit ends the session
-  server-side.
+- The persistent support banner shows the shop name, time left and Exit. Exit calls
+  `POST merchant/support-session/exit`, which sits on a `@MerchantSurface()` controller so a support
+  token can reach it, and ends the session server-side.
+- A real merchant session on the same browser is shadowed (not altered) during a support session and
+  resumes after it ends.
 
 ### Legal
 - Add the support-access sentence to the merchant terms (premise 5) in the same PR as the feature.
+
+**Accepted risk:** the operator name comes from `X-Operator` behind the shared `ADMIN_API_TOKEN`, so
+founder-only rests on that token staying secret. This is the same trust the console already places
+in it for ownership transfer.
 
 ## Open Questions
 
@@ -262,7 +291,7 @@ Plus one migration.
   - `/auth/refresh`.
 - Killing a session in the admin console makes the next API call 401 and drops the socket within
   5 s.
-- Every write in a session appears in `GET admin/audit` with operator, shop, route and sessionId.
+- Every request in a session appears in `GET admin/audit` with operator, shop, route and sessionId.
   This is proven by a test that edits a dish and asserts the row.
 - Each premise-6 endpoint returns `403 support_blocked` inside a session (one test each), and the
   attempt is in the audit log.
@@ -297,3 +326,237 @@ fail-closed audit) is never cut, because without it this is an unrevocable key.
   audit log and the terms sentence to carry the trust instead.
 - You answered "Not happened yet" plainly instead of inventing a merchant story. That honesty is why
   the Assignment asks for three named shops before code.
+
+<!-- gstack:office-hours:concerns:start -->
+## Reviewer Concerns
+
+Disposition: CONCERNS_RECORDED
+
+Stop: MAX_ITERATIONS
+
+### R3-1 — clarity (blocking)
+
+**Problem**
+
+> Premise 5 makes the re-shown terms step the gate on the merchant app's next load. The change replaces that step with a read-only notice in a support session and never offers Accept, but it does not say whether the notice still blocks the app. If the notice is a blocking step with no Accept and no way past it, an override session (the case where the owner has not accepted, i.e. the '2am kitchen not answering' case) can never reach the board, and the override path the design keeps on purpose does nothing. If the notice can be passed, the design should say how. The committed override behavior depends on this.
+
+**Remedy**
+
+> State that in a support session the terms notice is non-blocking (for example an inline notice or a dismissible card, with the board and every other merchant-surface screen usable), and add a test that an override session reaches the board while the owner's termsVersion is still stale.
+
+### R3-2 — consistency (minor)
+
+**Problem**
+
+> Persisting R2-3: premise 3 still says each session writes 'every mutating request' to AuditLog, and the success criterion says 'Every write', while API item 5 audits every request, reads included.
+
+**Remedy**
+
+> Update premise 3 (and the success criterion if wanted) to say that every request, reads included, is audited.
+
+### R3-3 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-4: Exit 'ends the session server-side', but no exit endpoint is named; only admin kill exists. The guard allows support tokens only on @MerchantSurface controllers and now writes a support.refused row for others, so an exit route under auth/support would be refused.
+
+**Remedy**
+
+> Name the exit endpoint (for example POST merchant/support-session/exit on a @MerchantSurface controller) and note that it is reachable with a support token.
+
+### R3-4 — completeness (minor)
+
+**Problem**
+
+> Persisting R2-5: live-order data reaches the support principal over the socket, which the HTTP audit interceptor does not see. Socket connect/join under a support token is not said to be audited.
+
+**Remedy**
+
+> Audit socket connect/disconnect under a support token (one row each with the sessionId), or state that session start covers it.
+
+### R3-5 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-6: the 'default-deny' rule is still a path-name regex lint (owner|transfer|payout|delete-business). It misses routes like DELETE merchant/account or PATCH merchant/bank, and it would match the admin route POST admin/merchants/:id/owner.
+
+**Remedy**
+
+> Scope the lint to @MerchantSurface routes, widen the pattern or require an explicit allow/block annotation on every merchant-surface write, and call it a lint rather than default-deny.
+
+### R3-6 — feasibility (minor)
+
+**Problem**
+
+> Persisting R2-7: the exchange is called server-side from the Next route handler, so the API's 10/min 'per IP' limit keys on the merchant server's IP and becomes one shared bucket.
+
+**Remedy**
+
+> Note that the limit applies to the Next server's IP (acceptable with one operator and a 256-bit code), or forward and key on the client IP.
+
+### R3-7 — completeness (minor)
+
+**Problem**
+
+> Persisting R2-8: Dependencies still lists only the SupportSession migration and a banner deviation. It omits the termsVersion migration with MERCHANT_TERMS_VERSION, the new POST merchant/terms/accept endpoint, and the D-entries for the other five UI surfaces in the Constraints table.
+
+**Remedy**
+
+> Add the termsVersion migration, the terms re-accept endpoint and the UI-surfaces table's approvals to Dependencies.
+
+### R3-8 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-9: the default attribution rule records 'the shop owner's profileId', which assumes exactly one owner. Behavior with several owner members, or none, is unspecified.
+
+**Remedy**
+
+> Define which owner is used (for example the earliest active owner MerchantMember) and what happens when none exists.
+
+### R3-9 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-10: while the support cookie exists it shadows any real merchant session on that browser in every tab. The success criterion 'Existing merchant OTP sessions ... are untouched' reads as if they keep working throughout.
+
+**Remedy**
+
+> State that a real session on the same browser is shadowed (not altered) during a support session and resumes after it ends, and phrase the criterion accordingly.
+
+### R3-10 — feasibility (minor)
+
+**Problem**
+
+> Persisting R2-11: a 5 s kill re-check plus query and disconnect time can exceed the 'drops the socket within 5 s' success criterion, leaving the test no margin.
+
+**Remedy**
+
+> Poll every 2-3 s or relax the criterion to about 6 s.
+
+### R3-11 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-12 (R1-13): Open Question 2 ('Extend +60') is still open while exp = expiresAt with no refresh token and no re-mint path.
+
+**Remedy**
+
+> If Extend is chosen, specify how a new token is issued and how the banner timer updates.
+
+### R3-12 — completeness (minor)
+
+**Problem**
+
+> Persisting R2-13 (R1-14): the design does not say whether more than one active support session per merchant is allowed, or how concurrent founder and owner actions (for example both accepting the same order) are handled.
+
+**Remedy**
+
+> State a one-active-session-per-merchant rule (or not), and whether existing optimistic checks cover concurrent owner and support actions.
+
+### R3-13 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-14 (R1-16): operator identity still comes from the X-Operator header behind the shared ADMIN_API_TOKEN, so 'founder-only' rests on token secrecy, and this is not recorded as an accepted risk.
+
+**Remedy**
+
+> Record it as an accepted risk, or bind the operator to the IAP/Easy Auth identity for support-session start.
+
+### R3-14 — scope (minor)
+
+**Problem**
+
+> Persisting R2-15 (R1-17): the whole B scope (four task groups, sockets, admin management) is still committed as one month-one delivery with no ordering.
+
+**Remedy**
+
+> Consider shipping menu/catalogue and hours first on the session core, with live orders, team and money following real use.
+
+### R3-15 — clarity (minor)
+
+**Problem**
+
+> Persisting R2-16 (R1-18): session history still relies on GET admin/audit 'filtered to support.*', with no confirmation that an action-prefix filter exists.
+
+**Remedy**
+
+> Confirm the filter exists, or list the audit endpoint change as API work.
+
+### R3-16 — completeness (minor)
+
+**Problem**
+
+> Only the new re-accept endpoint is blocked. The design says the re-shown step is 'the existing terms-accept step', so any existing endpoint that stamps MerchantMember.termsAcceptedAt (for example in onboarding) could still be reachable in a support session and, if it is changed to stamp termsVersion, would reopen the loophole.
+
+**Remedy**
+
+> Name every endpoint that writes termsAcceptedAt or termsVersion and mark each @SupportBlocked, or state that the new endpoint is the only writer.
+
+### Prior finding evidence
+
+**R2-3 → R3-2 (persisting)**
+
+> Premise 3 still reads 'writes every mutating request', and the success criterion still says 'Every write'.
+
+**R2-4 → R3-3 (persisting)**
+
+> The merchant app section still says 'Exit ends the session server-side' with no endpoint named. Section 8 lists only list and kill.
+
+**R2-5 → R3-4 (persisting)**
+
+> API item 7 is unchanged and does not audit socket connect/join under a support token.
+
+**R2-6 → R3-5 (persisting)**
+
+> The default-deny paragraph still uses the path regex owner|transfer|payout|delete-business, unscoped.
+
+**R2-7 → R3-6 (persisting)**
+
+> API item 2 still says '10 requests/min per IP' while the exchange runs through the Next route handler.
+
+**R2-8 → R3-7 (persisting)**
+
+> Dependencies is unchanged: only the SupportSession migration, the banner deviation and the terms copy.
+
+**R2-9 → R3-8 (persisting)**
+
+> API item 4's default rule still says 'the shop owner's profileId' with no multi-owner or no-owner rule.
+
+**R2-10 → R3-9 (persisting)**
+
+> The Precedence section and the 'untouched' success criterion are unchanged.
+
+**R2-11 → R3-10 (persisting)**
+
+> API item 7 still re-checks every 5 s, and the success criterion still says within 5 s.
+
+**R2-12 → R3-11 (persisting)**
+
+> Open Question 2 is unchanged, with no re-mint path for Extend.
+
+**R2-13 → R3-12 (persisting)**
+
+> No passage addresses concurrent sessions per merchant or simultaneous founder and owner actions.
+
+**R2-14 → R3-13 (persisting)**
+
+> The Data section still takes operator from X-Operator, with no accepted-risk note.
+
+**R2-15 → R3-14 (persisting)**
+
+> Target User still commits all four task groups in month one, with no ordering.
+
+**R2-16 → R3-15 (persisting)**
+
+> The Admin console section still says 'Session history from GET admin/audit filtered to support.*', unconfirmed.
+
+### Unresolved at the cap
+
+1. R3-1 — clarity (blocking): Premise 5 makes the re-shown terms step the gate on the merchant app's next load. The change replaces that step with a read-only notice in a support session and never offers Accept, but it does not say whether the notice still blocks the app. If the notice is a blocking step with no Accept and no way past it, an override session (the case where the owner has not accepted, i.e. the '2am kitchen not answering' case) can never reach the board, and the override path the design keeps on purpose does nothing. If the notice can be passed, the design should say how. The committed override behavior depends on this.
+
+issues verified: 1 of 1
+
+Verification is deterministic: a fix counts when its `applied_text` is in the current design and absent from the round-3 snapshot. It confirms applied edits, never a review verdict; no reviewer was launched past the cap.
+<!-- gstack:office-hours:concerns:end -->
