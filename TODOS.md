@@ -210,6 +210,26 @@ starts from reasoning, not archaeology.
 
 ## Own bikers (from /plan-ceo-review 2026-10-19, `docs/designs/own-bikers.md`)
 
+### Tell merchants what Own bikers costs before they're billed
+
+- **What:** Show the Own bikers price in the merchant app before the first bill, in three places:
+  1. **The rate:** the Own bikers roster (or its first-time empty state, OB-M4) and the invite sheet say what LyniaGo
+     charges, e.g. "LyniaGo charges 10% of each ride, billed weekly". Read the rate from the API (the admin detail
+     already serves `feePct`; the merchant `/fleet` read needs it too), never a hard-coded 10.
+  2. **Each phone booking's fee:** Book a biker's My bikers choice shows that booking's fee (10% of the suggested
+     fare, `bookingFleetFee`) before the merchant books.
+  3. **A disabled business:** say why its Own bikers row is gone (today it just disappears from Account; Pause has
+     its gold chip, Disable has nothing).
+- **Why:** Since the launch (owner, 2026-10-20) every business has Own bikers with no sign-up and is billed the
+  commission rate × each ride's cost. The handoff (`packages/design/handoff/own-bikers-v1/`) was drawn for an
+  opt-in flat fee, so no merchant screen states the price: the weekly fleet bill is the first place a merchant
+  sees a charge.
+- **Pros:** No surprise bills, fewer disputes and "wrong fee" credits. **Cons:** Needs a design round first (new
+  copy and states on OB-M2/M4, Book S4 and Account), so a handoff export or a ledger entry before building.
+- **Context:** own-bikers.md amendment 19; ledger D-117. The flat-fee sample copy (credit "−$1.50") is just data.
+- **Effort:** human M / CC S once drawn. **Priority:** P1.
+- **Trigger / blocked by:** the designer's drawings for the three states (CLAUDE.md: not drawn ⇒ not rendered).
+
 ### Delete the Preferred riders code
 
 - **What:** Remove what's left of Preferred riders: the preferred-first block in `NearestRiderDispatchStrategy`,
