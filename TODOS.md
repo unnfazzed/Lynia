@@ -210,6 +210,90 @@ starts from reasoning, not archaeology.
 
 ## Own bikers (from /plan-ceo-review 2026-10-19, `docs/designs/own-bikers.md`)
 
+### Tell merchants what Own bikers costs before they're billed
+
+- **What:** Show the Own bikers price in the merchant app before the first bill, in three places:
+  1. **The rate:** the Own bikers roster (or its first-time empty state, OB-M4) and the invite sheet say what LyniaGo
+     charges, e.g. "LyniaGo charges 10% of each ride, billed weekly". Read the rate from the API (the admin detail
+     already serves `feePct`; the merchant `/fleet` read needs it too), never a hard-coded 10.
+  2. **Each phone booking's fee:** Book a biker's My bikers choice shows that booking's fee (10% of the suggested
+     fare, `bookingFleetFee`) before the merchant books.
+  3. **A disabled business:** say why its Own bikers row is gone (today it just disappears from Account; Pause has
+     its gold chip, Disable has nothing).
+- **Why:** Since the launch (owner, 2026-10-20) every business has Own bikers with no sign-up and is billed the
+  commission rate × each ride's cost. The handoff (`packages/design/handoff/own-bikers-v1/`) was drawn for an
+  opt-in flat fee, so no merchant screen states the price: the weekly fleet bill is the first place a merchant
+  sees a charge.
+- **Pros:** No surprise bills, fewer disputes and "wrong fee" credits. **Cons:** Needs a design round first (new
+  copy and states on OB-M2/M4, Book S4 and Account), so a handoff export or a ledger entry before building.
+- **Context:** own-bikers.md amendment 19; ledger D-117. The flat-fee sample copy (credit "−$1.50") is just data.
+- **Effort:** human M / CC S once drawn. **Priority:** P1.
+- **Trigger / blocked by:** the designer's drawings for the three states (CLAUDE.md: not drawn ⇒ not rendered).
+
+### Send the Own bikers privacy announcement
+
+- **What:** Send the in-app announcement of the privacy notice change (the "Riding as a business's Own biker"
+  section, dated 19 October 2026), the way the Azure move was announced (CEO-6).
+- **Why:** The notice promises material changes are announced in the app first. The announcement was meant to go
+  out with the `FLEET_UI_LIVE` launch switch, which the launch removed (owner, 2026-10-20), so nothing sends it now.
+- **Context:** own-bikers.md amendment 7 (privacy notice, T1) and amendment 19.
+- **Effort:** human S / CC S. **Priority:** P1.
+- **Trigger / blocked by:** the owner's wording.
+
+### Ship the biker-app Own bikers cleanup in the next production OTA
+
+- **What:** Publish the biker app's #1275 change (`useMyFleet` no longer reads `fleetLive`; it always asks
+  `GET /fleet/me`) with the next OTA to the `production` channel.
+- **Why:** Nothing breaks while it waits (the API answers `fleetLive: true`), but the dead read should go out.
+- **Effort:** none on its own. **Priority:** P3.
+- **Trigger / blocked by:** the next production OTA.
+
+### OB-M7: tell the owner when a biker joins
+
+- **What:** Build OB-M7, the merchant notification row "Farai joined your bikers" and the first-biker-joined state
+  (drawn in `packages/design/handoff/own-bikers-v1/`, README "OB-M7 First biker joined · OB-M7 Notifications").
+- **Why:** Drawn in the handoff but left for a later PR (own-bikers.md T3a notes); an owner who sent an invite hears
+  nothing when it's accepted.
+- **Effort:** human S / CC S. **Priority:** P2.
+- **Trigger / blocked by:** nothing.
+
+### Open Own bikers invite links straight in the app
+
+- **What:** Android App Links for `lyniago.com/j/<code>`: an intent filter in the app plus
+  `/.well-known/assetlinks.json` on the website, so a biker who has LyniaGo opens the Join card directly.
+- **Why:** Today every device goes to the Play listing (the link carries nothing; the invite is bound to the phone
+  number). A biker with the app installed taps "Open" on Play, which works but adds a step.
+- **Effort:** human S / CC S, plus a production store build. **Priority:** P3.
+- **Trigger / blocked by:** the next production store build.
+
+### Admin Own bikers list now shows every business
+
+- **What:** Give the admin Own bikers table (OB-A1) a filter or a redesign: default to businesses with bikers (or
+  any bill), and drop or rethink "No fleets yet" and the "N fleets" count.
+- **Why:** It was drawn for a few opt-in fleets. Since the launch every business has a fleet row, so most rows are
+  businesses with 0 bikers and $0, and the empty state can never show.
+- **Effort:** human S / CC S once drawn. **Priority:** P2.
+- **Trigger / blocked by:** a design call (drawn, or an owner-approved ledger entry).
+
+### Draw the admin fee line and "Turn on"
+
+- **What:** Get the designer to draw the admin fleet detail's read-only "Fee · 10% of each ride" and the "Turn on"
+  button and confirm for a disabled business, then align the build to it.
+- **Why:** The handoff drew an editable "Fee per ride" with Save. The copy is owner-approved (D-117, 2026-10-20) but
+  the layout was improvised in #1275.
+- **Effort:** human S / CC S once drawn. **Priority:** P3.
+- **Trigger / blocked by:** the drawing.
+
+### Rename the roster's "FROM YOUR PREFERRED RIDERS" suggestions
+
+- **What:** Reword or drop the OB-M5 invite-suggestions heading "FROM YOUR PREFERRED RIDERS".
+- **Why:** Preferred riders is retired (2026-10-20) and no longer appears anywhere else in the merchant app, so the
+  heading names a feature the merchant can't see. The suggestions still work (they read the kept list).
+- **Context:** Copy is verbatim from the handoff, so this needs a new export or a ledger entry first. Goes with
+  "Delete the Preferred riders code" below, which must move or drop these suggestions anyway.
+- **Effort:** human XS / CC XS. **Priority:** P3.
+- **Trigger / blocked by:** a copy decision.
+
 ### Delete the Preferred riders code
 
 - **What:** Remove what's left of Preferred riders: the preferred-first block in `NearestRiderDispatchStrategy`,
