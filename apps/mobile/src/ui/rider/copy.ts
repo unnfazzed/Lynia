@@ -163,7 +163,8 @@ export const RIDER_COPY = {
   atDropCta: "I'm at the drop-off",
   confirmCta: "Confirm delivery",
   checkItems: "Check before you leave",
-  photoNeed: "Take a pickup photo",
+  /** D-118 (owner 2026-10-20): the parcel pickup photo is optional; the handoff draws "Take a pickup photo". */
+  photoNeed: "Take a pickup photo (optional)",
   photoNeedB: "Shows the parcel as you got it. The customer can see it.",
   takePhoto: "Take photo",
   retake: "Retake",
@@ -171,7 +172,6 @@ export const RIDER_COPY = {
   photoUploading: "Saving photo…",
   photoFail: "Photo didn't upload. It's saved on your phone; we'll send it when you have data.",
   photoSaved: "Photo saved",
-  needPhoto: "Tick the item and add a photo to continue.",
   problem: "Problem with this job?",
   yours: "YOURS",
   owed: "OWED TO KITCHEN",
