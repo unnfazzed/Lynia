@@ -5848,9 +5848,9 @@ react-native-web from the `ob_*` fixtures). What still differs, and why:
   the handoff shortens to the brand in some strings: there is one name per branch, and owner decision P7-1 makes it the
   name every fleet screen uses. The templates are checked against the handoff with its own sample names
   (`src/ui/rider/__tests__/fleet-copy.test.ts`).
-- **Open, owner's call:** `b.expB` says fleet jobs "hold for 60 seconds"; a round is 40 s on the server
-  (`FLEET_DISPATCH.roundMs`, which the merchant's "We rang them 3 times over 2 minutes" depends on). The app says the
-  real number, from that constant, until the owner picks the copy or the round.
+- **Owner-approved (2026-10-20): 40 s.** `b.expB` says fleet jobs "hold for 60 seconds"; a round is 40 s on the server
+  (`FLEET_DISPATCH.roundMs`, which the merchant's "We rang them 3 times over 2 minutes" depends on). The owner kept the
+  40 s round, so the copy says the real number, from that constant; the handoff's "60" is not reproduced.
 - Primary buttons are the app's shared `CtaButton` fill (the rider screens' primary everywhere), a lighter green than the
   kit's `--cta-fill`; the secondaries are the kit's `btn2` (48, 1px line, ink).
 - The harness draws no map tiles (grey), the drop-off square is the app's stop mark, and the offer screen is a pushed
@@ -5884,7 +5884,8 @@ runs a stub API with the handoff's data set and switches it per frame). What sti
   the words every branch name starts with are the business ("Chicken Inn Avondale" + "Chicken Inn Borrowdale" →
   "Chicken Inn" · "Avondale, Borrowdale"). A business with one branch shows its full name in both, where the handoff's
   sample has "Mama's Kitchen" · "Avondale". The owner's own name is in the side panel's line ("Owner Rumbi Chari"), as
-  drawn. Branches read A–Z (the API's order), where the sample writes Eastgate first.
+  drawn. Branches read A–Z (the API's order), where the sample writes Eastgate first. **Owner-approved (2026-10-20):**
+  branch names as stored, no separate business-name field.
 - OB-A3's confirms open from the side panel (the switches live there), so the panel shows under the dialog; the handoff
   draws the dialog over the table alone. The dialog is the console's `ConfirmModal`, with the handoff's labels ("Reason
   code", "Note for the audit log", "Recorded in the audit log with your name.") passed in; its Cancel is the kit's quiet
@@ -5896,7 +5897,7 @@ runs a stub API with the handoff's data set and switches it per frame). What sti
   (`AdminFleetDetail.recentRides`, added here).
 - Unpause (a paused fleet) uses the same confirm, titled "Unpause Chicken Inn's Own bikers?": the handoff has the
   `unpause` label but draws no dialog for it. A disabled fleet's status reads "Disabled" (muted); the handoff draws none
-  and has no string for it.
+  and has no string for it. **Owner-approved (2026-10-20):** both, as built (Unpause keeps the reason code + note).
 - Offline: the console is server-rendered and keeps no copy of the last read, so it can't show "Offline · showing data
   from 14:02"; it shows the console's offline banner (API unreachable) over the error row instead of dimmed data.
 - The OB-A4 tile counts fleets with a bill overdue (`ownBikers.overdueFleets`, added here), so its "2 overdue" matches the
