@@ -475,9 +475,6 @@ jobs:
           # Pharmacy prescriptions (D-59, BRIEF §13) are launched with Pharmacy, so unset means ON; set the
           # Variable to "false" to stop Rx items being listed or ordered (the kill switch).
           RX_ENABLED: ${{ vars.RX_ENABLED || 'true' }}
-          # Own bikers (D-117): off until launch; unset means OFF. Set the Variable to "true" to open the routes.
-          # Retiring Preferred riders (own-bikers.md T9): unset means Preferred still runs for businesses without Own
-          # bikers. Set the Variable to "true" once the release is live; unset it to roll back.
           # Penalty suspension (owner 2026-10-12, apps/api/src/common/penalties.ts): unset means SUSPENDED (no
           # automatic holds, strike cooldowns, cash-debt job lock or cash ban); set the Variable to "false" to
           # switch penalties back on.

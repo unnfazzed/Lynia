@@ -67,7 +67,8 @@ export interface BusinessFleet {
   active: boolean;
 }
 
-/** The fleet of the business `merchantId`'s owner, or null when the owner has none (or the business no owner). */
+/** The fleet of the business `merchantId`'s owner (on when it has no row yet: every business has Own bikers), or null
+ *  when the business has no owner. */
 export async function businessFleet(prisma: PrismaService, merchantId: string | null): Promise<BusinessFleet | null> {
   if (!merchantId) return null;
   const merchant = await prisma.merchant.findUnique({

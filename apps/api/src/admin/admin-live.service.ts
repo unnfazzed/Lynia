@@ -90,7 +90,7 @@ export interface LiveAlerts {
   kitchenConfirmations: number;
   merchantApplications: number;
   ordersBreaching: number;
-  /** Own bikers (OB-A4 tile, D-117): fleets switched on, their bikers online now, and bills past their due day. */
+  /** Own bikers (OB-A4 tile, D-117): switched-on fleets with bikers, their bikers online now, and bills past their due day. */
   ownBikers: { fleets: number; bikersOnline: number; overdueBills: number; overdueFleets: number };
 }
 
@@ -279,13 +279,14 @@ export class AdminLiveService {
     const now = Date.now();
     if (this.alertsCache && now - this.alertsCache.at < ALERTS_CACHE_MS) return this.alertsCache.value;
     const today = new Date(`${harareDayKey(new Date(now))}T00:00:00.000Z`);
-    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, monitor, fleets, bikersOnline, overdueBills] = await Promise.all([
+    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, monitor, fleetsWithBikers, bikersOnline, overdueBills] = await Promise.all([
       this.prisma.sosEvent.count({ where: { acknowledgedAt: null } }),
       this.money.openAnomalyCount(),
       this.kitchen.countToConfirm(),
       this.prisma.merchant.count({ where: applicationsPastSlaWhere(now) }),
       this.liveOrders(),
-      this.prisma.ownerFleet.count({ where: { enabled: true } }),
+      // Every business has Own bikers since the launch (2026-10-20), so a "fleet" here is one with bikers in it.
+      this.prisma.rider.groupBy({ by: ["fleetOwnerProfileId"], where: { fleetOwnerProfileId: { not: null }, fleetOwner: { enabled: true } } }),
       this.prisma.rider.count({ where: { fleetOwnerProfileId: { not: null }, isOnline: true } }),
       this.prisma.merchantFleetStatement.groupBy({ by: ["ownerProfileId"], where: { status: { not: "paid" }, dueOn: { lt: today } }, _count: { _all: true } }),
     ]);
@@ -296,7 +297,7 @@ export class AdminLiveService {
       merchantApplications,
       ordersBreaching: monitor.counts.breach,
       ownBikers: {
-        fleets,
+        fleets: fleetsWithBikers.length,
         bikersOnline,
         overdueBills: overdueBills.reduce((n, g) => n + g._count._all, 0),
         // OB-A4 "2 overdue": fleets with a bill past its due day (the table's Overdue chip counts the same).
