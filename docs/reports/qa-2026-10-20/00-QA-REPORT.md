@@ -695,9 +695,9 @@ Table-driven unit tests over all 5 idempotency sites + extended orders-idempoten
 B) Unit only
 The same contracts as unit tests only (no new int tests); export snapshot and no-test-edit rule unchanged.
 
-State: pending
-Actual answer: unanswered
-Accepted scope: none
+State: approved
+Actual answer: A) Unit + integration (recommended), D15 answer 2026-10-20
+Accepted scope: Table-driven unit tests over all 5 idempotency sites + extended orders-idempotency.int.spec.ts; filter unit test + int test that a no-header wrong delivery code stays 401; @lynia/shared export-name snapshot and no test edits in split PRs; extended admin-orders spec; assertions for the intended changes (card shows pre-biker breaches; mismatch → 422; fare above cap → 409). The no-header assertion and the split rules depend on R5/R6, which D19/D20 may reopen.
 History: none
 
 ### R8: TODO — retire the versioned status remap
@@ -719,9 +719,9 @@ No TODO.
 C) Build it now
 Remove the remap in this wave (would break old builds).
 
-State: pending
-Actual answer: unanswered
-Accepted scope: none
+State: pending (conflict)
+Actual answer: C) Build it now, D16 answer 2026-10-20
+Accepted scope: none yet. Conflict: removing the remap now means corrected status codes for every client, which is R5 option C and reverses the approved D13 B (old builds keep today's codes). Reopened as D19.
 History: none
 
 ### R9: TODO — migrate callers off the split facades
@@ -743,9 +743,9 @@ No TODO.
 C) Build it now
 Rewrite all imports in this wave (reverses D14).
 
-State: pending
-Actual answer: unanswered
-Accepted scope: none
+State: pending (conflict)
+Actual answer: C) Build it now, D17 answer 2026-10-20
+Accepted scope: none yet. Conflict: rewriting all imports now is R6 option B and reverses the approved D14 A (re-export front door). Reopened as D20.
 History: none
 
 ### R10: TODO — automate the launch-day WhatsApp message
@@ -767,7 +767,72 @@ Manual CSV export stays the launch process.
 C) Build it now
 Template + admin action in this wave.
 
+State: approved
+Actual answer: C) Build it now, D18 answer 2026-10-20 (recommended was A)
+Accepted scope: Bird WhatsApp template for "<service> is open near you" + an admin action to message the R1 interest list, in this wave. Dependencies (not choices): Meta must approve the template before sends work; the Bird connector in this session needs authorization in claude.ai connector settings before templates can be created from here. Until approval the admin action stays disabled with the template status shown. R1 updated: the launch send is no longer manual-only.
+History: none
+
+### R5 reopened (D19): status-code compatibility after D16 = C
+Finding: conflict between D13 B (approved) and D16 C (actual answer), reviewer: eng review
+Plan baseline: R5 approved D13 B — corrected codes only for x-app-version ≥ V_new.
+Runtime evidence: installed builds vc 47/48 send no x-app-version and branch on today's codes (`apps/mobile/src/api/client.ts:287` handles the wrong-delivery-code 401).
+Comparison grid:
+| Choice | Current (approved) | A) Keep D13 B; drop the TODO | B) Status fixes for everyone now |
+|---|---|---|---|
+| R5 status codes | corrected only for x-app-version ≥ V_new | same | corrected for every client (R5 option C) |
+| R8 TODO | conflict | not added; the remap stays until a later decision | moot: no remap exists |
+| R5 body shape, reason registry | approved | unchanged | unchanged |
+Question D19:
+D19 — Old app builds and the new error codes: which of your two answers wins? Project/branch/task: claude/cool-curie-xnt15t, R5 conflict. ELI10: In D13 you chose "new error codes only for new app builds; old builds keep today's codes". In D16 you chose to remove that version check now, which means every phone, old ones included, gets the new codes immediately. Those can't both be true. Stakes if we pick wrong: bikers on the current Play build (vc 47/48) could see a confusing error instead of "wrong code, try again" at the customer's door. Recommendation: A) Keep D13 B because removing the gate before old builds age out breaks phones that are live on Play today. Note: options differ in kind, not coverage, so there is no completeness score. Pros / cons: A) Keep D13 B (recommended) ✅ Phones already on Play keep working exactly as now ✅ New builds still get the corrected codes ❌ The version branch stays in the code until a later clean-up (human: ~0 extra / CC: ~0 extra). B) Status fixes for everyone now ✅ One behaviour, no version branch to maintain ✅ Correct HTTP codes immediately ❌ Breaks installed builds that branch on today's codes, e.g. the delivery-code screen (human: −1 day / CC: −1 h vs D13 B). Net: protect the phones in the field, or take the simpler code and the breakage.
+Header: Remap conflict
+Options:
+A) Keep D13 B (recommended)
+Corrected status codes only for x-app-version ≥ V_new; old builds keep today's codes; no TODO is added and removal waits for a later decision.
+B) Status fixes for everyone now
+Drop the version gate: corrected status codes for every client immediately (R5 becomes option C); installed vc 47/48 builds get the new codes.
+
 State: pending
 Actual answer: unanswered
 Accepted scope: none
-History: none
+History: D13 B approved; D16 C answered; conflict found 2026-10-20.
+
+### R6 reopened (D20): split style after D17 = C
+Finding: conflict between D14 A (approved) and D17 C (actual answer), reviewer: eng review
+Plan baseline: R6 approved D14 A — re-export barrel/facades, no caller changes.
+Runtime evidence: `@lynia/shared` contracts are imported across api, mobile, admin and merchant; the services are injected by class.
+Comparison grid:
+| Choice | Current (approved) | A) Keep D14 A; drop the TODO | B) Rewrite all imports now |
+|---|---|---|---|
+| R6 split style | re-export front door | same | rewrite every import/injection, delete the old files (R6 option B) |
+| R9 TODO | conflict | not added | moot: no facade exists |
+| R7 split rule "no test edits" | approved | unchanged | specs that import the old paths must change, so the rule becomes "test edits limited to import lines" |
+Question D20:
+D20 — File splits: keep the front door, or rewrite every import now? Project/branch/task: claude/cool-curie-xnt15t, R6 conflict. ELI10: In D14 you chose to keep the big files as thin front doors so nobody else's code changes. In D17 you chose to rewrite every import now, which removes the front doors. Those can't both happen. Stakes if we pick wrong: a very large import diff lands across four apps and conflicts with other open work. Recommendation: A) Keep D14 A because it keeps each split PR small and conflict-free, and the regression rule "no test edits" stays strict. Note: options differ in kind, not coverage, so there is no completeness score. Pros / cons: A) Keep D14 A (recommended) ✅ Small, conflict-free split PRs; nothing outside the split file changes ✅ Existing tests prove nothing changed, untouched ❌ Front doors stay until callers move on their own (human: ~3 days / CC: ~2 h). B) Rewrite all imports now ✅ Clean end state; no leftover barrel or facades ✅ Module ownership is explicit everywhere ❌ Touches hundreds of import lines across api, mobile, admin and merchant; tests must change their imports (human: ~5 days / CC: ~4 h). Net: small safe PRs now, or the clean end state with a big diff.
+Header: Split conflict
+Options:
+A) Keep D14 A (recommended)
+Re-export barrel and service facades; no caller changes; no TODO is added.
+B) Rewrite all imports now
+Split by domain and update every import and injection across api, mobile, admin and merchant; delete the old files; test edits limited to import lines.
+
+State: pending
+Actual answer: unanswered
+Accepted scope: none
+History: D14 A approved; D17 C answered; conflict found 2026-10-20.
+
+### R11 (D21): wave scope — refactor + bug fixes only?
+State: pending. D21 was sent; the owner replied with a question ("You are not adding new features right?") and then "Give me the final plan b4 execution" instead of choosing. The final plan below assumes the recommended **B) Refactor + bug fixes only** and is not approved until the owner says go. If B is confirmed, D19 and D20 are moot (no versioned codes; D14 front door stands) and R1, R3, R4-fingerprint, R5-status-remap and R10 move to TODOs.
+
+## Final plan (pending owner go) — refactor + bug fixes only
+
+| PR | Work | Behaviour change | Proof (D15) |
+|---|---|---|---|
+| 1 | Admin: new `admin/order-health.ts` (one late rule on `live-ops.stageOf`, one not-ended active count); Overview card, banner, Live KPI and order-detail flag use it; retire the flat 20-min rule (QA-B02/B03) | bug fix: the card now lists late pre-biker orders; both KPIs agree | unit table over all stages; Overview⇔Live agreement test; order-detail flag test |
+| 2 | `common/idempotency.ts` helper adopted by the 5 sites; replay behaviour unchanged; fix the food/parcel key collision 500 → 409 `idempotency_key_reused`; scope issue keys to the order | bug fix only (500 → 409; cross-order issue reuse) | table-driven unit tests + extended `orders-idempotency.int.spec.ts` |
+| 3 | `common/api-error.ts` + filter + zod pipe: every error body `{statusCode, reason, message}`, `ApiErrorReason` registry in `@lynia/shared`, contract test; **no status-code changes** | none for clients (additive fields only) | filter/pipe unit tests; int test: wrong delivery code still 401 |
+| 4–6 | Split `contracts.ts`, `food-order.service.ts`, `rider.service.ts` behind re-export front doors (D14), after PRs 2–3 merge | none | export-name snapshot; no test edits; full suite green |
+| 7 | Web Lows B05 focus ring, B06 duplicate boot fetches, B07 lost typed pickup — replay each first, fix only what reproduces | bug fixes (parity sheet for B05/B07) | targeted tests + parity sheet |
+| 8 | Seed (wallet-paid seed orders → cash, consistent fares) + QA harness (flags, CORS, Docker PG, `expo export --clear`) + KNOWN_BUGS / REFACTOR-LEDGER rows | dev tooling only | `pnpm db:seed` + harness run |
+
+Moved to TODOs (features, not this wave): Notify-me server list (R1/R10), fare cap (R3), idempotency body fingerprint + 422 (R4), versioned status codes (R5).
+Each PR: `pnpm typecheck && pnpm test` green, gstack `/review`, squash-merge on green (CLAUDE.md policy).
