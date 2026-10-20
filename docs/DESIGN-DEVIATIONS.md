@@ -1970,6 +1970,7 @@ rule. A change comes back as a new export.
 | #3 About us, revisited | **Remove the link** (owner, 2026-09-30: *"remove the about us section in the website"*). There is no About page, so the footer's "About us" link is dropped rather than left pointing at a 404. | The footer loses one link (`LAUNCH_EDITS` → `about-removed`); `INTENTIONAL_404` is empty. `/about` still 404s like any unknown path. |
 
 | (not a README TODO) Live in Bulawayo too | **Name both towns** (owner, 2026-10-20, D-120). Title, description, OG title and description, the hero line and "Live in Harare and Bulawayo"; the "Live in" map gets a Bulawayo dot drawn like Harare's; each town gets a smaller chip pinned to its own dot (Harare above, Bulawayo below). | Copy, one map dot, smaller chips (`LAUNCH_EDITS` `live-*`). |
+| (not a README TODO) One pulsing green | **Same pulse everywhere** (owner, 2026-10-20). The map's pulse scales instead of animating SVG `r` (iOS Safari showed none), and the hero's "Biker 4 min away" dot pulses the same way; both stop under reduced motion. | CSS only (`map-pulse-*`, `hero-dot-pulse`). |
 | (not a README TODO) Menu buttons stop short on phones | **Fix it** (owner, 2026-09-28, after the gstack QA and design reviews both found it). The lazy `biz-scooter-rider.svg` had no reserved size, so on a first visit at ≤960px the page grew about 350px while scrolling. The first tap on "Download the app" or "Send a parcel" then stopped 320–540px short of `#app`. The fix uses the README's own screenshot pattern: `width="460" height="460"` (the SVG's size) on that `<img>`, plus `height:auto` in `.biz-ill`. | Nothing looks different: the parity harness shows 0 px at all 7 widths. On a cold load the buttons now land where the reference lands (0px at 360, 390 and 768). **Report upstream** so the next export carries it; this row then retires. `LAUNCH_EDITS` → `biz-ill-size` and `biz-ill-height-auto`. |
 
 Hosting-only files, none of which render: `_headers` (the README's caching rules plus security
@@ -5975,7 +5976,11 @@ launch edits.
 - **Website (D-42 launch edits).** Title, description, OG tags, hero line and the "Live in" heading name both towns;
   the map gets a Bulawayo dot drawn like Harare's, and each town's chip is a smaller pill (13px) pinned to its own dot,
   Harare's above and Bulawayo's below, replacing the handoff's top-right chip position (owner, 2026-10-20: "the Bulawayo
-  tab should be on Bulawayo", "make the label smaller"; `LAUNCH_EDITS` `live-*`). The
+  tab should be on Bulawayo", "make the label smaller"; `LAUNCH_EDITS` `live-*`).
+  **One pulsing green, phone and desktop alike** (owner, 2026-10-20: "same web and mobile pulsing green even on the
+  map"): the handoff animated the map ring's SVG `r`, which iOS Safari doesn't animate, so `zpulse` now scales the ring
+  (same 6 → 26 growth and 2 s fade), and the hero's "Biker 4 min away" dot gets the same ring. Still under
+  reduced motion (`map-pulse-*`, `hero-dot-pulse`). The
   illustrations' alt text describes the drawings and is unchanged.
 - **Upstream:** the kits and the website handoff should name both towns and draw the second dot. The kit is not edited.
 
