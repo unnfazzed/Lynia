@@ -22,6 +22,7 @@ import { AdminRidersService } from "./admin-riders.service";
 import { AdminSearchService } from "./admin-search.service";
 import { AdminTimelineService } from "./admin-timeline.service";
 import { AdminService } from "./admin.service";
+import { OrderHealthService } from "./order-health";
 
 @Module({
   // SettlementsModule exports SettlementsService — the admin cash endpoints delegate to it (A-06).
@@ -49,6 +50,7 @@ import { AdminService } from "./admin.service";
     AdminPeopleService,
     AdminPhoneRevealService,
     AdminLiveService,
+    OrderHealthService,
   ],
 })
 export class AdminModule {}

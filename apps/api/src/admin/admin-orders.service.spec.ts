@@ -209,6 +209,36 @@ describe("AdminOrdersService.getOrderDetail (D-2)", () => {
     expect(d).toMatchObject({ riderId: "r1", customerId: "c1" });
   });
 
+  // QA-B02 (R7 regression contract): the detail flag now uses the same per-step rule as the Live page. A delivery
+  // quiet for more than 20 minutes still stalls (unchanged), and a food order past its no-biker limit now does too.
+  it("flags a delivery with no update for 21 minutes as stalled, as before", async () => {
+    const events = [
+      { status: "assigned", createdAt: new Date(Date.now() - 40 * 60000) },
+      { status: "en_route_dropoff", createdAt: new Date(Date.now() - 21 * 60000) },
+    ];
+    const d = (await new AdminOrdersService(detailPrisma(baseOrder({ events })) as unknown as PrismaService).getOrderDetail("o1"))!;
+    expect(d.stuck).toBe(true);
+    expect(d.stuckNote).toBe("No GPS/status update from the biker for 21 minutes.");
+    expect(d.timeline!.find((s) => s.state === "stall")?.note).toBe("On the way, no update: 21 min, past its 20 min limit.");
+  });
+
+  it("flags a food order with no biker past its 6-minute limit (the old 20-minute rule missed it)", async () => {
+    const food = baseOrder({
+      orderType: "merchant",
+      status: "requested",
+      riderId: null,
+      rider: null,
+      merchantPhase: "ready_for_pickup",
+      readyAt: new Date(Date.now() - 10 * 60000),
+      dispatchStartedAt: new Date(Date.now() - 10 * 60000),
+      events: [{ status: "requested", createdAt: new Date(Date.now() - 12 * 60000) }],
+      merchant: { name: "Sadza Republic", cashRule: null },
+    });
+    const d = (await new AdminOrdersService(detailPrisma(food) as unknown as PrismaService).getOrderDetail("o1"))!;
+    expect(d.stuck).toBe(true);
+    expect(d.stuckNote).toBe("No biker yet for 10 minutes, past its 6-minute limit.");
+  });
+
   it("merchant web upgrade L2 (OV-9): a business's booking reads as the business, on its pickup contact phone", async () => {
     const live = baseOrder({
       events: [{ status: "en_route_dropoff", createdAt: new Date(Date.now() - 60000) }],

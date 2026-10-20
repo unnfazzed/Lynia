@@ -83,3 +83,28 @@ describe("Overview · the Own bikers tile (OB-A4)", () => {
     expect(screen.queryByLabelText("Own bikers")).toBeNull();
   });
 });
+
+describe("Overview · late orders and the active count (QA-B02/B03)", () => {
+  const withData = (data: unknown) => async (path: string) => (path.startsWith("/admin/funnels") ? { reason: "not-implemented" } : { data }) as never;
+
+  it("lists late orders on the Needs-attention card with their step and limit, linking to the oldest", async () => {
+    vi.mocked(adminFetchResult).mockImplementation(
+      withData({
+        ...overview,
+        activeOrders: 9,
+        attention: { ...overview.attention, stuckOrders: 3, stuckOrderId: "food-1", stuckOrderStage: { label: "No biker yet", limitMinutes: 6 } },
+      }),
+    );
+    render(await OverviewPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByText("3 orders may be stuck")).toBeTruthy();
+    expect(screen.getByText(/no biker yet past its 6 min limit\./)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Review order/ }).getAttribute("href")).toBe("/orders/food-1");
+    expect(screen.queryByText("Nothing needs you right now")).toBeNull();
+  });
+
+  it("shows the API's not-ended count as Live orders, the same number the Live page shows", async () => {
+    vi.mocked(adminFetchResult).mockImplementation(withData({ ...overview, activeOrders: 9 }));
+    render(await OverviewPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByText("Live orders").closest(".kpi")?.textContent).toContain("9");
+  });
+});

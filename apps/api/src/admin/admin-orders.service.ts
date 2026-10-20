@@ -25,7 +25,8 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { WalletService } from "../wallet/wallet.service";
-import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP, STUCK_AFTER_MS } from "./admin.shared";
+import { auditData, deriveItems, ORDER_TIMELINE, routeOf, STATUS_STEP } from "./admin.shared";
+import { LIVE_FACTS_SELECT, lateCheck } from "./order-health";
 import { CANCELLED_BY_ROLES, type CancelledByRole, cancelAttribution } from "../common/cancel-attribution";
 import { recordFleetRide } from "../common/fleet-ledger";
 
@@ -548,6 +549,7 @@ export class AdminOrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       select: {
+        ...LIVE_FACTS_SELECT,
         id: true,
         orderType: true,
         status: true,
@@ -607,7 +609,8 @@ export class AdminOrdersService {
     // The two fare-provenance lookups (see FareProvenance) ride the same round-trip: the audit rows
     // for any admin fare adjustment on this order, and the offer the customer selected (the market
     // outcome the agreedFare was set from). Both are narrow, indexed reads.
-    const [openIssue, fareAdjusts, selectedOffer] = await Promise.all([
+    const parcelOpen = order.orderType === "parcel" && order.status === "open_for_offers";
+    const [openIssue, fareAdjusts, selectedOffer, pendingBids] = await Promise.all([
       this.prisma.issue.findFirst({
         where: { orderId: id, status: { in: ["open", "investigating"] } },
         orderBy: { createdAt: "desc" },
@@ -622,6 +625,10 @@ export class AdminOrdersService {
         where: { orderId: id, status: "selected" },
         select: { type: true, offeredFare: true },
       }),
+      // The per-step clock for an open parcel depends on its bids (no bid yet vs customer choosing).
+      parcelOpen
+        ? this.prisma.offer.findMany({ where: { orderId: id, status: "pending" }, select: { createdAt: true }, orderBy: { createdAt: "asc" } })
+        : Promise.resolve([] as Array<{ createdAt: Date }>),
     ]);
 
     // Derive the fare's provenance (only meaningful once a fare was actually agreed). An admin
@@ -670,14 +677,20 @@ export class AdminOrdersService {
     };
 
     const current = STATUS_STEP[order.status] ?? -1;
-    const lastEventAt = order.events.length ? order.events[order.events.length - 1]!.createdAt : order.createdAt;
-    const active = ACTIVE_RIDE_STATUSES.includes(order.status);
-    // DS20-01: shared threshold (admin.shared.STUCK_AFTER_MS), the same value the ops-dashboard
-    // aggregate uses — the two can't drift now. This detail page keys off the last OrderEvent.createdAt
-    // (more precise, and the events are already loaded here) rather than the dashboard's cheaper
-    // order.updatedAt aggregate — an intentional data-source difference, not a bug to reconcile.
-    const stuck = active && now - lastEventAt.getTime() > STUCK_AFTER_MS;
-    const stuckMins = Math.round((now - lastEventAt.getTime()) / 60000);
+    const lastEventAt = order.events.length ? order.events[order.events.length - 1]!.createdAt : null;
+    const assignedEventAt = [...order.events].reverse().find((e) => e.status === "assigned")?.createdAt ?? null;
+    // QA-B02: the same per-step rule as the Live page and the Overview card (order-health.ts), not a flat
+    // 20 minutes since the last event — a food order waiting on a biker is late at 6 minutes, a delivery at 20.
+    const clock = lateCheck(order, {
+      bids: pendingBids.length,
+      firstBidAt: pendingBids[0]?.createdAt ?? null,
+      lastEventAt,
+      assignedEventAt,
+    }, now);
+    const stuck = clock?.late ?? false;
+    const stuckMins = clock ? Math.round(clock.elapsedMs / 60000) : 0;
+    const limitMins = clock ? Math.round(clock.limitMs / 60000) : 0;
+    const quietBiker = clock?.stage === "pickup" || clock?.stage === "delivery";
 
     // E2E 2026-10-05 P-6: a delivered/completed order is over, so its last reached step is done, never "now".
     const finished = COMPLETED_ORDER_STATUSES.includes(order.status);
@@ -690,7 +703,7 @@ export class AdminOrdersService {
         label: step.label,
         state,
         ts: state === "done" ? tsForStep(i) : state === "now" ? "now" : undefined,
-        note: state === "stall" ? `No status update for ${stuckMins} min.` : undefined,
+        note: state === "stall" ? `${clock?.stageLabel ?? "No status update"}: ${stuckMins} min, past its ${limitMins} min limit.` : undefined,
       };
     });
 
@@ -780,7 +793,14 @@ export class AdminOrdersService {
       status: order.status,
       stuck,
       stuckNote: stuck
-        ? [otpMismatchNote, `No GPS/status update from the biker for ${stuckMins} minutes.`].filter(Boolean).join(" ")
+        ? [
+            otpMismatchNote,
+            quietBiker
+              ? `No GPS/status update from the biker for ${stuckMins} minutes.`
+              : `${clock?.stageLabel} for ${stuckMins} minutes, past its ${limitMins}-minute limit.`,
+          ]
+            .filter(Boolean)
+            .join(" ")
         : otpMismatchNote,
       deliveryOtpAttempts: order.deliveryOtpAttempts,
       hasOpenIssue: openIssue != null,

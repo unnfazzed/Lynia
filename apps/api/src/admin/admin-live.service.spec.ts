@@ -5,6 +5,7 @@ import type { TrackingService } from "../tracking/tracking.service";
 import type { AdminKitchenService } from "./admin-kitchen.service";
 import type { AdminMoneyService } from "./admin-money.service";
 import { ALERTS_CACHE_MS, AdminLiveService } from "./admin-live.service";
+import { OrderHealthService } from "./order-health";
 
 const NOW = new Date("2026-10-13T08:30:00Z");
 const ago = (min: number) => new Date(NOW.getTime() - min * 60_000);
@@ -61,7 +62,8 @@ function build(over: { orders?: unknown[]; riders?: unknown[]; live?: Record<str
     { ...baseOrder, id: "o-later", orderType: "merchant", status: "requested", merchantPhase: "awaiting_accept", createdAt: ago(5), customerId: "c-4" },
   ];
   const prisma = {
-    order: { findMany: vi.fn(async () => orders) },
+    // count = not-ended orders: the four above plus one delivered order the monitor doesn't time.
+    order: { findMany: vi.fn(async () => orders), count: vi.fn(async () => 5) },
     offer: { groupBy: vi.fn(async () => []) },
     orderEvent: {
       groupBy: vi.fn(async (args: { where: { status?: string } }) =>
@@ -116,6 +118,7 @@ function build(over: { orders?: unknown[]; riders?: unknown[]; live?: Record<str
     tracking as unknown as TrackingService,
     kitchen as unknown as AdminKitchenService,
     money as unknown as AdminMoneyService,
+    new OrderHealthService(prisma as unknown as PrismaService),
   );
   return { svc, prisma, tracking, kitchen, money };
 }
@@ -137,7 +140,9 @@ describe("AdminLiveService.liveOrders", () => {
       ["o-ring", "merchant_accept", "warn"],
       ["o-fresh", "no_bid", "ok"],
     ]);
-    expect(out.counts).toEqual({ total: 3, breach: 1, warn: 1 });
+    // QA-B03: `active` is every not-ended order (the Overview's number); `untimed` is the scheduled order and
+    // the delivered one, which the monitor can't put a clock on.
+    expect(out.counts).toEqual({ total: 3, breach: 1, warn: 1, active: 5, untimed: 2 });
     const quiet = out.rows[0];
     expect(quiet.stageStartedAt).toBe(ago(30).toISOString());
     expect(quiet.elapsedMs).toBe(30 * 60_000);

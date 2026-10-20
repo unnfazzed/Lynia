@@ -7,9 +7,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminService } from "./admin.service";
+import { OrderHealthService } from "./order-health";
 
 const prisma = new PrismaService();
-const admin = new AdminService(prisma, {} as unknown as Env);
+const admin = new AdminService(prisma, {} as unknown as Env, new OrderHealthService(prisma));
 
 async function clean(): Promise<void> {
   await prisma.orderEvent.deleteMany({});
