@@ -115,6 +115,22 @@ export const UpdateMerchantProfileRequest = z
   .strict();
 export type UpdateMerchantProfileRequest = z.infer<typeof UpdateMerchantProfileRequest>;
 
+/** `POST /admin/merchants/:id/shop-front` (ops setting up a business on its behalf): the same fields as the
+ *  owner's `PATCH /merchant/profile`, plus the reason the audit row needs. A photo key here must be one
+ *  `POST /admin/merchants/:id/shop-front/photo` minted for THIS business. */
+export const AdminUpdateShopFrontRequest = UpdateMerchantProfileRequest.extend({
+  reasonCode: z.string().trim().min(1).max(120),
+  note: z.string().trim().max(2000).optional(),
+}).refine(
+  (v) => [v.name, v.description, v.coverPhotoUrl, v.logoUrl, v.cuisineTags, v.priceLevel].some((f) => f !== undefined),
+  { message: "Nothing to change" },
+);
+export type AdminUpdateShopFrontRequest = z.infer<typeof AdminUpdateShopFrontRequest>;
+
+/** `POST /admin/merchants/:id/shop-front/photo`: a signed PUT for a logo or cover ops uploads for a business. */
+export const AdminShopFrontPhotoRequest = z.object({ contentType: z.enum(["image/jpeg", "image/png"]) }).strict();
+export type AdminShopFrontPhotoRequest = z.infer<typeof AdminShopFrontPhotoRequest>;
+
 export const UpdateMerchantHoursRequest = z.object({ hours: MerchantHours }).strict();
 export type UpdateMerchantHoursRequest = z.infer<typeof UpdateMerchantHoursRequest>;
 

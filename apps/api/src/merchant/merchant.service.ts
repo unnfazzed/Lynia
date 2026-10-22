@@ -355,6 +355,25 @@ export class MerchantService {
 
   async updateProfile(profileId: string, body: UpdateMerchantProfileRequest): Promise<MerchantProfileResponse> {
     const merchant = await this.findOwnMerchantOrThrow(profileId);
+    const data = await this.profileUpdateData(merchant, body, profileId);
+    const updated = await this.prisma.merchant.update({
+      where: { id: merchant.id },
+      data,
+      include: { ownerProfile: { select: { phone: true } } },
+    });
+    return await this.toProfileResponse(updated, merchant);
+  }
+
+  /**
+   * The row change a shop-front edit makes, photos checked and thumbnailed. Shared by the owner's own edit and
+   * ops' edit on the business's behalf (AdminShopFrontService), which differ only in whose upload namespace a
+   * new photo key must sit in: the caller's profile, or the business's ops namespace ({@link opsUploadOwner}).
+   */
+  async profileUpdateData(
+    merchant: { coverPhotoUrl: string | null; logoUrl: string | null },
+    body: UpdateMerchantProfileRequest,
+    photoOwnerId: string,
+  ): Promise<Prisma.MerchantUpdateInput> {
     const data: Prisma.MerchantUpdateInput = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.description !== undefined) data.description = body.description;
@@ -363,7 +382,7 @@ export class MerchantService {
       data.coverPhotoUrl = null;
       data.coverThumbKey = null;
     } else if (body.coverPhotoUrl !== undefined) {
-      await this.verifyPhotoKey(body.coverPhotoUrl, merchant.coverPhotoUrl, profileId, "banner");
+      await this.verifyPhotoKey(body.coverPhotoUrl, merchant.coverPhotoUrl, photoOwnerId, "banner");
       data.coverPhotoUrl = body.coverPhotoUrl;
       if (body.coverPhotoUrl !== merchant.coverPhotoUrl) data.coverThumbKey = await this.thumbFor(body.coverPhotoUrl);
     }
@@ -371,18 +390,13 @@ export class MerchantService {
       data.logoUrl = null;
       data.logoThumbKey = null;
     } else if (body.logoUrl !== undefined) {
-      await this.verifyPhotoKey(body.logoUrl, merchant.logoUrl, profileId, "banner");
+      await this.verifyPhotoKey(body.logoUrl, merchant.logoUrl, photoOwnerId, "banner");
       data.logoUrl = body.logoUrl;
       if (body.logoUrl !== merchant.logoUrl) data.logoThumbKey = await this.thumbFor(body.logoUrl);
     }
     if (body.cuisineTags !== undefined) data.cuisineTags = body.cuisineTags;
     if (body.priceLevel !== undefined) data.priceLevel = body.priceLevel;
-    const updated = await this.prisma.merchant.update({
-      where: { id: merchant.id },
-      data,
-      include: { ownerProfile: { select: { phone: true } } },
-    });
-    return await this.toProfileResponse(updated, merchant);
+    return data;
   }
 
   async updateHours(profileId: string, body: UpdateMerchantHoursRequest): Promise<MerchantProfileResponse> {

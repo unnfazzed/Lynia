@@ -59,6 +59,12 @@ row; *No answer* doesn't).
 5. **Opening hours are set.** Without hours the restaurant reads as closed.
 6. **The owner's name is recorded.** Sign-up asks for it, and it shows on the merchant's team.
 
+**Setting up the shop front for them.** If the owner can't do it themselves, use **Edit shop front** on the
+Shop front card: the name, about, tags or cuisine, price level, logo and cover photo. Photos are cropped to the
+centre and compressed for you. Every save asks for a reason and goes into the audit log with what changed
+before and after (`merchant.shop_front`). The owner sees the change in the merchant app. The menu and hours are
+still the owner's to set in the merchant app.
+
 ## 4. Review, approve, go live, suspend
 
 Each action is on the Application card (Suspend is in the header of a live business), takes a reason, and

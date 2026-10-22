@@ -42,6 +42,13 @@ export function ownNamespace(kind: UploadKind, ownerId: string): string {
   return `${UPLOAD_KINDS[kind].prefix}${ownerId}/`;
 }
 
+/** The owner id a photo ops uploads FOR a business is filed under (`banner/ops-<merchantId>/…`). The console
+ *  has no profile of its own (one shared admin token), and the prefix keeps these keys apart from every
+ *  profile's own namespace, so a key minted for one business can't be attached to another. */
+export function opsUploadOwner(merchantId: string): string {
+  return `ops-${merchantId}`;
+}
+
 /**
  * D7 review (2026-10-07): a key that is safe to hand to a storage SDK. The Azure SDK normalises
  * `dish/me/../../kyc/victim/x.jpg` to `kyc/victim/x.jpg`, so a key that merely STARTS with the caller's

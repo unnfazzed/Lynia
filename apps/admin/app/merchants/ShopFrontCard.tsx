@@ -3,6 +3,7 @@ import type { MerchantShopFront } from "../lib/adminTypes";
 import { KeyValue } from "../components/KeyValue";
 import { Pill } from "../components/StatusPill";
 import { money } from "../lib/format";
+import { ShopFrontEditor } from "./ShopFrontEditor";
 
 const DAY_LABEL: Record<MerchantShopFront["hours"][number]["day"], string> = {
   mon: "Mon",
@@ -37,15 +38,41 @@ function Missing({ label, style }: { label: string; style: CSSProperties }) {
 /**
  * What customers will see, so ops reviews it before approving (owner, 2026-10-18): the cover banner and round
  * logo, the "about", tags and price level, the week's hours, and the first items as listed. Built from the
- * kit's card, KeyValue and pill (ledger D-106); the photos are short-lived signed URLs, so plain <img>.
+ * kit's card, KeyValue and pill (ledger D-106); the photos are short-lived signed URLs, so plain <img>. With
+ * `merchantId`, ops can also change it on the business's behalf (admin assist: ShopFrontEditor).
  */
-export function ShopFrontCard({ name, shopFront: s, shop }: { name: string; shopFront: MerchantShopFront; shop: boolean }) {
+export function ShopFrontCard({
+  name,
+  shopFront: s,
+  shop,
+  merchantId,
+  connected = false,
+}: {
+  name: string;
+  shopFront: MerchantShopFront;
+  shop: boolean;
+  merchantId?: string;
+  connected?: boolean;
+}) {
   const photoMissing = (has: boolean) => (has ? "Couldn't load" : "No photo");
   return (
     <section className="card" aria-label="Shop front" style={{ marginBottom: "var(--space-lg)" }}>
       <div className="block-title">
         Shop front <span className="count">what customers see</span>
       </div>
+      {merchantId ? (
+        <ShopFrontEditor
+          merchantId={merchantId}
+          name={name}
+          about={s.about}
+          tags={s.tags}
+          priceLevel={s.priceLevel}
+          hasLogo={s.hasLogo}
+          hasCover={s.hasCover}
+          shop={shop}
+          connected={connected}
+        />
+      ) : null}
 
       {/* The logo hangs 28px below the banner, so the gap under it clears that first. */}
       <div style={{ position: "relative", marginBottom: "calc(28px + var(--space-lg))" }}>

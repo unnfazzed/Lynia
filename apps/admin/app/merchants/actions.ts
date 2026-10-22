@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminPostResult, describeAdminPostFailure } from "../lib/api";
+import { adminPostJson, adminPostResult, describeAdminPostFailure } from "../lib/api";
 
 /**
  * X1: R-05 admin dispute resolution — `POST /admin/orders/:id/resolve-handshake`. The domain half of
@@ -133,6 +133,72 @@ export async function setMerchantOrderSettings(
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const auditNote = [reasonCode, note.trim()].filter(Boolean).join(" — ");
   const res = await adminPostResult(`/admin/merchants/${merchantId}/order-settings`, { ...settings, note: auditNote || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/merchants/${merchantId}`);
+  return { ok: true };
+}
+
+/** The shop-front fields ops can change for a business (admin assist): the owner's own `PATCH /merchant/profile`
+ *  fields. A field left out stays as it is; `null` removes a photo or the price level. */
+export interface ShopFrontChanges {
+  name?: string;
+  description?: string;
+  cuisineTags?: string[];
+  priceLevel?: number | null;
+  removeLogo?: boolean;
+  removeCover?: boolean;
+}
+
+/** A photo PUT straight to storage, from this server: the media store's CORS only admits the merchant and
+ *  customer web apps, and the browser never holds the admin token. */
+const PHOTO_PUT_TIMEOUT_MS = 30_000;
+
+async function uploadShopFrontPhoto(merchantId: string, photo: File): Promise<{ ok: true; key: string } | { ok: false; message: string }> {
+  const minted = await adminPostJson<{ uploadUrl: string; key: string; headers: Record<string, string> }>(`/admin/merchants/${merchantId}/shop-front/photo`, {
+    contentType: "image/jpeg",
+  });
+  if (!minted.ok) return { ok: false, message: describeAdminPostFailure(minted) };
+  try {
+    const res = await fetch(minted.data.uploadUrl, {
+      method: "PUT",
+      headers: minted.data.headers,
+      body: Buffer.from(await photo.arrayBuffer()),
+      signal: AbortSignal.timeout(PHOTO_PUT_TIMEOUT_MS),
+    });
+    // The upload URL is create-only: 409 means the bytes already landed (as on the merchant web, E13).
+    if (!res.ok && res.status !== 409) return { ok: false, message: `The photo didn't upload (${res.status}). Try again.` };
+  } catch {
+    return { ok: false, message: "The photo didn't upload. Try again." };
+  }
+  return { ok: true, key: minted.data.key };
+}
+
+/**
+ * Admin assist: change a business's shop front on its behalf — `POST /admin/merchants/:id/shop-front`. The
+ * domain half of a <ConfirmModal> confirm; the endpoint writes the audit row with the change (A-01), so the
+ * modal sets `auditInEndpoint`. A new logo/cover arrives already compressed (≤250 KB JPEG) in `form` as
+ * `logo`/`cover`; each is uploaded here first and its key sent with the rest.
+ */
+export async function saveMerchantShopFront(
+  merchantId: string,
+  changes: ShopFrontChanges,
+  form: FormData,
+  reasonCode: string | null,
+  note: string,
+): Promise<ActionResult> {
+  const { removeLogo, removeCover, ...fields } = changes;
+  const body: Record<string, unknown> = { ...fields, reasonCode, ...(note.trim() ? { note: note.trim() } : {}) };
+  for (const [field, name, remove] of [["logoUrl", "logo", removeLogo], ["coverPhotoUrl", "cover", removeCover]] as const) {
+    const photo = form.get(name);
+    if (photo instanceof File && photo.size > 0) {
+      const up = await uploadShopFrontPhoto(merchantId, photo);
+      if (!up.ok) return up;
+      body[field] = up.key;
+    } else if (remove) {
+      body[field] = null;
+    }
+  }
+  const res = await adminPostResult(`/admin/merchants/${merchantId}/shop-front`, body);
   if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidatePath(`/merchants/${merchantId}`);
   return { ok: true };

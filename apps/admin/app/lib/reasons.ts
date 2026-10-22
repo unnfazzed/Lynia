@@ -36,6 +36,12 @@ export const REASONS = {
     "The business asked to pay for delivery",
     "The business asked to stop paying for delivery",
   ],
+  // Admin assist: why ops changed a business's shop front on its behalf.
+  merchantShopFront: [
+    "The owner asked by phone",
+    "Setting up the shop for the owner",
+    "Fixing a mistake or a photo that breaks the rules",
+  ],
   // KB-POD-DISPUTE Phase B — why ops is overturning an `undelivered` outcome to `delivered`.
   orderAdjudicateDelivered: [
     "Proof photo + GPS confirm the drop; recipient withheld the code",
