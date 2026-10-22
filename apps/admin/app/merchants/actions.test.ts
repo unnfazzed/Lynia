@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { logMerchantCall, moveMerchantApplication, recordMerchantLicence, resolveHandshake, transferMerchantOwner, verifyMerchantLicence, writeOffDebt } from "./actions";
+import {
+  logMerchantCall,
+  moveMerchantApplication,
+  recordMerchantLicence,
+  resolveHandshake,
+  saveMerchantShopFront,
+  transferMerchantOwner,
+  verifyMerchantLicence,
+  writeOffDebt,
+} from "./actions";
 
 /**
  * X1/R-05: the admin action that releases a frozen doorstep handshake — a rider's job lock and a
@@ -146,5 +155,58 @@ describe("transferMerchantOwner (merchant web upgrade L4: support hands a busine
     const out = await transferMerchantOwner("m-1", "0773000003", null, "checked ID");
     expect(out).toEqual({ ok: false, message: "That number works at another business. They must leave it first." });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("saveMerchantShopFront (admin assist)", () => {
+  const KEY = "banner/ops-m-1/aaaaaaaa-0000-4000-8000-000000000001.jpg";
+  const minted = { uploadUrl: "https://blob.test/put", key: KEY, headers: { "Content-Type": "image/jpeg", "x-ms-blob-type": "BlockBlob" } };
+  const json = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+  const logoForm = () => {
+    const fd = new FormData();
+    fd.append("logo", new File([new Uint8Array([0xff, 0xd8, 0xff])], "logo.jpg", { type: "image/jpeg" }));
+    return fd;
+  };
+
+  it("saves text changes with the reason, as the operator", async () => {
+    const r = await saveMerchantShopFront("m-1", { name: "Mama's Kitchen Avondale" }, new FormData(), "The owner asked by phone", " Spoke to Tendai ");
+    expect(r).toEqual({ ok: true });
+    expect(lastCall()).toMatchObject({
+      url: "https://api.test/admin/merchants/m-1/shop-front",
+      method: "POST",
+      body: { name: "Mama's Kitchen Avondale", reasonCode: "The owner asked by phone", note: "Spoke to Tendai" },
+      headers: { "X-Operator": "alice@corp.com" },
+    });
+    expect(revalidateMock).toHaveBeenCalledWith("/merchants/m-1");
+  });
+
+  it("uploads a new logo from the server, then saves its key", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, minted)).mockResolvedValueOnce(res(201)).mockResolvedValueOnce(res(200));
+    const r = await saveMerchantShopFront("m-1", {}, logoForm(), "Setting up the shop for the owner", "");
+    expect(r).toEqual({ ok: true });
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.test/admin/merchants/m-1/shop-front/photo");
+    const [putUrl, put] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(putUrl).toBe("https://blob.test/put");
+    expect(put).toMatchObject({ method: "PUT", headers: minted.headers });
+    expect(lastCall().body).toEqual({ logoUrl: KEY, reasonCode: "Setting up the shop for the owner" });
+  });
+
+  it("sends null for a removed cover", async () => {
+    await saveMerchantShopFront("m-1", { removeCover: true }, new FormData(), "x", "");
+    expect(lastCall().body).toEqual({ coverPhotoUrl: null, reasonCode: "x" });
+  });
+
+  it("stops before saving when the photo doesn't upload", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, minted)).mockResolvedValueOnce(res(403));
+    const r = await saveMerchantShopFront("m-1", { name: "X" }, logoForm(), "x", "");
+    expect(r).toEqual({ ok: false, message: "The photo didn't upload (403). Try again." });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the API's refusal", async () => {
+    fetchMock.mockResolvedValueOnce(json(400, { message: "Invalid photo key" }));
+    const r = await saveMerchantShopFront("m-1", { name: "X" }, new FormData(), "x", "");
+    expect(r).toEqual({ ok: false, message: expect.stringContaining("Invalid photo key") });
   });
 });

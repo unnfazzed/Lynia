@@ -138,6 +138,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "merchant.resume": "Resumed",
   "merchant.order_settings": "Order settings changed",
   "merchant.owner_transfer": "Owner changed",
+  "merchant.shop_front": "Shop front changed by ops",
   "merchant.report_non_return": "Reported goods not returned",
   "merchant.rider.add": "Biker added",
   "merchant.rider.remove": "Biker removed",

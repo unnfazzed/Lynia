@@ -130,7 +130,7 @@ export default async function MerchantProfilePage({
       {app && app.status !== "live" ? <ApplicationCard app={app} name={m.name} connected={connected} /> : null}
 
       {/* The owner's ask (2026-10-18): the logo, the "about" and the items, seen before Approve. */}
-      {m.shopFront ? <ShopFrontCard name={m.name} shopFront={m.shopFront} shop={isShop} /> : null}
+      {m.shopFront ? <ShopFrontCard name={m.name} shopFront={m.shopFront} shop={isShop} merchantId={m.id} connected={connected} /> : null}
 
       {!app && !m.pilotEnabled ? (
         <div className="warnbar">

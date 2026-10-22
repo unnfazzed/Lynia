@@ -8,6 +8,7 @@ import {
   TEAM_REMOVE_ACTION,
 } from "../merchant/merchant-team.service";
 import { OWNER_TRANSFER_ACTION } from "./admin-merchants.service";
+import { SHOP_FRONT_AUDIT_ACTION } from "../merchant/admin-shop-front.service";
 import { FEED_READ_ACTIONS } from "../notifications/notifications-feed.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuditService, RESERVED_AUDIT_ACTIONS } from "./admin-audit.service";
@@ -149,6 +150,7 @@ describe("AdminAuditService.recordAuditAction (A-01)", () => {
       TEAM_JOIN_ACTION,
       TEAM_DECLINE_ACTION,
       OWNER_TRANSFER_ACTION,
+      SHOP_FRONT_AUDIT_ACTION,
     ];
     expect(merchantActions.filter((a) => !RESERVED_AUDIT_ACTIONS.has(a))).toEqual([]);
   });

@@ -1,5 +1,7 @@
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { AdminFleetsController } from "./admin-fleets.controller";
+import { AdminShopFrontController } from "./admin-shop-front.controller";
+import { AdminShopFrontService } from "./admin-shop-front.service";
 import { FleetAdminService } from "./fleet-admin.service";
 import { FleetDispatchService } from "./fleet-dispatch.service";
 import { FleetLedgerService } from "./fleet-ledger.service";
@@ -98,6 +100,8 @@ import { PrescriptionService } from "./prescription.service";
     HandoverLinkController,
     MerchantFleetController,
     AdminFleetsController,
+    // Admin assist: ops editing a shop front on the business's behalf.
+    AdminShopFrontController,
     RiderFleetController,
   ],
   providers: [
@@ -111,6 +115,7 @@ import { PrescriptionService } from "./prescription.service";
     FleetDispatchService,
     FleetLedgerService,
     FleetAdminService,
+    AdminShopFrontService,
     MerchantGuard,
     RestaurantsEnabledGuard,
     ShopsEnabledGuard,
