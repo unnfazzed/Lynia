@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { LatLng, UploadObjectKey, Waypoint } from "./core";
+import { MERCHANT_APPLICATION_STATUSES } from "../merchant-application";
 
 // ---------------------------------------------------------------------------
 // Restaurants vertical — merchant domain + menu (C1,
@@ -161,6 +162,12 @@ export const EditMerchantOrderItemsRequest = z
       .min(1)
       .max(30),
     prepMinutes: z.number().int().min(5).max(120).optional(),
+    /** The quantities the editor was showing (0 = taken off). When sent, the edit is refused if the order's
+     *  lines no longer match, so a stale screen can't overwrite a change made since it loaded. Optional. */
+    expected: z
+      .array(z.object({ itemId: z.string().uuid(), quantity: z.number().int().min(0).max(99) }).strict())
+      .max(30)
+      .optional(),
   })
   .strict();
 export type EditMerchantOrderItemsRequest = z.infer<typeof EditMerchantOrderItemsRequest>;
@@ -212,6 +219,11 @@ export const MerchantProfileResponse = z
     freeDelivery: z.boolean().optional(),
     /** Order flow v2 (BRIEF §13): the CALLER may approve or decline prescriptions. Optional/additive. */
     myIsPharmacist: z.boolean().optional(),
+    /** Admin console v2 §5: where the business is in its application, and the reject reason code
+     *  (MERCHANT_REJECT_REASON_LABELS) while it is rejected. Optional, so older APIs stay valid. */
+    application: z
+      .object({ status: z.enum(MERCHANT_APPLICATION_STATUSES), reasonCode: z.string().nullable() })
+      .optional(),
   })
   .strict();
 export type MerchantProfileResponse = z.infer<typeof MerchantProfileResponse>;

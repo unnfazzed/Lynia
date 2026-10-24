@@ -12,6 +12,7 @@ import { ApplicationCard, ApplicationStatusPill, MetricsCard } from "../applicat
 import { OrderSettingsCard } from "../OrderSettingsCard";
 import { ShopFrontCard } from "../ShopFrontCard";
 import { OwnerTransferButton } from "../OwnerTransferButton";
+import { ShopKindButton } from "../ShopKindButton";
 import { OrderLink, RecordLink } from "../../components/links";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { fetchTimeline, TimelineCard } from "../../components/Timeline";
@@ -124,7 +125,7 @@ export default async function MerchantProfilePage({
         </span>
         <Conn connected={connected} />
         <OwnerTransferButton merchantId={m.id} name={m.name} connected={connected} />
-        {app?.actions.includes("suspend") ? <ApplicationActionButton merchantId={m.id} name={m.name} action="suspend" connected={connected} /> : null}
+        {app?.actions.includes("suspend") ? <ApplicationActionButton merchantId={m.id} name={m.name} action="suspend" connected={connected} app={app} /> : null}
       </header>
 
       {app && app.status !== "live" ? <ApplicationCard app={app} name={m.name} connected={connected} /> : null}
@@ -145,7 +146,7 @@ export default async function MerchantProfilePage({
         <div className="warnbar">
           <IconStore />
           <span className="t">
-            <b>No verified pharmacy licence.</b> It went live before licences were checked. Record it after the next call.
+            <b>No verified pharmacy licence.</b> {app.checklist.find((r) => r.warning)?.warning}
           </span>
           <span style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
             <LicenceButtons merchantId={m.id} name={m.name} connected={connected} recorded={!!app.licence} verified={!!app.licence?.verifiedAt} />
@@ -206,7 +207,17 @@ export default async function MerchantProfilePage({
             <div className="block-title">Details</div>
             <KeyValue
               rows={[
-                { label: "Type", value: isShop ? (kind ? `Shop · ${kind}` : "Shop") : "Restaurant" },
+                {
+                  label: "Type",
+                  value: isShop ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: tokens.space.sm, flexWrap: "wrap" }}>
+                      {kind ? `Shop · ${kind}` : "Shop"}
+                      <ShopKindButton merchantId={m.id} name={m.name} current={m.shopKind} connected={connected} />
+                    </span>
+                  ) : (
+                    "Restaurant"
+                  ),
+                },
                 { label: "Contact phone", value: m.contactPhone ?? "—" },
                 { label: "Landmark", value: m.landmark ?? "—" },
                 {
@@ -243,6 +254,9 @@ export default async function MerchantProfilePage({
                     ]
                   : []),
                 { label: "Joined", value: m.joined },
+                // Admin console v2 §5: when it was first approved, and since when it has been in its current state.
+                ...(app?.approvedAt ? [{ label: "First approved", value: fmtDateTime(app.approvedAt) }] : []),
+                ...(app?.statusAt ? [{ label: "Status since", value: fmtDateTime(app.statusAt) }] : []),
                 // The shop front card shows the "about" when the API sends one; older APIs keep it here.
                 ...(m.description && !m.shopFront ? [{ label: "Description", value: m.description }] : []),
               ]}

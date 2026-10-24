@@ -86,16 +86,19 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   // real, domain-owned dispute resolution the free-text path must not be able to forge (it would read
   // identically to a genuine support resolution with no underlying handshake/rider-lock release).
   "order.handshake_resolve",
+  // N-12: `AdminMerchantsService.recordRefund` writes this with the refundedAt it records.
+  "order.refund_record",
   // X1: `AdminCustomersService.liftCashBan` writes this in the same transaction as the
   // cashBanned=false write — the R-08 cash-ban's only lift path, same forgery risk as customer.lift.
   "customer.cash_ban_lift",
-  // Merchant web upgrade L1: `AdminMerchantsService.setPilot` writes these in the same transaction as
-  // the pilotEnabled flip — the only go-live switch; a free-text forgery would read as a real one.
+  // Merchant web upgrade L1: the go-live switch wrote these with the pilotEnabled flip (go_live is now
+  // AdminMerchantApplicationService's; go_dormant stays reserved for the rows the old switch wrote).
   "merchant.go_live",
   "merchant.go_dormant",
   // Admin console v2 §5: AdminMerchantApplicationService writes each of these in the same transaction as
   // the application change it records (MERCHANT_APPLICATION_AUDIT; the admin spec cross-checks the list).
   "merchant.application_call",
+  "merchant.shop_kind",
   "merchant.application_review",
   "merchant.application_approve",
   "merchant.application_reject",

@@ -8,14 +8,16 @@ import { adminPostJson, adminPostResult, describeAdminPostFailure } from "../lib
  * a <ConfirmModal> confirm (the endpoint writes the audit row in the SAME transaction, A-01, so the
  * modal sets `auditInEndpoint`). Mirrors `mutateCustomer`/`mutateRider`'s shape exactly.
  */
-export async function resolveHandshake(orderId: string, reasonCode: string | null, note: string): Promise<void> {
+export async function resolveHandshake(orderId: string, reasonCode: string | null, note: string): Promise<ActionResult> {
   const res = await adminPostResult(`/admin/orders/${orderId}/resolve-handshake`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!res.ok) throw new Error(`Failed to resolve handshake for order ${orderId}: ${describeAdminPostFailure(res)}`);
+  // Returned, not thrown: Next redacts a thrown server-action message in production (see moveMerchantApplication).
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/merchants/disputes");
+  return { ok: true };
 }
 
 /**
@@ -24,14 +26,28 @@ export async function resolveHandshake(orderId: string, reasonCode: string | nul
  * audit row in the SAME transaction (A-01), so the modal sets `auditInEndpoint`. It does not suspend the
  * rider: that stays the rider console action. Fails closed, like resolveHandshake.
  */
-export async function writeOffDebt(orderId: string, reasonCode: string | null, note: string): Promise<void> {
+export async function writeOffDebt(orderId: string, reasonCode: string | null, note: string): Promise<ActionResult> {
   const res = await adminPostResult(`/admin/orders/${orderId}/write-off-debt`, {
     reason: reasonCode ?? "",
     note: note || null,
   });
-  if (!res.ok) throw new Error(`Failed to write off the debt on order ${orderId}: ${describeAdminPostFailure(res)}`);
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/merchants/disputes");
+  return { ok: true };
+}
+
+/**
+ * N-12: support checked the merchant refunded the customer outside the app — `POST /admin/orders/:id/record-refund`.
+ * Records the refund time only (LyniaGo never holds the money); the endpoint writes the `order.refund_record`
+ * audit row in the SAME transaction, so the modal sets `auditInEndpoint`.
+ */
+export async function recordRefund(orderId: string, reasonCode: string | null, note: string): Promise<ActionResult> {
+  const res = await adminPostResult(`/admin/orders/${orderId}/record-refund`, { reason: reasonCode ?? "", note: note || null });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/merchants/disputes");
+  return { ok: true };
 }
 
 type ActionResult = { ok: true } | { ok: false; message: string };
@@ -85,6 +101,14 @@ export async function recordMerchantLicence(
     reference: licence.reference.trim() || null,
     note: note.trim() || null,
   });
+  if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
+  revalidateMerchant(merchantId);
+  return { ok: true };
+}
+
+/** Correct a shop's kind (`POST /admin/merchants/:id/shop-kind`). Audited in the endpoint. */
+export async function setMerchantShopKind(merchantId: string, kind: string | null, note: string): Promise<ActionResult> {
+  const res = await adminPostResult(`/admin/merchants/${merchantId}/shop-kind`, { kind: kind ?? "", note: note.trim() || null });
   if (!res.ok) return { ok: false, message: describeAdminPostFailure(res) };
   revalidateMerchant(merchantId);
   return { ok: true };

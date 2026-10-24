@@ -26,6 +26,20 @@ export const NOT_SUSPENDED = { applicationStatus: { not: "suspended" } } as cons
  *  switched on: they are listed by their own rule, {@link customerVisibleShop}. */
 export const CUSTOMER_VISIBLE_RESTAURANT = { pilotEnabled: true, ...NOT_SUSPENDED, businessType: "restaurant" } as const;
 
+/** Order flow v2 (BRIEF §13): while RX_ENABLED is off, "Prescription needed" items are not listed.
+ *  MJ-H5 / U43: nor are they at a pharmacy with no team member ticked as pharmacist — nobody there
+ *  could check the prescription. Wrapped in AND so it composes with a caller's own OR. */
+export function rxVisibleDishWhere(env?: Pick<Env, "RX_ENABLED">): Prisma.MerchantDishWhereInput {
+  if (env?.RX_ENABLED !== "true") return { rxRequired: false };
+  return { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
+}
+
+/** A dish or item a customer can actually see: photographed (not a draft), in a category that isn't
+ *  hidden, and not a prescription item that isn't listed (rxVisibleDishWhere). What go-live counts. */
+export function customerListedDishWhere(env?: Pick<Env, "RX_ENABLED">): Prisma.MerchantDishWhereInput {
+  return { isDraft: false, category: { hidden: false }, AND: [rxVisibleDishWhere(env)] };
+}
+
 /** The customer-facing visibility rule for shops (ledger D-58): ops-switched-on (`pilotEnabled`, the
  *  same go-live switch restaurants use) SHOPS, narrowed to the sections that are switched on. Pharmacy
  *  is the `pharmacy` kind; Shops is every other kind. `service` narrows to one section. */

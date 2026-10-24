@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { type MerchantApplicationStatus, Prisma } from "@prisma/client";
 import type {
   BecomeMerchantRequest,
   DishOutOfStockFor,
@@ -51,6 +51,7 @@ import {
   RESTAURANTS_DEBT,
   roundToCents,
   isInServiceArea,
+  MERCHANT_SIGN_UP_HOURS,
 } from "@lynia/shared";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { isMintedUploadKey, type UploadKind } from "../adapters/storage/upload-kinds";
@@ -65,10 +66,11 @@ import type { Env } from "../config/env";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { lockMembershipsTx, resolveMerchantAccess } from "./merchant-access";
+import { effectiveApplicationStatus } from "../admin/merchant-application";
 import { findBookingAccountId } from "./booking-account";
 import { branchRides, ownerBills } from "./fleet-bills";
 import { harareEffectiveHours, harareStartOfNextDay } from "./harare-clock";
-import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId } from "./merchant-lookup.util";
+import { CUSTOMER_VISIBLE_RESTAURANT, isDishOutOfStock as isOutOfStock, resolveOwnMerchantId, rxVisibleDishWhere } from "./merchant-lookup.util";
 import { addDaysToKey, daysSinceMonday, harareDayBounds, harareDayKey } from "./harare-clock";
 import {
   POPULAR_MIN_ORDERS,
@@ -167,9 +169,7 @@ export const OUT_OF_STOCK_UNTIL_BACK = new Date(Date.UTC(9999, 11, 31, 23, 59, 5
 /** MJ-RH3 (C13, 2026-10-07): a new business starts with 08:00–22:00 every day stored — the hours its form
  *  shows — instead of null, which every read takes as open around the clock (and an auto-accepting
  *  kitchen then cooks a 2 a.m. order nobody is there for). Null keeps that meaning for existing rows. */
-export const SIGN_UP_HOURS: MerchantHours = Object.fromEntries(
-  (["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((d) => [d, { open: "08:00", close: "22:00" }]),
-) as MerchantHours;
+export const SIGN_UP_HOURS: MerchantHours = { ...MERCHANT_SIGN_UP_HOURS };
 
 function outOfStockUntil(forHowLong: DishOutOfStockFor = "rest_of_today"): Date {
   if (forHowLong === "until_back") return OUT_OF_STOCK_UNTIL_BACK;
@@ -286,6 +286,12 @@ export class MerchantService {
    * Standing (OV-5): the same people Send won't let book can't open a business either — a held account,
    * or a banned/suspended rider account.
    */
+  /** D-49: the person accepted the terms at the merchant sign-in; record it where their team rows lack it. */
+  async acceptTerms(profileId: string): Promise<{ accepted: number }> {
+    const res = await this.prisma.merchantMember.updateMany({ where: { profileId, termsAcceptedAt: null }, data: { termsAcceptedAt: new Date() } });
+    return { accepted: res.count };
+  }
+
   async becomeMerchant(profileId: string, body: BecomeMerchantRequest): Promise<MerchantProfileResponse> {
     const profile = await this.prisma.profile.findUnique({
       where: { id: profileId },
@@ -1371,6 +1377,8 @@ export class MerchantService {
       freeDelivery: merchant.freeDelivery,
       // Order flow v2 (BRIEF §13): whether the caller may approve/decline prescriptions.
       ...(me.myIsPharmacist !== undefined ? { myIsPharmacist: me.myIsPharmacist } : {}),
+      // Admin console v2 §5: the application state and, while rejected, the reason code the business reads.
+      ...(merchant.applicationStatus ? { application: applicationOf(merchant) } : {}),
     };
   }
 
@@ -1472,8 +1480,7 @@ export class MerchantService {
    *  could check the prescription, so the order could never be packed (placement refuses it too,
    *  PrescriptionService.prepareForPlacement). Wrapped in AND so it composes with a caller's own OR. */
   private rxVisible(): Prisma.MerchantDishWhereInput {
-    if (this.env?.RX_ENABLED !== "true") return { rxRequired: false };
-    return { AND: [{ OR: [{ rxRequired: false }, { category: { merchant: { members: { some: { isPharmacist: true } } } } }] }] };
+    return rxVisibleDishWhere(this.env);
   }
 }
 
@@ -1490,4 +1497,10 @@ function alreadyMember(): ConflictException {
 function assertCategoryWindow(from: string | null, to: string | null): void {
   if ((from === null) !== (to === null)) throw new BadRequestException("availableFrom and availableTo must be set together");
   if (from !== null && to !== null && from >= to) throw new BadRequestException("The start time must be before the end time.");
+}
+
+/** The application slice of the merchant profile: the effective status, and the reject code while rejected. */
+function applicationOf(m: { applicationStatus: MerchantApplicationStatus; pilotEnabled: boolean; applicationReasonCode: string | null }) {
+  const status = effectiveApplicationStatus(m);
+  return { status, reasonCode: status === "rejected" ? m.applicationReasonCode : null };
 }

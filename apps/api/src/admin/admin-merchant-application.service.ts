@@ -1,14 +1,21 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
-  MERCHANT_APPLICATION_WAITING,
+  MERCHANT_REJECT_REASON_LABELS,
   MERCHANT_REJECT_REASONS,
   type MerchantHours,
+  type MerchantRejectReason,
+  type MerchantShopKind,
   isMerchantOpenNow,
+  isMerchantSignUpHours,
   merchantApplicationSla,
 } from "@lynia/shared";
 import { domainEvents, type MerchantApplicationStep } from "../common/domain-events";
+import { ENV } from "../config/config.module";
+import type { Env } from "../config/env";
 import { harareWallClock } from "../merchant/harare-clock";
+import { customerListedDishWhere } from "../merchant/merchant-lookup.util";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData } from "./admin.shared";
 import {
@@ -21,6 +28,7 @@ import {
   effectiveApplicationStatus,
   isPharmacy,
   median,
+  slaSince,
   type ApplicationAction,
   type ApplicationStatus,
   type ChecklistInput,
@@ -37,6 +45,7 @@ export const MERCHANT_APPLICATION_AUDIT = {
   resume: "merchant.resume",
   licenceRecord: "merchant.licence_record",
   licenceVerify: "merchant.licence_verify",
+  shopKind: "merchant.shop_kind",
 } as const;
 
 const STEP_FOR: Readonly<Record<ApplicationAction, MerchantApplicationStep>> = {
@@ -65,6 +74,7 @@ const APPLICATION_SELECT = {
   pilotEnabled: true,
   applicationStatus: true,
   applicationStatusAt: true,
+  applicationQueuedAt: true,
   applicationReasonCode: true,
   approvedAt: true,
   approvedBy: true,
@@ -76,10 +86,31 @@ type ApplicationRow = Prisma.MerchantGetPayload<{ select: typeof APPLICATION_SEL
 /** The slice of Prisma the checklist loader reads — the service's client or a transaction's. */
 type Db = Pick<
   Prisma.TransactionClient,
-  "merchantCategory" | "merchantDish" | "merchantMember" | "merchantInvite" | "merchantDocument" | "domainEvent"
+  "merchantCategory" | "merchantDish" | "merchantMember" | "merchantInvite" | "merchantDocument" | "auditLog"
 >;
 
+/** Orders that are over (no more work for the business): what "open orders" leaves out. */
+const DONE_ORDER_STATUSES = ["completed", "delivered", "cancelled", "expired", "undelivered"] as const;
+
+/**
+ * What the business owner is told when ops moves the application (best effort, after the commit). No push was
+ * drawn for these, so the copy is plain and says what happens next; a reject carries the reason the business
+ * reads (MERCHANT_REJECT_REASON_LABELS), in those words. Start review tells nobody (nothing changed for them).
+ */
+const APPLICATION_PUSH: Partial<Record<ApplicationAction, (name: string, reason: string) => { title: string; body: string }>> = {
+  approve: (n) => ({ title: `${n} is approved`, body: "LyniaGo will call you to switch it on for customers." }),
+  reject: (n, r) => ({ title: `${n} wasn't approved`, body: MERCHANT_REJECT_REASON_LABELS[r as MerchantRejectReason] ?? MERCHANT_REJECT_REASON_LABELS.other }),
+  go_live: (n) => ({ title: `${n} is live`, body: "Customers can find you and order now." }),
+  suspend: (n) => ({
+    title: `${n} is paused`,
+    body: "Customers can't see it or order for now. Orders already in progress carry on. Message LyniaGo on WhatsApp for details.",
+  }),
+  resume: (n) => ({ title: `${n} is back on`, body: "Customers can find you and order again." }),
+};
+
 const METRICS_WINDOW_DAYS = 30;
+/** The orders a metrics read loads at most (newest first). */
+const METRICS_ORDER_CAP = 2000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SLOT_MS = 15 * 60 * 1000;
 
@@ -100,7 +131,23 @@ function eventStep(data: unknown): { step?: string; outcome?: string } {
  */
 @Injectable()
 export class AdminMerchantApplicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminMerchantApplicationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so unit tests can construct with just Prisma: the flags decide what a customer can see (the
+    // go-live dish count, the "is this section switched on" warning); notifications tell the owner.
+    @Optional() @Inject(ENV) private readonly env?: Env,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
+
+  /** The customer section a business is listed in, and whether it is switched on (null = unknown here). */
+  private section(m: { businessType: string; shopKind: string | null }): { name: string; enabled: boolean | null } {
+    const name = m.businessType === "shop" ? (isPharmacy(m) ? "Pharmacy" : "Shops") : "Restaurants";
+    if (!this.env) return { name, enabled: null };
+    const flag = name === "Pharmacy" ? this.env.PHARMACY_ENABLED : name === "Shops" ? this.env.SHOPS_ENABLED : this.env.RESTAURANTS_ENABLED;
+    return { name, enabled: flag === "true" };
+  }
 
   /* ── Reads ──────────────────────────────────────────────────────────────────────────────────── */
 
@@ -109,8 +156,9 @@ export class AdminMerchantApplicationService {
     const ids = merchants.map((m) => m.id);
     const out = new Map<string, ChecklistInput>();
     if (ids.length === 0) return out;
-    const [categories, dishes, photos, members, invites, documents, events] = await Promise.all([
-      db.merchantCategory.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids } }, _count: { _all: true } }),
+    const [categories, dishes, listed, photos, members, invites, documents, calls, rejects] = await Promise.all([
+      // What a customer sees: categories that aren't hidden, and dishes they would actually be shown.
+      db.merchantCategory.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids }, hidden: false }, _count: { _all: true } }),
       db.merchantDish.groupBy({
         by: ["merchantId", "isDraft"],
         where: { merchantId: { in: ids } },
@@ -118,6 +166,7 @@ export class AdminMerchantApplicationService {
         _min: { priceUsd: true },
         _max: { priceUsd: true },
       }),
+      db.merchantDish.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids }, ...customerListedDishWhere(this.env) }, _count: { _all: true } }),
       db.merchantDish.groupBy({ by: ["merchantId"], where: { merchantId: { in: ids }, photoUrl: { not: null } }, _count: { _all: true } }),
       db.merchantMember.findMany({
         where: { merchantId: { in: ids } },
@@ -128,12 +177,15 @@ export class AdminMerchantApplicationService {
         where: { merchantId: { in: ids }, kind: "pharmacy_licence" },
         select: { merchantId: true, licenceNumber: true, pharmacistName: true, verifiedAt: true },
       }),
-      db.domainEvent.findMany({
-        where: { type: "merchant.application", subjectId: { in: ids } },
+      // The latest call that reached each business (one row per business, however many calls the page has),
+      // and each one's latest rejection: a call made before a rejection doesn't count after a reopen.
+      db.auditLog.findMany({
+        where: { action: MERCHANT_APPLICATION_AUDIT.call, target: { in: ids }, reasonCode: "reached" },
         orderBy: { createdAt: "desc" },
-        take: 500,
-        select: { subjectId: true, data: true, createdAt: true },
+        distinct: ["target"],
+        select: { target: true, createdAt: true },
       }),
+      db.auditLog.groupBy({ by: ["target"], where: { action: MERCHANT_APPLICATION_AUDIT.reject, target: { in: ids } }, _max: { createdAt: true } }),
     ]);
     for (const m of merchants) {
       const dishRows = dishes.filter((d) => d.merchantId === m.id);
@@ -144,19 +196,23 @@ export class AdminMerchantApplicationService {
       const team = members.filter((t) => t.merchantId === m.id);
       const owner = team.find((t) => t.role === "owner");
       const doc = documents.find((d) => d.merchantId === m.id);
-      const call = events.find((e) => e.subjectId === m.id && eventStep(e.data).step === "called" && eventStep(e.data).outcome === "reached");
+      const call = calls.find((c) => c.target === m.id);
+      const rejectedAt = rejects.find((r) => r.target === m.id)?._max.createdAt ?? null;
+      const lastCallAt = call && (!rejectedAt || call.createdAt > rejectedAt) ? call.createdAt : null;
       out.set(m.id, {
+        name: m.name,
         businessType: m.businessType,
         shopKind: m.shopKind,
         status: effectiveApplicationStatus(m),
         location: m.location,
         hours: m.hours,
+        hoursDefault: isMerchantSignUpHours(m.hours),
         shopFront: { logo: !!m.logoUrl, cover: !!m.coverPhotoUrl, about: !!m.description?.trim() },
         owner: owner ? { name: owner.displayName, phoneVerified: owner.profile?.phoneVerifiedAt != null, termsAccepted: owner.termsAcceptedAt != null } : null,
         menu: {
           categories: categories.find((c) => c.merchantId === m.id)?._count._all ?? 0,
           dishes: total,
-          liveDishes: total - drafts,
+          liveDishes: listed.find((d) => d.merchantId === m.id)?._count._all ?? 0,
           withPhoto: photos.find((p) => p.merchantId === m.id)?._count._all ?? 0,
           drafts,
           minPrice: mins.length ? Math.min(...mins) : null,
@@ -169,7 +225,7 @@ export class AdminMerchantApplicationService {
           pharmacists: team.filter((t) => t.isPharmacist).length,
         },
         licence: doc ? { licenceNumber: doc.licenceNumber, pharmacistName: doc.pharmacistName, verifiedAt: doc.verifiedAt } : null,
-        lastCallAt: call?.createdAt ?? null,
+        lastCallAt,
       });
     }
     return out;
@@ -182,15 +238,17 @@ export class AdminMerchantApplicationService {
       merchants.map((m) => {
         const status = effectiveApplicationStatus(m);
         const ageMs = now.getTime() - m.createdAt.getTime();
-        const waiting = MERCHANT_APPLICATION_WAITING.includes(status);
+        const since = slaSince({ ...m, status });
         const rows = buildChecklist(inputs.get(m.id)!);
         return [
           m.id,
           {
             applicationStatus: status,
             appliedAt: m.createdAt.toISOString(),
+            // When the wait the SLA measures began (sign-up or the last reopen; approval for Approved).
+            waitingSince: since?.toISOString() ?? null,
             ageMs,
-            sla: waiting ? merchantApplicationSla(ageMs) : null,
+            sla: since ? merchantApplicationSla(now.getTime() - since.getTime()) : null,
             score: checklistScore(rows),
           },
         ] as const;
@@ -202,7 +260,7 @@ export class AdminMerchantApplicationService {
   async getApplication(id: string, now = new Date()) {
     const m = await this.prisma.merchant.findUnique({ where: { id }, select: APPLICATION_SELECT });
     if (!m) throw new NotFoundException("Merchant not found");
-    const [inputs, licence, calls, events] = await Promise.all([
+    const [inputs, licence, calls, events, notDone, scheduled] = await Promise.all([
       this.loadChecklistInputs(this.prisma, [m], now),
       this.prisma.merchantDocument.findUnique({ where: { merchantId_kind: { merchantId: id, kind: "pharmacy_licence" } } }),
       this.prisma.auditLog.findMany({
@@ -217,11 +275,16 @@ export class AdminMerchantApplicationService {
         take: 50,
         select: { data: true, createdAt: true },
       }),
+      // What a suspension leaves running (the suspend modal says so): orders not over yet, and the scheduled
+      // ones among them that haven't started (they are cancelled when their time comes, OrderScheduleService).
+      this.prisma.order.count({ where: { merchantId: id, orderType: "merchant", status: { notIn: [...DONE_ORDER_STATUSES] } } }),
+      this.prisma.orderSchedule.count({ where: { merchantId: id, rungAt: null, order: { status: "requested" } } }),
     ]);
     const status = effectiveApplicationStatus(m);
     const checklist = buildChecklist(inputs.get(id)!);
     const passes = checklistPasses(checklist);
     const ageMs = now.getTime() - m.createdAt.getTime();
+    const since = slaSince({ ...m, status });
     return {
       merchantId: id,
       status,
@@ -229,8 +292,12 @@ export class AdminMerchantApplicationService {
       rejectReason: status === "rejected" ? m.applicationReasonCode : null,
       appliedAt: m.createdAt.toISOString(),
       approvedAt: m.approvedAt?.toISOString() ?? null,
-      sla: MERCHANT_APPLICATION_WAITING.includes(status) ? merchantApplicationSla(ageMs) : null,
+      waitingSince: since?.toISOString() ?? null,
+      sla: since ? merchantApplicationSla(now.getTime() - since.getTime()) : null,
       ageMs,
+      // Go live / Resume put it in this customer section; `enabled: false` means customers still can't see it.
+      section: this.section(m),
+      orders: { open: Math.max(0, notDone - scheduled), scheduled },
       isPharmacy: isPharmacy(m),
       checklist,
       score: checklistScore(checklist),
@@ -277,6 +344,28 @@ export class AdminMerchantApplicationService {
    * live before licences were checked is not taken offline for it.
    */
   async transition(actor: string, id: string, action: ApplicationAction, input: { reason: string; note?: string | null }) {
+    const result = await this.transitionTx(actor, id, action, input);
+    void this.notifyOwners(id, result.name, action, input.reason);
+    return { id: result.id, status: result.status, pilotEnabled: result.pilotEnabled, auditId: result.auditId };
+  }
+
+  /** Best effort, after the commit: tell the business's owner(s) what changed. Never throws. */
+  private async notifyOwners(merchantId: string, name: string, action: ApplicationAction, reason: string): Promise<void> {
+    const copy = APPLICATION_PUSH[action];
+    if (!copy || !this.notifications) return;
+    try {
+      const owners = await this.prisma.merchantMember.findMany({ where: { merchantId, role: "owner" }, select: { profileId: true } });
+      if (owners.length === 0) return;
+      await this.notifications.notifyProfiles(
+        owners.map((o) => o.profileId),
+        { ...copy(name, reason), data: { kind: "merchant_application", merchantId, step: STEP_FOR[action] } },
+      );
+    } catch (err) {
+      this.logger.warn(`merchant application push failed for ${merchantId}: ${(err as Error).message}`);
+    }
+  }
+
+  private async transitionTx(actor: string, id: string, action: ApplicationAction, input: { reason: string; note?: string | null }) {
     if (action === "reject" && !(MERCHANT_REJECT_REASONS as readonly string[]).includes(input.reason)) {
       throw new ConflictException({ reason: "bad_reject_reason", message: "Pick a reason the business can read." });
     }
@@ -299,20 +388,30 @@ export class AdminMerchantApplicationService {
       }
       if (action === "go_live" || action === "resume") {
         if (!m.location) throw new ConflictException({ reason: "no_location", message: `This ${noun} has no pickup pin yet.` });
-        const liveDishes = await tx.merchantDish.count({ where: { merchantId: id, isDraft: false } });
+        // What a customer would see: a photo, in a category that isn't hidden, not an unlisted prescription item.
+        const liveDishes = await tx.merchantDish.count({ where: { merchantId: id, ...customerListedDishWhere(this.env) } });
         if (liveDishes === 0) {
           throw new ConflictException({
             reason: "no_live_dishes",
-            message: noun === "restaurant" ? "This restaurant has no dish with a photo yet — its menu would be empty." : `This ${noun} has no item with a photo yet — its shop would be empty.`,
+            message:
+              noun === "restaurant"
+                ? "This restaurant has no dish customers can see yet — its menu would be empty. A dish needs a photo, in a category that isn't hidden."
+                : `This ${noun} has no item customers can see yet — its shop would be empty. An item needs a photo, in a category that isn't hidden.`,
           });
         }
       }
-      if (action === "go_live" && isPharmacy(m)) {
+      if ((action === "go_live" || action === "resume") && isPharmacy(m)) {
         const doc = await tx.merchantDocument.findUnique({ where: { merchantId_kind: { merchantId: id, kind: "pharmacy_licence" } }, select: { verifiedAt: true } });
-        if (!doc?.verifiedAt) throw new ConflictException({ reason: "licence_not_verified", message: "Record and verify the pharmacy licence first." });
+        // Go live needs a verified licence. Resume keeps a pharmacy that went live before licences were checked
+        // (no licence recorded) online, but not one whose recorded licence was changed and isn't verified again.
+        if (action === "go_live" && !doc?.verifiedAt) throw new ConflictException({ reason: "licence_not_verified", message: "Record and verify the pharmacy licence first." });
+        if (action === "resume" && doc && !doc.verifiedAt) {
+          throw new ConflictException({ reason: "licence_not_verified", message: "The pharmacy licence changed and isn't verified. Verify it first." });
+        }
       }
 
-      const before = { applicationStatus: from, pilotEnabled: m.pilotEnabled };
+      // `from` is the effective status; the stored one rides along when an older revision left them apart.
+      const before = { applicationStatus: from, pilotEnabled: m.pilotEnabled, ...(m.applicationStatus !== from ? { storedStatus: m.applicationStatus } : {}) };
       const pilotEnabled = to === "live" ? true : action === "suspend" ? false : m.pilotEnabled;
       const firstApproval = action === "approve" && m.approvedAt == null;
       const now = new Date();
@@ -325,6 +424,8 @@ export class AdminMerchantApplicationService {
           pilotEnabled,
           ...(action === "reject" ? { applicationReasonCode: input.reason } : action === "review" ? { applicationReasonCode: null } : {}),
           ...(firstApproval ? { approvedAt: now, approvedBy: actor } : {}),
+          // A reopened rejection joins the queue again: the applied / in-review SLA restarts here.
+          ...(action === "review" && from === "rejected" ? { applicationQueuedAt: now } : {}),
         },
       });
       if (claimed.count === 0) throw new ConflictException({ reason: "changed", message: "This business changed — refresh and try again." });
@@ -341,7 +442,7 @@ export class AdminMerchantApplicationService {
         actorId: actor,
         data: { from, ...(action === "reject" || action === "suspend" ? { reason: input.reason } : {}) },
       });
-      return { id, status: to, pilotEnabled, auditId: audit.id };
+      return { id, name: m.name, status: to, pilotEnabled, auditId: audit.id };
     });
   }
 
@@ -350,6 +451,22 @@ export class AdminMerchantApplicationService {
    * where the copy is). A changed number or pharmacist clears the verification; verify is a separate action.
    */
   async recordLicence(
+    actor: string,
+    id: string,
+    input: { licenceNumber: string; pharmacistName: string; reference?: string | null; note?: string | null },
+  ) {
+    try {
+      return await this.recordLicenceTx(actor, id, input);
+    } catch (err) {
+      // Two saves at once both tried to create the licence row (unique merchant + kind): the second is a 409.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException({ reason: "changed", message: "The licence changed — refresh and try again." });
+      }
+      throw err;
+    }
+  }
+
+  private async recordLicenceTx(
     actor: string,
     id: string,
     input: { licenceNumber: string; pharmacistName: string; reference?: string | null; note?: string | null },
@@ -379,6 +496,44 @@ export class AdminMerchantApplicationService {
         select: { id: true },
       });
       return { id, verified: doc.verifiedAt != null, auditId: audit.id };
+    });
+  }
+
+  /**
+   * Correct what kind of shop a business is (sign-up asks the owner, and a pharmacy can sign up as "something
+   * else", out of the licence check). Becoming a pharmacy adds an empty, unverified licence row, so Go live and
+   * Resume both wait on a recorded, verified licence: it is never grandfathered. A live shop can't become a
+   * pharmacy (suspend it first). Audited with before/after in the same transaction.
+   */
+  async setShopKind(actor: string, id: string, input: { kind: MerchantShopKind; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const m = await tx.merchant.findUnique({ where: { id }, select: APPLICATION_SELECT });
+      if (!m) throw new NotFoundException("Merchant not found");
+      if (m.businessType !== "shop") throw new ConflictException({ reason: "not_a_shop", message: "Only a shop has a kind." });
+      if (m.shopKind === input.kind) return { id, shopKind: input.kind, auditId: null };
+      const status = effectiveApplicationStatus(m);
+      if (input.kind === "pharmacy" && status === "live") {
+        throw new ConflictException({ reason: "pharmacy_while_live", message: "Suspend it first: a pharmacy goes live only with a verified licence." });
+      }
+      const previous = m.shopKind;
+      const claimed = await tx.merchant.updateMany({ where: { id, shopKind: previous }, data: { shopKind: input.kind } });
+      if (claimed.count === 0) throw new ConflictException({ reason: "changed", message: "This business changed — refresh and try again." });
+      if (input.kind === "pharmacy") {
+        const key = { merchantId_kind: { merchantId: id, kind: "pharmacy_licence" as const } };
+        if (!(await tx.merchantDocument.findUnique({ where: key }))) {
+          await tx.merchantDocument.create({ data: { merchantId: id, kind: "pharmacy_licence", recordedBy: actor } });
+        }
+      }
+      const audit = await tx.auditLog.create({
+        data: {
+          ...auditData(actor, MERCHANT_APPLICATION_AUDIT.shopKind, id, input.kind, input.note),
+          targetType: "merchant",
+          before: { shopKind: previous },
+          after: { shopKind: input.kind },
+        },
+        select: { id: true },
+      });
+      return { id, shopKind: input.kind, auditId: audit.id };
     });
   }
 
@@ -431,9 +586,11 @@ export class AdminMerchantApplicationService {
     const since = new Date(Math.max(windowStart.getTime(), recordingStart.getTime(), m.createdAt.getTime()));
 
     const [orders, availability, openDebt] = await Promise.all([
+      // Newest first, so a business past the cap is measured on its latest orders (`ordersCapped` says so).
       this.prisma.order.findMany({
         where: { merchantId: id, orderType: "merchant", createdAt: { gte: since } },
-        take: 2000,
+        orderBy: { createdAt: "desc" },
+        take: METRICS_ORDER_CAP,
         select: {
           createdAt: true,
           merchantAcceptedAt: true,
@@ -448,7 +605,8 @@ export class AdminMerchantApplicationService {
       }),
       this.prisma.domainEvent.findMany({
         where: { type: "merchant.availability", subjectId: id, createdAt: { gte: new Date(since.getTime() - 2 * DAY_MS), lte: now } },
-        orderBy: { createdAt: "asc" },
+        // The newest 1000 (reversed below): a cap drops the oldest closures, never the latest ones.
+        orderBy: { createdAt: "desc" },
         take: 1000,
         select: { data: true, createdAt: true },
       }),
@@ -462,13 +620,14 @@ export class AdminMerchantApplicationService {
     const prepped = orders.filter((o) => o.prepStartedAt && o.readyAt && o.prepMinutes != null);
     const lines = orders.flatMap((o) => o.merchantItems);
     const outLines = lines.filter((l) => l.available === false).length;
-    const hours = this.hoursOpenVsScheduled((m.hours as MerchantHours | null) ?? null, availability, since, now);
+    const hours = this.hoursOpenVsScheduled((m.hours as MerchantHours | null) ?? null, [...availability].reverse(), since, now);
 
     return {
       since: since.toISOString(),
       short: since.getTime() > windowStart.getTime() + 60_000,
       windowDays: METRICS_WINDOW_DAYS,
       orders: orders.length,
+      ordersCapped: orders.length >= METRICS_ORDER_CAP,
       acceptMedianSeconds: median(acceptSecs),
       acceptSample: acceptSecs.length,
       missedPct: orders.length ? (missed / orders.length) * 100 : null,

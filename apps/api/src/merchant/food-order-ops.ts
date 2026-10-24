@@ -28,29 +28,42 @@ const EDITABLE_STATUSES = ["requested", "open_for_offers", "assigned", "confirme
  *  existing accept flow owns the items). A null phase means a rider is already on it. */
 const EDITABLE_PHASES: ReadonlySet<string> = new Set(["preparing", "ready_for_pickup"]);
 
+/** A write that must commit with the change it records (an ops audit row), run inside its transaction. */
+export type InTx = (tx: Prisma.TransactionClient) => Promise<unknown>;
+
 /** The kitchen is making it: an auto-accepted order may now be sent to a rider. Idempotent. Returns
- *  false when there is nothing to confirm (not auto-accepted, already confirmed, or no longer live). */
+ *  false when there is nothing to confirm (not auto-accepted, already confirmed, or no longer live).
+ *  `alsoInTx` (ops' audit row) commits in the same transaction as the confirm, and only when it claims. */
 export async function confirmKitchen(
   prisma: PrismaService,
   gateway: TrackingGateway,
   orderId: string,
   by: "merchant" | "ops",
   merchantId?: string,
+  alsoInTx?: InTx,
 ): Promise<boolean> {
-  const claimed = await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      orderType: "merchant",
-      autoAccepted: true,
-      kitchenConfirmedAt: null,
-      status: { in: [...EDITABLE_STATUSES] },
-      ...(merchantId ? { merchantId } : {}),
-    },
-    // Admin console v2 §3: an auto-accepted order's "accept" is the kitchen's confirm. A "Food is ready"
-    // that confirmed it first (markReady) already stamped merchantAcceptedAt, and kitchenConfirmedAt guards this.
-    data: { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: by, merchantAcceptedAt: new Date() },
-  });
-  if (claimed.count === 0) return false;
+  const claim = (db: Pick<Prisma.TransactionClient, "order">) =>
+    db.order.updateMany({
+      where: {
+        id: orderId,
+        orderType: "merchant",
+        autoAccepted: true,
+        kitchenConfirmedAt: null,
+        status: { in: [...EDITABLE_STATUSES] },
+        ...(merchantId ? { merchantId } : {}),
+      },
+      // Admin console v2 §3: an auto-accepted order's "accept" is the kitchen's confirm. A "Food is ready"
+      // that confirmed it first (markReady) already stamped merchantAcceptedAt, and kitchenConfirmedAt guards this.
+      data: { kitchenConfirmedAt: new Date(), kitchenConfirmedBy: by, merchantAcceptedAt: new Date() },
+    });
+  const count = alsoInTx
+    ? await prisma.$transaction(async (tx) => {
+        const c = await claim(tx);
+        if (c.count > 0) await alsoInTx(tx);
+        return c.count;
+      })
+    : (await claim(prisma)).count;
+  if (count === 0) return false;
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { merchantId: true } });
   // Best-effort (no transaction here): the confirm above is committed.
   await domainEvents.merchantPhase(prisma, {
@@ -77,6 +90,7 @@ export async function editOrderItems(
   orderId: string,
   body: EditMerchantOrderItemsRequest,
   merchantId?: string,
+  alsoInTx?: InTx,
 ): Promise<void> {
   const order = await prisma.order.findFirst({
     where: { id: orderId, orderType: "merchant", ...(merchantId ? { merchantId } : {}) },
@@ -99,6 +113,15 @@ export async function editOrderItems(
   // Order flow v2 (BRIEF §8): one change at a time — not while the customer is answering a substitution.
   if ((order.substitutionRounds?.length ?? 0) > 0) {
     throw new ConflictException({ reason: "substitution_open", message: "The customer is still answering your last changes." });
+  }
+
+  // The editor sent the quantities it was showing: refuse when the order has changed since (another edit, a
+  // substitution), so a stale screen can't silently overwrite it.
+  if (body.expected) {
+    const shown = new Map(body.expected.map((l) => [l.itemId, l.quantity]));
+    const stale =
+      shown.size !== order.merchantItems.length || order.merchantItems.some((it) => shown.get(it.id) !== (it.available === false ? 0 : it.quantity));
+    if (stale) throw new ConflictException({ reason: "items_changed", message: "The order changed since you opened it. Refresh and try again." });
   }
 
   const byId = new Map(order.merchantItems.map((it) => [it.id, it]));
@@ -128,7 +151,8 @@ export async function editOrderItems(
 
   await prisma.$transaction(async (tx) => {
     const claimed = await tx.order.updateMany({
-      where: { id: orderId, status: order.status, merchantPhase: order.merchantPhase },
+      // itemsEditedAt is the lines' version: an edit committed since this one read the order makes it a 409.
+      where: { id: orderId, status: order.status, merchantPhase: order.merchantPhase, itemsEditedAt: order.itemsEditedAt },
       data: {
         merchantGoodsTotal,
         merchantDeliveryShare,
@@ -143,6 +167,7 @@ export async function editOrderItems(
         n.quantity > 0 ? { quantity: n.quantity, available: true } : { available: false };
       await tx.merchantOrderItem.update({ where: { id: n.it.id }, data });
     }
+    if (alsoInTx) await alsoInTx(tx);
   });
 
   notifyFoodQueueChanged(gateway, order.merchantId, orderId);

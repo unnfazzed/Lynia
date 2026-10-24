@@ -126,9 +126,9 @@ export default async function KitchenConfirmationsPage() {
           {orders.map((o) => (
             <OrderCard key={o.orderId} o={o} connected={connected} />
           ))}
-          {orders.length >= 100 ? (
+          {list?.capped ? (
             <div style={{ fontSize: 12, color: tokens.color.muted }}>
-              Showing the oldest 100 orders — newer ones appear as these are confirmed.
+              Showing the newest {list.cap ?? orders.length} orders — older ones appear as these are confirmed.
             </div>
           ) : null}
         </div>

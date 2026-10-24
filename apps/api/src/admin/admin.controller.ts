@@ -4,6 +4,8 @@ import {
   KycStatus,
   isFareUnit,
   MERCHANT_APPLICATION_STATUSES,
+  MERCHANT_APPLICATION_WAITING_VIEW,
+  MerchantShopKind,
   OrderStatus,
   OrderType,
   PlateStatus,
@@ -25,7 +27,7 @@ import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminKycReviewService } from "./admin-kyc-review.service";
 import { AdminLiveService } from "./admin-live.service";
 import { AdminMerchantApplicationService, CALL_OUTCOMES } from "./admin-merchant-application.service";
-import { AdminMerchantsService } from "./admin-merchants.service";
+import { AdminMerchantsService, type ApplicationQueueView } from "./admin-merchants.service";
 import type { ApplicationAction } from "./merchant-application";
 import { AdminMoneyService, TOPUP_FILTERS, type TopupFilter } from "./admin-money.service";
 import { AdminOrdersService } from "./admin-orders.service";
@@ -75,12 +77,6 @@ const SetMerchantOrderSettings = z
 
 const OptionalNote = z.object({ note: z.string().max(2000).nullish() });
 
-const SetMerchantPilot = z
-  .object({
-    enabled: z.boolean(),
-    note: z.string().max(2000).nullish(),
-  })
-  .strict();
 // Admin console v2 §5: an ops call to an applying business, and a pharmacy's licence as ops recorded it.
 const LogMerchantCall = z.object({
   outcome: z.enum(CALL_OUTCOMES),
@@ -92,6 +88,8 @@ const RecordMerchantLicence = z.object({
   reference: z.string().trim().max(300).nullish(),
   note: z.string().max(2000).nullish(),
 });
+// A shop's kind as ops corrects it (sign-up asks the owner; a pharmacy can sign up as "something else").
+const SetMerchantShopKind = z.object({ kind: MerchantShopKind, note: z.string().max(2000).nullish() }).strict();
 /** The application actions reachable by URL (`POST /admin/merchants/:id/application/:action`). */
 const APPLICATION_ACTIONS: readonly ApplicationAction[] = ["review", "approve", "reject", "go_live", "suspend", "resume"];
 const ReasonOptional = z.object({
@@ -548,10 +546,17 @@ export class AdminController {
    *  `filter=awaiting_go_live` (restaurants not switched on yet — the ops queue) or `filter=shops`
    *  (merchant web upgrade L1). */
   @Get("merchants")
-  merchants(@Query("filter") filter?: string, @Query("status") status?: string) {
-    // Admin console v2 §5: `status` is the application queue; an unknown value is ignored (the directory).
-    const s = (MERCHANT_APPLICATION_STATUSES as readonly string[]).includes(status ?? "") ? (status as (typeof MERCHANT_APPLICATION_STATUSES)[number]) : undefined;
-    return this.merchantsService.listMerchants(filter, s);
+  merchants(
+    @Query("filter") filter?: string,
+    @Query("status") status?: string,
+    // The last row's id from the page before (pages of 100); a malformed one is a clean 400.
+    @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string,
+  ) {
+    // Admin console v2 §5: `status` is the application queue (or `waiting`: applied + in review); an
+    // unknown value is ignored (the directory).
+    const views: readonly string[] = [...MERCHANT_APPLICATION_STATUSES, MERCHANT_APPLICATION_WAITING_VIEW];
+    const s = views.includes(status ?? "") ? (status as ApplicationQueueView) : undefined;
+    return this.merchantsService.listMerchants(filter, s, cursor);
   }
 
   /** Admin console v2 §5: the application — a data-backed checklist, the licence, calls and the open actions. */
@@ -596,6 +601,16 @@ export class AdminController {
     return this.application.verifyLicence(actor, id, body);
   }
 
+  /** Correct a shop's kind. Becoming a pharmacy needs a recorded, verified licence before it is (again) live. */
+  @Post("merchants/:id/shop-kind")
+  setMerchantShopKind(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(SetMerchantShopKind)) body: z.infer<typeof SetMerchantShopKind>,
+    @AdminActor() actor: string,
+  ) {
+    return this.application.setShopKind(actor, id, body);
+  }
+
   /** Move an application: review · approve (every required check ✅) · reject (a merchant-readable code) ·
    *  go_live (from approved) · suspend / resume. Reason required; audited with before/after. */
   @Post("merchants/:id/application/:action")
@@ -622,17 +637,6 @@ export class AdminController {
     const merchant = await this.merchantsService.getMerchantDetail(id, debtCursor);
     if (!merchant) throw new NotFoundException("Merchant not found");
     return merchant;
-  }
-
-  /** The go-live switch (merchant web upgrade L1): the only writer of `pilotEnabled`, audit-logged.
-   *  Refuses shops (they open with LyniaGo Shops) and a restaurant with no pin or no live dish. */
-  @Post("merchants/:id/pilot")
-  setMerchantPilot(
-    @Param("id", ParseUUIDPipe) id: string,
-    @Body(new ZodBody(SetMerchantPilot)) body: z.infer<typeof SetMerchantPilot>,
-    @AdminActor() actor: string,
-  ) {
-    return this.merchantsService.setPilot(actor, id, body);
   }
 
   /** Hand a business to another person (merchant web upgrade L4): after support's identity check, by the
@@ -707,6 +711,17 @@ export class AdminController {
     @AdminActor() actor: string,
   ) {
     return this.merchantsService.resolveHandshake(actor, id, body);
+  }
+
+  /** N-12: the merchant refunded the customer outside the app and support checked it — the order leaves
+   *  "Refunds past SLA". Records the refund time only; no money moves. Reason required, audited. */
+  @Post("orders/:id/record-refund")
+  recordRefund(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodBody(ReasonRequired)) body: z.infer<typeof ReasonRequired>,
+    @AdminActor() actor: string,
+  ) {
+    return this.merchantsService.recordRefund(actor, id, body);
   }
 
   /** D3 (2026-10-07, MJ-RH1): the only write-off of a food debt — an admin, reason required, after

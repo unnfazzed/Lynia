@@ -212,6 +212,36 @@ describe("MerchantService profile self-service", () => {
     await expect(s.getMyMerchant("p1")).rejects.toThrow(/not found/i);
   });
 
+  it("the profile carries the application: its status, and the reject code only while rejected", async () => {
+    const row = (over: Record<string, unknown>) => ({
+      id: "m1",
+      name: "Shop",
+      ownerProfile: { phone: null },
+      description: null,
+      coverPhotoUrl: null,
+      logoUrl: null,
+      cuisineTags: [],
+      priceLevel: null,
+      hours: null,
+      cashRule: "collect_and_return",
+      busyMode: false,
+      pilotEnabled: false,
+      members: [],
+      ...over,
+    });
+    const rejected = svc({ merchant: { findUnique: async () => row({ applicationStatus: "rejected", applicationReasonCode: "menu_incomplete" }) } });
+    expect((await rejected.getMyMerchant("p1")).application).toEqual({ status: "rejected", reasonCode: "menu_incomplete" });
+    const suspended = svc({ merchant: { findUnique: async () => row({ applicationStatus: "suspended", applicationReasonCode: "menu_incomplete" }) } });
+    expect((await suspended.getMyMerchant("p1")).application).toEqual({ status: "suspended", reasonCode: null });
+  });
+
+  it("acceptTerms records the sign-in's acceptance only on team rows that lack it", async () => {
+    let where: unknown;
+    const s = svc({ merchantMember: { findFirst: async () => OWNER_OF_M1, updateMany: async (args: { where: unknown }) => ((where = args.where), { count: 1 }) } });
+    expect(await s.acceptTerms("p1")).toEqual({ accepted: 1 });
+    expect(where).toEqual({ profileId: "p1", termsAcceptedAt: null });
+  });
+
   it("updateProfile only writes the fields provided", async () => {
     let receivedData: unknown;
     const s = svc({

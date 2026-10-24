@@ -22,7 +22,9 @@ describe("merchant application actions (admin console v2 §5)", () => {
     vi.mocked(moveMerchantApplication).mockResolvedValue({ ok: true });
     render(<ApplicationActionButton merchantId="m-1" name="Sadza Republic" action="reject" connected />);
     fireEvent.click(screen.getByRole("button", { name: "Reject…" }));
-    expect(screen.getByText("The business is told the reason you pick, in these words. You can reopen it later.")).toBeTruthy();
+    expect(
+      screen.getByText("The reason you pick is saved for the business in these words, and pushed to the owner's phone if they have LyniaGo notifications on. You can reopen it later."),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Your business is outside the area LyniaGo covers for now." }));
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     await vi.waitFor(() => expect(moveMerchantApplication).toHaveBeenCalledWith("m-1", "reject", "outside_area", ""));
@@ -39,10 +41,20 @@ describe("merchant application actions (admin console v2 §5)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("suspend says orders already placed carry on", () => {
-    render(<ApplicationActionButton merchantId="m-1" name="Sadza Republic" action="suspend" connected />);
+  it("suspend says what it leaves running: orders in progress carry on, scheduled ones that haven't started are cancelled", () => {
+    render(<ApplicationActionButton merchantId="m-1" name="Sadza Republic" action="suspend" connected app={{ orders: { open: 3, scheduled: 1 } }} />);
     fireEvent.click(screen.getByRole("button", { name: "Suspend…" }));
-    expect(screen.getByText("Customers stop seeing it and it takes no new orders. Orders already placed carry on.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Customers stop seeing it and it takes no new orders. 3 orders in progress carry on. 1 scheduled order hasn't started: each is cancelled when its time comes, and the customer is told.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("go live warns when the business's customer section is switched off", () => {
+    render(<ApplicationActionButton merchantId="m-1" name="Dube Pharmacy" action="go_live" connected app={{ section: { name: "Pharmacy", enabled: false } }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Go live…" }));
+    expect(screen.getByText("Customers can find it and order once Pharmacy is switched on. It's off now, so customers can't see it yet.")).toBeTruthy();
   });
 
   it("is inert offline", () => {

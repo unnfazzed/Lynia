@@ -25,10 +25,22 @@ export type UtilizationRow = Omit<RawUtilizationRow, "day"> & { day: string };
 
 /** Merchant applications still waiting on ops past the 24h SLA (the Merchants badge and the alert strip). */
 export function applicationsPastSlaWhere(now: number = Date.now()): Prisma.MerchantWhereInput {
+  const cutoff = new Date(now - MERCHANT_APPLICATION_SLA.amberMs);
   return {
     applicationStatus: { in: [...MERCHANT_APPLICATION_WAITING] },
     pilotEnabled: false,
-    createdAt: { lt: new Date(now - MERCHANT_APPLICATION_SLA.amberMs) },
+    // The wait runs from the last time it entered the queue: sign-up, or reopening a rejection (slaSince).
+    OR: [{ applicationQueuedAt: null, createdAt: { lt: cutoff } }, { applicationQueuedAt: { lt: cutoff } }],
+  };
+}
+
+/** Approved businesses still not live 24h after approval: they wait on ops' Go live (the alert strip). */
+export function approvedPastSlaWhere(now: number = Date.now()): Prisma.MerchantWhereInput {
+  const cutoff = new Date(now - MERCHANT_APPLICATION_SLA.amberMs);
+  return {
+    applicationStatus: "approved",
+    pilotEnabled: false,
+    OR: [{ applicationStatusAt: null, createdAt: { lt: cutoff } }, { applicationStatusAt: { lt: cutoff } }],
   };
 }
 

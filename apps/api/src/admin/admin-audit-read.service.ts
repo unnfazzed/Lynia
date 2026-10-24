@@ -118,6 +118,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "order.riders_available_notify": "Told bikers are back",
   "order.debt_write_off": "Debt written off",
   "order.handshake_resolve": "Cash handover resolved",
+  "order.refund_record": "Refund recorded",
+  "merchant.shop_kind": "Shop kind changed",
   "order.kitchen_confirm": "Kitchen confirmed",
   "order.kitchen_no_answer": "Kitchen didn't answer",
   "order.items_edit": "Items changed",

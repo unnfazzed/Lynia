@@ -1,5 +1,5 @@
 import type { MerchantApplicationStatus, Prisma } from "@prisma/client";
-import type { Waypoint } from "@lynia/shared";
+import { MERCHANT_APPLICATION_WAITING, MERCHANT_APPLICATION_WAITING_VIEW, type Waypoint } from "@lynia/shared";
 
 /**
  * Admin console v2 §5 (docs/plans/2026-10-13-admin-console-v2.md): the pure half of merchant registration →
@@ -45,10 +45,27 @@ export function effectiveApplicationStatus(m: { applicationStatus: ApplicationSt
 }
 
 /** The Prisma filter for "effectively in this status" (mirrors {@link effectiveApplicationStatus}). */
-export function applicationStatusWhere(status: ApplicationStatus): Prisma.MerchantWhereInput {
+export function applicationStatusWhere(status: ApplicationStatus | typeof MERCHANT_APPLICATION_WAITING_VIEW): Prisma.MerchantWhereInput {
+  if (status === MERCHANT_APPLICATION_WAITING_VIEW) return { OR: MERCHANT_APPLICATION_WAITING.map((s) => applicationStatusWhere(s)) };
   if (status === "live") return { pilotEnabled: true, applicationStatus: { not: "suspended" } };
   if (status === "suspended") return { OR: [{ applicationStatus: "suspended" }, { applicationStatus: "live", pilotEnabled: false }] };
   return { applicationStatus: status, pilotEnabled: false };
+}
+
+/**
+ * When the SLA clock for a waiting state started. Applied and in review: when the business entered the queue
+ * (sign-up, or the last reopen after a rejection). Approved: when it was approved (it now waits on Go live).
+ * Null for the states nobody is waiting on.
+ */
+export function slaSince(m: {
+  createdAt: Date;
+  applicationStatusAt: Date | null;
+  applicationQueuedAt: Date | null;
+  status: ApplicationStatus;
+}): Date | null {
+  if (MERCHANT_APPLICATION_WAITING.includes(m.status)) return m.applicationQueuedAt ?? m.createdAt;
+  if (m.status === "approved") return m.applicationStatusAt ?? m.createdAt;
+  return null;
 }
 
 /** The actions open from a status (approve is further gated on the checklist by the service). */
@@ -73,12 +90,18 @@ export interface ChecklistRow {
 }
 
 export interface ChecklistInput {
+  /** The business name, to tell a real landmark from the name sign-up fills it with. */
+  name: string;
   businessType: string;
   shopKind: string | null;
   status: ApplicationStatus;
   location: unknown;
   hours: unknown;
+  /** The hours are still exactly the sign-up default (08:00–22:00 every day): nobody confirmed them. */
+  hoursDefault: boolean;
   owner: { name: string; phoneVerified: boolean; termsAccepted: boolean } | null;
+  /** `liveDishes` is what a customer can see (customerListedDishWhere): photographed, in a category that
+   *  isn't hidden, and not an unlisted prescription item. `categories` counts the visible categories. */
   menu: { categories: number; dishes: number; liveDishes: number; withPhoto: number; drafts: number; minPrice: number | null; maxPrice: number | null };
   /** What customers will see at the top of the listing: the round logo, the cover banner and the "about" text. */
   shopFront: { logo: boolean; cover: boolean; about: boolean };
@@ -110,6 +133,8 @@ export function buildChecklist(input: ChecklistInput): ChecklistRow[] {
   const wp = (input.location as Waypoint | null) ?? null;
   const hasPin = !!wp?.point;
   const landmark = wp?.landmark?.trim() ?? "";
+  // Sign-up fills an empty landmark with the address or the business name (merchantWaypoint).
+  const landmarkIsName = landmark.length > 0 && landmark === input.name.trim();
   const days = openDays(input.hours);
   const o = input.owner;
   const m = input.menu;
@@ -119,14 +144,14 @@ export function buildChecklist(input: ChecklistInput): ChecklistRow[] {
       label: "Pin and landmark",
       ok: hasPin && landmark.length > 0,
       required: true,
-      detail: !hasPin ? "No pin yet" : landmark ? landmark : "Pin set, no landmark",
+      detail: !hasPin ? "No pin yet" : landmarkIsName ? `${landmark} · just the business name, ask for a landmark` : landmark ? landmark : "Pin set, no landmark",
     },
     {
       key: "hours",
       label: "Opening hours",
       ok: days > 0,
       required: true,
-      detail: days > 0 ? `Open ${plural(days, "day")} a week` : "Not set",
+      detail: days === 0 ? "Not set" : input.hoursDefault ? "08:00–22:00 every day · the sign-up default, confirm on the call" : `Open ${plural(days, "day")} a week`,
     },
     {
       key: "owner",
@@ -193,7 +218,9 @@ export function buildChecklist(input: ChecklistInput): ChecklistRow[] {
           ? `Not recorded · ${plural(input.team.pharmacists, "pharmacist")} on the team`
           : "Not recorded"
         : [numbered ? `No. ${l.licenceNumber!.trim()}` : "No number", named ? l.pharmacistName!.trim() : "No pharmacist named", l.verifiedAt ? "verified" : "not verified"].join(" · "),
-      ...(!ok && live ? { warning: "Live before licences were checked. Record and verify it." } : {}),
+      ...(!ok && live
+        ? { warning: l ? "The licence isn't verified (it was changed, or never checked). Verify it." : "Live before licences were checked. Record and verify it." }
+        : {}),
     });
   }
 

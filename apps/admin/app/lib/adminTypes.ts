@@ -368,6 +368,8 @@ export interface Merchant {
   applicationStatus?: MerchantApplicationStatus;
   /** Queue rows only (`?status=`): when it signed up, how long it has waited, the SLA and the checklist score. */
   appliedAt?: string;
+  /** When the wait the SLA measures began: sign-up or the last reopen (approval, for Approved). */
+  waitingSince?: string | null;
   ageMs?: number;
   sla?: MerchantApplicationSla | null;
   score?: { passed: number; total: number };
@@ -392,8 +394,14 @@ export interface MerchantApplication {
   rejectReason: string | null;
   appliedAt: string;
   approvedAt: string | null;
+  /** When the wait the SLA measures began (sign-up or the last reopen; approval for Approved). Older APIs omit it. */
+  waitingSince?: string | null;
   sla: MerchantApplicationSla | null;
   ageMs: number;
+  /** The customer section Go live puts it in; `enabled: false` = customers still can't see it, null = unknown. */
+  section?: { name: string; enabled: boolean | null };
+  /** What a suspension leaves running: orders in progress, and scheduled ones that haven't started. */
+  orders?: { open: number; scheduled: number };
   isPharmacy: boolean;
   checklist: MerchantChecklistRow[];
   score: { passed: number; total: number };
@@ -418,6 +426,8 @@ export interface MerchantMetrics {
   short: boolean;
   windowDays: number;
   orders: number;
+  /** The read stopped at its cap (2000, newest first): the figures cover the latest orders only. */
+  ordersCapped?: boolean;
   acceptMedianSeconds: number | null;
   acceptSample: number;
   missedPct: number | null;
@@ -525,6 +535,9 @@ export interface KitchenConfirmationRow {
 export interface KitchenConfirmations {
   orders: KitchenConfirmationRow[];
   escalateAfterMinutes: number;
+  /** The newest `cap` orders were returned and older ones left out. Older APIs omit both. */
+  capped?: boolean;
+  cap?: number;
 }
 
 /* ── Support dispute queue (X1: GET /admin/merchant-disputes) ── */
@@ -965,6 +978,8 @@ export interface LiveAlerts {
   topupAnomalies: number;
   kitchenConfirmations: number;
   merchantApplications: number;
+  /** Approved businesses not live 24h after approval. Older APIs omit it. */
+  merchantsApprovedNotLive?: number;
   ordersBreaching: number;
   /** Own bikers (OB-A4 tile): fleets switched on, their bikers online, bills and fleets past due. Older APIs omit it
    *  (and `overdueFleets`). */

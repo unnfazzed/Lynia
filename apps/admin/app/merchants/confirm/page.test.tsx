@@ -82,10 +82,18 @@ describe("Orders to confirm (auto-accept ops call list)", () => {
     fireEvent.click(screen.getByRole("button", { name: "One less Coke" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
-      expect(editKitchenOrderItems).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", [
-        { itemId: "i-1", quantity: 2 },
-        { itemId: "i-2", quantity: 0 },
-      ]),
+      expect(editKitchenOrderItems).toHaveBeenCalledWith(
+        "11111111-1111-4111-8111-111111111111",
+        [
+          { itemId: "i-1", quantity: 2 },
+          { itemId: "i-2", quantity: 0 },
+        ],
+        // What the card showed, so the API can refuse a stale edit.
+        [
+          { itemId: "i-1", quantity: 2 },
+          { itemId: "i-2", quantity: 1 },
+        ],
+      ),
     );
   });
 

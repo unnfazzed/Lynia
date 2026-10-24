@@ -204,6 +204,7 @@ describe("AdminLiveService.alerts", () => {
       topupAnomalies: 4,
       kitchenConfirmations: 3,
       merchantApplications: 1,
+      merchantsApprovedNotLive: 1,
       ordersBreaching: 1,
       // OB-A4: "Own bikers live: 3 fleets · 14 bikers online · 2 overdue".
       ownBikers: { fleets: 3, bikersOnline: 14, overdueBills: 3, overdueFleets: 2 },

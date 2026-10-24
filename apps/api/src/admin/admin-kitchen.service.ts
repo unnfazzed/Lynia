@@ -94,44 +94,61 @@ export class AdminKitchenService {
     });
     // Urgent first, newest first among them (D1: a 24 h backlog); not yet urgent, oldest first.
     out.sort((a, b) => Number(b.urgent) - Number(a.urgent) || (a.urgent ? b.placedAt.localeCompare(a.placedAt) : a.placedAt.localeCompare(b.placedAt)));
-    return { orders: out, escalateAfterMinutes: RESTAURANTS_AUTO_ACCEPT.escalateAfterMs / 60_000 };
+    // At the cap the oldest orders are the ones left out (the read is newest first): the page says so.
+    return { orders: out, escalateAfterMinutes: RESTAURANTS_AUTO_ACCEPT.escalateAfterMs / 60_000, capped: rows.length >= LIST_CAP, cap: LIST_CAP };
   }
 
   /** Ops phoned the restaurant and it's making the order: a rider may now be sent. */
   async confirm(actor: string, orderId: string, note?: string | null) {
-    const ok = await confirmKitchen(this.prisma, this.gateway, orderId, "ops");
+    let auditId: string | null = null;
+    // The audit row commits with the confirm (A-01): never a confirm without its row, or a row without one.
+    const ok = await confirmKitchen(this.prisma, this.gateway, orderId, "ops", undefined, async (tx) => {
+      auditId = (await tx.auditLog.create({ data: { ...auditData(actor, "order.kitchen_confirm", orderId, null, note ?? null), targetType: "order" }, select: { id: true } })).id;
+    });
     if (!ok) throw new ConflictException({ reason: "nothing_to_confirm", message: "This order is already confirmed or no longer live." });
-    const audit = await this.prisma.auditLog.create({ data: auditData(actor, "order.kitchen_confirm", orderId, null, note ?? null), select: { id: true } });
-    return { orderId, confirmed: true, auditId: audit.id };
+    return { orderId, confirmed: true, auditId };
   }
 
   /** Ops called and nobody answered: logged so the list shows the attempts; call again. */
   async logNoAnswer(actor: string, orderId: string) {
-    const claimed = await this.prisma.order.updateMany({
-      where: { id: orderId, orderType: "merchant", autoAccepted: true, kitchenConfirmedAt: null, status: { in: [...LIVE_STATUSES] } },
-      data: { opsNoAnswerAt: { push: new Date() } },
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, orderType: "merchant", autoAccepted: true, kitchenConfirmedAt: null, status: { in: [...LIVE_STATUSES] } },
+        data: { opsNoAnswerAt: { push: new Date() } },
+      });
+      if (claimed.count === 0) throw new ConflictException({ reason: "nothing_to_confirm", message: "This order is already confirmed or no longer live." });
+      const audit = await tx.auditLog.create({ data: { ...auditData(actor, "order.kitchen_no_answer", orderId), targetType: "order" }, select: { id: true } });
+      return { orderId, auditId: audit.id };
     });
-    if (claimed.count === 0) throw new ConflictException({ reason: "nothing_to_confirm", message: "This order is already confirmed or no longer live." });
-    const audit = await this.prisma.auditLog.create({ data: auditData(actor, "order.kitchen_no_answer", orderId), select: { id: true } });
-    return { orderId, auditId: audit.id };
   }
 
   /** Ops changes the items the restaurant and customer agreed by phone (same rules as the restaurant's own edit). */
   async editItems(actor: string, orderId: string, body: EditMerchantOrderItemsRequest) {
     if (!this.notifications) throw new ConflictException("Notifications unavailable");
-    await editOrderItems(this.prisma, this.notifications, this.gateway, orderId, body);
-    const audit = await this.prisma.auditLog.create({
-      data: auditData(actor, "order.items_edit", orderId, null, JSON.stringify(body.lines)),
-      select: { id: true },
+    let auditId: string | null = null;
+    // The audit row commits in the edit's own transaction (A-01).
+    await editOrderItems(this.prisma, this.notifications, this.gateway, orderId, body, undefined, async (tx) => {
+      auditId = (
+        await tx.auditLog.create({ data: { ...auditData(actor, "order.items_edit", orderId, null, JSON.stringify(body.lines)), targetType: "order" }, select: { id: true } })
+      ).id;
     });
-    return { orderId, auditId: audit.id };
+    return { orderId, auditId };
   }
 
   /** Ops sets how a restaurant takes orders, on its behalf (it may never open the app). */
   async setOrderSettings(actor: string, merchantId: string, input: { autoAccept?: boolean; showPhoneToCustomers?: boolean; freeDelivery?: boolean; note?: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const merchant = await tx.merchant.findUnique({ where: { id: merchantId }, select: { id: true } });
+      const merchant = await tx.merchant.findUnique({
+        where: { id: merchantId },
+        select: { id: true, businessType: true, autoAccept: true, showPhoneToCustomers: true, freeDelivery: true },
+      });
       if (!merchant) throw new NotFoundException("Merchant not found");
+      // Shops never take orders automatically (placement and the scheduled ring both skip a shop), so the
+      // switch isn't stored for one: it would only read as on.
+      if (input.autoAccept === true && merchant.businessType === "shop") {
+        throw new ConflictException({ reason: "shop_no_auto_accept", message: "Shops don't take orders automatically." });
+      }
+      const before = { autoAccept: merchant.autoAccept, showPhoneToCustomers: merchant.showPhoneToCustomers, freeDelivery: merchant.freeDelivery };
       const updated = await tx.merchant.update({
         where: { id: merchantId },
         data: {
@@ -142,7 +159,12 @@ export class AdminKitchenService {
         select: { autoAccept: true, showPhoneToCustomers: true, freeDelivery: true },
       });
       const audit = await tx.auditLog.create({
-        data: auditData(actor, "merchant.order_settings", merchantId, null, [JSON.stringify(updated), input.note].filter(Boolean).join(" · ")),
+        data: {
+          ...auditData(actor, "merchant.order_settings", merchantId, null, [JSON.stringify(updated), input.note].filter(Boolean).join(" · ")),
+          targetType: "merchant",
+          before,
+          after: updated,
+        },
         select: { id: true },
       });
       return { id: merchantId, ...updated, auditId: audit.id };

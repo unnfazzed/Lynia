@@ -1236,6 +1236,9 @@ model Merchant {
   applicationStatus     MerchantApplicationStatus @default(applied) @map("application_status")
   // When applicationStatus last changed (null = never changed since the backfill / sign-up).
   applicationStatusAt   DateTime?                 @map("application_status_at")
+  // When the business last entered the application queue: null = at sign-up (createdAt); set when a
+  // rejection is reopened (migration 0115). The applied / in-review SLA runs from here.
+  applicationQueuedAt   DateTime?                 @map("application_queued_at")
   // The reject reason code (@lynia/shared MERCHANT_REJECT_REASONS), written for the merchant to read.
   // Cleared when the application is reopened.
   applicationReasonCode String?                   @map("application_reason_code")

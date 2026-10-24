@@ -74,27 +74,89 @@ describe("AdminKitchenService", () => {
     expect(res.orders.map((o) => o.orderId)).toEqual(["fresh-urgent", "day-old", "calm-b", "calm-a"]);
   });
 
-  it("confirm is audited, and 409s when there is nothing left to confirm", async () => {
-    let audited: Record<string, unknown> | undefined;
+  /** A fake whose `$transaction(cb)` runs on itself and records which writes ran inside it. */
+  function withTx<T extends Record<string, unknown>>(fake: T) {
+    const inTx: string[] = [];
+    let open = false;
+    const tracked = Object.fromEntries(
+      Object.entries(fake).map(([model, methods]) => [
+        model,
+        Object.fromEntries(
+          Object.entries(methods as Record<string, (...a: unknown[]) => unknown>).map(([m, fn]) => [
+            m,
+            (...a: unknown[]) => {
+              if (open) inTx.push(`${model}.${m}`);
+              return fn(...a);
+            },
+          ]),
+        ),
+      ]),
+    );
     const prisma = {
+      ...tracked,
+      $transaction: async (cb: (tx: unknown) => unknown) => {
+        open = true;
+        try {
+          return await cb(prisma);
+        } finally {
+          open = false;
+        }
+      },
+    };
+    return { prisma: prisma as unknown as PrismaService, inTx };
+  }
+
+  it("confirm is audited in the confirm's own transaction, and 409s (with no audit row) when there is nothing left to confirm", async () => {
+    let audited: Record<string, unknown> | undefined;
+    const { prisma, inTx } = withTx({
       order: { updateMany: async () => ({ count: 1 }), findUnique: async () => ({ merchantId: "m1" }) },
       auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => ((audited = data), { id: "a1" }) },
-    } as unknown as PrismaService;
+    });
     const svc = new AdminKitchenService(prisma, gateway);
     expect(await svc.confirm("ops@lynia", "o1")).toMatchObject({ confirmed: true, auditId: "a1" });
-    expect(audited).toMatchObject({ action: "order.kitchen_confirm", target: "o1" });
+    expect(audited).toMatchObject({ action: "order.kitchen_confirm", target: "o1", targetType: "order" });
+    expect(inTx).toEqual(["order.updateMany", "auditLog.create"]);
 
-    const done = { order: { updateMany: async () => ({ count: 0 }) } } as unknown as PrismaService;
-    await expect(new AdminKitchenService(done, gateway).confirm("ops@lynia", "o1")).rejects.toMatchObject({ response: { reason: "nothing_to_confirm" } });
+    let wrote = false;
+    const done = withTx({ order: { updateMany: async () => ({ count: 0 }) }, auditLog: { create: async () => ((wrote = true), { id: "x" }) } });
+    await expect(new AdminKitchenService(done.prisma, gateway).confirm("ops@lynia", "o1")).rejects.toMatchObject({ response: { reason: "nothing_to_confirm" } });
+    expect(wrote).toBe(false);
   });
 
-  it("no answer appends a call to the order's log", async () => {
+  it("no answer appends a call to the order's log, audited in the same transaction", async () => {
     let data: Record<string, unknown> | undefined;
-    const prisma = {
+    const { prisma, inTx } = withTx({
       order: { updateMany: async (args: { data: Record<string, unknown> }) => ((data = args.data), { count: 1 }) },
       auditLog: { create: async () => ({ id: "a2" }) },
-    } as unknown as PrismaService;
+    });
     await new AdminKitchenService(prisma, gateway).logNoAnswer("ops@lynia", "o1");
     expect(data).toEqual({ opsNoAnswerAt: { push: expect.any(Date) } });
+    expect(inTx).toEqual(["order.updateMany", "auditLog.create"]);
+  });
+
+  it("says when the call list is capped (the oldest orders are the ones left out)", async () => {
+    const many = Array.from({ length: 300 }, (_, i) => row(`o${i}`, i, false));
+    const prisma = { order: { findMany: async () => many } } as unknown as PrismaService;
+    expect(await new AdminKitchenService(prisma, gateway).listToConfirm()).toMatchObject({ capped: true, cap: 300 });
+    const few = { order: { findMany: async () => many.slice(0, 150) } } as unknown as PrismaService;
+    expect(await new AdminKitchenService(few, gateway).listToConfirm()).toMatchObject({ capped: false });
+  });
+
+  it("order settings: audited with before and after, and auto-accept is refused for a shop", async () => {
+    let audited: Record<string, unknown> | undefined;
+    const merchant = { id: "m1", businessType: "restaurant", autoAccept: false, showPhoneToCustomers: false, freeDelivery: false };
+    const fake = (m: typeof merchant) => {
+      const p = {
+        merchant: { findUnique: async () => m, update: async ({ data }: { data: Record<string, unknown> }) => ({ autoAccept: false, showPhoneToCustomers: false, freeDelivery: false, ...data }) },
+        auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => ((audited = data), { id: "a3" }) },
+        $transaction: async (cb: (tx: unknown) => unknown) => cb(p),
+      };
+      return p as unknown as PrismaService;
+    };
+    await new AdminKitchenService(fake(merchant), gateway).setOrderSettings("ops", "m1", { autoAccept: true });
+    expect(audited).toMatchObject({ targetType: "merchant", before: { autoAccept: false }, after: { autoAccept: true } });
+    await expect(new AdminKitchenService(fake({ ...merchant, businessType: "shop" }), gateway).setOrderSettings("ops", "m1", { autoAccept: true })).rejects.toMatchObject({
+      response: { reason: "shop_no_auto_accept" },
+    });
   });
 });

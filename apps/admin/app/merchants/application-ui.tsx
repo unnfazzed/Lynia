@@ -64,7 +64,7 @@ export function ApplicationCard({ app, name, connected }: { app: MerchantApplica
         Application <span className="count">{`${app.score.passed}/${app.score.total} required checks`}</span>
         <span className="right" style={{ display: "flex", gap: "var(--space-xs)" }}>
           <ApplicationStatusPill status={app.status} />
-          {app.sla ? <SlaPill sla={app.sla} since={app.appliedAt} /> : null}
+          {app.sla ? <SlaPill sla={app.sla} since={app.waitingSince ?? app.appliedAt} /> : null}
         </span>
       </div>
       {app.status === "rejected" ? (
@@ -100,7 +100,7 @@ export function ApplicationCard({ app, name, connected }: { app: MerchantApplica
           <LicenceButtons merchantId={app.merchantId} name={name} connected={connected} recorded={!!app.licence} verified={!!app.licence?.verifiedAt} />
         ) : null}
         {actions.map((a) => (
-          <ApplicationActionButton key={a} merchantId={app.merchantId} name={name} action={a} connected={connected} />
+          <ApplicationActionButton key={a} merchantId={app.merchantId} name={name} action={a} connected={connected} app={app} />
         ))}
       </div>
       {hint ? (
@@ -155,7 +155,7 @@ export function MetricsCard({ m }: { m: MerchantMetrics }) {
       </div>
       <KeyValue
         rows={[
-          { label: "Orders", value: m.orders },
+          { label: "Orders", value: m.ordersCapped ? `${m.orders}+ (the latest ${m.orders} are measured)` : m.orders },
           { label: "Accept time", value: m.acceptSample ? `${acceptTime(m.acceptMedianSeconds)} median` : "—" },
           { label: "Missed orders", value: m.orders ? `${pct(m.missedPct)} (${m.missed})` : "—" },
           { label: "Prep time", value: m.prepSample ? `${mins(m.prepMedianMinutes)} vs ${mins(m.promisedMedianMinutes)} promised` : "—" },

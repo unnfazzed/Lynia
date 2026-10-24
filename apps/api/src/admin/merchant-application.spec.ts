@@ -17,11 +17,13 @@ const PIN = { point: { lat: -17.83, lng: 31.05 }, landmark: "Next to the rank", 
 
 function readyInput(over: Partial<ChecklistInput> = {}): ChecklistInput {
   return {
+    name: "Sadza Republic",
     businessType: "restaurant",
     shopKind: null,
     status: "reviewing",
     location: PIN,
     hours: { mon: { open: "08:00", close: "20:00" }, tue: { open: "08:00", close: "20:00" } },
+    hoursDefault: false,
     owner: { name: "Tendai Moyo", phoneVerified: true, termsAccepted: true },
     menu: { categories: 2, dishes: 10, liveDishes: 8, withPhoto: 8, drafts: 2, minPrice: 1.5, maxPrice: 12 },
     shopFront: { logo: true, cover: true, about: true },
@@ -146,5 +148,28 @@ describe("merchant application — checklist, computed from data", () => {
     expect(median([])).toBeNull();
     expect(median([5, 1, 3])).toBe(3);
     expect(median([4, 1, 3, 2])).toBe(2.5);
+  });
+});
+
+describe("merchant application — what the checklist says about sign-up defaults (review 2026-10-24)", () => {
+  it("hours still at the sign-up default pass, but say so: confirm them on the call", () => {
+    const rows = buildChecklist(readyInput({ hoursDefault: true, hours: { mon: { open: "08:00", close: "22:00" } } }));
+    expect(rows.find((r) => r.key === "hours")).toMatchObject({ ok: true, detail: "08:00–22:00 every day · the sign-up default, confirm on the call" });
+  });
+
+  it("a landmark that is just the business name (sign-up fills it so) asks for a real one", () => {
+    const rows = buildChecklist(readyInput({ location: { ...PIN, landmark: "Sadza Republic" } }));
+    expect(rows.find((r) => r.key === "location")).toMatchObject({ ok: true, detail: "Sadza Republic · just the business name, ask for a landmark" });
+  });
+
+  it("a live pharmacy's warning tells a licence that was changed from one that was never recorded", () => {
+    const live = { businessType: "shop", shopKind: "pharmacy", status: "live" as const };
+    expect(buildChecklist(readyInput(live)).find((r) => r.key === "licence")?.warning).toBe("Live before licences were checked. Record and verify it.");
+    const changed = buildChecklist(readyInput({ ...live, licence: { licenceNumber: "PCZ-9", pharmacistName: "R. Dube", verifiedAt: null } }));
+    expect(changed.find((r) => r.key === "licence")?.warning).toBe("The licence isn't verified (it was changed, or never checked). Verify it.");
+  });
+
+  it("`waiting` is applied or in review, as the 24h badge counts", () => {
+    expect(applicationStatusWhere("waiting")).toEqual({ OR: [applicationStatusWhere("applied"), applicationStatusWhere("reviewing")] });
   });
 });

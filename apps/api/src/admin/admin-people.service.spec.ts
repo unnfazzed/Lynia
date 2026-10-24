@@ -335,7 +335,7 @@ describe("AdminPeopleService.stuck — customers and merchants", () => {
   it("merchant applications link to PR 4's queue instead of repeating it", async () => {
     const prisma = prismaWith({ merchant: { count: async () => 3 } });
     const out = await new AdminPeopleService(prisma, notificationsStub()).stuck("merchant_applications", NOW);
-    expect(out).toMatchObject({ rows: [], count: 3, queue: { href: "/merchants?status=applied", count: 3 } });
+    expect(out).toMatchObject({ rows: [], count: 3, queue: { href: "/merchants?status=waiting", count: 3 } });
   });
 
   it("live, no order in 7 days: the owner is who a nudge reaches", async () => {
