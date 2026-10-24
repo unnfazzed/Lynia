@@ -98,6 +98,28 @@ id = "GHSA-86w9-cpqp-85rv"
 ignoreUntil = 2026-10-31
 reason = "node-forge RSA PKCS#1 v1.5 signature-verification forgery. No fixed version exists (OSV last_affected 1.4.0 = npm latest). Build/dev tooling only: importers are @expo/cli and @expo/code-signing-certificates, run on dev/CI/EAS machines, never shipped to devices or used by apps/api; the app configures no expo-updates code signing, so no third-party signature is ever verified with it."
 
+# ── @azure/msal-node (2026-10-24) ──────────────────────────────────────────────────────────────
+# GHSA-xcx6-jx8p-x3h5 (CVSS 7.5, confidentiality): in MSAL Node's AUTHORIZATION-CODE flow,
+# `acquireTokenByCode` can send request parameters to an attacker-controlled endpoint. Fixed in 7.1.0.
+# Owner asked for the dependency upgrade on PR #1296 (2026-10-24); this one entry is the part a bump
+# can't do yet, flagged on that PR for the owner's review.
+#
+# Accepted, time-boxed, because THERE IS NO COMPATIBLE FIX: the only importer is @azure/identity, and
+# its latest (4.14.0) still declares `@azure/msal-node: ^6.0.0`. Forcing 7.x with an override would put
+# a major the SDK wasn't built against under the API's only Azure auth path (blob storage SAS signing).
+#
+# REACHABILITY: apps/api uses MSAL only through `new DefaultAzureCredential(...)` with a user-assigned
+# managed identity (apps/api/src/adapters/storage/azure-blob.storage.ts). That is the managed-identity /
+# client-credential path; nothing in the repo calls `acquireTokenByCode` or any auth-code flow, so the
+# vulnerable code path is never run.
+#
+# Re-check on or before ignoreUntil: drop this entry the day @azure/identity accepts msal-node >= 7.1.0
+# (then a plain `pnpm install` or an override clears it).
+[[IgnoredVulns]]
+id = "GHSA-xcx6-jx8p-x3h5"
+ignoreUntil = 2026-11-07
+reason = "MSAL Node auth-code flow parameter disclosure. Fixed only in msal-node 7.1.0, but its sole importer @azure/identity (latest 4.14.0) still requires ^6.0.0. apps/api uses MSAL only via DefaultAzureCredential with a managed identity; no code calls acquireTokenByCode or any auth-code flow, so the vulnerable path is unreachable."
+
 # ── braces (2026-10-03) ──────────────────────────────────────────────────────────────────────────
 # GHSA-vfj7-8cjw-p6xm (CVE-2026-93687, CVSS 8.7, availability only): the recursive AST walkers in
 # braces <= 3.0.3 have no depth guard, so a deeply nested brace pattern exhausts the stack and throws
