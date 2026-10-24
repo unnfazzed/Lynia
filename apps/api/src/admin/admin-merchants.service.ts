@@ -9,12 +9,22 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AdminMerchantApplicationService } from "./admin-merchant-application.service";
 import { auditData, fmtDate, routeOf } from "./admin.shared";
 import { applicationStatusWhere, effectiveApplicationStatus, type ApplicationStatus } from "./merchant-application";
+import type { MERCHANT_APPLICATION_WAITING_VIEW } from "@lynia/shared";
+
+/** Admin console v2 §5: a queue chip — one stored state, or "waiting" (applied + in review). */
+export type ApplicationQueueView = ApplicationStatus | typeof MERCHANT_APPLICATION_WAITING_VIEW;
+
+/** A page of the directory or a queue; the last row's id is the cursor for the next page. */
+const MERCHANT_PAGE_SIZE = 100;
 
 /** D3 (2026-10-07): an admin's write-off of an open food debt, audit-logged in the same transaction. */
 export const DEBT_WRITE_OFF_ACTION = "order.debt_write_off";
 
 /** Merchant web upgrade L4: support's handover of a business, audit-logged in the same transaction. */
 export const OWNER_TRANSFER_ACTION = "merchant.owner_transfer";
+
+/** A refund the merchant paid outside the app, recorded by support so it leaves the overdue list. */
+export const REFUND_RECORD_ACTION = "order.refund_record";
 
 /** The directory/detail's shared column set (L1 added type, kind and the location for landmark + phone). */
 const MERCHANT_DIRECTORY_SELECT = {
@@ -40,6 +50,7 @@ const MERCHANT_QUEUE_SELECT = {
   coverPhotoUrl: true,
   description: true,
   applicationStatusAt: true,
+  applicationQueuedAt: true,
   applicationReasonCode: true,
   approvedAt: true,
   approvedBy: true,
@@ -65,7 +76,7 @@ export function weeklyHours(hours: unknown): { day: (typeof WEEK_DAYS)[number]; 
 }
 
 /** The application states the queue keeps oldest first (they wait on ops). */
-const OLDEST_FIRST: readonly ApplicationStatus[] = ["applied", "reviewing", "approved"];
+const OLDEST_FIRST: readonly ApplicationQueueView[] = ["applied", "reviewing", "approved", "waiting"];
 
 /**
  * X1 — admin alignment for the merchant vertical (docs/archive/plans/2026-07-28-restaurants-send-joint-launch-plan.md
@@ -122,10 +133,11 @@ export class AdminMerchantsService {
    *  Merchant web upgrade L1 (plan 2026-09-29 D5): `filter=awaiting_go_live` is the ops queue —
    *  businesses that signed up and aren't switched on yet; `filter=shops` lists signed-up shops (live or
    *  not), which go live through the same switch (ledger D-58). */
-  async listMerchants(filter?: string, status?: ApplicationStatus) {
+  async listMerchants(filter?: string, status?: ApplicationQueueView, cursor?: string) {
     // Admin console v2 §5: `status` is the application queue (one chip per state). Waiting states read
-    // oldest first, with the age, SLA and checklist score on each row.
-    if (status) return this.listApplicationQueue(status);
+    // oldest first, with the age, SLA and checklist score on each row. Pages of 100: `cursor` is the last
+    // row's id from the page before.
+    if (status) return this.listApplicationQueue(status, cursor);
     const where =
       filter === "awaiting_go_live"
         ? { pilotEnabled: false }
@@ -134,8 +146,9 @@ export class AdminMerchantsService {
           : {};
     const merchants = await this.prisma.merchant.findMany({
       where,
-      orderBy: { createdAt: "desc" },
-      take: 100,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: MERCHANT_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: MERCHANT_DIRECTORY_SELECT,
     });
     const ids = merchants.map((m) => m.id);
@@ -154,11 +167,13 @@ export class AdminMerchantsService {
     return merchants.map((m) => this.toMerchant(m, ordersBy.get(m.id) ?? 0, debtBy.get(m.id)));
   }
 
-  private async listApplicationQueue(status: ApplicationStatus) {
+  private async listApplicationQueue(status: ApplicationQueueView, cursor?: string) {
+    const dir = OLDEST_FIRST.includes(status) ? "asc" : "desc";
     const merchants = await this.prisma.merchant.findMany({
       where: applicationStatusWhere(status),
-      orderBy: { createdAt: OLDEST_FIRST.includes(status) ? "asc" : "desc" },
-      take: 100,
+      orderBy: [{ createdAt: dir }, { id: dir }],
+      take: MERCHANT_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: MERCHANT_QUEUE_SELECT,
     });
     const ids = merchants.map((m) => m.id);
@@ -460,7 +475,7 @@ export class AdminMerchantsService {
         data: { orderId, merchantId: order.merchantId, riderId: order.riderId, type: "written_off", amount: -amount, note: input.note ?? input.reason, actor },
       });
       const audit = await tx.auditLog.create({
-        data: auditData(actor, DEBT_WRITE_OFF_ACTION, orderId, input.reason, input.note),
+        data: { ...auditData(actor, DEBT_WRITE_OFF_ACTION, orderId, input.reason, input.note), targetType: "order", before: { debtStatus: "open" }, after: { debtStatus: "written_off" } },
         select: { id: true },
       });
       return { id: orderId, debtStatus: "written_off" as const, auditId: audit.id };
@@ -493,7 +508,7 @@ export class AdminMerchantsService {
       });
       if (claimed.count === 0) throw new ConflictException("Order changed — refresh and try again");
       const audit = await tx.auditLog.create({
-        data: auditData(actor, "order.handshake_resolve", orderId, input.reason, input.note),
+        data: { ...auditData(actor, "order.handshake_resolve", orderId, input.reason, input.note), targetType: "order" },
         select: { id: true },
       });
       return { id: orderId, resolved: true as const, auditId: audit.id, customerId: order.customerId, riderId: order.riderId };
@@ -516,28 +531,31 @@ export class AdminMerchantsService {
   }
 
   /**
-   * The old go-live switch (merchant web upgrade L1), kept so a console from before admin console v2 §5 still
-   * works during a rollout. It now goes through the application state machine: on = Go live from `approved`
-   * or Resume from `suspended` (with their checks: pin, a live dish or item, a pharmacy's verified licence);
-   * off = Suspend. Anything else is refused (409) rather than skipping the approval. Setting the current
-   * value writes nothing. The customer paths still read `pilotEnabled`, which the state machine writes.
+   * "Refunds past SLA" (N-12): the merchant refunded the customer outside the app (LyniaGo never holds the
+   * money) and support checked it, so the order leaves the overdue list. Records `refundedAt` only — no money
+   * moves. Reason required, CAS on `refundedAt: null`, audit row in the same transaction. 404 when it isn't a
+   * merchant order; 409 when it isn't a failed wallet-paid order or a refund is already on record.
    */
-  async setPilot(actor: string, id: string, input: { enabled: boolean; note?: string | null }) {
-    const merchant = await this.prisma.merchant.findUnique({ where: { id }, select: { id: true, pilotEnabled: true, applicationStatus: true } });
-    if (!merchant) throw new NotFoundException("Merchant not found");
-    const status = effectiveApplicationStatus(merchant);
-    const reason = { reason: input.enabled ? "switch_on" : "switch_off", note: input.note ?? null };
-    if (input.enabled) {
-      if (status === "live") return { id, pilotEnabled: true, auditId: null };
-      if (status !== "approved" && status !== "suspended") {
-        throw new ConflictException({ reason: "not_approved", message: "Approve this business before it goes live." });
+  async recordRefund(actor: string, orderId: string, input: { reason: string; note?: string | null }) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { orderType: true, merchantPaymentMethod: true, merchantPaymentConfirmedAt: true, status: true, refundedAt: true },
+      });
+      if (!order || order.orderType !== "merchant") throw new NotFoundException("Order not found");
+      if (order.merchantPaymentMethod !== "wallet" || !order.merchantPaymentConfirmedAt || !(order.status === "cancelled" || order.status === "undelivered")) {
+        throw new ConflictException({ reason: "not_refundable", message: "This order has no paid wallet amount to refund." });
       }
-      const res = await this.application.transition(actor, id, status === "approved" ? "go_live" : "resume", reason);
-      return { id, pilotEnabled: res.pilotEnabled, auditId: res.auditId };
-    }
-    if (status !== "live") return { id, pilotEnabled: merchant.pilotEnabled, auditId: null };
-    const res = await this.application.transition(actor, id, "suspend", reason);
-    return { id, pilotEnabled: res.pilotEnabled, auditId: res.auditId };
+      if (order.refundedAt) throw new ConflictException({ reason: "already_refunded", message: "A refund is already on record for this order." });
+      const now = new Date();
+      const claimed = await tx.order.updateMany({ where: { id: orderId, refundedAt: null }, data: { refundedAt: now } });
+      if (claimed.count === 0) throw new ConflictException({ reason: "changed", message: "Order changed — refresh and try again" });
+      const audit = await tx.auditLog.create({
+        data: { ...auditData(actor, REFUND_RECORD_ACTION, orderId, input.reason, input.note), targetType: "order", before: { refundedAt: null }, after: { refundedAt: now.toISOString() } },
+        select: { id: true },
+      });
+      return { id: orderId, refundedAt: now.toISOString(), auditId: audit.id };
+    });
   }
 
   /**
@@ -556,7 +574,9 @@ export class AdminMerchantsService {
     const phone = normalizePhone(input.phone);
     if (!phone) throw new BadRequestException({ reason: "bad_phone", message: "Enter the new owner's phone number, like 0771234567." });
     try {
-      return await this.transferOwnerTx(actor, id, phone, input.note);
+      const res = await this.transferOwnerTx(actor, id, phone, input.note);
+      this.notifyHandover(res);
+      return { id: res.id, ownerProfileId: res.ownerProfileId, previousOwnerProfileId: res.previousOwnerProfileId, auditId: res.auditId };
     } catch (err) {
       // The new owner joined another business in the same instant (unique member profile_id).
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -593,7 +613,10 @@ export class AdminMerchantsService {
       if (nextElsewhere > 0 || nextOwnsOther) {
         throw new ConflictException({ reason: "member_elsewhere", message: "That number works at another business. They must leave it first." });
       }
-      if (nextMember?.role === "owner") throw new ConflictException({ reason: "already_owner", message: "That number already owns this business." });
+      // Already the owner: on the team as owner, or the owner of record whose owner row was never backfilled.
+      if (nextMember?.role === "owner" || (!currentOwner && merchant.ownerProfileId === next.id)) {
+        throw new ConflictException({ reason: "already_owner", message: "That number already owns this business." });
+      }
 
       // The old owner steps down first: a business has exactly one owner (a partial unique index).
       const previousOwnerProfileId = currentOwner?.profileId ?? merchant.ownerProfileId;
@@ -621,9 +644,34 @@ export class AdminMerchantsService {
       await tx.merchant.update({ where: { id }, data: { ownerProfileId: next.id } });
       // An invite to the new owner's number has nothing left to do.
       await tx.merchantInvite.deleteMany({ where: { merchantId: id, phone } });
-      const audit = await tx.auditLog.create({ data: auditData(actor, OWNER_TRANSFER_ACTION, id, null, note), select: { id: true } });
-      return { id, ownerProfileId: next.id, previousOwnerProfileId: previousOwnerProfileId ?? null, auditId: audit.id };
+      const audit = await tx.auditLog.create({
+        data: {
+          ...auditData(actor, OWNER_TRANSFER_ACTION, id, null, note),
+          targetType: "merchant",
+          before: { ownerProfileId: previousOwnerProfileId ?? null },
+          after: { ownerProfileId: next.id },
+        },
+        select: { id: true },
+      });
+      return { id, name: merchant.name, ownerProfileId: next.id, previousOwnerProfileId: previousOwnerProfileId ?? null, auditId: audit.id };
     });
+  }
+
+  /** Best effort, after the commit: both people hear about a handover (an unexpected one is a takeover). */
+  private notifyHandover(r: { id: string; name: string; ownerProfileId: string; previousOwnerProfileId: string | null }): void {
+    if (!this.notifications) return;
+    void this.notifications.notifyProfiles([r.ownerProfileId], {
+      title: `You now own ${r.name}`,
+      body: "LyniaGo handed the business to you. Sign in to LyniaGo Merchant to run it.",
+      data: { kind: "merchant_owner_transfer", merchantId: r.id },
+    });
+    if (r.previousOwnerProfileId && r.previousOwnerProfileId !== r.ownerProfileId) {
+      void this.notifications.notifyProfiles([r.previousOwnerProfileId], {
+        title: `${r.name} has a new owner`,
+        body: "LyniaGo handed the business over. You stay on the team as Staff. If you didn't ask for this, message LyniaGo on WhatsApp now.",
+        data: { kind: "merchant_owner_transfer", merchantId: r.id },
+      });
+    }
   }
 
   /** Shared Merchant projection for the directory + detail. */

@@ -14,6 +14,7 @@ import {
   type ScheduleSlotsResponse,
   type Waypoint,
 } from "@lynia/shared";
+import { cancelAttribution } from "../common/cancel-attribution";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { makingWord, pushCopy, PUSH_C, pushTime } from "../notifications/merchant-order-push";
@@ -192,7 +193,7 @@ export class OrderScheduleService implements OnModuleInit, OnModuleDestroy {
             customerId: true,
             merchantId: true,
             merchantPaymentMethod: true,
-            merchant: { select: { name: true, businessType: true, autoAccept: true, busyMode: true, prepBaselineMinutes: true } },
+            merchant: { select: { name: true, businessType: true, autoAccept: true, busyMode: true, prepBaselineMinutes: true, pilotEnabled: true, applicationStatus: true } },
           },
         },
       },
@@ -204,7 +205,16 @@ export class OrderScheduleService implements OnModuleInit, OnModuleDestroy {
         if (claimed.count === 0) continue;
         const o = s.order;
         if (o.status !== "requested" || o.merchantPhase !== "awaiting_accept") continue;
-        const autoAccept = o.merchant?.businessType === "restaurant" && o.merchant.autoAccept && o.merchantPaymentMethod === "cash";
+        // Admin console v2 §5: a business suspended (or switched off) since the order was placed doesn't
+        // start it. The order hadn't started, so it is cancelled as the venue couldn't take it, and the
+        // customer is told — orders already in progress carry on, as the suspend modal says.
+        if (!o.merchant?.pilotEnabled || o.merchant.applicationStatus === "suspended") {
+          await this.cancelNotLive(s.orderId, o.merchantId, o.customerId, o.merchant?.name ?? null, now);
+          continue;
+        }
+        // The RESTAURANTS_ENABLED kill switch also stops orders cooking on their own: the venue accepts by hand.
+        const restaurantsOn = (this.env?.RESTAURANTS_ENABLED ?? "true") === "true";
+        const autoAccept = restaurantsOn && o.merchant?.businessType === "restaurant" && o.merchant.autoAccept && o.merchantPaymentMethod === "cash";
         const data: Prisma.OrderUpdateManyMutationInput = autoAccept
           ? {
               merchantPhase: "preparing",
@@ -239,5 +249,27 @@ export class OrderScheduleService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { rung };
+  }
+
+  /** A due scheduled order at a venue customers can no longer see: cancelled before it starts (nothing was charged). */
+  private async cancelNotLive(orderId: string, merchantId: string | null, customerId: string, venueName: string | null, now: Date): Promise<void> {
+    const cancelled = await this.prisma.order.updateMany({
+      where: { id: orderId, status: "requested", merchantPhase: "awaiting_accept", acceptDeadlineAt: null },
+      data: {
+        status: "cancelled",
+        cancelledAt: now,
+        rejectionReason: "shop_closed",
+        merchantPhase: null,
+        ...cancelAttribution({ by: "system", status: "requested", merchantPhase: "awaiting_accept", reasonCode: "shop_closed" }),
+      },
+    });
+    if (cancelled.count === 0) return;
+    await this.prisma.orderEvent.create({ data: { orderId, status: "cancelled" } });
+    notifyFoodQueueChanged(this.gateway, merchantId, orderId);
+    const venue = venueName?.trim() || null;
+    void this.notifications.notifyProfiles([customerId], {
+      ...(venue ? pushCopy(PUSH_C.venueCouldnt, { v: venue }) : { title: "Your order was cancelled", body: "Nothing was charged." }),
+      data: { orderId, status: "cancelled", to: "customer", orderType: "merchant" },
+    });
   }
 }

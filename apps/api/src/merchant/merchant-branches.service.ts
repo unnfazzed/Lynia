@@ -10,6 +10,8 @@ import {
   isInServiceArea,
   type SwitchMerchantBranchRequest,
 } from "@lynia/shared";
+import { effectiveApplicationStatus } from "../admin/merchant-application";
+import { domainEvents } from "../common/domain-events";
 import { PrismaService } from "../prisma/prisma.service";
 import { TrackingGateway } from "../tracking/tracking.gateway";
 import { ACTIVE_MEMBERSHIP_ORDER, type MerchantAccess, lockMembershipsTx } from "./merchant-access";
@@ -98,6 +100,8 @@ export class MerchantBranchesService {
       const source = await tx.merchant.findUniqueOrThrow({
         where: { id: access.merchantId },
         select: {
+          pilotEnabled: true,
+          applicationStatus: true,
           description: true,
           coverPhotoUrl: true,
           logoUrl: true,
@@ -113,6 +117,18 @@ export class MerchantBranchesService {
           members: { where: { profileId }, select: { displayName: true, termsAcceptedAt: true } },
         },
       });
+      // Admin console v2 §5: a suspended or rejected business can't open branches — each would arrive in
+      // the application queue as a clean new business, with no sign of the decision on this one.
+      const standing = effectiveApplicationStatus(source);
+      if (standing === "suspended" || standing === "rejected") {
+        throw new ForbiddenException({
+          reason: "business_paused",
+          message:
+            standing === "suspended"
+              ? "This business is paused, so it can't open branches. Message LyniaGo on WhatsApp to sort it out."
+              : "This business isn't approved, so it can't open branches. Message LyniaGo on WhatsApp to sort it out.",
+        });
+      }
       const branch = await tx.merchant.create({
         data: {
           name,
@@ -149,6 +165,12 @@ export class MerchantBranchesService {
         },
       });
       if (body.copyMenu) await copyMenuTx(tx, access.merchantId, branch.id);
+      // The branch's application starts here, like a sign-up's, and names the business it was opened from.
+      await domainEvents.merchantApplication(tx, branch.id, "submitted", {
+        actorId: profileId,
+        actorRole: "merchant",
+        data: { businessType: source.businessType, branchOf: access.merchantId },
+      });
       await tx.auditLog.create({ data: { actor: profileId, action: BRANCH_CREATE_ACTION, target: branch.id, note: access.merchantId } });
     });
     await this.leaveQueue(profileId, access.merchantId);

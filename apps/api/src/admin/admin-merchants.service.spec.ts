@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminMerchantsService } from "./admin-merchants.service";
 
@@ -475,94 +476,8 @@ describe("AdminMerchantsService.resolveHandshake (X1/R-05 — the only lever out
   });
 });
 
-describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + ops queue)", () => {
+describe("AdminMerchantsService — merchant web upgrade L1 (ops queue)", () => {
   const PIN = { point: { lat: -17.8292, lng: 31.0522 }, landmark: "Next to the rank", contactPhone: "+263771234567" };
-
-  /** A fake Prisma for setPilot: `$transaction(cb)` runs against the same fake; writes are recorded. */
-  function pilotHarness(merchant: Record<string, unknown> | null, liveDishes = 1, licenceVerified = false) {
-    const writes: { update?: { where: unknown; data: Record<string, unknown> }; audit?: Record<string, unknown>; events: unknown[] } = { events: [] };
-    const row = merchant ? { applicationStatus: "approved", approvedAt: null, ...merchant } : null;
-    const prisma: Record<string, unknown> = {
-      merchant: {
-        findUnique: async () => row,
-        updateMany: async (args: { where: unknown; data: Record<string, unknown> }) => {
-          writes.update = args;
-          return { count: 1 };
-        },
-      },
-      merchantDish: { count: async () => liveDishes },
-      merchantDocument: { findUnique: async () => (licenceVerified ? { verifiedAt: new Date() } : null) },
-      domainEvent: { create: async (args: unknown) => writes.events.push(args) },
-      auditLog: {
-        create: async ({ data }: { data: Record<string, unknown> }) => {
-          writes.audit = data;
-          return { id: "audit-1" };
-        },
-      },
-    };
-    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-    return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), writes };
-  }
-
-  it("the old switch ON goes live from approved, through the state machine (flip, audit, event in one transaction)", async () => {
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN });
-    const res = await svc.setPilot("ops@lyniago", "m1", { enabled: true, note: "Called; pin checked on street view" });
-    expect(res).toEqual({ id: "m1", pilotEnabled: true, auditId: "audit-1" });
-    expect(writes.update?.data).toMatchObject({ applicationStatus: "live", pilotEnabled: true });
-    expect(writes.audit).toMatchObject({
-      actor: "ops@lyniago",
-      action: "merchant.go_live",
-      target: "m1",
-      note: "Called; pin checked on street view",
-      targetType: "merchant",
-      before: { applicationStatus: "approved", pilotEnabled: false },
-      after: { applicationStatus: "live", pilotEnabled: true },
-    });
-    expect(writes.events).toHaveLength(1);
-  });
-
-  it("the old switch ON refuses a business that hasn't been approved (no skipping the review)", async () => {
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN, applicationStatus: "applied" });
-    await expect(svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "not_approved" } });
-    expect(writes.update).toBeUndefined();
-  });
-
-  it("the old switch ON resumes a suspended business", async () => {
-    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: PIN, applicationStatus: "suspended" });
-    await expect(svc.setPilot("ops", "m2", { enabled: true })).resolves.toMatchObject({ pilotEnabled: true });
-    expect(writes.audit).toMatchObject({ action: "merchant.resume" });
-  });
-
-  it("go-live keeps the pin and live-item checks, for restaurants and shops alike (D-58)", async () => {
-    const noPin = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: null });
-    await expect(noPin.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ status: 409, response: { reason: "no_location", message: "This shop has no pickup pin yet." } });
-    const noItems = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: false, location: PIN }, 0);
-    await expect(noItems.svc.setPilot("ops", "m2", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
-    expect(noItems.writes.update).toBeUndefined();
-    const noDishes = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN }, 0);
-    await expect(noDishes.svc.setPilot("ops", "m1", { enabled: true })).rejects.toMatchObject({ response: { reason: "no_live_dishes" } });
-  });
-
-  it("the old switch OFF suspends a live business", async () => {
-    const { svc, writes } = pilotHarness({ id: "m2", businessType: "shop", shopKind: "grocery", pilotEnabled: true, location: null, applicationStatus: "live" }, 0);
-    await expect(svc.setPilot("ops", "m2", { enabled: false })).resolves.toMatchObject({ pilotEnabled: false });
-    expect(writes.audit).toMatchObject({ action: "merchant.suspend" });
-    expect(writes.update?.data).toMatchObject({ applicationStatus: "suspended", pilotEnabled: false });
-  });
-
-  it("is idempotent: setting the current value writes nothing", async () => {
-    const { svc, writes } = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: true, location: PIN, applicationStatus: "live" });
-    await expect(svc.setPilot("ops", "m1", { enabled: true })).resolves.toEqual({ id: "m1", pilotEnabled: true, auditId: null });
-    const off = pilotHarness({ id: "m1", businessType: "restaurant", shopKind: null, pilotEnabled: false, location: PIN, applicationStatus: "applied" });
-    await expect(off.svc.setPilot("ops", "m1", { enabled: false })).resolves.toEqual({ id: "m1", pilotEnabled: false, auditId: null });
-    expect(writes.update).toBeUndefined();
-    expect(writes.audit).toBeUndefined();
-  });
-
-  it("404s an unknown merchant", async () => {
-    const { svc } = pilotHarness(null);
-    await expect(svc.setPilot("ops", "nope", { enabled: true })).rejects.toThrow(/not found/i);
-  });
 
   it("listMerchants: awaiting_go_live is restaurants not yet on; shops is every shop; landmark shown, phone masked", async () => {
     const wheres: unknown[] = [];
@@ -594,6 +509,52 @@ describe("AdminMerchantsService — merchant web upgrade L1 (go-live switch + op
     await svc.listMerchants();
     expect(wheres).toEqual([{ pilotEnabled: false }, { businessType: "shop" }, {}]);
     expect(row).toMatchObject({ businessType: "restaurant", shopKind: null, landmark: "Next to the rank", contactPhoneMasked: "+263•••••4567" });
+  });
+
+  it("pages by cursor (100 a page), and `waiting` reads applied + in review together, oldest first", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const prisma = {
+      merchant: { findMany: async (args: Record<string, unknown>) => (calls.push(args), []) },
+      order: { groupBy: async () => [] },
+    };
+    const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
+    await svc.listMerchants(undefined, undefined, "00000000-0000-4000-8000-000000000001");
+    expect(calls[0]).toMatchObject({ take: 100, cursor: { id: "00000000-0000-4000-8000-000000000001" }, skip: 1, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    await svc.listMerchants(undefined, "waiting");
+    expect(calls[1]).toMatchObject({
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      where: { OR: [{ applicationStatus: "applied", pilotEnabled: false }, { applicationStatus: "reviewing", pilotEnabled: false }] },
+    });
+  });
+});
+
+describe("AdminMerchantsService.recordRefund (N-12 — a refund paid outside the app)", () => {
+  function refundHarness(order: Record<string, unknown> | null) {
+    const audits: Record<string, unknown>[] = [];
+    let update: Record<string, unknown> | undefined;
+    const prisma: Record<string, unknown> = {
+      order: {
+        findUnique: async () => order,
+        updateMany: async (args: Record<string, unknown>) => ((update = args), { count: 1 }),
+      },
+      auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => (audits.push(data), { id: "audit-1" }) },
+    };
+    prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
+    return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), audits, update: () => update };
+  }
+  const failed = { orderType: "merchant", merchantPaymentMethod: "wallet", merchantPaymentConfirmedAt: new Date(), status: "cancelled", refundedAt: null };
+
+  it("records the refund time (no money moves), CAS on no refund yet, audited in the same transaction", async () => {
+    const h = refundHarness(failed);
+    await expect(h.svc.recordRefund("ops", "o1", { reason: "Merchant sent the refund — customer confirmed" })).resolves.toMatchObject({ id: "o1", auditId: "audit-1" });
+    expect(h.update()).toMatchObject({ where: { id: "o1", refundedAt: null }, data: { refundedAt: expect.any(Date) } });
+    expect(h.audits[0]).toMatchObject({ action: "order.refund_record", target: "o1", targetType: "order", before: { refundedAt: null } });
+  });
+
+  it("refuses an order with nothing to refund, or a refund already on record", async () => {
+    await expect(refundHarness({ ...failed, merchantPaymentMethod: "cash" }).svc.recordRefund("ops", "o1", { reason: "x" })).rejects.toMatchObject({ response: { reason: "not_refundable" } });
+    await expect(refundHarness({ ...failed, refundedAt: new Date() }).svc.recordRefund("ops", "o1", { reason: "x" })).rejects.toMatchObject({ response: { reason: "already_refunded" } });
+    await expect(refundHarness(null).svc.recordRefund("ops", "o1", { reason: "x" })).rejects.toThrow(/not found/i);
   });
 });
 
@@ -672,10 +633,38 @@ describe("AdminMerchantsService.transferOwner (merchant web upgrade L4 — suppo
       },
     };
     prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-    return { svc: new AdminMerchantsService(prisma as unknown as PrismaService), people, merchants, members, invites, audit, add };
+    const pushes: { profileIds: string[]; title: string }[] = [];
+    const notifications = { notifyProfiles: async (profileIds: string[], msg: { title: string }) => (pushes.push({ profileIds, title: msg.title }), new Set<string>()) };
+    return {
+      svc: new AdminMerchantsService(prisma as unknown as PrismaService, notifications as unknown as NotificationsService),
+      people,
+      merchants,
+      members,
+      invites,
+      audit,
+      add,
+      pushes,
+    };
   }
 
   const NOTE = "Called Farai and Chipo; saw Chipo's ID at the shop";
+
+  it("tells both people about a handover (the new owner, and the old one in case it's a takeover)", async () => {
+    const h = transferHarness();
+    h.add({ id: "chipo", phone: "+263773000003", firstName: "Chipo", lastName: "Moyo" });
+    await h.svc.transferOwner("ops@lyniago", "m1", { phone: "0773 000 003", note: NOTE });
+    expect(h.pushes).toEqual([
+      { profileIds: ["chipo"], title: "You now own Mbare Auto Spares" },
+      { profileIds: ["farai"], title: "Mbare Auto Spares has a new owner" },
+    ]);
+  });
+
+  it("the owner of record with no owner row is already the owner (not a confusing 'works at another business')", async () => {
+    const h = transferHarness();
+    h.members.splice(h.members.findIndex((m) => m.id === "mm-farai"), 1);
+    await expect(h.svc.transferOwner("ops", "m1", { phone: "0771 000 001", note: NOTE })).rejects.toMatchObject({ response: { reason: "already_owner" } });
+    expect(h.audit).toEqual([]);
+  });
 
   it("promotes a staff member: the old owner stays on as Staff, the column follows, and the audit row carries the note", async () => {
     const h = transferHarness();
@@ -690,7 +679,18 @@ describe("AdminMerchantsService.transferOwner (merchant web upgrade L4 — suppo
       ["chipo", "owner"],
     ]);
     expect(h.merchants.get("m1")!.ownerProfileId).toBe("chipo");
-    expect(h.audit).toEqual([{ actor: "ops@lyniago", action: "merchant.owner_transfer", target: "m1", reasonCode: null, note: NOTE }]);
+    expect(h.audit).toEqual([
+      {
+        actor: "ops@lyniago",
+        action: "merchant.owner_transfer",
+        target: "m1",
+        reasonCode: null,
+        note: NOTE,
+        targetType: "merchant",
+        before: { ownerProfileId: "farai" },
+        after: { ownerProfileId: "chipo" },
+      },
+    ]);
     // A pending invite to the new owner's number has nothing left to do.
     expect(h.invites).toEqual([]);
   });

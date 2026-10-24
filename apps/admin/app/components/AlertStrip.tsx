@@ -19,7 +19,9 @@ const CHIPS: Chip[] = [
   { key: "ordersBreaching", href: "/live", kind: "bad", text: (n) => `${plural(n, "order", "orders")} past the time limit` },
   { key: "kitchenConfirmations", href: "/merchants/confirm", kind: "warn", text: (n) => `${plural(n, "order", "orders")} to confirm with the kitchen` },
   { key: "topupAnomalies", href: "/cash/topups", kind: "warn", text: (n) => `${plural(n, "top-up", "top-ups")} to sort out` },
-  { key: "merchantApplications", href: "/merchants?status=applied", kind: "warn", text: (n) => `${plural(n, "application", "applications")} waiting over 24 h` },
+  // Applied and in review together: the count covers both (applicationsPastSlaWhere), so the link does too.
+  { key: "merchantApplications", href: "/merchants?status=waiting", kind: "warn", text: (n) => `${plural(n, "application", "applications")} waiting over 24 h` },
+  { key: "merchantsApprovedNotLive", href: "/merchants?status=approved", kind: "warn", text: (n) => `${plural(n, "approved business", "approved businesses")} not live after 24 h` },
 ];
 
 export function AlertStrip({ alerts }: { alerts: LiveAlerts | null }) {
@@ -31,7 +33,7 @@ export function AlertStrip({ alerts }: { alerts: LiveAlerts | null }) {
       {shown.map((c) => (
         <a key={c.key} href={c.href} className={`kpill ${c.kind}`}>
           <span className="dot" />
-          {c.text(alerts[c.key])}
+          {c.text(alerts[c.key] ?? 0)}
         </a>
       ))}
     </nav>

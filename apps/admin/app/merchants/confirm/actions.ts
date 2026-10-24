@@ -37,8 +37,9 @@ export async function logKitchenNoAnswer(orderId: string): Promise<KitchenAction
 export async function editKitchenOrderItems(
   orderId: string,
   lines: { itemId: string; quantity: number }[],
+  expected?: { itemId: string; quantity: number }[],
 ): Promise<KitchenActionResult> {
-  return post(`/admin/orders/${orderId}/edit-items`, { lines }, orderId);
+  return post(`/admin/orders/${orderId}/edit-items`, { lines, ...(expected ? { expected } : {}) }, orderId);
 }
 
 /** "Can't make it": the existing admin cancel (`ReasonRequired = { reason, note? }`). */

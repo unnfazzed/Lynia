@@ -483,10 +483,12 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
   function prismaFor(o: Record<string, unknown>) {
     const itemUpdates: Array<{ id: string; data: Record<string, unknown> }> = [];
     let orderData: Record<string, unknown> | undefined;
+    let orderWhere: Record<string, unknown> | undefined;
     const prisma: Record<string, unknown> = {
       order: {
         findFirst: async () => o,
-        updateMany: async ({ data }: { data: Record<string, unknown> }) => {
+        updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+          orderWhere = where;
           orderData = data;
           return { count: 1 };
         },
@@ -494,7 +496,7 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
       merchantOrderItem: { update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => itemUpdates.push({ id: where.id, data }) },
     };
     prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-    return { prisma: prisma as unknown as PrismaService, itemUpdates, orderData: () => orderData };
+    return { prisma: prisma as unknown as PrismaService, itemUpdates, orderData: () => orderData, orderWhere: () => orderWhere };
   }
 
   it("recomputes the totals server-side and tells the customer the new total", async () => {
@@ -537,6 +539,42 @@ describe("food-order-ops — shared by the restaurant and ops (safeguards 1 and 
     await expect(editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i1", quantity: 1 }] })).rejects.toMatchObject({
       response: { reason: "not_editable" },
     });
+  });
+
+  it("a stale editor (its lines no longer match the order) is refused, so it can't overwrite a newer change", async () => {
+    const { prisma, itemUpdates } = prismaFor(order());
+    await expect(
+      editOrderItems(prisma, notifications, gateway, "o1", {
+        lines: [{ itemId: "i2", quantity: 0 }],
+        // The editor still shows 3 × i1; the restaurant has since made it 2.
+        expected: [
+          { itemId: "i1", quantity: 3 },
+          { itemId: "i2", quantity: 1 },
+        ],
+      }),
+    ).rejects.toMatchObject({ status: 409, response: { reason: "items_changed" } });
+    expect(itemUpdates).toEqual([]);
+    // What the order really holds: accepted.
+    const ok = prismaFor(order());
+    await editOrderItems(ok.prisma, notifications, gateway, "o1", {
+      lines: [{ itemId: "i2", quantity: 0 }],
+      expected: [
+        { itemId: "i1", quantity: 2 },
+        { itemId: "i2", quantity: 1 },
+      ],
+    });
+    expect(ok.itemUpdates).toHaveLength(2);
+  });
+
+  it("the save is guarded on the lines' version (itemsEditedAt), and an ops audit row commits inside it", async () => {
+    const editedAt = new Date("2026-10-24T08:00:00Z");
+    const { prisma, orderWhere } = prismaFor(order({ itemsEditedAt: editedAt }));
+    const inTx: string[] = [];
+    await editOrderItems(prisma, notifications, gateway, "o1", { lines: [{ itemId: "i2", quantity: 0 }] }, undefined, async () => {
+      inTx.push("audit");
+    });
+    expect(orderWhere()).toMatchObject({ itemsEditedAt: editedAt });
+    expect(inTx).toEqual(["audit"]);
   });
 
   it("confirmKitchen only confirms a live, unconfirmed, auto-accepted order", async () => {

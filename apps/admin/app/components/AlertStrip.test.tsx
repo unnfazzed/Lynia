@@ -10,14 +10,15 @@ const none = { sosPending: 0, topupAnomalies: 0, kitchenConfirmations: 0, mercha
 
 describe("AlertStrip", () => {
   it("shows one linked chip per thing waiting, SOS first", () => {
-    render(<AlertStrip alerts={{ sosPending: 1, topupAnomalies: 2, kitchenConfirmations: 3, merchantApplications: 1, ordersBreaching: 4 }} />);
+    render(<AlertStrip alerts={{ sosPending: 1, topupAnomalies: 2, kitchenConfirmations: 3, merchantApplications: 1, merchantsApprovedNotLive: 2, ordersBreaching: 4 }} />);
     const links = screen.getAllByRole("link");
     expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
       ["1 SOS waiting", "/sos"],
       ["4 orders past the time limit", "/live"],
       ["3 orders to confirm with the kitchen", "/merchants/confirm"],
       ["2 top-ups to sort out", "/cash/topups"],
-      ["1 application waiting over 24 h", "/merchants?status=applied"],
+      ["1 application waiting over 24 h", "/merchants?status=waiting"],
+      ["2 approved businesses not live after 24 h", "/merchants?status=approved"],
     ]);
   });
 

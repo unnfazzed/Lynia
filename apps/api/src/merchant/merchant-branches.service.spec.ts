@@ -299,6 +299,25 @@ describe("MerchantBranchesService (multi-branch owners)", () => {
       expect(w.prisma.merchant.create).not.toHaveBeenCalled();
     });
 
+    it("a suspended or rejected business can't open branches (each would reach the queue as a clean new business)", async () => {
+      w.merchants.get("m1")!.applicationStatus = "suspended";
+      w.merchants.get("m1")!.pilotEnabled = false;
+      await expect(w.svc.create(OWNER_AT_M1, "mai", body())).rejects.toMatchObject({ status: 403, response: { reason: "business_paused" } });
+      w.merchants.get("m1")!.applicationStatus = "rejected";
+      await expect(w.svc.create(OWNER_AT_M1, "mai", body())).rejects.toMatchObject({ response: { reason: "business_paused" } });
+      expect([...w.merchants.values()].filter((m) => m.name === "Mama's Kitchen · Avondale")).toEqual([]);
+    });
+
+    it("records the branch's application as submitted, naming the business it came from", async () => {
+      const events: Array<{ data: { type: string; subjectId: string; data: Record<string, unknown> } }> = [];
+      (w.prisma as unknown as { domainEvent: unknown }).domainEvent = { create: async (args: (typeof events)[number]) => events.push(args) };
+      await w.svc.create(OWNER_AT_M1, "mai", body());
+      const branch = [...w.merchants.values()].find((m) => m.name === "Mama's Kitchen · Avondale")!;
+      expect(events.map((e) => e.data)).toEqual([
+        expect.objectContaining({ type: "merchant.application", subjectId: branch.id, data: { step: "submitted", businessType: "restaurant", branchOf: "m1" } }),
+      ]);
+    });
+
     it("refuses a held account and a pin outside the service area", async () => {
       await expect(w.svc.create(OWNER_AT_M1, "mai", body({ location: { ...PIN, point: { lat: -15.4167, lng: 28.2833 } } }))).rejects.toMatchObject({
         status: 400,

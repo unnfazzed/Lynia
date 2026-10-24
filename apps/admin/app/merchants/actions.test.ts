@@ -68,9 +68,9 @@ describe("resolveHandshake (R-05 admin dispute resolution)", () => {
     expect(lastCall().body).toEqual({ reason: "", note: null });
   });
 
-  it("FAILS CLOSED: a rejected write throws and does NOT revalidate — a rider/customer must not see a phantom release", async () => {
+  it("FAILS CLOSED: a rejected write returns the failure (not thrown, so production keeps the API's words) and does NOT revalidate", async () => {
     fetchMock.mockResolvedValue(res(409));
-    await expect(resolveHandshake("order-1", "x", "")).rejects.toThrow(/Failed to resolve handshake/i);
+    await expect(resolveHandshake("order-1", "x", "")).resolves.toMatchObject({ ok: false, message: expect.any(String) });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });
@@ -86,9 +86,9 @@ describe("writeOffDebt (D3, 2026-10-07: the only write-off of a food debt)", () 
     expect(revalidateMock).toHaveBeenCalledWith("/merchants/disputes");
   });
 
-  it("FAILS CLOSED: a rejected write-off throws and does NOT revalidate", async () => {
+  it("FAILS CLOSED: a rejected write-off returns the failure and does NOT revalidate", async () => {
     fetchMock.mockResolvedValue(res(409));
-    await expect(writeOffDebt("order-1", "x", "")).rejects.toThrow(/Failed to write off/i);
+    await expect(writeOffDebt("order-1", "x", "")).resolves.toMatchObject({ ok: false, message: expect.any(String) });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });

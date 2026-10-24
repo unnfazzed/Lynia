@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RESERVED_AUDIT_ACTIONS } from "./admin-audit.service";
 import { AdminMerchantApplicationService, MERCHANT_APPLICATION_AUDIT } from "./admin-merchant-application.service";
@@ -26,7 +28,17 @@ interface Doc {
  */
 function harness(
   merchantOver: Record<string, unknown> = {},
-  opts: { liveDishes?: number; called?: boolean; termsAccepted?: boolean; doc?: Partial<Doc> | null } = {},
+  opts: {
+    liveDishes?: number;
+    called?: boolean;
+    calledAt?: Date;
+    rejectedAt?: Date;
+    termsAccepted?: boolean;
+    doc?: Partial<Doc> | null;
+    openOrders?: number;
+    scheduledOrders?: number;
+    pharmacyOff?: boolean;
+  } = {},
 ) {
   const merchant: Record<string, unknown> | null = {
     id: "m1",
@@ -64,19 +76,22 @@ function harness(
     : null;
   const audits: Record<string, unknown>[] = [];
   const events: Record<string, unknown>[] = [];
+  const dishCountWheres: Record<string, unknown>[] = [];
+  const pushes: { profileIds: string[]; title: string; body: string; data?: Record<string, string> }[] = [];
   let casFails = false;
   const prisma: Record<string, unknown> = {
     merchant: {
       findUnique: async () => merchant,
       updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-        if (casFails || where.applicationStatus !== merchant!.applicationStatus || where.pilotEnabled !== merchant!.pilotEnabled) return { count: 0 };
+        const differs = (k: string) => k in where && where[k] !== merchant![k];
+        if (casFails || differs("applicationStatus") || differs("pilotEnabled") || differs("shopKind")) return { count: 0 };
         Object.assign(merchant!, data);
         return { count: 1 };
       },
     },
     merchantCategory: { groupBy: async () => [{ merchantId: "m1", _count: { _all: 1 } }] },
     merchantDish: {
-      count: async () => liveDishes,
+      count: async (args: { where: Record<string, unknown> }) => (dishCountWheres.push(args.where), liveDishes),
       groupBy: async (args: { by: string[] }) =>
         args.by.includes("isDraft")
           ? [{ merchantId: "m1", isDraft: false, _count: { _all: liveDishes }, _min: { priceUsd: dec("2.00") }, _max: { priceUsd: dec("9.00") } }]
@@ -84,7 +99,7 @@ function harness(
     },
     merchantMember: {
       findMany: async () => [
-        { merchantId: "m1", role: "owner", displayName: "Tendai Moyo", termsAcceptedAt: opts.termsAccepted === false ? null : new Date(), isPharmacist: false, profile: { phoneVerifiedAt: new Date() } },
+        { merchantId: "m1", profileId: "owner-1", role: "owner", displayName: "Tendai Moyo", termsAcceptedAt: opts.termsAccepted === false ? null : new Date(), isPharmacist: false, profile: { phoneVerifiedAt: new Date() } },
       ],
     },
     merchantInvite: { groupBy: async () => [] },
@@ -99,6 +114,10 @@ function harness(
         doc = { ...doc!, ...data };
         return { count: 1 };
       },
+      create: async ({ data }: { data: Partial<Doc> }) => {
+        doc = { id: "doc1", licenceNumber: null, pharmacistName: null, reference: null, verifiedAt: null, verifiedBy: null, updatedAt: new Date(), ...data } as Doc;
+        return doc;
+      },
     },
     domainEvent: {
       findMany: async () => (opts.called === false ? [] : [{ subjectId: "m1", data: { step: "called", outcome: "reached" }, createdAt: new Date("2026-10-12T09:00:00Z") }]),
@@ -110,13 +129,27 @@ function harness(
         audits.push(data);
         return { id: `audit-${audits.length}` };
       },
-      findMany: async () => [],
+      // The ops calls: one that reached the business, unless the test says no call was logged.
+      findMany: async ({ where }: { where: { action?: string } }) =>
+        where.action === MERCHANT_APPLICATION_AUDIT.call && opts.called !== false
+          ? [{ id: "call-1", target: "m1", reasonCode: "reached", note: null, createdAt: opts.calledAt ?? new Date("2026-10-12T09:00:00Z") }]
+          : [],
+      // Each business's latest rejection.
+      groupBy: async () => (opts.rejectedAt ? [{ target: "m1", _max: { createdAt: opts.rejectedAt } }] : []),
     },
+    order: { count: async () => opts.openOrders ?? 0 },
+    orderSchedule: { count: async () => opts.scheduledOrders ?? 0 },
   };
   prisma.$transaction = async (cb: (tx: unknown) => unknown) => cb(prisma);
-  const svc = new AdminMerchantApplicationService(prisma as unknown as PrismaService);
+  const notifications = {
+    notifyProfiles: async (profileIds: string[], msg: { title: string; body: string; data?: Record<string, string> }) => (pushes.push({ profileIds, ...msg }), new Set<string>()),
+  };
+  const env = { RX_ENABLED: "false", RESTAURANTS_ENABLED: "true", SHOPS_ENABLED: "true", PHARMACY_ENABLED: opts.pharmacyOff ? "false" : "true" };
+  const svc = new AdminMerchantApplicationService(prisma as unknown as PrismaService, env as never, notifications as unknown as NotificationsService);
   return {
     svc,
+    dishCountWheres,
+    pushes,
     prisma,
     merchant: merchant!,
     audits,
@@ -365,5 +398,113 @@ describe("AdminMerchantApplicationService — metrics", () => {
     ];
     expect(svc.hoursOpenVsScheduled(hours, events, since, now)).toEqual({ open: 4.5, scheduled: 6 });
     expect(svc.hoursOpenVsScheduled(null, events, since, now)).toBeNull();
+  });
+});
+
+describe("AdminMerchantApplicationService — review fixes (2026-10-24)", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("go live counts only what customers can see: a photo, a visible category, no unlisted prescription item", async () => {
+    const h = harness({ applicationStatus: "approved" });
+    await h.svc.transition("ops", "m1", "go_live", { reason: "Ops call done" });
+    expect(h.dishCountWheres[0]).toMatchObject({ merchantId: "m1", isDraft: false, category: { hidden: false }, AND: [{ rxRequired: false }] });
+  });
+
+  it("resume refuses a pharmacy whose recorded licence isn't verified; one with no licence (grandfathered) still resumes", async () => {
+    const pharmacy = { applicationStatus: "suspended", businessType: "shop", shopKind: "pharmacy" };
+    const changed = harness(pharmacy, { doc: { licenceNumber: "PCZ-9", pharmacistName: "R. Dube", verifiedAt: null } });
+    await expect(changed.svc.transition("ops", "m1", "resume", { reason: "Back" })).rejects.toMatchObject({ status: 409, response: { reason: "licence_not_verified" } });
+    expect(changed.merchant.pilotEnabled).toBe(false);
+    await expect(harness(pharmacy).svc.transition("ops", "m1", "resume", { reason: "Back" })).resolves.toMatchObject({ status: "live" });
+  });
+
+  it("reopening a rejection restarts the SLA clock (applicationQueuedAt)", async () => {
+    const h = harness({ applicationStatus: "rejected", createdAt: new Date("2026-09-01T00:00:00Z") });
+    await h.svc.transition("ops", "m1", "review", { reason: "Reopening after they fixed it" });
+    expect(h.merchant.applicationQueuedAt).toBeInstanceOf(Date);
+    const at = h.merchant.applicationQueuedAt as Date;
+    const rows = await h.svc.queueRows([h.merchant as never], new Date(at.getTime() + 60 * 60 * 1000));
+    expect(rows.get("m1")).toMatchObject({ applicationStatus: "reviewing", sla: "ok", waitingSince: at.toISOString() });
+  });
+
+  it("approved waits on Go live: its SLA runs from the approval", async () => {
+    const approvedAt = new Date("2026-10-12T09:00:00Z");
+    const h = harness({ applicationStatus: "approved", applicationStatusAt: approvedAt });
+    const rows = await h.svc.queueRows([h.merchant as never], new Date("2026-10-13T10:00:00Z"));
+    expect(rows.get("m1")).toMatchObject({ applicationStatus: "approved", sla: "amber", waitingSince: approvedAt.toISOString() });
+  });
+
+  it("a call made before the last rejection doesn't tick the Ops call check after a reopen", async () => {
+    const h = harness({}, { calledAt: new Date("2026-10-11T09:00:00Z"), rejectedAt: new Date("2026-10-11T10:00:00Z") });
+    const app = await h.svc.getApplication("m1");
+    expect(app.checklist.find((r) => r.key === "call")).toMatchObject({ ok: false });
+    const after = harness({}, { calledAt: new Date("2026-10-11T11:00:00Z"), rejectedAt: new Date("2026-10-11T10:00:00Z") });
+    expect((await after.svc.getApplication("m1")).checklist.find((r) => r.key === "call")).toMatchObject({ ok: true });
+  });
+
+  it("tells the owner after the commit: a reject carries the reason in the business's words; review tells nobody", async () => {
+    const h = harness();
+    await h.svc.transition("ops", "m1", "reject", { reason: "menu_incomplete" });
+    await flush();
+    expect(h.pushes).toEqual([
+      {
+        profileIds: ["owner-1"],
+        title: "Sadza Republic wasn't approved",
+        body: "Add photos and prices to your menu first.",
+        data: { kind: "merchant_application", merchantId: "m1", step: "rejected" },
+      },
+    ]);
+    const r = harness({ applicationStatus: "applied" });
+    await r.svc.transition("ops", "m1", "review", { reason: "Called — starting the checks" });
+    await flush();
+    expect(r.pushes).toEqual([]);
+  });
+
+  it("a refused move tells nobody", async () => {
+    const h = harness();
+    h.failCas();
+    await expect(h.svc.transition("ops", "m1", "reject", { reason: "duplicate" })).rejects.toMatchObject({ status: 409 });
+    await flush();
+    expect(h.pushes).toEqual([]);
+  });
+
+  it("the application read carries the customer section and what a suspension leaves running", async () => {
+    const h = harness({ applicationStatus: "live", pilotEnabled: true, businessType: "shop", shopKind: "pharmacy" }, { pharmacyOff: true, openOrders: 5, scheduledOrders: 2 });
+    const app = await h.svc.getApplication("m1");
+    expect(app.section).toEqual({ name: "Pharmacy", enabled: false });
+    expect(app.orders).toEqual({ open: 3, scheduled: 2 });
+  });
+
+  it("two licence saves at once: the losing upsert is a 409, not a 500", async () => {
+    const h = harness({ businessType: "shop", shopKind: "pharmacy" });
+    (h.prisma.merchantDocument as { upsert: unknown }).upsert = async () => {
+      throw new Prisma.PrismaClientKnownRequestError("unique", { code: "P2002", clientVersion: "x" });
+    };
+    await expect(h.svc.recordLicence("ops", "m1", { licenceNumber: "PCZ-1", pharmacistName: "R. Dube" })).rejects.toMatchObject({ status: 409, response: { reason: "changed" } });
+  });
+
+  it("the audit's before keeps the stored status when an older revision left it apart from the effective one", async () => {
+    const h = harness({ applicationStatus: "live", pilotEnabled: false });
+    await h.svc.transition("ops", "m1", "resume", { reason: "Back" });
+    expect(h.audits[0]).toMatchObject({ before: { applicationStatus: "suspended", storedStatus: "live" } });
+  });
+
+  it("a shop can be corrected to a pharmacy: an empty licence row is added, so Go live and Resume wait on a verified one", async () => {
+    const h = harness({ applicationStatus: "suspended", businessType: "shop", shopKind: "other" });
+    await expect(h.svc.setShopKind("ops", "m1", { kind: "pharmacy", note: "Saw the dispensary" })).resolves.toMatchObject({ shopKind: "pharmacy", auditId: "audit-1" });
+    expect(h.merchant.shopKind).toBe("pharmacy");
+    expect(h.doc).toMatchObject({ kind: "pharmacy_licence", licenceNumber: null, verifiedAt: null });
+    expect(h.audits[0]).toMatchObject({ action: "merchant.shop_kind", before: { shopKind: "other" }, after: { shopKind: "pharmacy" } });
+    await expect(h.svc.transition("ops", "m1", "resume", { reason: "Back" })).rejects.toMatchObject({ response: { reason: "licence_not_verified" } });
+  });
+
+  it("a live shop can't become a pharmacy, a restaurant has no kind, and the same kind writes nothing", async () => {
+    await expect(harness({ applicationStatus: "live", pilotEnabled: true, businessType: "shop", shopKind: "grocery" }).svc.setShopKind("ops", "m1", { kind: "pharmacy" })).rejects.toMatchObject({
+      response: { reason: "pharmacy_while_live" },
+    });
+    await expect(harness().svc.setShopKind("ops", "m1", { kind: "grocery" })).rejects.toMatchObject({ response: { reason: "not_a_shop" } });
+    const same = harness({ businessType: "shop", shopKind: "grocery" });
+    await expect(same.svc.setShopKind("ops", "m1", { kind: "grocery" })).resolves.toMatchObject({ auditId: null });
+    expect(same.audits).toHaveLength(0);
   });
 });

@@ -7,6 +7,7 @@ import { Pill } from "../../components/StatusPill";
 import { IconAlert } from "../../components/icons";
 import { ResolveHandshakeButton } from "../ResolveHandshakeButton";
 import { WriteOffDebtButton } from "../WriteOffDebtButton";
+import { RecordRefundButton } from "../RecordRefundButton";
 import { AutoRefresh } from "../../components/AutoRefresh";
 import { OrderLink } from "../../components/links";
 import { fmtDateTime, money } from "../../lib/format";
@@ -87,6 +88,7 @@ export default async function FoodDisputesPage() {
         </a>
       ),
     },
+    { key: "actions", header: "", cell: (d) => <RecordRefundButton orderId={d.orderId} connected={connected} /> },
   ];
 
   return (

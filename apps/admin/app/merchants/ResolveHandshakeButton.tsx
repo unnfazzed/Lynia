@@ -23,7 +23,10 @@ export function ResolveHandshakeButton({ orderId, connected }: { orderId: string
       reasons={REASONS.handshakeResolve}
       notePlaceholder="What did the biker and customer say? (optional)"
       confirmLabel="Resolve dispute"
-      onConfirm={(r) => resolveHandshake(orderId, r.reasonCode, r.note)}
+      onConfirm={async (r) => {
+        const res = await resolveHandshake(orderId, r.reasonCode, r.note);
+        if (!res.ok) throw new Error(res.message);
+      }}
     />
   );
 }

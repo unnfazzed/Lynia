@@ -23,7 +23,10 @@ export function WriteOffDebtButton({ orderId, connected }: { orderId: string; co
       reasons={REASONS.debtWriteOff}
       notePlaceholder="What did the biker and merchant say? (optional)"
       confirmLabel="Write off debt"
-      onConfirm={(r) => writeOffDebt(orderId, r.reasonCode, r.note)}
+      onConfirm={async (r) => {
+        const res = await writeOffDebt(orderId, r.reasonCode, r.note);
+        if (!res.ok) throw new Error(res.message);
+      }}
     />
   );
 }

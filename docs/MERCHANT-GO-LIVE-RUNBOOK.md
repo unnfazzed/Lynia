@@ -75,13 +75,27 @@ is `POST /admin/merchants/:id/application/<action> {"reason": "…", "note": "�
 - **Approve** (`approve`): reviewing → approved, only when every required check is ✅ (`checklist_incomplete`
   otherwise). Customers still can't see it.
 - **Reject** (`reject`): the reason is a code the business can read (`MERCHANT_REJECT_REASONS` in
-  `@lynia/shared`); it is stored on the merchant.
+  `@lynia/shared`); it is stored on the merchant, returned in the merchant profile (`application.reasonCode`)
+  and pushed to the owner in those words.
 - **Go live** (`go_live`): approved → live, turns `pilot_enabled` on. Refuses `no_location`, `no_live_dishes`
-  and, for a pharmacy, `licence_not_verified`.
+  (nothing a customer would see: a dish needs a photo, in a category that isn't hidden, and isn't an unlisted
+  prescription item) and, for a pharmacy, `licence_not_verified`. If the business's customer section
+  (`RESTAURANTS_ENABLED` / `SHOPS_ENABLED` / `PHARMACY_ENABLED`) is off, the modal says customers still can't
+  see it.
 - **Suspend / Resume** (`suspend` / `resume`): live ↔ suspended. Suspended hides it from customers and blocks
-  new orders; orders already placed carry on. Resume re-checks the pin and the menu.
-- The old switch `POST /admin/merchants/:id/pilot` still works: on = Go live from approved or Resume, off =
-  Suspend. It refuses a business that isn't approved (`not_approved`).
+  new orders; orders in progress carry on. A scheduled order that hasn't started yet is cancelled when its time
+  comes ("couldn't take your order", nothing charged); the suspend modal shows both counts. Resume re-checks the
+  pin and the menu, and refuses a pharmacy whose recorded licence isn't verified (one with no licence recorded,
+  live before licences were checked, still resumes). A suspended or rejected business can't open branches.
+- The owner gets a push on approve, reject, go live, suspend and resume (best effort, after the commit).
+- **The SLA clock** runs from when the business entered the queue: sign-up, or reopening a rejection
+  (`application_queued_at`). Approved businesses not live 24 h after approval get their own alert.
+  Businesses that were switched off before migration 0100 were backfilled as `applied` and read as long
+  overdue: triage them once (reject as `duplicate` / `unreachable`, or review them).
+- **Ops call** only counts when it reached someone and came after the last rejection.
+- **Shop kind** (`POST /admin/merchants/:id/shop-kind`, "Change kind…" on the Details card): sign-up asks the
+  owner, so a pharmacy can sign up as "something else". Changing a shop to Pharmacy adds an empty licence row:
+  Go live and Resume then wait on a recorded, verified licence. A live shop must be suspended first.
 - `pilot_enabled` stays the flag every customer path reads; it is on exactly while the state is `live`.
 - Every audit action is reserved, so the free-text audit endpoint can't forge one.
 
@@ -197,8 +211,10 @@ The only way ownership moves, for a sale, a family handover or an owner who lost
    (10–500 characters): say who you spoke to, how you checked, and why. It goes on the `merchant.owner_transfer`
    audit row, which commits with the handover.
 4. The old owner stays on the team as Staff. The new owner can remove them in Team if that's what was agreed.
-5. Send the new owner the merchant terms. Someone who wasn't on the team never accepted them in the app, and
-   support can't accept on their behalf, so their team row has no acceptance time.
+5. Ask the new owner to sign in to LyniaGo Merchant. Its sign-in says "By continuing you accept the terms"
+   (D-49), and that sign-in records their acceptance on the team row (support can't accept on their behalf).
+   Until they do, an application not yet approved fails its Owner check. Both people get a push about the
+   handover, and the audit row records the old and new owner.
 
 Never change `merchants.owner_profile_id` or `merchant_members.role` by hand: the endpoint keeps the owner
 row, the column and the audit trail in step.

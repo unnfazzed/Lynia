@@ -51,6 +51,16 @@ export class MerchantController {
     return this.merchant.getMyMerchant(profileId);
   }
 
+  /** D-49: the merchant sign-in reads "By continuing you accept the terms". The app calls this once the
+   *  code is verified, recording that acceptance on any team row of the caller's that lacks it (an owner a
+   *  business was handed to never accepted in the app). Not MerchantGuard'd: a number on no business yet is
+   *  a no-op, not an error. */
+  @Post("terms/accept")
+  @HttpCode(200)
+  acceptTerms(@CurrentUser() profileId: string) {
+    return this.merchant.acceptTerms(profileId);
+  }
+
   // E3: money surfaces — weekly statement + end-of-day summary (N-13).
   @Get("statement/weekly")
   @UseGuards(MerchantGuard)

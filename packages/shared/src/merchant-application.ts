@@ -57,3 +57,27 @@ export function merchantApplicationSla(ageMs: number): MerchantApplicationSla {
   if (ageMs >= MERCHANT_APPLICATION_SLA.amberMs) return "amber";
   return "ok";
 }
+
+/** The application queue's "waiting on ops" view (`?status=waiting`): applied and in review together, the
+ *  states the 24h SLA badge and alert count. Not a stored status. */
+export const MERCHANT_APPLICATION_WAITING_VIEW = "waiting";
+
+/** MJ-RH3: the hours a new business is stored with at sign-up (08:00–22:00 every day), before it sets its own. */
+export const MERCHANT_SIGN_UP_HOURS: Readonly<Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", { open: string; close: string }>> = {
+  mon: { open: "08:00", close: "22:00" },
+  tue: { open: "08:00", close: "22:00" },
+  wed: { open: "08:00", close: "22:00" },
+  thu: { open: "08:00", close: "22:00" },
+  fri: { open: "08:00", close: "22:00" },
+  sat: { open: "08:00", close: "22:00" },
+  sun: { open: "08:00", close: "22:00" },
+};
+
+/** True when a business's hours are still exactly the sign-up default: nobody has confirmed them yet. */
+export function isMerchantSignUpHours(hours: unknown): boolean {
+  if (!hours || typeof hours !== "object") return false;
+  const h = hours as Record<string, { open?: unknown; close?: unknown } | null | undefined>;
+  const days = Object.keys(MERCHANT_SIGN_UP_HOURS) as (keyof typeof MERCHANT_SIGN_UP_HOURS)[];
+  if (Object.keys(h).length !== days.length) return false;
+  return days.every((d) => h[d]?.open === MERCHANT_SIGN_UP_HOURS[d].open && h[d]?.close === MERCHANT_SIGN_UP_HOURS[d].close);
+}

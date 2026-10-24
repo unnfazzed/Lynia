@@ -3,7 +3,7 @@
 import { MERCHANT_REJECT_REASONS, MERCHANT_REJECT_REASON_LABELS } from "@lynia/shared";
 import { REASONS } from "../lib/reasons";
 import { ConfirmModal } from "../components/ConfirmModal";
-import type { MerchantApplicationAction } from "../lib/adminTypes";
+import type { MerchantApplication, MerchantApplicationAction } from "../lib/adminTypes";
 import { logMerchantCall, moveMerchantApplication, recordMerchantLicence, verifyMerchantLicence } from "./actions";
 
 const REJECT_REASONS = MERCHANT_REJECT_REASONS.map((r) => ({ value: r, label: MERCHANT_REJECT_REASON_LABELS[r] }));
@@ -42,7 +42,7 @@ const COPY: Record<
   reject: {
     trigger: "Reject…",
     title: (n) => `Reject ${n}?`,
-    consequence: "The business is told the reason you pick, in these words. You can reopen it later.",
+    consequence: "The owner is sent the reason you pick, in these words. You can reopen it later.",
     confirm: "Reject",
     reasons: REJECT_REASONS,
     danger: true,
@@ -59,7 +59,7 @@ const COPY: Record<
   suspend: {
     trigger: "Suspend…",
     title: (n) => `Suspend ${n}?`,
-    consequence: "Customers stop seeing it and it takes no new orders. Orders already placed carry on.",
+    consequence: "Customers stop seeing it and it takes no new orders. Orders in progress carry on; scheduled ones that haven't started are cancelled.",
     confirm: "Suspend",
     reasons: REASONS.merchantSuspend,
     danger: true,
@@ -75,16 +75,39 @@ const COPY: Record<
   },
 };
 
+const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * The modal's consequence, with what this business's state adds: Go live / Resume into a customer section
+ * that is switched off (customers still won't see it), and what a suspension leaves running.
+ */
+export function applicationConsequence(action: MerchantApplicationAction, app?: Pick<MerchantApplication, "section" | "orders"> | null): string {
+  const base = COPY[action].consequence;
+  if ((action === "go_live" || action === "resume") && app?.section?.enabled === false) {
+    return `${base.replace(/( straight away)?\.$/, "")} once ${app.section.name} is switched on. It's off now, so customers can't see it yet.`;
+  }
+  if (action === "suspend" && app?.orders) {
+    const { open, scheduled } = app.orders;
+    const inProgress = `${n(open, "order", "orders")} in progress carry on.`;
+    const later = scheduled > 0 ? ` ${n(scheduled, "scheduled order hasn't", "scheduled orders haven't")} started: each is cancelled when its time comes, and the customer is told.` : "";
+    return `Customers stop seeing it and it takes no new orders. ${inProgress}${later}`;
+  }
+  return base;
+}
+
 export function ApplicationActionButton({
   merchantId,
   name,
   action,
   connected,
+  app,
 }: {
   merchantId: string;
   name: string;
   action: MerchantApplicationAction;
   connected: boolean;
+  /** Adds the section and open-order facts to the consequence (applicationConsequence). */
+  app?: Pick<MerchantApplication, "section" | "orders"> | null;
 }) {
   const c = COPY[action];
   return (
@@ -98,7 +121,7 @@ export function ApplicationActionButton({
       disabled={!connected}
       danger={c.danger}
       title={c.title(name)}
-      consequence={c.consequence}
+      consequence={applicationConsequence(action, app)}
       reasons={c.reasons}
       notePlaceholder="Anything ops should know? (optional)"
       confirmLabel={c.confirm}

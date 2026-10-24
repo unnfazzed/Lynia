@@ -128,6 +128,8 @@ export const REASONS = {
     "Biker unreachable after follow-up",
     "Goods spoiled or lost on the way back",
   ],
+  // N-12: support checked the merchant refunded the customer outside the app.
+  refundRecord: ["Merchant sent the refund — customer confirmed", "Merchant showed proof of the refund"],
   cashBanLift: ["Customer contacted and cleared", "Payment issue resolved", "Ban applied in error"],
   // Merchant web upgrade L1: the go-live switch (docs/MERCHANT-GO-LIVE-RUNBOOK.md).
   merchantGoLive: ["Ops call done — every go-live check passed"],

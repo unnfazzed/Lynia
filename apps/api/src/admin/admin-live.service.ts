@@ -10,7 +10,7 @@ import { TrackingService } from "../tracking/tracking.service";
 import { REVERSAL_CAP_USD } from "../wallet/wallet.service";
 import { AdminKitchenService } from "./admin-kitchen.service";
 import { AdminMoneyService } from "./admin-money.service";
-import { applicationsPastSlaWhere } from "./admin.service";
+import { applicationsPastSlaWhere, approvedPastSlaWhere } from "./admin.service";
 import { LIVE_ORDER_STATUSES, type LiveBreach, slaTable } from "./live-ops";
 import { LIVE_ORDER_CAP, type LiveOrders, OrderHealthService } from "./order-health";
 
@@ -57,6 +57,8 @@ export interface LiveAlerts {
   topupAnomalies: number;
   kitchenConfirmations: number;
   merchantApplications: number;
+  /** Approved businesses still not live 24h after approval (approvedPastSlaWhere). */
+  merchantsApprovedNotLive: number;
   ordersBreaching: number;
   /** Own bikers (OB-A4 tile, D-117): switched-on fleets with bikers, their bikers online now, and bills past their due day. */
   ownBikers: { fleets: number; bikersOnline: number; overdueBills: number; overdueFleets: number };
@@ -159,11 +161,12 @@ export class AdminLiveService {
     const now = Date.now();
     if (this.alertsCache && now - this.alertsCache.at < ALERTS_CACHE_MS) return this.alertsCache.value;
     const today = new Date(`${harareDayKey(new Date(now))}T00:00:00.000Z`);
-    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, monitor, fleetsWithBikers, bikersOnline, overdueBills] = await Promise.all([
+    const [sosPending, topupAnomalies, kitchenConfirmations, merchantApplications, merchantsApprovedNotLive, monitor, fleetsWithBikers, bikersOnline, overdueBills] = await Promise.all([
       this.prisma.sosEvent.count({ where: { acknowledgedAt: null } }),
       this.money.openAnomalyCount(),
       this.kitchen.countToConfirm(),
       this.prisma.merchant.count({ where: applicationsPastSlaWhere(now) }),
+      this.prisma.merchant.count({ where: approvedPastSlaWhere(now) }),
       this.liveOrders(),
       // Every business has Own bikers since the launch (2026-10-20), so a "fleet" here is one with bikers in it.
       this.prisma.rider.groupBy({ by: ["fleetOwnerProfileId"], where: { fleetOwnerProfileId: { not: null }, fleetOwner: { enabled: true } } }),
@@ -175,6 +178,7 @@ export class AdminLiveService {
       topupAnomalies,
       kitchenConfirmations,
       merchantApplications,
+      merchantsApprovedNotLive,
       ordersBreaching: monitor.counts.breach,
       ownBikers: {
         fleets: fleetsWithBikers.length,

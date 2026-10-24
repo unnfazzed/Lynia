@@ -161,7 +161,13 @@ export function KitchenOrderActions({
               disabled={busy || !anyLeft}
               onClick={() =>
                 run(
-                  () => editKitchenOrderItems(orderId, items.map((it) => ({ itemId: it.itemId, quantity: qty[it.itemId] ?? 0 }))),
+                  () =>
+                    editKitchenOrderItems(
+                      orderId,
+                      items.map((it) => ({ itemId: it.itemId, quantity: qty[it.itemId] ?? 0 })),
+                      // What this card shows: the API refuses the edit if the order changed since.
+                      items.map((it) => ({ itemId: it.itemId, quantity: it.removed ? 0 : it.quantity })),
+                    ),
                   () => setEditing(false),
                 )
               }

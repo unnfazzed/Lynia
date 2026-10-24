@@ -415,10 +415,11 @@ describe("AdminService.navCounts — X1 foodDisputes badge", () => {
     } finally {
       vi.useRealTimers();
     }
-    const w = where as unknown as { applicationStatus: { in: string[] }; pilotEnabled: boolean; createdAt: { lt: Date } };
+    const w = where as unknown as { applicationStatus: { in: string[] }; pilotEnabled: boolean; OR: Record<string, unknown>[] };
     expect(w.applicationStatus.in).toEqual(["applied", "reviewing"]);
     expect(w.pilotEnabled).toBe(false);
-    // Exactly 24h before "now".
-    expect(w.createdAt.lt.toISOString()).toBe("2026-10-17T12:00:00.000Z");
+    // Exactly 24h before "now", from when it last entered the queue: sign-up, or the last reopen.
+    const cutoff = new Date("2026-10-17T12:00:00.000Z");
+    expect(w.OR).toEqual([{ applicationQueuedAt: null, createdAt: { lt: cutoff } }, { applicationQueuedAt: { lt: cutoff } }]);
   });
 });

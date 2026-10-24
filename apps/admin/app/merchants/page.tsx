@@ -1,4 +1,10 @@
-import { MERCHANT_APPLICATION_STATUSES, MERCHANT_APPLICATION_STATUS_LABELS, MERCHANT_SHOP_KIND_LABELS, type MerchantShopKind } from "@lynia/shared";
+import {
+  MERCHANT_APPLICATION_STATUSES,
+  MERCHANT_APPLICATION_STATUS_LABELS,
+  MERCHANT_APPLICATION_WAITING_VIEW,
+  MERCHANT_SHOP_KIND_LABELS,
+  type MerchantShopKind,
+} from "@lynia/shared";
 import { adminFetchResult } from "../lib/api";
 import type { Merchant, MerchantApplicationStatus } from "../lib/adminTypes";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
@@ -39,6 +45,14 @@ function isStatus(v: unknown): v is MerchantApplicationStatus {
   return typeof v === "string" && (MERCHANT_APPLICATION_STATUSES as readonly string[]).includes(v);
 }
 
+/** A queue: one stored state, or `waiting` (applied + in review, what the 24h alert counts). */
+type QueueView = MerchantApplicationStatus | typeof MERCHANT_APPLICATION_WAITING_VIEW;
+
+const WAITING_COPY = { title: "Nothing waiting", sub: "Applied or in review, waiting on ops. Oldest first.", emptyLine: "No one is waiting." };
+
+/** A page of the list is 100 rows (the API's page size). */
+const PAGE_SIZE = 100;
+
 /** Merchant directory (X1) and the application queue (admin console v2 §5). `?filter=awaiting_go_live`
  *  (the old go-live queue) now opens the applied queue. */
 export default async function MerchantsPage({
@@ -47,10 +61,19 @@ export default async function MerchantsPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const sp = await searchParams;
-  const status: MerchantApplicationStatus | null = isStatus(sp.status) ? sp.status : sp.filter === "awaiting_go_live" ? "applied" : null;
+  const status: QueueView | null = isStatus(sp.status)
+    ? sp.status
+    : sp.status === MERCHANT_APPLICATION_WAITING_VIEW
+      ? MERCHANT_APPLICATION_WAITING_VIEW
+      : sp.filter === "awaiting_go_live"
+        ? "applied"
+        : null;
   const filter: Filter | null = !status && typeof sp.filter === "string" && sp.filter in FILTERS ? (sp.filter as Filter) : null;
-  const query = status ? `?status=${status}` : filter ? `?filter=${filter}` : "";
-  const res = await adminFetchResult<Merchant[]>(`/admin/merchants${query}`);
+  const cursor = typeof sp.cursor === "string" ? sp.cursor : null;
+  const query = status ? `status=${status}` : filter ? `filter=${filter}` : "";
+  const qs = (extra: string | null) => [query, extra].filter(Boolean).join("&");
+  const listQuery = qs(cursor ? `cursor=${encodeURIComponent(cursor)}` : null);
+  const res = await adminFetchResult<Merchant[]>(`/admin/merchants${listQuery ? `?${listQuery}` : ""}`);
   const merchants = "data" in res ? res.data : null;
   const reason = "data" in res ? undefined : res.reason;
   const connected = merchants !== null;
@@ -65,7 +88,7 @@ export default async function MerchantsPage({
     { key: "name", header: "Merchant", cell: (m) => m.name },
     { key: "type", header: "Type", cell: (m) => kindLabel(m) },
     { key: "area", header: "Area", className: "mut", cell: (m) => m.landmark ?? "—" },
-    { key: "age", header: "Waiting", cell: (m) => (m.appliedAt ? <SlaPill sla={m.sla} since={m.appliedAt} /> : "—") },
+    { key: "age", header: "Waiting", cell: (m) => (m.appliedAt ? <SlaPill sla={m.sla} since={m.waitingSince ?? m.appliedAt} /> : "—") },
     { key: "score", header: "Checks", className: "num", cell: (m) => (m.score ? `${m.score.passed}/${m.score.total}` : "—") },
     statusCol,
   ];
@@ -98,7 +121,12 @@ export default async function MerchantsPage({
     { key: "joined", header: "Joined", className: "mut", cell: (m) => m.joined },
   ];
 
-  const sub = status ? STATUS_COPY[status].sub : filter ? FILTERS[filter].sub : "Every restaurant and shop on LyniaGo";
+  const waiting = status === MERCHANT_APPLICATION_WAITING_VIEW;
+  const sub = waiting ? WAITING_COPY.sub : status ? STATUS_COPY[status].sub : filter ? FILTERS[filter].sub : "Every restaurant and shop on LyniaGo";
+  const statusTitle = waiting ? WAITING_COPY.title : status ? `Nothing ${MERCHANT_APPLICATION_STATUS_LABELS[status].toLowerCase()}` : null;
+  const statusEmptyLine = waiting ? WAITING_COPY.emptyLine : status ? STATUS_COPY[status].emptyLine : null;
+  const last = merchants && merchants.length >= PAGE_SIZE ? merchants[merchants.length - 1] : null;
+  const base = `/merchants${query ? `?${query}` : ""}`;
 
   return (
     <main className="content">
@@ -138,8 +166,8 @@ export default async function MerchantsPage({
             connected ? (
               <EmptyState
                 icon={<IconStore />}
-                title={status ? `Nothing ${MERCHANT_APPLICATION_STATUS_LABELS[status].toLowerCase()}` : filter ? FILTERS[filter].emptyTitle : "No merchants yet"}
-                line={status ? STATUS_COPY[status].emptyLine : filter ? FILTERS[filter].emptyLine : "Restaurants and shops that sign up will appear here."}
+                title={statusTitle ?? (filter ? FILTERS[filter].emptyTitle : "No merchants yet")}
+                line={statusEmptyLine ?? (filter ? FILTERS[filter].emptyLine : "Restaurants and shops that sign up will appear here.")}
               />
             ) : (
               <EmptyState
@@ -150,8 +178,22 @@ export default async function MerchantsPage({
             )
           }
         />
-        {merchants && merchants.length >= 100 ? (
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>Showing the first 100.</div>
+        {last || cursor ? (
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", marginTop: 12 }}>
+            <span>Showing {PAGE_SIZE} per page.</span>
+            <span style={{ display: "flex", gap: 12 }}>
+              {cursor ? (
+                <a href={base} style={{ color: "var(--accent-text)" }}>
+                  ↺ Back to the start
+                </a>
+              ) : null}
+              {last ? (
+                <a href={`/merchants?${qs(`cursor=${encodeURIComponent(last.id)}`)}`} style={{ color: "var(--accent-text)" }}>
+                  Next {PAGE_SIZE} →
+                </a>
+              ) : null}
+            </span>
+          </div>
         ) : null}
       </section>
     </main>

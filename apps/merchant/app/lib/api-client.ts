@@ -148,6 +148,9 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyResu
     profileId: result.profileId,
     role: result.role,
   });
+  // D-49: this screen says "By continuing you accept the terms". Record it on the person's team rows that
+  // lack it (an owner a business was handed to). Best effort: sign-in never waits on it or fails for it.
+  void authedFetch("/merchant/terms/accept", { method: "POST" }).catch(() => undefined);
   return result;
 }
 
