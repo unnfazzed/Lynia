@@ -191,6 +191,13 @@ export default async function CustomerProfilePage({
               {/* S·2: the real, blocking hold/lift (mutates Profile.onHold + audit in one tx). The
                   flag/ban controls below remain audit-only placeholders (no backing model yet). */}
               <CallButton profileId={c.id} phone={c.phoneMasked} label="Call customer" connected={connected} />
+              <CallButton
+                profileId={c.id}
+                phone={c.phoneMasked}
+                label="WhatsApp customer"
+                connected={connected}
+                via="whatsapp"
+              />
               <CustomerActions id={c.id} name={c.name} onHold={onHold} connected={connected} />
               {/* X1/R-08: only shown once actually cash-banned — the ban itself has no console "apply"
                   counterpart (see LiftCashBanAction's docstring). */}
