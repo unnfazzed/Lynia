@@ -507,24 +507,42 @@ describe("AdminMerchantsService — merchant web upgrade L1 (ops queue)", () => 
     const [row] = await svc.listMerchants("awaiting_go_live");
     await svc.listMerchants("shops");
     await svc.listMerchants();
-    expect(wheres).toEqual([{ pilotEnabled: false }, { businessType: "shop" }, {}]);
+    expect(wheres).toEqual([{ AND: [{ pilotEnabled: false }, {}] }, { AND: [{ businessType: "shop" }, {}] }, { AND: [{}, {}] }]);
     expect(row).toMatchObject({ businessType: "restaurant", shopKind: null, landmark: "Next to the rank", contactPhoneMasked: "+263•••••4567" });
   });
 
-  it("pages by cursor (100 a page), and `waiting` reads applied + in review together, oldest first", async () => {
+  it("pages by a (createdAt, id) keyset, 100 a page, and `waiting` reads applied + in review together, oldest first", async () => {
     const calls: Record<string, unknown>[] = [];
+    const at = new Date("2026-10-20T08:00:00Z");
+    const CURSOR = "00000000-0000-4000-8000-000000000001";
     const prisma = {
-      merchant: { findMany: async (args: Record<string, unknown>) => (calls.push(args), []) },
+      merchant: {
+        findMany: async (args: Record<string, unknown>) => (calls.push(args), []),
+        findUnique: async ({ where }: { where: { id: string } }) => (where.id === CURSOR ? { createdAt: at } : null),
+      },
       order: { groupBy: async () => [] },
     };
     const svc = new AdminMerchantsService(prisma as unknown as PrismaService);
-    await svc.listMerchants(undefined, undefined, "00000000-0000-4000-8000-000000000001");
-    expect(calls[0]).toMatchObject({ take: 100, cursor: { id: "00000000-0000-4000-8000-000000000001" }, skip: 1, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-    await svc.listMerchants(undefined, "waiting");
+    await svc.listMerchants(undefined, undefined, CURSOR);
+    expect(calls[0]).toMatchObject({
+      take: 100,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      where: { AND: [{}, { OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: CURSOR } }] }] },
+    });
+    expect(calls[0]).not.toHaveProperty("skip");
+    await svc.listMerchants(undefined, "waiting", CURSOR);
     expect(calls[1]).toMatchObject({
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      where: { OR: [{ applicationStatus: "applied", pilotEnabled: false }, { applicationStatus: "reviewing", pilotEnabled: false }] },
+      where: {
+        AND: [
+          { OR: [{ applicationStatus: "applied", pilotEnabled: false }, { applicationStatus: "reviewing", pilotEnabled: false }] },
+          { OR: [{ createdAt: { gt: at } }, { createdAt: at, id: { gt: CURSOR } }] },
+        ],
+      },
     });
+    // A cursor that no longer exists reads as the end of the list, never as the first page again.
+    await svc.listMerchants(undefined, undefined, "00000000-0000-4000-8000-000000000009");
+    expect(calls[2]).toMatchObject({ where: { AND: [{}, { id: { in: [] } }] } });
   });
 });
 

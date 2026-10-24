@@ -76,7 +76,9 @@ is `POST /admin/merchants/:id/application/<action> {"reason": "…", "note": "�
   otherwise). Customers still can't see it.
 - **Reject** (`reject`): the reason is a code the business can read (`MERCHANT_REJECT_REASONS` in
   `@lynia/shared`); it is stored on the merchant, returned in the merchant profile (`application.reasonCode`)
-  and pushed to the owner in those words.
+  and pushed to the owner in those words. A push reaches only a phone with LyniaGo notifications on (the
+  merchant web registers no device), and the merchant app doesn't show the reason yet (no screen is drawn
+  for it), so say it on the call too.
 - **Go live** (`go_live`): approved → live, turns `pilot_enabled` on. Refuses `no_location`, `no_live_dishes`
   (nothing a customer would see: a dish needs a photo, in a category that isn't hidden, and isn't an unlisted
   prescription item) and, for a pharmacy, `licence_not_verified`. If the business's customer section
@@ -87,7 +89,8 @@ is `POST /admin/merchants/:id/application/<action> {"reason": "…", "note": "�
   comes ("couldn't take your order", nothing charged); the suspend modal shows both counts. Resume re-checks the
   pin and the menu, and refuses a pharmacy whose recorded licence isn't verified (one with no licence recorded,
   live before licences were checked, still resumes). A suspended or rejected business can't open branches.
-- The owner gets a push on approve, reject, go live, suspend and resume (best effort, after the commit).
+- The owner gets a push on approve, reject, go live, suspend and resume (best effort, after the commit, and
+  only on a phone with LyniaGo notifications on).
 - **The SLA clock** runs from when the business entered the queue: sign-up, or reopening a rejection
   (`application_queued_at`). Approved businesses not live 24 h after approval get their own alert.
   Businesses that were switched off before migration 0100 were backfilled as `applied` and read as long
@@ -211,8 +214,9 @@ The only way ownership moves, for a sale, a family handover or an owner who lost
    (10–500 characters): say who you spoke to, how you checked, and why. It goes on the `merchant.owner_transfer`
    audit row, which commits with the handover.
 4. The old owner stays on the team as Staff. The new owner can remove them in Team if that's what was agreed.
-5. Ask the new owner to sign in to LyniaGo Merchant. Its sign-in says "By continuing you accept the terms"
-   (D-49), and that sign-in records their acceptance on the team row (support can't accept on their behalf).
+5. Ask the new owner to open LyniaGo Merchant (signing in if they aren't). Its sign-in says "By continuing you
+   accept the terms" (D-49), and the app records that acceptance on their team row the next time it loads
+   (support can't accept on their behalf).
    Until they do, an application not yet approved fails its Owner check. Both people get a push about the
    handover, and the audit row records the old and new owner.
 

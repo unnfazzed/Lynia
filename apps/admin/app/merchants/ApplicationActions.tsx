@@ -42,7 +42,7 @@ const COPY: Record<
   reject: {
     trigger: "Reject…",
     title: (n) => `Reject ${n}?`,
-    consequence: "The owner is sent the reason you pick, in these words. You can reopen it later.",
+    consequence: "The reason you pick is saved for the business in these words, and pushed to the owner's phone if they have LyniaGo notifications on. You can reopen it later.",
     confirm: "Reject",
     reasons: REJECT_REASONS,
     danger: true,

@@ -260,7 +260,9 @@ export class OrderScheduleService implements OnModuleInit, OnModuleDestroy {
         cancelledAt: now,
         rejectionReason: "shop_closed",
         merchantPhase: null,
-        ...cancelAttribution({ by: "system", status: "requested", merchantPhase: "awaiting_accept", reasonCode: "shop_closed" }),
+        // Attributed to admin: ops suspended the venue, so it isn't a "missed order" in the venue's metrics
+        // (which count system / merchant cancels at awaiting_accept).
+        ...cancelAttribution({ by: "admin", status: "requested", merchantPhase: "awaiting_accept", reasonCode: "venue_suspended" }),
       },
     });
     if (cancelled.count === 0) return;

@@ -150,8 +150,27 @@ export async function verifyOtp(phone: string, code: string): Promise<VerifyResu
   });
   // D-49: this screen says "By continuing you accept the terms". Record it on the person's team rows that
   // lack it (an owner a business was handed to). Best effort: sign-in never waits on it or fails for it.
-  void authedFetch("/merchant/terms/accept", { method: "POST" }).catch(() => undefined);
+  termsRecordedFor = null;
+  recordTermsOnce();
   return result;
+}
+
+/** Who the terms acceptance was last recorded for in this app load (see {@link recordTermsOnce}). */
+let termsRecordedFor: string | null = null;
+
+/**
+ * D-49: the person accepted the terms at this app's sign-in. Recorded on their team rows that lack it once
+ * per app load and person, so a session that predates a handover (no new sign-in) is covered too. Best
+ * effort and a no-op once recorded; a failure is retried on the next load.
+ */
+function recordTermsOnce(): void {
+  const who = loadMerchantSession()?.profileId ?? null;
+  if (!who || termsRecordedFor === who) return;
+  termsRecordedFor = who;
+  // authedRequest, not authedFetch: recording it changes nothing a shared read shows, so the reads stay cached.
+  void authedRequest("/merchant/terms/accept", { method: "POST" }).catch(() => {
+    termsRecordedFor = null;
+  });
 }
 
 export type MerchantProfile = MerchantProfileResponse;
@@ -165,6 +184,10 @@ export function getMyMerchant(): Promise<MerchantProfile> {
   return sharedRead("/merchant/me", () => authedFetch<MerchantProfile>("/merchant/me"), {
     freshMs: SHARED_READ_FRESH_MS,
     keepError: (err) => err instanceof ApiError && err.status === 403 && err.reason === "not_a_member",
+  }).then((me) => {
+    // On a business: make sure its sign-in's terms acceptance is on record (once per app load).
+    recordTermsOnce();
+    return me;
   });
 }
 

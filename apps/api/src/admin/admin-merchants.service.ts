@@ -145,10 +145,9 @@ export class AdminMerchantsService {
           ? { businessType: "shop" as const }
           : {};
     const merchants = await this.prisma.merchant.findMany({
-      where,
+      where: { AND: [where, await this.after(cursor, "desc")] },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: MERCHANT_PAGE_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: MERCHANT_DIRECTORY_SELECT,
     });
     const ids = merchants.map((m) => m.id);
@@ -167,13 +166,24 @@ export class AdminMerchantsService {
     return merchants.map((m) => this.toMerchant(m, ordersBy.get(m.id) ?? 0, debtBy.get(m.id)));
   }
 
+  /**
+   * The rows after the page's last one, by (createdAt, id) — a keyset, not Prisma's `cursor` + `skip: 1`, so a
+   * cursor row that has since left the queue (approved by someone else) never makes the next page skip a row.
+   */
+  private async after(cursor: string | undefined, dir: "asc" | "desc"): Promise<Prisma.MerchantWhereInput> {
+    if (!cursor) return {};
+    const row = await this.prisma.merchant.findUnique({ where: { id: cursor }, select: { createdAt: true } });
+    if (!row) return { id: { in: [] } };
+    const beyond = dir === "asc" ? "gt" : "lt";
+    return { OR: [{ createdAt: { [beyond]: row.createdAt } }, { createdAt: row.createdAt, id: { [beyond]: cursor } }] };
+  }
+
   private async listApplicationQueue(status: ApplicationQueueView, cursor?: string) {
     const dir = OLDEST_FIRST.includes(status) ? "asc" : "desc";
     const merchants = await this.prisma.merchant.findMany({
-      where: applicationStatusWhere(status),
+      where: { AND: [applicationStatusWhere(status), await this.after(cursor, dir)] },
       orderBy: [{ createdAt: dir }, { id: dir }],
       take: MERCHANT_PAGE_SIZE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: MERCHANT_QUEUE_SELECT,
     });
     const ids = merchants.map((m) => m.id);

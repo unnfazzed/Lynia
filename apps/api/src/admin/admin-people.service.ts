@@ -7,6 +7,7 @@ import { mapDiditPendingState } from "../kyc/didit";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { auditData, fmtDate, harareDayStart } from "./admin.shared";
+import { applicationsPastSlaWhere } from "./admin.service";
 import { humanize, money, shortId } from "./admin-read.shared";
 import {
   buildFunnel,
@@ -717,14 +718,9 @@ export class AdminPeopleService {
 
   /** PR 4's application queue owns this list: only its count and a link here. */
   private async applicationQueue(now: Date): Promise<NonNullable<StuckListView["queue"]>> {
-    const cut = new Date(now.getTime() - 24 * HOURS);
-    const count = await this.prisma.merchant.count({
-      where: {
-        applicationStatus: { in: ["applied", "reviewing"] },
-        OR: [{ applicationStatusAt: { lt: cut } }, { applicationStatusAt: null, createdAt: { lt: cut } }],
-      },
-    });
-    return { href: "/merchants?status=applied", label: "Open the application queue", count };
+    // The same rule as the Merchants badge and the alert strip (one "waiting over 24 h" number everywhere).
+    const count = await this.prisma.merchant.count({ where: applicationsPastSlaWhere(now.getTime()) });
+    return { href: "/merchants?status=waiting", label: "Open the application queue", count };
   }
 
   /** Live businesses with no order in the last 7 days. */

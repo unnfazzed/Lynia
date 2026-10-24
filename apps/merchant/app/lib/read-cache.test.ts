@@ -55,6 +55,15 @@ describe("shared reads (MJ-P2)", () => {
     expect(calls("/merchant/me")).toBe(1);
   });
 
+  it("records the sign-in's terms acceptance once per app load, whatever reads /merchant/me", async () => {
+    const { getMyMerchant } = await import("./api-client");
+    await getMyMerchant();
+    await getMyMerchant();
+    await vi.waitFor(() => expect(calls("/merchant/terms/accept")).toBe(1));
+    const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/merchant/terms/accept"));
+    expect((post?.[1] as RequestInit | undefined)?.method).toBe("POST");
+  });
+
   it("reuses an answer for the landing screen right after sign-in, and asks afresh after that", async () => {
     vi.useFakeTimers();
     const { getMyMerchant, SHARED_READ_FRESH_MS } = await import("./api-client");

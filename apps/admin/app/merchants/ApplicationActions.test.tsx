@@ -22,7 +22,9 @@ describe("merchant application actions (admin console v2 §5)", () => {
     vi.mocked(moveMerchantApplication).mockResolvedValue({ ok: true });
     render(<ApplicationActionButton merchantId="m-1" name="Sadza Republic" action="reject" connected />);
     fireEvent.click(screen.getByRole("button", { name: "Reject…" }));
-    expect(screen.getByText("The owner is sent the reason you pick, in these words. You can reopen it later.")).toBeTruthy();
+    expect(
+      screen.getByText("The reason you pick is saved for the business in these words, and pushed to the owner's phone if they have LyniaGo notifications on. You can reopen it later."),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Your business is outside the area LyniaGo covers for now." }));
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     await vi.waitFor(() => expect(moveMerchantApplication).toHaveBeenCalledWith("m-1", "reject", "outside_area", ""));

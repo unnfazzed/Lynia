@@ -48,7 +48,8 @@ describe("OrderScheduleService.sweepDueRings — a venue that is no longer live"
     const w = world({ pilotEnabled: false, applicationStatus: "suspended" });
     expect(await w.svc.sweepDueRings(new Date("2026-10-24T11:40:00Z"))).toEqual({ rung: 0 });
     expect(w.orderUpdates).toHaveLength(1);
-    expect(w.orderUpdates[0]!.data).toMatchObject({ status: "cancelled", rejectionReason: "shop_closed", merchantPhase: null, cancelledByRole: "system" });
+    // Ops' decision, so it never counts as an order the venue missed.
+    expect(w.orderUpdates[0]!.data).toMatchObject({ status: "cancelled", rejectionReason: "shop_closed", merchantPhase: null, cancelledByRole: "admin", cancelReasonCode: "venue_suspended" });
     expect(w.orderUpdates[0]!.data).not.toHaveProperty("autoAccepted");
     expect(w.events).toEqual([{ data: { orderId: "o1", status: "cancelled" } }]);
     expect(w.notifyProfiles).toHaveBeenCalledWith(["c1"], expect.objectContaining({ title: "Mama's Kitchen couldn’t take your order" }));
