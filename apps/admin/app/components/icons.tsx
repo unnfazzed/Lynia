@@ -147,6 +147,14 @@ export function IconPhone(p: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+/** lucide `message-circle` — WhatsApp, as on the app's order screen (D-53). */
+export function IconMessageCircle(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(p)}>
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+    </svg>
+  );
+}
 /** lucide `menu` — the phone top bar's nav disclosure (D-105). */
 export function IconMenu(p: SVGProps<SVGSVGElement>) {
   return (

@@ -27,7 +27,7 @@ export function RiderActions({
   id: string;
   name: string;
   suspended: boolean;
-  /** Permanently banned — a terminal state; offer neither Suspend nor Lift, only Call. */
+  /** Permanently banned — a terminal state; offer neither Suspend nor Lift, only Call and WhatsApp. */
   banned: boolean;
   /** Active rider locked out by the reliability engine (distinct from an admin suspension). */
   onHold: boolean;
@@ -38,11 +38,12 @@ export function RiderActions({
   connected: boolean;
 }) {
   // A ban is terminal and can't be undone from the console — offering "Suspend" (or "Lift") here is
-  // nonsensical. Only Call remains.
+  // nonsensical. Only Call and WhatsApp remain.
   if (banned) {
     return (
       <>
         <CallButton profileId={id} phone={phone} label="Call biker" connected={connected} />
+        <CallButton profileId={id} phone={phone} label="WhatsApp biker" connected={connected} via="whatsapp" />
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           This account is permanently banned. A ban can&apos;t be reversed from the console.
         </div>
@@ -97,6 +98,7 @@ export function RiderActions({
   return (
     <>
       <CallButton profileId={id} phone={phone} label="Call biker" connected={connected} />
+      <CallButton profileId={id} phone={phone} label="WhatsApp biker" connected={connected} via="whatsapp" />
       {onHold ? (
         <ConfirmModal
           action="rider.clear_hold"
