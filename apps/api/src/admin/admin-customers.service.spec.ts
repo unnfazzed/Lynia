@@ -55,6 +55,21 @@ describe("AdminCustomersService.listCustomers + getCustomerDetail (D-2)", () => 
     expect(rows[0]!.phoneMasked).not.toContain("111");
   });
 
+  it("tags a customer with the businesses they work at (owner, 2026-10-24)", async () => {
+    const member = {
+      ...profile,
+      merchantMemberships: [{ role: "staff", merchant: { id: "m1", name: "Mama's Kitchen" } }],
+    };
+    const prisma = {
+      profile: { findMany: async () => [member, profile] },
+      order: { groupBy: async () => [], findMany: async () => [] },
+      report: { groupBy: async () => [] },
+    };
+    const rows = await new AdminCustomersService(prisma as unknown as PrismaService).listCustomers();
+    expect(rows[0]!.merchants).toEqual([{ id: "m1", name: "Mama's Kitchen", role: "staff" }]);
+    expect(rows[1]!.merchants).toEqual([]);
+  });
+
   it("NEW-3: a cancel the BIKER (or admin) made doesn't count toward the customer's own cancel rate", async () => {
     const prisma = {
       profile: { findMany: async () => [profile] },

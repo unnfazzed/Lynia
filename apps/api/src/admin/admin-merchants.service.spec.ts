@@ -148,6 +148,45 @@ describe("AdminMerchantsService.listMerchants + getMerchantDetail (X1)", () => {
     expect(d.bookingAccount).toEqual({ id: "acct-1", onHold: true });
   });
 
+  it("lists the business's team (owner first) and its own bikers, phones masked (owner, 2026-10-24)", async () => {
+    let selected: Record<string, unknown> = {};
+    const prisma = {
+      merchant: {
+        findUnique: async (args: { select: Record<string, unknown> }) => {
+          selected = args.select;
+          return {
+            ...merchant,
+            members: [
+              { profileId: "p-own", role: "owner", displayName: "Tendai M", isPharmacist: false, createdAt: new Date("2026-07-01T00:00:00Z"), profile: { phone: "+263771111111", role: "customer" } },
+              { profileId: "p-stf", role: "staff", displayName: "Rudo", isPharmacist: true, createdAt: new Date("2026-08-01T00:00:00Z"), profile: { phone: "+263772222222", role: "merchant" } },
+            ],
+            fleetHomeRiders: [
+              { profileId: "r-1", isOnline: true, accountStatus: "active", fleetJoinedAt: new Date("2026-10-20T00:00:00Z"), profile: { firstName: "Blessing", lastName: "C", phone: "+263773333333" } },
+            ],
+          };
+        },
+      },
+      profile: { findUnique: async () => null },
+      order: {
+        count: async () => 0,
+        aggregate: async () => ({ _sum: { debtAmount: null }, _count: { _all: 0 } }),
+        findMany: async () => [],
+      },
+      merchantDish: NO_DISHES,
+      merchantDebtLedger: { findMany: async () => [] },
+    };
+    const d = (await new AdminMerchantsService(prisma as unknown as PrismaService).getMerchantDetail("m1"))!;
+    expect(selected).toHaveProperty("members");
+    expect(selected).toHaveProperty("fleetHomeRiders");
+    expect(d.team).toEqual([
+      { profileId: "p-own", name: "Tendai M", role: "owner", isPharmacist: false, phoneMasked: "+263•••••1111", hasCustomerPage: true, since: "2026-07-01" },
+      { profileId: "p-stf", name: "Rudo", role: "staff", isPharmacist: true, phoneMasked: "+263•••••2222", hasCustomerPage: false, since: "2026-08-01" },
+    ]);
+    expect(d.bikers).toEqual([
+      { profileId: "r-1", name: "Blessing C", phoneMasked: "+263•••••3333", isOnline: true, accountStatus: "active", since: "2026-10-20" },
+    ]);
+  });
+
   /** One debt-ledger row builder, newest-first ids (l1 = newest). */
   function debtRow(id: string, at: string) {
     return {

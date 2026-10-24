@@ -50,6 +50,8 @@ export class AdminCustomersService {
         holdReason: true,
         cashBanned: true,
         cashBanReason: true,
+        // The businesses this person works at, so the directory tags them with the name (owner, 2026-10-24).
+        merchantMemberships: { orderBy: { createdAt: "asc" }, select: { role: true, merchant: { select: { id: true, name: true } } } },
       },
     });
     const ids = profiles.map((p) => p.id);
@@ -116,6 +118,8 @@ export class AdminCustomersService {
         holdReason: true,
         cashBanned: true,
         cashBanReason: true,
+        // The businesses this person works at, so the directory tags them with the name (owner, 2026-10-24).
+        merchantMemberships: { orderBy: { createdAt: "asc" }, select: { role: true, merchant: { select: { id: true, name: true } } } },
       },
     });
     if (!profile) return null;
@@ -172,6 +176,7 @@ export class AdminCustomersService {
       holdReason?: string | null;
       cashBanned?: boolean;
       cashBanReason?: string | null;
+      merchantMemberships?: { role: "owner" | "staff"; merchant: { id: string; name: string } }[];
     },
     total: number,
     cancelled: number,
@@ -194,6 +199,8 @@ export class AdminCustomersService {
       // blocks ALL ordering). Default false for the pre-C4 `onHold`-only call sites that never selected it.
       cashBanned: p.cashBanned ?? false,
       cashBanReason: p.cashBanReason ?? null,
+      // The businesses this person is on the team of (owner or staff), oldest first. Empty for most customers.
+      merchants: (p.merchantMemberships ?? []).map((mm) => ({ id: mm.merchant.id, name: mm.merchant.name, role: mm.role })),
     };
   }
 

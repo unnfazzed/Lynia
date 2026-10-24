@@ -14,6 +14,16 @@ export function RecordLink({ href, children }: { href: string; children: ReactNo
   );
 }
 
+/** The business a person works at or rides for (owner, 2026-10-24): a small tag that opens its profile.
+ *  Raised above a DataTable row's stretched link like `RecordLink`. */
+export function MerchantTag({ id, name, title }: { id: string; name: string; title?: string }) {
+  return (
+    <a href={`/merchants/${id}`} className="kpill mut" title={title} style={{ position: "relative", zIndex: 2, textDecoration: "none" }}>
+      {name}
+    </a>
+  );
+}
+
 /** "#a1b2c3" linked to the order; the full id is in the tooltip. */
 export function OrderLink({ id }: { id: string }) {
   return (

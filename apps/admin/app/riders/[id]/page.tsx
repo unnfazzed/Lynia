@@ -9,7 +9,7 @@ import { RiderActions } from "./RiderActions";
 import { PlateConfirmButton } from "../PlateConfirm";
 import { WalletCreditButton, WalletReverseButton } from "./WalletActions";
 import { railLabel } from "../../lib/money-labels";
-import { OrderLink } from "../../components/links";
+import { MerchantTag, OrderLink } from "../../components/links";
 import { enumLabel, fmtDateTime, money } from "../../lib/format";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
@@ -178,6 +178,8 @@ export default async function RiderProfilePage({
         <span style={{ display: "flex", gap: 6 }}>
           {riderPill(r)}
           <Pill kind={r.kyc === "verified" ? "good" : "mut"}>{enumLabel(r.kyc)}</Pill>
+          {/* Own bikers (D-117): the business this biker rides for (owner, 2026-10-24). */}
+          {r.fleetMerchant ? <MerchantTag id={r.fleetMerchant.id} name={`${r.fleetMerchant.name} · own biker`} /> : null}
         </span>
         <Conn connected={connected} />
       </header>

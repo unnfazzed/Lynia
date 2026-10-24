@@ -11,7 +11,7 @@ import { CustomerActions, LiftCashBanAction } from "./CustomerActions";
 import { ReportsCallout } from "../../components/ReportsCallout";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../../components/states";
 import { IconAlert, IconUser } from "../../components/icons";
-import { OrderLink } from "../../components/links";
+import { MerchantTag, OrderLink } from "../../components/links";
 import { AuditCard, fetchAuditFor } from "../../components/AuditSection";
 import { fetchTimeline, TimelineCard } from "../../components/Timeline";
 import { money } from "../../lib/format";
@@ -85,6 +85,10 @@ export default async function CustomerProfilePage({
         <h1 style={{ fontSize: 18 }}>{c.name}</h1>
         <span style={{ display: "flex", gap: 6 }}>
           {c.status === "banned" ? <Pill kind="bad">banned</Pill> : onHold ? <Pill kind="bad">on hold</Pill> : flagged ? <Pill kind="bad">flagged</Pill> : <Pill kind="good">active</Pill>}
+          {/* The businesses this person works at (owner, 2026-10-24). */}
+          {c.merchants?.map((m) => (
+            <MerchantTag key={m.id} id={m.id} name={`${m.name} · ${m.role}`} />
+          ))}
         </span>
         <Conn connected={connected} />
       </header>

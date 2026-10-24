@@ -7,6 +7,7 @@ import { Pill } from "../components/StatusPill";
 import { IconBike } from "../components/icons";
 import { PlateConfirmButton } from "./PlateConfirm";
 import { shortId } from "../lib/format";
+import { MerchantTag } from "../components/links";
 
 interface Rider {
   profileId: string;
@@ -26,6 +27,8 @@ interface Rider {
   tripsCount: number;
   cancelStrikes: number;
   cooldownUntil: string | null;
+  /** Own bikers (D-117): the business this biker rides for; null for a public biker, absent on older APIs. */
+  fleetMerchant?: { id: string; name: string } | null;
 }
 
 const KYC_TABS = ["pending", "verified", "failed", "expired", "all"] as const;
@@ -77,9 +80,12 @@ function strikesCell(r: Rider) {
 
 function riderName(r: Rider) {
   return (
-    <a href={`/riders/${r.profileId}`} style={{ color: "var(--accent-text)", textDecoration: "none", fontWeight: 500 }}>
-      {r.name || shortId(r.profileId)}
-    </a>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <a href={`/riders/${r.profileId}`} style={{ color: "var(--accent-text)", textDecoration: "none", fontWeight: 500 }}>
+        {r.name || shortId(r.profileId)}
+      </a>
+      {r.fleetMerchant ? <MerchantTag id={r.fleetMerchant.id} name={r.fleetMerchant.name} title="Own biker" /> : null}
+    </span>
   );
 }
 

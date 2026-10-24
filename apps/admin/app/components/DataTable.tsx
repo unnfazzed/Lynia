@@ -22,8 +22,8 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T) => string;
-  /** When set, each row becomes a full-row link to this href. */
-  getRowHref?: (row: T) => string;
+  /** When set, each row becomes a full-row link to this href; a row it returns null for isn't a link. */
+  getRowHref?: (row: T) => string | null;
   rowLabel?: (row: T) => string;
   /** Rendered as a single full-width row when `rows` is empty. */
   empty?: ReactNode;

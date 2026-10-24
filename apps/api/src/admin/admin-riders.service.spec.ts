@@ -82,6 +82,16 @@ describe("AdminRidersService.listRiders", () => {
     expect(rows[0]!.phone).not.toContain("78200");
   });
 
+  it("tags an own biker with the business they ride for; a public biker has none (owner, 2026-10-24)", async () => {
+    const prisma = {
+      rider: { findMany: async () => [riderRow({ fleetHomeMerchant: { id: "m1", name: "Mama's Kitchen" } }), riderRow({ profileId: "r2", fleetHomeMerchant: null })] },
+      order: { findMany: async () => [] },
+    };
+    const rows = await new AdminRidersService(prisma as unknown as PrismaService, noNotifications, noGateway).listRiders();
+    expect(rows[0]!.fleetMerchant).toEqual({ id: "m1", name: "Mama's Kitchen" });
+    expect(rows[1]!.fleetMerchant).toBeNull();
+  });
+
   it("REVEALS the full phone when the biker is a party on a LIVE order right now", async () => {
     let orderWhere: { status?: { in: string[] } } = {};
     const prisma = {
