@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.57.0](https://github.com/unnfazzed/Lynia/compare/v0.56.0...v0.57.0) (2026-10-24)
+
+
+### Features
+
+* **biker:** Own bikers lane C PR 1 — joining, the fleet board and the fleet offer (OB-R1–R7) ([#1268](https://github.com/unnfazzed/Lynia/issues/1268)) ([dd4e2e1](https://github.com/unnfazzed/Lynia/commit/dd4e2e14dc337c471314df7a3ce71db5b33f7918))
+* **biker:** Own bikers lane C PR 2 — the fleet job, Done, Money, Leave and the end of the fleet (OB-R8–R13) ([#1271](https://github.com/unnfazzed/Lynia/issues/1271)) ([d38a058](https://github.com/unnfazzed/Lynia/commit/d38a05853732608b43c47c31994d0465a16efca9))
+* live in Harare and Bulawayo — copy, 25 km parcel reach, app follows the user's town (D-120) ([#1286](https://github.com/unnfazzed/Lynia/issues/1286)) ([42e22d1](https://github.com/unnfazzed/Lynia/commit/42e22d14cecf57ac1cb2caf60a7ddb31eeab2c1c))
+* **own-bikers:** launch for every business — no launch switch, commission billing, /j/ links, Preferred riders retired ([#1275](https://github.com/unnfazzed/Lynia/issues/1275)) ([9fd9a46](https://github.com/unnfazzed/Lynia/commit/9fd9a46f215112eb6dd237f92675c002ed7409eb))
+* **rider:** make the parcel pickup photo optional (D-118) ([#1278](https://github.com/unnfazzed/Lynia/issues/1278)) ([468435c](https://github.com/unnfazzed/Lynia/commit/468435cfc462d1b39b6885c08c823a003ca27454))
+
+
+### Bug Fixes
+
+* **mobile:** web polish — one focus ring on Send, no flag-off retries, typed pickup kept (QA-B05/B06/B07) ([#1287](https://github.com/unnfazzed/Lynia/issues/1287)) ([657dff1](https://github.com/unnfazzed/Lynia/commit/657dff1b728a428d8d5921466dd50c4c63d84102))
+
 ## [0.56.0](https://github.com/unnfazzed/Lynia/compare/v0.55.0...v0.56.0) (2026-10-19)
 
 
