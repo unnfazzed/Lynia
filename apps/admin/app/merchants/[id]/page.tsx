@@ -1,6 +1,14 @@
 import { MERCHANT_SHOP_KIND_LABELS, type MerchantShopKind, tokens } from "@lynia/shared";
 import { adminFetchResult } from "../../lib/api";
-import type { MerchantApplication, MerchantDebtLedgerRow, MerchantDetail, MerchantMetrics, TripRow } from "../../lib/adminTypes";
+import type {
+  MerchantApplication,
+  MerchantDebtLedgerRow,
+  MerchantDetail,
+  MerchantFleetBiker,
+  MerchantMetrics,
+  MerchantTeamMember,
+  TripRow,
+} from "../../lib/adminTypes";
 import { DataTable, type Column } from "../../components/DataTable";
 import { KpiCard } from "../../components/KpiCard";
 import { KeyValue } from "../../components/KeyValue";
@@ -109,6 +117,35 @@ export default async function MerchantProfilePage({
       cell: (l) => <RecordLink href={`/riders/${l.riderId}`}>{l.riderName || shortId(l.riderId)}</RecordLink>,
     },
     { key: "note", header: "Note", className: "mut", cell: (l) => l.note ?? "—" },
+  ];
+
+  // The people behind the business (owner, 2026-10-24): its team and its own bikers.
+  const teamCols: Column<MerchantTeamMember>[] = [
+    { key: "name", header: "Name", cell: (p) => p.name },
+    {
+      key: "role",
+      header: "Role",
+      cell: (p) => (
+        <span style={{ display: "inline-flex", gap: 6 }}>
+          <Pill kind={p.role === "owner" ? "good" : "mut"}>{p.role}</Pill>
+          {p.isPharmacist ? <Pill kind="mut">pharmacist</Pill> : null}
+        </span>
+      ),
+    },
+    { key: "phone", header: "Phone", className: "mono", cell: (p) => p.phoneMasked },
+    { key: "since", header: "Since", className: "mut", cell: (p) => p.since },
+  ];
+
+  const bikerCols: Column<MerchantFleetBiker>[] = [
+    { key: "name", header: "Biker", cell: (b) => b.name || shortId(b.profileId) },
+    { key: "phone", header: "Phone", className: "mono", cell: (b) => b.phoneMasked },
+    {
+      key: "status",
+      header: "Status",
+      cell: (b) =>
+        b.accountStatus !== "active" ? <Pill kind="bad">{b.accountStatus}</Pill> : <Pill kind={b.isOnline ? "good" : "mut"}>{b.isOnline ? "online" : "offline"}</Pill>,
+    },
+    { key: "since", header: "Joined fleet", className: "mut", cell: (b) => b.since ?? "—" },
   ];
 
   return (
@@ -267,6 +304,31 @@ export default async function MerchantProfilePage({
           </div>
         </div>
       </div>
+
+      {m.team || m.bikers ? (
+        <section className="card" style={{ marginTop: tokens.space.lg }}>
+          <div className="block-title">Team · {m.team?.length ?? 0}</div>
+          <DataTable
+            columns={teamCols}
+            rows={m.team ?? []}
+            rowKey={(p) => p.profileId}
+            getRowHref={(p) => (p.hasCustomerPage ? `/customers/${p.profileId}` : null)}
+            rowLabel={(p) => `Open ${p.name}`}
+            empty={<div className="mut" style={{ textAlign: "center", padding: 20 }}>No one on the team yet.</div>}
+          />
+          <div className="block-title" style={{ marginTop: tokens.space.lg }}>
+            Own bikers · {m.bikers?.length ?? 0}
+          </div>
+          <DataTable
+            columns={bikerCols}
+            rows={m.bikers ?? []}
+            rowKey={(b) => b.profileId}
+            getRowHref={(b) => `/riders/${b.profileId}`}
+            rowLabel={(b) => `Open ${b.name}`}
+            empty={<div className="mut" style={{ textAlign: "center", padding: 20 }}>No own bikers ride from this branch.</div>}
+          />
+        </section>
+      ) : null}
 
       <section className="card" style={{ marginTop: tokens.space.lg }}>
         <div className="block-title">

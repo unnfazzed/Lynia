@@ -49,6 +49,8 @@ export interface Customer {
    *  (which blocks ALL ordering). Written only by a rider's refusal report (FoodDebtService). */
   cashBanned: boolean;
   cashBanReason: string | null;
+  /** The businesses this person is on the team of (owner, 2026-10-24). Absent on older APIs. */
+  merchants?: { id: string; name: string; role: "owner" | "staff" }[];
 }
 
 export interface CustomerFlag {
@@ -499,6 +501,31 @@ export interface MerchantDetail extends Merchant {
   freeDelivery?: boolean;
   /** Absent on an API from before the shop-front review. */
   shopFront?: MerchantShopFront;
+  /** Who works at the business, owner first (owner, 2026-10-24). Absent on older APIs. */
+  team?: MerchantTeamMember[];
+  /** The own bikers whose home branch this is (D-117). Absent on older APIs. */
+  bikers?: MerchantFleetBiker[];
+}
+
+export interface MerchantTeamMember {
+  profileId: string;
+  /** The name the business knows them by. */
+  name: string;
+  role: "owner" | "staff";
+  isPharmacist: boolean;
+  phoneMasked: string;
+  /** False for a merchant-only profile, which has no admin customer page. */
+  hasCustomerPage: boolean;
+  since: string;
+}
+
+export interface MerchantFleetBiker {
+  profileId: string;
+  name: string;
+  phoneMasked: string;
+  isOnline: boolean;
+  accountStatus: "active" | "suspended" | "banned";
+  since: string | null;
 }
 
 /* ── Orders to confirm (auto-accept: GET /admin/kitchen-confirmations) ── */
@@ -613,6 +640,8 @@ export interface RiderDetail {
   reports?: number;
   /** The recent conduct/safety report entries (A-05) — what `<ReportsCallout>` renders. */
   reportLog?: ReportEntry[];
+  /** Own bikers (D-117): the business this biker rides for; null for a public biker, absent on older APIs. */
+  fleetMerchant?: { id: string; name: string } | null;
   trail: TripRow[];
 }
 

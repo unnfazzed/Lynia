@@ -127,6 +127,37 @@ describe("Merchant profile: holding a business's bookings (merchant web upgrade 
   });
 });
 
+describe("Merchant profile: the people behind the business (owner, 2026-10-24)", () => {
+  it("lists the team and the own bikers, each opening their own page", async () => {
+    await open(
+      detail({
+        team: [
+          { profileId: "p-own", name: "Tendai M", role: "owner", isPharmacist: false, phoneMasked: "+263•••••1111", hasCustomerPage: true, since: "2026-07-01" },
+          { profileId: "p-stf", name: "Rudo", role: "staff", isPharmacist: true, phoneMasked: "+263•••••2222", hasCustomerPage: false, since: "2026-08-01" },
+        ],
+        bikers: [{ profileId: "r-1", name: "Blessing C", phoneMasked: "+263•••••3333", isOnline: true, accountStatus: "active", since: "2026-10-20" }],
+      }),
+    );
+    expect(screen.getByText("Team · 2")).toBeTruthy();
+    expect(screen.getByText("Own bikers · 1")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Tendai M" }).getAttribute("href")).toBe("/customers/p-own");
+    // A merchant-only profile has no customer page to open.
+    expect(screen.queryByRole("link", { name: "Open Rudo" })).toBeNull();
+    expect(screen.getByText("pharmacist")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Blessing C" }).getAttribute("href")).toBe("/riders/r-1");
+  });
+
+  it("says so when there are no own bikers", async () => {
+    await open(detail({ team: [], bikers: [] }));
+    expect(screen.getByText("No own bikers ride from this branch.")).toBeTruthy();
+  });
+
+  it("shows no people card on an API that doesn't send them", async () => {
+    await open(detail());
+    expect(screen.queryByText(/^Team ·/)).toBeNull();
+  });
+});
+
 describe("Merchant profile: Taking orders (auto-accept)", () => {
   it("a restaurant shows its three switches with their current state", async () => {
     await open(detail({ businessType: "restaurant", shopKind: null, autoAccept: true, showPhoneToCustomers: false, freeDelivery: false }));

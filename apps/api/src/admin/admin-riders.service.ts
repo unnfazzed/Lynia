@@ -61,6 +61,8 @@ export class AdminRidersService {
         cooldownUntil: true,
         duplicateIdFlag: true,
         profile: { select: { firstName: true, lastName: true, phone: true } },
+        // Own bikers (D-117): the business a fleet biker rides for, tagged on the roster (owner, 2026-10-24).
+        fleetHomeMerchant: { select: { id: true, name: true } },
       },
     });
 
@@ -96,6 +98,8 @@ export class AdminRidersService {
       // an auto-held rider too.
       accountStatus: r.accountStatus,
       onHold: r.onHold,
+      // Null for a public biker.
+      fleetMerchant: r.fleetHomeMerchant ?? null,
       ratingAvg: r.ratingAvg,
       ratingCount: r.ratingCount,
       tripsCount: r.tripsCount,
@@ -451,6 +455,7 @@ export class AdminRidersService {
         onHold: true,
         reliabilityScore: true,
         profile: { select: { firstName: true, lastName: true, phone: true, createdAt: true } },
+        fleetHomeMerchant: { select: { id: true, name: true } },
       },
     });
     if (!rider) return null;
@@ -538,6 +543,8 @@ export class AdminRidersService {
       reports: reports.count,
       reportLog: reports.recent,
       joined: fmtDate(rider.profile.createdAt),
+      // Own bikers (D-117): the business this biker rides for; null for a public biker.
+      fleetMerchant: rider.fleetHomeMerchant ?? null,
       trail: recent.map((o) => toTripRow(o)),
     };
   }

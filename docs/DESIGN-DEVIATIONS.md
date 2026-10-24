@@ -5986,3 +5986,19 @@ launch edits.
   illustrations' alt text describes the drawings and is unchanged.
 - **Upstream:** the kits and the website handoff should name both towns and draw the second dot. The kit is not edited.
 
+
+## D-121 · Admin: a business's team and own bikers on its profile, and the business's name tagged on its people — APPROVED (owner, 2026-10-24)
+
+**Owner (2026-10-24):** *"I want people that are associated to a merchant to be mentioned, and bikers as well .. under
+the merchant information .. under customers they must also have a tag of the merchant name."* None of this is drawn in
+the admin kit.
+
+- **Merchant profile.** A card after the details lists **Team · N** (each `MerchantMember`, owner first: name the business
+  knows them by, owner/staff pill, a pharmacist pill, masked phone, since) and **Own bikers · N** (the riders whose
+  `fleetHomeMerchantId` is this branch: name, masked phone, online/offline or their suspension, joined fleet). A row opens
+  the person's customer or biker page; a merchant-only profile has no customer page, so its row isn't a link. Phones stay
+  masked as in the directories (A-03); the person's own page reveals them.
+- **Customers.** A customer on a business's team carries a small pill with the business's name beside their name in the
+  directory, and "name · owner/staff" in the header of their profile. The pill opens the business.
+- **Bikers.** An own biker carries the same pill in the bikers directory, and "name · own biker" in their profile's header.
+- **Upstream:** the admin kit should draw the people card and the business tag. The kit is not edited.

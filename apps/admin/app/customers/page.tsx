@@ -7,6 +7,7 @@ import { Pill } from "../components/StatusPill";
 import { FilterNav } from "../components/FilterNav";
 import { Conn, EmptyState, OfflineBanner, reasonLine, reasonTitle } from "../components/states";
 import { IconUser } from "../components/icons";
+import { MerchantTag } from "../components/links";
 
 /**
  * Customers directory (kit `customers.html`). Masked contact, spend and cancel pattern; flagged
@@ -41,7 +42,22 @@ export default async function CustomersPage({
   const connected = customers !== null;
 
   const columns: Column<Customer>[] = [
-    { key: "name", header: "Customer", cell: (c) => c.name },
+    {
+      key: "name",
+      header: "Customer",
+      // A person on a business's team carries its name (owner, 2026-10-24).
+      cell: (c) =>
+        c.merchants?.length ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {c.name}
+            {c.merchants.map((m) => (
+              <MerchantTag key={m.id} id={m.id} name={m.name} title={m.role === "owner" ? "Owner" : "Staff"} />
+            ))}
+          </span>
+        ) : (
+          c.name
+        ),
+    },
     { key: "phone", header: "Phone", className: "mono", cell: (c) => c.phoneMasked },
     { key: "orders", header: "Orders", className: "num", cell: (c) => c.orders },
     { key: "spend", header: "Spend", className: "num", cell: (c) => money(c.spend) },

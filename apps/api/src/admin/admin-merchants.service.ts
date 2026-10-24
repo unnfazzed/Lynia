@@ -226,6 +226,22 @@ export class AdminMerchantsService {
         logoThumbKey: true,
         coverPhotoUrl: true,
         hours: true,
+        // The people behind the business (owner, 2026-10-24): its team, owner first, and the own bikers whose
+        // home branch it is (D-117).
+        members: {
+          orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+          select: { profileId: true, role: true, displayName: true, isPharmacist: true, createdAt: true, profile: { select: { phone: true, role: true } } },
+        },
+        fleetHomeRiders: {
+          orderBy: { fleetJoinedAt: "asc" },
+          select: {
+            profileId: true,
+            isOnline: true,
+            accountStatus: true,
+            fleetJoinedAt: true,
+            profile: { select: { firstName: true, lastName: true, phone: true } },
+          },
+        },
       },
     });
     if (!merchant) return null;
@@ -286,6 +302,25 @@ export class AdminMerchantsService {
       pin: location?.point ?? null,
       bookingAccount: bookingAccount ? { id: bookingAccount.id, onHold: bookingAccount.onHold } : null,
       shopFront,
+      // Phones masked like the directories (A-03): each person's own page is where ops calls them.
+      team: (merchant.members ?? []).map((mm) => ({
+        profileId: mm.profileId,
+        name: mm.displayName,
+        role: mm.role,
+        isPharmacist: mm.isPharmacist,
+        phoneMasked: maskPhone(mm.profile.phone),
+        // Only a customer-side profile has an admin customer page to open.
+        hasCustomerPage: mm.profile.role === "customer" || mm.profile.role === "rider",
+        since: fmtDate(mm.createdAt),
+      })),
+      bikers: (merchant.fleetHomeRiders ?? []).map((r) => ({
+        profileId: r.profileId,
+        name: `${r.profile.firstName} ${r.profile.lastName}`.trim(),
+        phoneMasked: maskPhone(r.profile.phone),
+        isOnline: r.isOnline,
+        accountStatus: r.accountStatus,
+        since: r.fleetJoinedAt ? fmtDate(r.fleetJoinedAt) : null,
+      })),
       trail: recentOrders.map((o) => ({
         id: o.id,
         route: routeOf(o.pickup, o.dropoff),
