@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import { ApiError } from "../api/client";
 import { requestKycPhotoUpload, uploadImage } from "../api/uploads";
 import { updateRiderProfile } from "../api/riders";
 import { downscaleForUpload, type UploadImageSource } from "./image-downscale";
@@ -93,4 +94,14 @@ export function licenceExpiredOn(iso: string | null | undefined, now: Date = new
   if (!iso) return false;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return new Date(`${iso}T00:00:00Z`).getTime() < today;
+}
+
+/** Save the typed licence (PATCH /riders/me). The UI calls this rather than the API (mobile-ui-no-api). */
+export async function saveLicenceDetails(licenceNumber: string, licenceExpiresOn: string): Promise<void> {
+  await updateRiderProfile({ licenceNumber, licenceExpiresOn });
+}
+
+/** A refused photo (wrong type, too large) rather than a connection problem: the retry won't help. */
+export function isRefusedUpload(e: unknown): boolean {
+  return e instanceof ApiError && (e.status === 422 || e.status === 400);
 }

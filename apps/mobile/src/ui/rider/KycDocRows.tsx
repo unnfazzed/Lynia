@@ -3,11 +3,10 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import React, { useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import type { Me } from "../../api/auth";
-import { ApiError } from "../../api/client";
-import { updateRiderProfile } from "../../api/riders";
 import type { UploadImageSource } from "../../logic/image-downscale";
 import {
   formatLicenceExpiry,
+  isRefusedUpload,
   KYC_DOC_SLOTS,
   type KycDocSlot,
   kycDocsComplete,
@@ -15,6 +14,7 @@ import {
   parseLicenceExpiry,
   pickKycDoc,
   saveKycDoc,
+  saveLicenceDetails,
 } from "../../logic/manual-kyc";
 import type { PhotoSource } from "../../logic/rider-documents";
 import { EVENTS, track } from "../../telemetry/events";
@@ -79,7 +79,7 @@ export async function runKycDocUpload(qc: QueryClient, slot: KycDocSlot, shot: U
     return "ok";
   } catch (e) {
     // A refused photo (wrong type, too large) is not a connection problem: drop it and say so.
-    if (e instanceof ApiError && (e.status === 422 || e.status === 400)) {
+    if (isRefusedUpload(e)) {
       setUpload(slot, null);
       return "refused";
     }
@@ -132,7 +132,7 @@ export function KycDocRows({ rider, AddPill, onBlocked }: KycDocRowsProps): Reac
     setExpiryErr(iso ? (licenceExpiredOn(iso) ? MK.licenceExpired : null) : MK.licenceExpiryBad);
     if (n.length < 4 || !iso || licenceExpiredOn(iso)) return;
     try {
-      await updateRiderProfile({ licenceNumber: n, licenceExpiresOn: iso });
+      await saveLicenceDetails(n, iso);
       qc.setQueryData<Me>(["me"], (cur) => (cur?.rider ? { ...cur, rider: { ...cur.rider, licenceNumber: n.replace(/\s+/g, " ").toUpperCase(), licenceExpiresOn: iso } } : cur));
       void qc.invalidateQueries({ queryKey: ["me"] });
       setLicenceSheet(false);
