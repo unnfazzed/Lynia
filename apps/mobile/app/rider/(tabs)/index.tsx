@@ -46,6 +46,7 @@ import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "
 import { boardPollMs } from "../../../src/logic/board-poll";
 import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from "../../../src/logic/last-known-fix";
 import { EVENTS, track } from "../../../src/telemetry/events";
+import { kycDocsComplete } from "../../../src/logic/manual-kyc";
 import { refusedJobCommission, topUpGate } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
@@ -648,6 +649,8 @@ export default function RiderHome(): React.ReactElement {
     // server state (a lock, a decline) still outranks it once `me` is re-read. Never the server's words.
     onError: (e) => {
       endKycCheckHold();
+      // D-122: a reopen that failed before any check opened, visible in PostHog (status + code, no PII).
+      track(EVENTS.kycLaunch, { lane: "none", outcome: "start_failed", status: e instanceof ApiError ? e.status : 0, code: e instanceof ApiError ? (e.code ?? "") : "" });
       if (e instanceof ApiError && isKycRetryRateLimited(e)) setError(KYC_RETRY_TRY_LATER);
       else setLaunch({ outcome: "failed", at: Date.now() });
       void qc.invalidateQueries({ queryKey: ["me"] });
@@ -1260,9 +1263,12 @@ export default function RiderHome(): React.ReactElement {
           // F6 "Expired 2 Oct 2026" (D-82 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
           expiredAt={parseIsoDay(rider?.kycExpiredOn)}
           onExit={exitToCustomer}
-          onRetry={() => retryM.mutate()}
+          // D-122 (manual KYC): there is no check to reopen — a decline is fixed by retaking the photos in
+          // Bike & documents (a complete set puts the biker back in the review queue).
+          onRetry={rider?.kycMode === "manual" ? () => router.push("/rider/documents") : () => retryM.mutate()}
           retrying={!!pendingOrQueued(retryM)}
           onHelp={whatsappSupport}
+          onAddDocs={rider?.kycMode === "manual" && !kycDocsComplete(rider?.kycDocs) ? () => router.push("/rider/documents") : undefined}
         />
         <KycCheckHost />
       </>

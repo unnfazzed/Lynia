@@ -6002,3 +6002,44 @@ the admin kit.
   directory, and "name · owner/staff" in the header of their profile. The pill opens the business.
 - **Bikers.** An own biker carries the same pill in the bikers directory, and "name · own biker" in their profile's header.
 - **Upstream:** the admin kit should draw the people card and the business tag. The kit is not edited.
+
+
+## D-122 · Manual KYC while Didit is unfunded: biker document photos, licence details, F1 "Add your documents" — APPROVED (owner, 2026-11-04)
+
+**Owner (2026-11-04):** Didit's free allowance ended on 1 Nov 2026 and there is no money to top it up, so bikers are
+reviewed by hand. The owner approved the plan in office hours, then in `/plan-design-review` and `/plan-eng-review`
+(decisions recorded in the gstack design doc `manual-kyc`), and approved all follow-up improvements, with the rule that
+**bikers have low-end phones with low-quality cameras**. None of this is drawn in First Run v2 (E1–E6, F1).
+
+- **Bike & documents (E1), manual mode only** (`rider.kycMode === "manual"`, or a biker who already has document photos).
+  Three more rows under National ID, built exactly like the E1 Photo row (soft "+ Add" → the camera/gallery sheet → an
+  upload per row that reuses E2d "Uploading…", E6 "Upload didn't finish" + "Try again", and "Change"). No Submit button.
+  A **Licence details** row (number and expiry date) under them. When no national ID is on file, the National ID row
+  gets a soft "+ Add" that opens a one-field sheet (the existing PD placeholder and format error). The counter reads
+  **"N of 6"** (ID check, three document photos, biker photo, plate); outside manual mode it stays E1's "N of 3".
+- **F1 (manual review).** One soft pill, **"Add your documents"**, under the checklist, opening Bike & documents. It is
+  hidden once all three photos are in. In manual mode, F4's "Try again" opens Bike & documents (there is no check to
+  reopen); a complete re-upload puts the biker back in the review queue.
+- **Go-online refusal** `licence_expired` gets its own gate copy (never "Your ID has expired").
+- **Admin KYC review.** An "ID documents (manual review)" card of three tiles in the Documents style (170px, `doc-ph`
+  placeholder), each opening the full-size image in a new tab; "Licence no." and "Licence expires" in Applicant; the KYC
+  queue gains a muted "Docs x/3" column.
+- **Low-end phones.** Documents shoot on the back camera (the selfie on the front), gallery always allowed, the existing
+  1280px / JPEG 0.7 downscale, the existing E6 retry for dropped connections.
+
+**Copy, verbatim.** Approved by the owner on 2026-11-04 (design review):
+"ID card (front)", "Driver's licence", "Selfie holding your ID", "For your ID check", "Lay it flat, all four corners in
+view, no glare.", "Hold your ID next to your face.", "Add your documents", decline reasons "Photos unreadable",
+"Licence expired", "Selfie doesn't show your face".
+
+New in the build, **awaiting the owner's word check** on the PR (they follow the approved behaviour; change any word and
+the app follows): "Licence details", "Number and expiry date", "Licence number", "Expiry date", "DD/MM/YYYY", "Use the
+format DD/MM/YYYY", "Enter your licence number", "This licence has expired", "Your national ID number", "Save", "of 6";
+gate "Your licence has expired" / "You can't go online until your new driving licence is approved. Add it in Bike &
+documents."; pushes "Your licence expires soon" / "Add your new driving licence in Bike & documents to keep riding." and
+"Your licence has expired" / "You're offline until your new driving licence is approved. Add it in Bike & documents.";
+Telegram "🪪 Biker docs ready" and "⚠️ Biker licence expired".
+
+- **Retired when:** Didit is funded again and PR 2 (the "Verify with Didit" nudge) lands; the document rows stay for
+  bikers who still hold photos until they pass Didit.
+- **Upstream:** First Run v2 should draw the manual-review document rows, the licence row and F1's pill. The kit is not edited.

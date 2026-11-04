@@ -86,6 +86,13 @@ export const PII_MANIFEST: Readonly<Record<string, PiiEntry>> = {
   },
 
   // --- Rider ---
+  // D-122 (manual KYC): the biker's ID-document photos. DB keys nulled; the objects deleted post-commit with the
+  // KYC photo (`kyc-object`).
+  kyc_id_front_key: { column: "kyc_id_front_key", where: "riders", tables: ["riders"], disposition: "null", note: "D-122 ID-card photo key nulled on erase; object deleted post-commit." },
+  kyc_licence_key: { column: "kyc_licence_key", where: "riders", tables: ["riders"], disposition: "null", note: "D-122 licence photo key nulled on erase; object deleted post-commit." },
+  kyc_selfie_id_key: { column: "kyc_selfie_id_key", where: "riders", tables: ["riders"], disposition: "null", note: "D-122 selfie-with-ID photo key nulled on erase; object deleted post-commit." },
+  licence_number: { column: "licence_number", where: "riders", tables: ["riders"], disposition: "null", note: "D-122 typed driving licence number nulled on erase." },
+  licence_expires_on: { column: "licence_expires_on", where: "riders", tables: ["riders"], disposition: "null", note: "D-122 licence expiry day nulled on erase." },
   bike_reg: { column: "bike_reg", where: "riders", tables: ["riders"], disposition: "null", note: "Emptied on erase (NOT NULL column)." },
   vehicle_info: { column: "vehicle_info", where: "riders", tables: ["riders"], disposition: "null", note: "Nulled on erase." },
   verified_id_number: {
@@ -354,6 +361,7 @@ export const NON_PII_COLUMNS: Readonly<Record<string, string>> = {
   // Mirrors the audit_logs.note/resolution_note reasoning: content authored FOR a public listing,
   // not personal data supplied to describe the account holder.
   "merchants.description": "Merchant.description is the shop's own one-line blurb on its public storefront (D-30) — business-listing copy, not personal data about the owner.",
+  "merchant_documents.licence_number": "MerchantDocument.licenceNumber is the business's trading-licence number on its own application document — about the business, not a person (the D-122 rider licence_number pattern matches its name).",
   "merchants.cover_photo_url": "Merchant.coverPhotoUrl is the shop's public cover banner (D-30) — a storefront photo of the business, not of or about a person.",
   "merchant_dishes.description": "MerchantDish.description is the menu-item description on the public menu — business content, not personal data.",
   "merchant_dishes.photo_url": "MerchantDish.photoUrl is the dish's own menu photo (D-31/D-32) — a photo of food, not of or about a person.",

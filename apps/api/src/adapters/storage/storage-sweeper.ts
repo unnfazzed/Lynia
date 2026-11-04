@@ -71,10 +71,24 @@ export class StorageSweeper {
         // The rider selfie; profile.photoUrl is included defensively (the erasure purge treats the two
         // together), so a key either column points at is never swept.
         const [riders, profiles] = await Promise.all([
-          this.prisma.rider.findMany({ where: { photoUrl: { in: keys } }, select: { photoUrl: true } }),
+          // D-122: the manual-KYC document photos share the kyc/ namespace — never sweep a referenced one.
+          this.prisma.rider.findMany({
+            where: {
+              OR: [
+                { photoUrl: { in: keys } },
+                { kycIdFrontKey: { in: keys } },
+                { kycLicenceKey: { in: keys } },
+                { kycSelfieIdKey: { in: keys } },
+              ],
+            },
+            select: { photoUrl: true, kycIdFrontKey: true, kycLicenceKey: true, kycSelfieIdKey: true },
+          }),
           this.prisma.profile.findMany({ where: { photoUrl: { in: keys } }, select: { photoUrl: true } }),
         ]);
-        found.push(...riders.map((r) => r.photoUrl), ...profiles.map((p) => p.photoUrl));
+        found.push(
+          ...riders.flatMap((r) => [r.photoUrl, r.kycIdFrontKey, r.kycLicenceKey, r.kycSelfieIdKey]),
+          ...profiles.map((p) => p.photoUrl),
+        );
         break;
       }
       case "pickup": {

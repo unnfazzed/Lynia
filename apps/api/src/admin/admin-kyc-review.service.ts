@@ -4,10 +4,13 @@ import { maskPhone } from "../common/phone-mask";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { classifyStoredDiditStatus } from "../kyc/didit";
 import { PrismaService } from "../prisma/prisma.service";
+import { auditData } from "./admin.shared";
 
 // Long enough that a reviewer working through the queue doesn't have the image expire mid-review;
 // short enough that a leaked/cached admin response can't be used to fetch the photo indefinitely.
 const KYC_PHOTO_READ_URL_TTL_SECONDS = 15 * 60;
+/** D-122: the audit action an admin view of a biker's ID-document photos writes. */
+export const KYC_DOCS_VIEW_ACTION = "rider.kyc_docs_view";
 
 @Injectable()
 export class AdminKycReviewService {
@@ -27,7 +30,7 @@ export class AdminKycReviewService {
    * only the overall verdict flows through the webhook into `kycStatus`. Those fields are therefore
    * omitted here; the console renders the checks panel from `kycStatus` + the reviewer's own compare.
    */
-  async getKycReview(profileId: string) {
+  async getKycReview(profileId: string, actor?: string) {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
       select: {
@@ -49,6 +52,12 @@ export class AdminKycReviewService {
         verifiedIdNumber: true,
         updatedAt: true,
         photoUrl: true,
+        // D-122 (manual KYC): the biker's own document photos (storage keys) and typed licence.
+        kycIdFrontKey: true,
+        kycLicenceKey: true,
+        kycSelfieIdKey: true,
+        licenceNumber: true,
+        licenceExpiresOn: true,
         profile: { select: { firstName: true, lastName: true, phone: true, idNumber: true, idNumberHash: true } },
       },
     });
@@ -62,6 +71,20 @@ export class AdminKycReviewService {
     const photoUrl = rider.photoUrl
       ? await this.storage.createReadUrl(rider.photoUrl, KYC_PHOTO_READ_URL_TTL_SECONDS).catch(() => null)
       : null;
+    // D-122: same signed, short-lived read for each manual-KYC document photo (null = none / signing failed).
+    const sign = (key: string | null) =>
+      key ? this.storage.createReadUrl(key, KYC_PHOTO_READ_URL_TTL_SECONDS).catch(() => null) : Promise.resolve(null);
+    const [idFrontUrl, licenceUrl, selfieIdUrl] = await Promise.all([
+      sign(rider.kycIdFrontKey),
+      sign(rider.kycLicenceKey),
+      sign(rider.kycSelfieIdKey),
+    ]);
+    // D-122 privacy: every admin view of the biker's ID documents is recorded (who, when). Best-effort.
+    if (actor && (rider.kycIdFrontKey || rider.kycLicenceKey || rider.kycSelfieIdKey)) {
+      await this.prisma.auditLog
+        .create({ data: auditData(actor, KYC_DOCS_VIEW_ACTION, profileId, "kyc_docs", null) })
+        .catch(() => undefined);
+    }
 
     // A-04 duplicate-account guard: the live set of OTHER accounts sharing this national ID, so the
     // reviewer can compare them before approving (post-IR26-01 a LIVE collision is blocked at claim
@@ -118,6 +141,10 @@ export class AdminKycReviewService {
       // Short-lived signed GET URL (or null: no photo yet, or signing failed) — never the raw object
       // key, and never a public bucket URL.
       photoUrl,
+      // D-122: manual-KYC document photos (signed URLs or null) and the typed licence ("YYYY-MM-DD" expiry).
+      kycDocs: { idFrontUrl, licenceUrl, selfieIdUrl },
+      licenceNumber: rider.licenceNumber,
+      licenceExpiresOn: rider.licenceExpiresOn ? rider.licenceExpiresOn.toISOString().slice(0, 10) : null,
       bike: rider.bikeReg,
       status: rider.kycStatus,
       kycRef: rider.kycRef,

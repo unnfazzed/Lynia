@@ -417,6 +417,18 @@ model Rider {
   // The re-check's own Didit session (the webhook routes on it) and its link (SECRET, like kycSessionUrl).
   selfieRecheckRef  String?                                @map("selfie_recheck_ref")
   selfieRecheckUrl  String?                                @map("selfie_recheck_url")
+  // Manual KYC (owner 2026-11-04, ledger D-122): the biker's own document photos while Didit is unfunded.
+  // Storage KEYS under kyc/{profileId}/ (never URLs), attached via PATCH /riders/me; kept until the biker
+  // later passes Didit (PR 2) or deleted 30 days after a final decline. kycDocsAlertedAt: the owner's
+  // Telegram "docs ready" alert went out (once per complete set).
+  kycIdFrontKey     String?                                @map("kyc_id_front_key")
+  kycLicenceKey     String?                                @map("kyc_licence_key")
+  kycSelfieIdKey    String?                                @map("kyc_selfie_id_key")
+  kycDocsAlertedAt  DateTime?                              @map("kyc_docs_alerted_at")
+  // The driving licence the biker typed (manual mode), its expiry, and when the 30-day reminder went out.
+  licenceNumber     String?                                @map("licence_number")
+  licenceExpiresOn  DateTime?                              @map("licence_expires_on") @db.Date
+  licenceRemindedAt DateTime?                              @map("licence_reminded_at")
   // Account standing (A-04) — only `active` may go online. suspended/banned are admin actions or a
   // settlement auto-pause (A-06). suspendReason carries the admin reason code / "settlement_overdue".
   accountStatus     RiderAccountStatus                     @default(active) @map("account_status")

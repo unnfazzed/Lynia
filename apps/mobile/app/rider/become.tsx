@@ -1,4 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
+import { EVENTS, track } from "../../src/telemetry/events";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -260,6 +261,9 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // Our words, never the server's: a rate limit, an ID already on another account (PD's drawn
       // one-ID-one-account line, as F5dup words it), or the plain failure. No rider record exists after
       // any of these (the server registers only once the vendor answered), so there is no F page yet.
+      // D-122 (2026-11-04): a start that failed before any check opened was invisible in PostHog — bikers
+      // were stuck for days unseen. No PII: the HTTP status and the server's reason code only.
+      track(EVENTS.kycLaunch, { lane: "none", outcome: "start_failed", status: e instanceof ApiError ? e.status : 0, code: e instanceof ApiError ? (e.code ?? "") : "" });
       setError(becomeErrorMessage(e));
     } finally {
       // Backstop: whatever path got here, the stand-in sheet never outlives the attempt.

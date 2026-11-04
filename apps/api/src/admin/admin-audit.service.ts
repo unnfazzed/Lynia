@@ -68,6 +68,8 @@ export const RESERVED_AUDIT_ACTIONS: ReadonlySet<string> = new Set([
   "rider.free_jobs_one_left",
   "rider.free_jobs_used_up",
   "rider.profile_update",
+  // D-122: written by AdminKycReviewService.getKycReview when an admin opens a biker's ID-document photos.
+  "rider.kyc_docs_view",
   // D-112: ops' cash payment for a referral (ReferralsService.markPaid, with the referral row's paid stamp).
   "referral.paid",
   // First Run v2 E4 (D-82): AdminRidersService.verifyPlate writes it with the plate_status flip.

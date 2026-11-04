@@ -21,7 +21,7 @@ export class RiderAvailability {
       where: { profileId },
       // isOnline + lastHeartbeatAt: admin console v2 §3's online/offline events (a real flip only) and the
       // funnel's first-online step (no heartbeat ever stamped ⇒ this is the rider's first time online).
-      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, isOnline: true, lastHeartbeatAt: true },
+      select: { kycStatus: true, accountStatus: true, onHold: true, cooldownUntil: true, isOnline: true, lastHeartbeatAt: true, licenceExpiresOn: true },
     });
     if (!rider) throw new ForbiddenException("Not a biker");
     // Full online-gate (Q2): kyc + account standing + reliability on_hold + cooldown. No wallet minimum

@@ -207,6 +207,12 @@ export const KycDeclineReason = {
   ID_MISMATCH: "id_mismatch",
   /** KYC-R26-13: the document says the rider is under the minimum riding age. Final: no retry can fix it. */
   UNDERAGE: "underage",
+  /** D-122 (manual KYC, owner 2026-11-04): the biker's own document photos can't be read — retake them. */
+  PHOTOS_UNREADABLE: "photos_unreadable",
+  /** D-122: the driving licence photo shows an expired licence. */
+  LICENCE_EXPIRED: "licence_expired",
+  /** D-122: the selfie-with-ID doesn't show the biker's face clearly. */
+  SELFIE_UNCLEAR: "selfie_unclear",
   OTHER: "other",
 } as const;
 export type KycDeclineReason = (typeof KycDeclineReason)[keyof typeof KycDeclineReason];
@@ -222,6 +228,9 @@ export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
   duplicate: "Already registered on another account",
   id_mismatch: "ID number doesn't match your account",
   underage: "You must be 18 or older to ride",
+  photos_unreadable: "Photos unreadable",
+  licence_expired: "Licence expired",
+  selfie_unclear: "Selfie doesn't show your face",
   other: "Other (see notes)",
 };
 
@@ -236,13 +245,17 @@ export const KYC_DECLINE_REASON_LABELS: Record<KycDeclineReason, string> = {
  *            holds, a name or number that isn't the account's): +1 strike, two lock (A-02).
  *   final    nothing the rider can do will change it (under age): locks at once (kycAttempts := max(n, 2)).
  *
- * A HUMAN decline (adminSetKyc) is not classified: it always counts one strike, whatever its reason.
+ * A HUMAN decline (adminSetKyc) always counts one strike, whatever its reason — EXCEPT the D-122 manual-KYC
+ * photo reasons (`KYC_PHOTO_RETAKE_REASONS`): a budget phone's blurry shot is an honest mistake, not evidence.
  */
 export type KycDeclineClass = "fixable" | "strike" | "final";
 export const KYC_DECLINE_CLASS: Record<KycDeclineReason, KycDeclineClass> = {
   id_unreadable: "fixable",
   face_mismatch: "fixable",
   id_expired: "fixable",
+  photos_unreadable: "fixable",
+  licence_expired: "fixable",
+  selfie_unclear: "fixable",
   other: "fixable",
   doc_tampered: "strike",
   liveness_failed: "strike",
@@ -250,6 +263,16 @@ export const KYC_DECLINE_CLASS: Record<KycDeclineReason, KycDeclineClass> = {
   id_mismatch: "strike",
   name_mismatch: "strike",
   underage: "final",
+};
+
+/**
+ * D-122 (owner 2026-11-04): decline reasons that only ask the biker to RETAKE manual-KYC document photos, and
+ * the slots each one reopens. An admin decline with one of these costs no strike (low-end phone cameras).
+ */
+export const KYC_PHOTO_RETAKE_REASONS: Partial<Record<KycDeclineReason, readonly ("idFront" | "licence" | "selfieId")[]>> = {
+  photos_unreadable: ["idFront", "licence", "selfieId"],
+  licence_expired: ["licence"],
+  selfie_unclear: ["selfieId"],
 };
 
 /** KYC-R26-13: the class of a stored decline reason. Null, absent or a key this build doesn't know (a newer

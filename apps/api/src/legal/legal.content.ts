@@ -126,18 +126,23 @@ export const LEGAL_DATA_CATEGORIES: readonly LegalDataCategory[] = [
   {
     label: "Government ID and vehicle details (bikers only)",
     collected:
-      "Your national ID number, a photo of your ID and of your face, and your motorbike's registration and vehicle details — collected only if you register as a biker.",
+      "Your national ID number, a photo of your ID and of your face, your driving licence number, its expiry date and a photo of your licence, and your motorbike's registration and vehicle details — collected only if you register as a biker.",
     purpose:
       "Identity verification (KYC) — a legal and safety requirement before anyone may carry another person's parcel or food — the signal used to stop a banned biker re-registering, and the vehicle record shown to the customer whose order you are carrying.",
     basis:
       "Your explicit consent, given when you start biker verification. Your national ID number and the photograph of your face are SENSITIVE personal information under the Cyber and Data Protection Act, so we ask for them only for verification and never use them for anything else. You can withdraw consent by deleting your biker account.",
     retention:
-      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details and your ID's expiry date. When you delete your account we also ask our ID-check provider to delete your verification session. ID and face images are held for the legal minimum after a biker account goes inactive or is rejected, then deleted automatically.",
+      "The ID number is encrypted at rest and cleared when you delete your account, along with your vehicle details and your ID's expiry date. When you delete your account we also ask our ID-check provider to delete your verification session. ID and face images are held for the legal minimum after a biker account goes inactive or is rejected, then deleted automatically. ID and licence photos you add in the app are deleted 30 days after your application is finally rejected, and cleared with your licence details when you delete your account.",
     manifestKeys: [
       "id_number",
       "id_number_hash",
       "verified_id_number",
       "photo_url",
+      "kyc_id_front_key",
+      "kyc_licence_key",
+      "kyc_selfie_id_key",
+      "licence_number",
+      "licence_expires_on",
       "kyc-object",
       "bike_reg",
       "vehicle_info",

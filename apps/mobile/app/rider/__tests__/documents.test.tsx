@@ -14,8 +14,19 @@ const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: 
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: jest.fn() }) }));
 let mockRider: Record<string, unknown>;
+let mockIdNumber: string | null = null;
+const mockUpdateProfile = jest.fn();
 jest.mock("../../../src/api/auth", () => ({
-  getMe: async () => ({ profileId: "p1", role: "rider", firstName: "Tendai", lastName: "Moyo", rider: mockRider }),
+  getMe: async () => ({ profileId: "p1", role: "rider", firstName: "Tendai", lastName: "Moyo", idNumber: mockIdNumber, rider: mockRider }),
+  updateProfile: (b: unknown) => mockUpdateProfile(b),
+}));
+// D-122: the manual-KYC document upload chain (pick → downscale → mint → PUT → attach).
+const mockPickDoc = jest.fn();
+const mockSaveDoc = jest.fn();
+jest.mock("../../../src/logic/manual-kyc", () => ({
+  ...jest.requireActual("../../../src/logic/manual-kyc"),
+  pickKycDoc: (slot: string, from: string) => mockPickDoc(slot, from),
+  saveKycDoc: (slot: string, shot: unknown) => mockSaveDoc(slot, shot),
 }));
 const mockUpdateRider = jest.fn();
 const mockStartRecheck = jest.fn();
@@ -43,6 +54,7 @@ jest.mock("../../../src/logic/rider-documents", () => ({
 
 import { AppState, Linking } from "react-native";
 import DocumentsScreen, { __resetPhotoUploadForTest, ADD_PILL_HEIGHT } from "../documents";
+import { __resetKycDocUploadsForTest } from "../../../src/ui/rider/KycDocRows";
 
 const trees: renderer.ReactTestRenderer[] = [];
 function render(): renderer.ReactTestRenderer {
@@ -85,6 +97,8 @@ const bars = (t: renderer.ReactTestRenderer) => ({
 beforeEach(() => {
   jest.clearAllMocks();
   __resetPhotoUploadForTest();
+  __resetKycDocUploadsForTest();
+  mockIdNumber = null;
   mockDraft.value = null;
   mockRider = { kycStatus: "verified", bikeReg: null, hasPhoto: false, plateStatus: "none" };
 });
@@ -418,5 +432,72 @@ describe("Bike & documents — the selfie re-check reminder (D-110)", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("D-122 · manual KYC (Didit unfunded)", () => {
+  const manual = { kycStatus: "pending", kycMode: "manual", bikeReg: null, hasPhoto: false, kycDocs: { idFront: false, licence: false, selfieId: false }, licenceNumber: null, licenceExpiresOn: null };
+
+  it("adds the three document rows, licence details and a national-ID entry, and counts 'N of 6'", async () => {
+    mockRider = { ...manual };
+    const tree = render();
+    await loaded(tree);
+    const s = text(tree);
+    for (const k of ["ID card (front)", "Driver's licence", "Selfie holding your ID", "For your ID check", "Licence details", "of 6"]) expect(s).toContain(k);
+    expect(bars(tree)).toEqual({ done: 0, open: 6 });
+    for (const id of ["add-doc-idFront", "add-doc-licence", "add-doc-selfieId", "add-licence-details", "add-id-number"]) expect(has(tree, id)).toBe(true);
+  });
+
+  it("outside manual mode nothing changes: no document rows and 'of 3'", async () => {
+    mockRider = { kycStatus: "verified", bikeReg: null, hasPhoto: false, kycMode: "auto" };
+    const tree = render();
+    await loaded(tree);
+    expect(has(tree, "row-doc-idFront")).toBe(false);
+    expect(text(tree)).toContain("of 3");
+  });
+
+  it("a row shows its guide line, uploads on its own and turns into Change", async () => {
+    mockRider = { ...manual };
+    mockPickDoc.mockResolvedValue({ uri: "file:///id.jpg", contentType: "image/jpeg" });
+    mockSaveDoc.mockResolvedValue({ idFront: true, licence: false, selfieId: false });
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-doc-idFront");
+    expect(text(tree)).toContain("Lay it flat, all four corners in view, no glare.");
+    await press(tree, "doc-camera");
+    expect(mockPickDoc).toHaveBeenCalledWith("idFront", "camera");
+    expect(mockSaveDoc).toHaveBeenCalledWith("idFront", { uri: "file:///id.jpg", contentType: "image/jpeg" });
+  });
+
+  it("a failed upload keeps the shot and offers Try again on that row only", async () => {
+    mockRider = { ...manual };
+    mockPickDoc.mockResolvedValue({ uri: "file:///lic.jpg", contentType: "image/jpeg" });
+    mockSaveDoc.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ idFront: false, licence: true, selfieId: false });
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-doc-licence");
+    await press(tree, "doc-gallery");
+    expect(text(tree)).toContain("Try again");
+    expect(has(tree, "add-doc-idFront")).toBe(true);
+    await press(tree, "row-doc-licence");
+    expect(mockSaveDoc).toHaveBeenCalledTimes(2);
+    expect(mockSaveDoc.mock.calls[1]).toEqual(["licence", { uri: "file:///lic.jpg", contentType: "image/jpeg" }]);
+  });
+
+  it("licence details refuse a bad date and save DD/MM/YYYY as an ISO day", async () => {
+    mockRider = { ...manual };
+    mockUpdateRider.mockResolvedValue({ hasPhoto: false, bikeReg: null });
+    const tree = render();
+    await loaded(tree);
+    await press(tree, "add-licence-details");
+    const field = (id: string) => tree.root.findAll((n) => n.props.testID === id && typeof n.props.onChangeText === "function")[0]!;
+    await act(async () => field("licence-number").props.onChangeText("ab 12345"));
+    await act(async () => field("licence-expiry").props.onChangeText("31/02/2028"));
+    await press(tree, "licence-save");
+    expect(text(tree)).toContain("Use the format DD/MM/YYYY");
+    expect(mockUpdateRider).not.toHaveBeenCalled();
+    await act(async () => field("licence-expiry").props.onChangeText("31/01/2028"));
+    await press(tree, "licence-save");
+    expect(mockUpdateRider).toHaveBeenCalledWith({ licenceNumber: "AB 12345", licenceExpiresOn: "2028-01-31" });
   });
 });

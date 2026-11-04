@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BackHandler, Image, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getMe, type Me } from "../../src/api/auth";
+import { getMe, type Me, updateProfile } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { startSelfieRecheck, updateRiderProfile } from "../../src/api/riders";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
@@ -46,6 +46,11 @@ import {
 import { BD, KY, RP } from "../../src/ui/firstrun/copy";
 import { RIDER_COPY as R } from "../../src/ui/rider/copy";
 import { SR } from "../../src/ui/rider/selfie-recheck-copy";
+import { KycDocRows } from "../../src/ui/rider/KycDocRows";
+import { MK } from "../../src/ui/rider/manual-kyc-copy";
+import { manualDocsProgress } from "../../src/logic/manual-kyc";
+import { formatNationalId, NATIONAL_ID_RE } from "../../src/logic/national-id";
+import { PD } from "../../src/ui/firstrun/copy";
 
 /**
  * E1's in-row "+ Add" pill height. The handoff drew it 36, under the tap-target floor; the owner had the
@@ -159,6 +164,10 @@ export default function DocumentsScreen(): React.ReactElement {
   const [plateSheet, setPlateSheet] = useState(false);
   const [plateDraft, setPlateDraft] = useState("");
   const [plateError, setPlateError] = useState<string | null>(null);
+  // D-122: the national ID number sheet (manual review).
+  const [idSheet, setIdSheet] = useState(false);
+  const [idDraft, setIdDraft] = useState("");
+  const [idError, setIdError] = useState<string | null>(null);
   const upload = useSyncExternalStore(subscribePhotoUpload, getPhotoUpload, getPhotoUpload);
   // FR-H2: camera / gallery access the phone will no longer ask for — the settings sheet, re-read on return.
   const [blocked, setBlocked] = useState<PhotoSource | null>(null);
@@ -169,6 +178,22 @@ export default function DocumentsScreen(): React.ReactElement {
       alive.current = false;
     };
   }, []);
+
+  /** D-122: save the typed national ID (PATCH /auth/me); a number on another live account is refused. */
+  const saveIdNumber = async (): Promise<void> => {
+    if (!NATIONAL_ID_RE.test(idDraft)) {
+      setIdError(PD.invalid);
+      return;
+    }
+    try {
+      const next = await updateProfile({ firstName: me?.firstName ?? "", lastName: me?.lastName ?? "", idNumber: idDraft });
+      qc.setQueryData(["me"], next);
+      setIdSheet(false);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "id_in_use") setIdError(`${PD.takenA} ${PD.takenB}. ${PD.takenBody}`);
+      else setError();
+    }
+  };
 
   /** An upload's end, while this screen is up: E6 on a connection failure, the toast on a refusal. */
   const follow = useCallback(
@@ -347,7 +372,13 @@ export default function DocumentsScreen(): React.ReactElement {
   // D-110: a reminder only — never a gate on going online.
   const selfieRecheck = idOk && rider?.selfieCheck === "recheck_requested";
   const hasPhoto = rider?.hasPhoto === true;
-  const progress = bikeDocsProgress(rider);
+  // D-122: manual KYC (Didit unfunded) — the biker's own ID-front, licence and selfie-with-ID photos and the
+  // typed licence join the list, and the count reads "N of 6". Shown while manual review is on, and to any
+  // biker who already has document photos on file (so a verified biker can renew their licence).
+  const docs = rider?.kycDocs;
+  const manual = rider?.kycMode === "manual" || !!(docs?.idFront || docs?.licence || docs?.selfieId);
+  const progress = manual ? manualDocsProgress(rider) : bikeDocsProgress(rider);
+  const needsIdNumber = manual && !idOk && !me?.idNumber;
   const allSet = !upload && progress.done === progress.total;
 
   const photoRow = upload ? (
@@ -393,8 +424,15 @@ export default function DocumentsScreen(): React.ReactElement {
       {selfieRecheck ? (
         <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={SR.rowSub} value={SR.redo} onPress={redoSelfie} accessibilityLabel={`${BD.id}, ${SR.rowSub}, ${SR.redo}`} />
       ) : (
-        <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
+        needsIdNumber ? (
+          // D-122: manual review compares the typed number with the ID photo, and the one-ID-one-account
+          // check runs on it (PATCH /auth/me refuses a number another live account holds).
+          <ListRow testID="row-id" icon="id-card" title={BD.id} sub={MK.sub} right={<AddPill onPress={() => setIdSheet(true)} testID="add-id-number" />} accessibilityLabel={`${BD.id}, ${MK.sub}`} />
+        ) : (
+          <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
+        )
       )}
+      {manual && rider ? <KycDocRows rider={rider} AddPill={AddPill} onBlocked={setBlocked} /> : null}
       {photoRow}
       {plateRow}
     </ListCard>
@@ -431,7 +469,7 @@ export default function DocumentsScreen(): React.ReactElement {
           </View>
         ) : (
           <>
-            <ProgressBars done={progress.done} total={progress.total} />
+            <ProgressBars done={progress.done} total={progress.total} label={manual ? MK.progressOf6 : BD.progress} />
             {rows}
             {/* "Optional. You can take jobs now." is only true once the ID is verified. */}
             {idOk ? <Text style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{BD.optional}</Text> : null}
@@ -471,6 +509,28 @@ export default function DocumentsScreen(): React.ReactElement {
         <PinnedFooter inline primary={{ label: BD.plateSave, onPress: savePlate, testID: "plate-save" }} />
       </FrSheet>
 
+      {/* D-122 — the national ID number, for manual review. */}
+      <FrSheet visible={idSheet} onClose={() => setIdSheet(false)} testID="id-sheet">
+        <SheetTitle>{MK.nationalIdSheet}</SheetTitle>
+        <FrField
+          testID="id-field"
+          value={idDraft}
+          onChangeText={(v) => {
+            setIdDraft(formatNationalId(v));
+            setIdError(null);
+          }}
+          placeholder={PD.idPh}
+          error={idError}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          autoComplete="off"
+          maxLength={14}
+          returnKeyType="done"
+          onSubmitEditing={() => void saveIdNumber()}
+        />
+        <PinnedFooter inline primary={{ label: MK.save, onPress: () => void saveIdNumber(), testID: "id-save" }} />
+      </FrSheet>
+
       {/* FR-H2 — access the phone won't ask for again: open phone settings; it re-reads on return. */}
       <FrSheet visible={blocked != null} onClose={() => setBlocked(null)} testID="photo-blocked">
         <Body>{R.docPhotoDenied}</Body>
@@ -487,16 +547,16 @@ export default function DocumentsScreen(): React.ReactElement {
 }
 
 /** E1–E4 progress: three 6dp bars (4 gap, radius 3, brand / `line`) and "N of 3" in 600 14 muted. */
-function ProgressBars({ done, total }: { done: number; total: number }): React.ReactElement {
+function ProgressBars({ done, total, label = BD.progress }: { done: number; total: number; label?: string }): React.ReactElement {
   return (
-    <View testID="documents-progress" accessible accessibilityLabel={`${done} ${BD.progress}`} style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
+    <View testID="documents-progress" accessible accessibilityLabel={`${done} ${label}`} style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 }}>
       <View style={{ flex: 1, flexDirection: "row", gap: 4 }}>
         {Array.from({ length: total }, (_, i) => (
           <View key={i} testID={i < done ? "bar-done" : "bar-open"} style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: i < done ? tokens.color.accent : tokens.color.line }} />
         ))}
       </View>
       <Text style={{ fontSize: 14, fontWeight: tokens.font.weight.semibold, color: tokens.color.muted, fontVariant: ["tabular-nums"] }}>
-        {done} {BD.progress}
+        {done} {label}
       </Text>
     </View>
   );

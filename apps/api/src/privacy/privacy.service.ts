@@ -52,6 +52,10 @@ const ERASURE_PROFILE_SELECT = {
       photoUrl: true,
       kycRef: true,
       selfieRecheckRef: true,
+      // D-122: the manual-KYC document photos, purged post-commit with the KYC photo.
+      kycIdFrontKey: true,
+      kycLicenceKey: true,
+      kycSelfieIdKey: true,
     },
   },
 } as const;
@@ -264,6 +268,11 @@ export class PrivacyService {
         bikeReg: "",
         vehicleInfo: null,
         photoUrl: "",
+        kycIdFrontKey: null,
+        kycLicenceKey: null,
+        kycSelfieIdKey: null,
+        licenceNumber: null,
+        licenceExpiresOn: null,
         kycRef: null,
         // A live vendor credential, so it goes — unlike verifiedIdHash/idNumberHash above, which are
         // one-way hashes retained on purpose (DS15-02b) as the signal that catches a banned identity
@@ -516,7 +525,14 @@ export class PrivacyService {
     }
 
     if (this.storage) {
-      const keys = [profile.photoUrl, profile.rider?.photoUrl, ...itemPhotoKeys].filter(
+      const keys = [
+        profile.photoUrl,
+        profile.rider?.photoUrl,
+        profile.rider?.kycIdFrontKey,
+        profile.rider?.kycLicenceKey,
+        profile.rider?.kycSelfieIdKey,
+        ...itemPhotoKeys,
+      ].filter(
         (k): k is string => typeof k === "string" && k.length > 0,
       );
       for (const key of keys) {

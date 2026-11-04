@@ -17,6 +17,8 @@ interface Rider {
   /** First Run v2 E4 (D-82): ops' check of the plate. Absent on older APIs. */
   plateStatus?: "none" | "checking" | "verified";
   kycStatus: "pending" | "verified" | "failed" | "expired";
+  /** D-122 (manual KYC): how many of the 3 document photos are in. Absent on older APIs. */
+  docsCount?: number;
   idVerified: boolean;
   isOnline: boolean;
   accountStatus: "active" | "suspended" | "banned";
@@ -129,6 +131,8 @@ export default async function RidersPage({
     // Kit's KYC queue names this column "Bike reg" (kyc.html), matching the review screen's KeyValue.
     { key: "bike", header: "Bike reg", className: "mono", cell: (r) => r.bikeReg },
     { key: "kyc", header: "KYC", cell: (r) => kycPill(r.kycStatus) },
+    // D-122: manual review — who has sent all three document photos. Approving works at any count.
+    { key: "docs", header: "Docs", className: "num mut", cell: (r) => (r.docsCount == null ? "—" : `Docs ${r.docsCount}/3`) },
     { key: "trips", header: "Trips / rating", className: "num", cell: (r) => `${r.tripsCount} · ${ratingTxt(r)}` },
     { key: "action", header: "Action", cell: (r) => <KycAction r={r} /> },
   ];

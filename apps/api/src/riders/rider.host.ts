@@ -4,6 +4,7 @@
  * itself, and TypeScript checks it satisfies this.
  */
 import type { Logger } from "@nestjs/common";
+import type { StorageAdapter } from "../adapters/storage/storage.interface";
 import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import type { Env } from "../config/env";
 import type { KycVendor } from "../kyc/kyc-vendor";
@@ -57,6 +58,7 @@ export interface RiderHost {
   readonly tracking: TrackingService;
   unreadableDeclinesSinceCleanSlate(tx: Prisma.TransactionClient, profileId: string): Promise<number>;
   readonly uploads?: UploadVerifier;
+  readonly storage?: StorageAdapter;
   readonly vendor: KycVendor;
   verifiedIdCollisionCount(db: Prisma.TransactionClient, profileId: string, hash: string, scope: "any" | "live"): Promise<number>;
 }
