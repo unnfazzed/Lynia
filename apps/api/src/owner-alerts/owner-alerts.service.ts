@@ -58,6 +58,14 @@ export const ownerAlertText = {
     const check = input.kycStatus === "verified" ? "ID check passed" : "ID check pending";
     return `🛵 New biker application\n${clip(input.firstName)} · ${check}`;
   },
+  /** D-122: all three manual-KYC document photos are in; the biker is waiting on the owner's review. */
+  bikerDocsReady(input: { firstName: string }): string {
+    return `🪪 Biker docs ready\n${clip(input.firstName)} · 3/3 · review in admin → KYC`;
+  },
+  /** D-122: a biker's driving licence expired; they're offline until a new licence is approved. */
+  bikerLicenceExpired(input: { firstName: string }): string {
+    return `⚠️ Biker licence expired\n${clip(input.firstName)} · offline until a new licence is approved`;
+  },
   parcelOrder(input: {
     orderId: string;
     proposedFare: unknown;

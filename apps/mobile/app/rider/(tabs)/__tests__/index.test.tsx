@@ -896,7 +896,10 @@ describe("biker board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     ["F3 unfinished — the biker's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, [KY.unfCta]],
     // R-3: a check held for a human review is F2 — not R2, no retry; WhatsApp only.
     ["F2 held for review — WhatsApp only", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }, [KY.help]],
-    ["F1 manual/ops review — nothing to press", { kycStatus: "pending", kycMode: "manual" }, []],
+    // D-122 (manual KYC, design review 2026-11-04): F1 carries one soft "Add your documents" pill until all
+    // three document photos are in; with a complete set there is again nothing to press.
+    ["F1 manual review — only Add your documents", { kycStatus: "pending", kycMode: "manual" }, ["Add your documents"]],
+    ["F1 manual review with all documents in — nothing to press", { kycStatus: "pending", kycMode: "manual", kycDocs: { idFront: true, licence: true, selfieId: true } }, []],
     ["F6 ID expired", { kycStatus: "expired" }, [KY.expCta]],
     ["F4d declined", { kycStatus: "failed", kycAttempts: 1 }, [KY.tryAgain, KY.help]],
     ["F5 locked", { kycStatus: "failed", kycAttempts: 2 }, [KY.msg]],

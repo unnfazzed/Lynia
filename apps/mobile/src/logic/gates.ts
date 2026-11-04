@@ -29,6 +29,7 @@ export interface GateError {
 export type OnlineGateReason =
   | "kyc"
   | "kyc_expired"
+  | "licence_expired"
   | "suspended"
   | "banned"
   | "on_hold"
@@ -40,6 +41,7 @@ export type OnlineGateReason =
 const ONLINE_GATE_REASONS: readonly OnlineGateReason[] = [
   "kyc",
   "kyc_expired",
+  "licence_expired",
   "suspended",
   "banned",
   "on_hold",
@@ -79,6 +81,8 @@ export function onlineGateReason(err: GateError | null | undefined): OnlineGateR
   if (m.includes("cooldown") || m.includes("cool-down") || m.includes("cool down")) return "cooldown";
   // Expired must be checked before the generic kyc sniff — the expired copy says "re-verify", which
   // would otherwise match `verif` and collapse a lapsed ID into the first-time "verify your ID" state.
+  // D-122: a lapsed driving licence is not a lapsed ID — checked before the generic "expired" sniff.
+  if (m.includes("licence")) return "licence_expired";
   if (m.includes("expired")) return "kyc_expired";
   if (m.includes("kyc") || m.includes("verif")) return "kyc";
   return null;
@@ -97,6 +101,11 @@ export const ONLINE_GATE_COPY: Record<OnlineGateReason, GateCopy> = {
   kyc_expired: {
     title: "Your ID has expired",
     message: "You can't go online until you re-verify. Re-submit a valid national ID to keep riding.",
+  },
+  // D-122 (manual KYC): new copy, pending the owner's sign-off in the ledger entry.
+  licence_expired: {
+    title: "Your licence has expired",
+    message: "You can't go online until your new driving licence is approved. Add it in Bike & documents.",
   },
   suspended: {
     title: "Your account is suspended",

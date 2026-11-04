@@ -338,8 +338,8 @@ export class AdminController {
 
   /** KYC doc-review detail for one rider (A-02). 404s when the profile isn't a rider. */
   @Get("riders/:profileId/kyc")
-  async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string) {
-    const review = await this.kycReviewService.getKycReview(profileId);
+  async kycReview(@Param("profileId", ParseUUIDPipe) profileId: string, @AdminActor() actor: string) {
+    const review = await this.kycReviewService.getKycReview(profileId, actor);
     if (!review) throw new NotFoundException("Biker not found");
     return review;
   }

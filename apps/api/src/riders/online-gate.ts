@@ -19,6 +19,7 @@ export function canGoOnline(kycStatus: string): boolean {
 export type OnlineRefusal =
   | "kyc"
   | "kyc_expired"
+  | "licence_expired"
   | "banned"
   | "suspended"
   | "on_hold"
@@ -45,6 +46,8 @@ export function onlineRefusalReason(
     accountStatus: string;
     onHold: boolean;
     cooldownUntil: Date | null;
+    /** D-122: the typed driving-licence expiry day (manual KYC). Absent/null = not tracked. */
+    licenceExpiresOn?: Date | null;
   },
   now: Date = new Date(),
 ): OnlineRefusal | null {
@@ -52,6 +55,7 @@ export function onlineRefusalReason(
   // and later expired sees the distinct "re-verify your ID" state, not the first-time "verify" copy.
   if (rider.kycStatus === KycStatus.EXPIRED) return "kyc_expired";
   if (!canGoOnline(rider.kycStatus)) return "kyc";
+  if (licenceExpired(rider.licenceExpiresOn, now)) return "licence_expired";
   if (rider.accountStatus === RiderAccountStatus.BANNED) return "banned";
   if (rider.accountStatus !== RiderAccountStatus.ACTIVE) return "suspended";
   // Penalty suspension (common/penalties.ts): automatic holds and strike cooldowns already on record are
@@ -67,6 +71,7 @@ export function onlineRefusalReason(
 export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   kyc: "Biker is not verified yet",
   kyc_expired: "Your ID has expired — re-verify to keep riding",
+  licence_expired: "Your driving licence has expired — add your new licence in Bike & documents",
   banned: "Your biker account has been banned",
   suspended: "Your biker account is suspended",
   on_hold: "Your account is on hold — contact support to get back on the road",
@@ -80,3 +85,10 @@ export const REFUSAL_MESSAGE: Record<OnlineRefusal, string> = {
   // older app builds, which sniff the message, on the top-up state.
   commission_low_balance: "Your wallet balance doesn't cover this job's commission — top up to take it",
 };
+
+/** D-122: a licence expiring on day D is valid through D (UTC calendar day) and expired from D+1. */
+export function licenceExpired(expiresOn: Date | null | undefined, now: Date = new Date()): boolean {
+  if (!expiresOn) return false;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return expiresOn.getTime() < today;
+}

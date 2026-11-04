@@ -332,6 +332,40 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
             </div>
           </section>
 
+          {/* D-122 (manual KYC): the biker's own document photos, same tile as the biker photo. Click opens the
+              full-size image (the same short-lived signed URL) in a new tab so the ID number can be read. */}
+          <section className="card">
+            <div className="block-title">ID documents (manual review)</div>
+            <div className="doc-grid" style={{ display: "grid", gap: tokens.space.md, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+              {(
+                [
+                  ["ID card (front)", r.kycDocs?.idFrontUrl ?? null],
+                  ["Driver's licence", r.kycDocs?.licenceUrl ?? null],
+                  ["Selfie holding ID", r.kycDocs?.selfieIdUrl ?? null],
+                ] as const
+              ).map(([label, url]) => (
+                <div key={label}>
+                  {url ? (
+                    <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`${label}, open full size`}>
+                      <img
+                        src={url}
+                        alt={label}
+                        style={{ width: "100%", height: 170, objectFit: "cover", borderRadius: tokens.radius.input, border: `1px solid ${tokens.color.line}` }}
+                      />
+                    </a>
+                  ) : (
+                    <div className="doc-ph" style={{ height: 170 }}>
+                      {label.toLowerCase()}
+                      <br />
+                      (not added yet)
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: tokens.color.muted, marginTop: 6 }}>{label}{url ? " · click to enlarge" : ""}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section className="card">
             <div className="block-title">Automated checks — Didit</div>
             {progress ? (
@@ -383,6 +417,9 @@ export default async function KycReviewPage({ params }: { params: Promise<{ id: 
                 { label: "Phone", value: <span className="mono">{formatPhoneLocal(r.phone)}</span> },
                 { label: "National ID", value: <span className="mono">{r.idNumber ?? "—"}</span> },
                 { label: "Bike reg", value: <span className="mono">{r.bike}</span> },
+                // D-122: the licence the biker typed, to compare against the licence photo.
+                { label: "Licence no.", value: <span className="mono">{r.licenceNumber ?? "—"}</span> },
+                { label: "Licence expires", value: <span className="mono">{r.licenceExpiresOn ?? "—"}</span> },
                 // KYC-R26-13: only declines that point at the identity (a duplicate, tampering, a mismatched
                 // name or number, an admin decline) use a try; a blurry photo or an unmatched face doesn't.
                 {

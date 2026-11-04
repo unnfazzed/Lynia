@@ -101,6 +101,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "rider.free_jobs_one_left": "One free job left",
   "rider.free_jobs_used_up": "Free jobs used up",
   "rider.profile_update": "Profile changed",
+  "rider.kyc_docs_view": "ID documents viewed",
   "rider.plate_verify": "Plate verified",
   "rider.suspend_food_debt": "Suspended for a food debt",
   "wallet.credit": "Wallet credited",

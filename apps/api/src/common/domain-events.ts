@@ -79,7 +79,8 @@ export type RiderOfflineReason =
   | "admin_suspend"
   | "admin_ban"
   | "kyc_change"
-  | "id_expired";
+  | "id_expired"
+  | "licence_expired";
 
 type JsonScalar = string | number | boolean | null;
 export type DomainEventData = Record<string, JsonScalar | JsonScalar[] | undefined>;

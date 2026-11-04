@@ -3,7 +3,8 @@ import type { KycOutcomeId } from "../../logic/kyc-outcome";
 import type { IconName } from "../Icon";
 import { RO } from "../onboarding/copy";
 import { KYF } from "../rider/copy";
-import { PinnedFooter, ExitButton, type PinnedFooterProps } from "./actions";
+import { PinnedFooter, ExitButton, FrSoftPill, type PinnedFooterProps } from "./actions";
+import { MK } from "../rider/manual-kyc-copy";
 import { TipChips, TriesMeter } from "./bits";
 import { KY, PD } from "./copy";
 import { Body, HeroDisc, HeroPanel, SplitTitle } from "./hero";
@@ -33,6 +34,8 @@ export interface IdCheckOutcomeProps {
   retrying?: boolean;
   /** WhatsApp: F2 / F4 / F7 link, F5 / F5dup CTA. */
   onHelp: () => void;
+  /** D-122 (manual KYC): F1's soft "Add your documents" pill → Bike & documents. Hidden when absent. */
+  onAddDocs?: () => void;
 }
 
 interface Page {
@@ -141,7 +144,7 @@ function pageFor(id: KycOutcomeId, firstName: string | null | undefined, expired
   }
 }
 
-export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, onRetry, retrying, onHelp }: IdCheckOutcomeProps): React.ReactElement {
+export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, onRetry, retrying, onHelp, onAddDocs }: IdCheckOutcomeProps): React.ReactElement {
   const p = pageFor(id, firstName, expiredAt);
   const footer: PinnedFooterProps = {};
   if (p.primary && p.primaryLabel) {
@@ -167,6 +170,7 @@ export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, on
       {/* `KY.triesLeft` is the only drawn meter label ("1 try left"): a decline below the lock is always 1 left. */}
       {p.tries && triesLeft === 1 ? <TriesMeter left={1} label={KY.triesLeft} /> : null}
       {p.checklist ? <KycChecklist step2={p.checklist.step2} label={p.checklist.label} /> : null}
+      {id === "F1" && onAddDocs ? <FrSoftPill label={MK.addDocs} icon="id-card" onPress={onAddDocs} testID="outcome-add-docs" style={{ marginTop: 16, alignSelf: "flex-start" }} /> : null}
     </FirstRunScreen>
   );
 }

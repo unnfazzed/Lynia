@@ -49,6 +49,9 @@ const PII_NAME_PATTERNS: RegExp[] = [
   // vendor status) — a new one fails coverage until erasure is told about it.
   /kyc_(session_|forced_at|id_expires|vendor_status)/,
   /current_(lat|lng)/,
+  // D-122 (manual KYC): the biker's own ID-document photo keys and typed driving licence.
+  /kyc_(id_front|licence|selfie_id)_key/,
+  /licence_(number|expires_on)/,
 ];
 
 /**

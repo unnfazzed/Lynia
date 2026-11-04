@@ -4121,7 +4121,7 @@ describe("RiderService — KYC-R26 decision guards", () => {
         OR: [{ reasonCode: { in: string[] } }, { reasonCode: null }];
       };
       expect(where).toMatchObject({ actor: "system:kyc-webhook", action: "rider.kyc_decline", target: "p1" });
-      expect(where.OR[0].reasonCode.in.sort()).toEqual(["face_mismatch", "id_expired", "id_unreadable", "other"]);
+      expect(where.OR[0].reasonCode.in.sort()).toEqual(["face_mismatch", "id_expired", "id_unreadable", "licence_expired", "other", "photos_unreadable", "selfie_unclear"]);
       expect(where.OR[1]).toEqual({ reasonCode: null });
       expect(before - where.createdAt.gte.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
       expect(before - where.createdAt.gte.getTime()).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);
@@ -4132,6 +4132,15 @@ describe("RiderService — KYC-R26 decision guards", () => {
       const { s } = withSpies(prisma);
       await s.adminSetKyc("p1", "failed", "id_unreadable", "admin:ops");
       expect(row.kycAttempts).toBe(1);
+    });
+
+    it("D-122: a manual-KYC photo decline costs no strike and reopens only the slots it names", async () => {
+      const { prisma, row } = memPrisma({ kycIdFrontKey: "kyc/p1/a.jpg", kycLicenceKey: "kyc/p1/b.jpg", kycSelfieIdKey: "kyc/p1/c.jpg", kycDocsAlertedAt: new Date() });
+      const { s } = withSpies(prisma);
+      await s.adminSetKyc("p1", "failed", "selfie_unclear", "admin:ops");
+      expect(row).toMatchObject({ kycStatus: "failed", kycAttempts: 0, kycSelfieIdKey: null, kycIdFrontKey: "kyc/p1/a.jpg", kycLicenceKey: "kyc/p1/b.jpg", kycDocsAlertedAt: null });
+      await s.adminSetKyc("p1", "failed", "photos_unreadable", "admin:ops");
+      expect(row).toMatchObject({ kycAttempts: 0, kycIdFrontKey: null, kycLicenceKey: null, kycSelfieIdKey: null });
     });
   });
 

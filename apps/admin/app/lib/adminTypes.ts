@@ -214,6 +214,11 @@ export interface KycReview {
   /** Short-lived signed GET URL for the rider's submitted document photo, or null (no photo yet, or
    *  the storage adapter failed to sign — the review still loads without it). */
   photoUrl: string | null;
+  /** D-122 (manual KYC): the biker's own document photos as short-lived signed URLs (null = none / unsigned). */
+  kycDocs?: { idFrontUrl: string | null; licenceUrl: string | null; selfieIdUrl: string | null };
+  /** D-122: the typed driving licence and its expiry ("YYYY-MM-DD"). */
+  licenceNumber?: string | null;
+  licenceExpiresOn?: string | null;
   bike: string;
   status: "pending" | "verified" | "failed" | "expired";
   kycRef: string | null;
