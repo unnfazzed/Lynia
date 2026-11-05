@@ -123,4 +123,6 @@ export const EVENTS = {
   kycDocsComplete: "kyc_docs_complete",
   /** The app started cold after its last run ended in the foreground (a crash or an OS kill): `last_screen`. */
   uncleanRestart: "app_unclean_restart",
+  /** The JS thread was blocked mid-use (stall-watch.ts): `stall_ms`, `screen`, `during_boot`, `ram_gb`, `nth`. */
+  jsStall: "js_stall",
 } as const;
