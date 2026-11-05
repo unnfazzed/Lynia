@@ -6043,3 +6043,20 @@ Telegram "🪪 Biker docs ready" and "⚠️ Biker licence expired".
 - **Retired when:** Didit is funded again and PR 2 (the "Verify with Didit" nudge) lands; the document rows stay for
   bikers who still hold photos until they pass Didit.
 - **Upstream:** First Run v2 should draw the manual-review document rows, the licence row and F1's pill. The kit is not edited.
+
+## D-123 · Android tab bar is solid, never glass — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"lets fix the floating glass tab bar to remove the possible cause of white screen."*
+Android users on both sides report a screen that stays white (tap Restaurants and nothing draws; same on the
+biker side), recovering after a wait or a restart (`docs/KNOWN_BUGS.md` MOB-WHITE-01). The prime suspect is the
+tab bar's glass on Android: expo-blur's only Android blur is the experimental `dimezisBlurView`, which redraws a
+copy of the whole window every frame, from the bar on the tab screen even while another screen is pushed over it.
+
+- **What changes.** On Android the floating pill is always the tab-bar-v1 handoff's own **solid fallback**
+  (README "Accessibility fallback", D-56 §6): opaque `bg`, the D-56 hairline edge, the same geometry, icons,
+  labels, indicator and badges. No `BlurView` is created on Android at all (`blurSupported("android") === false`
+  in `src/ui/shell/useGlass.ts`). It is the look Android phones below API 31, low-RAM phones and phones with high
+  contrast text already had.
+- **What doesn't.** iOS and the customer web build keep the glass, with every D-56 §6 fallback unchanged.
+- **Undo.** If MOB-WHITE-01 turns out to have another cause, restoring the API-31 check in `blurSupported` brings
+  Android glass back; re-approve here first.

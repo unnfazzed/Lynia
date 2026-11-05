@@ -8,7 +8,10 @@ import { AccessibilityInfo, Platform } from "react-native";
  * conditions holds, and then it is solid `bg`. It is never translucent without blur.
  */
 
-/** Android: below API 31 there is no RenderEffect blur, and the handoff says solid. */
+/**
+ * Android: below API 31 there is no RenderEffect blur, and the handoff says solid. Kept for the record of
+ * D-56 §6; since D-123 Android never blurs at all (see {@link blurSupported}).
+ */
 export const GLASS_MIN_API = 31;
 
 /**
@@ -18,9 +21,18 @@ export const GLASS_MIN_API = 31;
  */
 export const GLASS_MIN_RAM_BYTES = 3.5 * 1024 ** 3;
 
-/** Can this platform draw a backdrop blur at all? */
-export function blurSupported(os: string, api: number): boolean {
-  if (os === "android") return api >= GLASS_MIN_API;
+/**
+ * Can this platform draw a backdrop blur at all?
+ *
+ * Android: never (ledger D-123, owner 2026-11-05). The only Android blur expo-blur offers is the
+ * experimental `dimezisBlurView`, which redraws a copy of the whole window on every frame — and keeps
+ * doing so from the tab bar while another screen is pushed over it. It was the prime suspect for the
+ * Android "screen stays white" reports (KNOWN_BUGS MOB-WHITE-01: tap Restaurants, nothing draws), on both
+ * sides, because both sides wear this bar. Android gets the handoff's own solid fallback; iOS and web keep
+ * the glass. `api` is unused on Android now and stays in the signature for the other platforms' callers.
+ */
+export function blurSupported(os: string, _api: number): boolean {
+  if (os === "android") return false;
   if (os === "ios") return true;
   if (os === "web") {
     const css = (globalThis as { CSS?: { supports?: (p: string, v: string) => boolean } }).CSS;

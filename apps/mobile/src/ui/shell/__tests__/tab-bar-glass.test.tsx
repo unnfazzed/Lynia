@@ -4,7 +4,8 @@
  * - glass is `bg` at 93% over a 24 blur: expo-blur's `systemChromeMaterialLight` at intensity 96
  *   (Android blur radius 96 / 4), on a transparent bar — raised from the handoff's 72% so an idle label
  *   stays readable (≥ 4.5:1) over any backdrop, black included (owner, ledger D-56 §6);
- * - the bar is solid `bg` (and draws no blur) when `material="solid"`, on Android below API 31, on a
+ * - the bar is solid `bg` (and draws no blur) when `material="solid"`, on Android at any API level
+ *   (D-123: its experimental blur was the prime suspect for the white-screen reports, MOB-WHITE-01), on a
  *   low-RAM phone, and while Reduce Transparency or increased contrast is on — live, both ways;
  * - it is never translucent without blur.
  */
@@ -63,9 +64,10 @@ function captureListeners(): Record<string, (on: boolean) => void> {
 afterEach(() => jest.restoreAllMocks());
 
 describe("glass eligibility", () => {
-  it("blurs on iOS and on Android from API 31, never below it", () => {
+  it("blurs on iOS, never on Android at any API level (D-123, MOB-WHITE-01)", () => {
     expect(blurSupported("ios", 17)).toBe(true);
-    expect(blurSupported("android", GLASS_MIN_API)).toBe(true);
+    expect(blurSupported("android", GLASS_MIN_API)).toBe(false);
+    expect(blurSupported("android", 35)).toBe(false);
     expect(blurSupported("android", 30)).toBe(false);
     expect(blurSupported("android", 26)).toBe(false);
   });
@@ -96,6 +98,20 @@ describe("TabBar material", () => {
     expect(flat(blur!)).toMatchObject({ position: "absolute", borderRadius: tokens.radius.pill, overflow: "hidden" });
     expect(blur!.props.pointerEvents).toBe("none");
     expect(flat(barOf(r)).backgroundColor).toBe("transparent");
+  });
+
+  it("is solid bg with no blur on Android, even a new high-RAM phone (D-123, MOB-WHITE-01)", async () => {
+    const { Platform } = jest.requireActual("react-native") as typeof import("react-native");
+    const os = jest.replaceProperty(Platform, "OS", "android");
+    const version = jest.spyOn(Platform, "Version", "get").mockReturnValue(35 as never);
+    try {
+      const r = await mount(<TabBar tabs={APP_TABS} active="home" reduceMotion />);
+      expect(blurOf(r)).toHaveLength(0);
+      expect(flat(barOf(r)).backgroundColor).toBe(tokens.color.bg);
+    } finally {
+      os.restore();
+      version.mockRestore();
+    }
   });
 
   it("is solid bg with no blur when material is solid", async () => {
