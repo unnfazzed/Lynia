@@ -6102,3 +6102,19 @@ the invite's name is a pending label only; backfill existing staff.
   Migration `0118_merchant_member_name_not_business` renames team rows that carry their business's name (left by
   migration 0053's fallback) to the person's own profile name, where they have one.
 - **Upstream:** merchant-mobile A4 and A5 should draw the C5 name pair. The kit is not edited.
+
+## D-125 · Home shows every live venue: one is enough for a rail, and no address is needed — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"Yes make that change .. also show these shops to everyone .. even if they are in Bulawayo."*
+A single live shop, Uptown Liquor, was on the Shops screen while Home said "Coming soon near you".
+
+| | Handoff / earlier ledger | App |
+|---|---|---|
+| Rail minimum (Calm Mint v2 README §2) | A rail with fewer than 2 items is hidden | A rail shows from 1 item (`RAIL_MIN`, both rails) |
+| No address on Home (H6; kept by the owner in D-60) | The "Where should we deliver?" card replaces the rails | The rails show, without fee or ETA. The card only fills a Home with nothing to show. The header still reads "Set your location" |
+| List footer (Browse v2 `end`) | "That’s all {n} shops delivering to {area}." | At 1: "That’s the only shop delivering to {area}." (restaurant, pharmacy alike; `endLine`, `src/ui/browse/copy.ts`) |
+
+- **No server change.** D-99 already made browsing nationwide: the list has no location filter, so a customer in Bulawayo
+  already gets a Harare shop. Delivery rules are untouched: no distance cap, the fee stays per km, venue jobs go to bikers
+  within 15 km of the venue.
+- **Upstream:** the handoff's rail rule and the `end` line should allow for one venue. The kit is not edited.

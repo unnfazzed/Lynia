@@ -191,8 +191,8 @@ function useBootHomePaintMark(): void {
 
 /** "Popular restaurants" carries up to this many cards; the rail scrolls (2.2 show at 360px). */
 const RAIL_LIMIT = 8;
-/** README §2 rules: a rail with fewer than this many items is hidden. */
-const RAIL_MIN = 2;
+/** Ledger D-125 (owner 2026-11-05), replacing README §2's 2: one live venue is enough for its rail. */
+const RAIL_MIN = 1;
 
 /**
  * The customer Home — Calm Mint v2 (`packages/design/handoff/calm-mint-v2-2026-10`, H1–H6; ledger
@@ -405,9 +405,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
           <ServiceGrid narrow={narrow} onTile={onTile} />
         </BootEntrance>
         <BootEntrance index={2}>
-          {noAddress ? (
-            <NoLocationCard onUseLocation={locationAsk.start} onTypeAddress={() => openLocation(true)} />
-          ) : showRestaurants || showShops ? (
+          {/* D-125: venues show whether or not there is an address; the H6 card only fills an empty Home. */}
+          {showRestaurants || showShops ? (
             <View>
               {showRestaurants ? (
                 <VenueRail title={H.popularRestaurants} sub={H.popularRestaurantsSub} sticker="food" onSeeAll={() => router.push("/food")}>
@@ -453,6 +452,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
               <RailSkeleton />
               <RailSkeleton />
             </View>
+          ) : noAddress ? (
+            <NoLocationCard onUseLocation={locationAsk.start} onTypeAddress={() => openLocation(true)} />
           ) : (
             // Both rails empty → the H6 card, reworded: merchants coming, parcels now (owner 2026-10-02, D-60).
             <ComingSoonCard />
