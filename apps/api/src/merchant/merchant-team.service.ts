@@ -44,7 +44,7 @@ export class MerchantTeamService {
       this.prisma.merchantMember.findMany({
         where: { merchantId: access.merchantId },
         orderBy: { createdAt: "asc" },
-        select: { profileId: true, role: true, displayName: true, createdAt: true, isPharmacist: true, profile: { select: { phone: true } } },
+        select: { profileId: true, role: true, displayName: true, createdAt: true, isPharmacist: true, profile: { select: { phone: true, firstName: true, lastName: true } } },
       }),
       this.prisma.merchantInvite.findMany({
         where: { merchantId: access.merchantId, expiresAt: { gt: new Date() } },
@@ -56,7 +56,8 @@ export class MerchantTeamService {
     return {
       members: ordered.map((m) => ({
         profileId: m.profileId,
-        name: m.displayName,
+        // Their team name, else their own profile name (D-124) — never the business's.
+        name: m.displayName.trim() || `${m.profile.firstName ?? ""} ${m.profile.lastName ?? ""}`.trim(),
         phoneMasked: maskPhone(m.profile.phone),
         role: m.role,
         you: m.profileId === profileId,

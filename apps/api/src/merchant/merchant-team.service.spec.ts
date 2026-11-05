@@ -82,7 +82,10 @@ function makeWorld() {
         members
           .filter((m) => (where.merchantId === undefined || m.merchantId === where.merchantId) && (where.profileId === undefined || m.profileId === where.profileId))
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-          .map((m) => ({ ...m, profile: { phone: people.get(m.profileId)!.phone } })),
+          .map((m) => {
+            const p = people.get(m.profileId)!;
+            return { ...m, profile: { phone: p.phone, firstName: p.firstName, lastName: p.lastName } };
+          }),
       // The resolver's active-row read ({ profileId }), or one person on one team.
       findFirst: async ({ where }: { where: { merchantId?: string; profileId: string } }) => {
         const m = members.find((x) => x.profileId === where.profileId && (where.merchantId === undefined || x.merchantId === where.merchantId));
@@ -217,6 +220,15 @@ describe("MerchantTeamService.team (merchant web upgrade L4)", () => {
     ]);
     expect(res.members[1]!.phoneMasked).not.toContain("3000003");
     expect(res.invites.map((i) => [i.name, i.invitePhone])).toEqual([["Nyasha", "263775000005"]]);
+  });
+});
+
+describe("D-124: a person's name, never the business's", () => {
+  it("a team row with no name shows the person's own profile name", async () => {
+    w.person("staff-1", "+263773000003", { firstName: "Chipo", lastName: "Moyo" });
+    w.member("m1", "staff-1", "staff", "", 10_000);
+    const res = await w.team.team(OWNER, "owner-1");
+    expect(res.members.find((m) => m.profileId === "staff-1")!.name).toBe("Chipo Moyo");
   });
 });
 

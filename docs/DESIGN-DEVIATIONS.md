@@ -6094,4 +6094,11 @@ the invite's name is a pending label only; backfill existing staff.
   alone, so an older page keeps working.
 - **Backfill.** Migration `0117_merchant_staff_name_backfill` sets every staff member's team name to their own account
   name (first + last, at most 60 letters) where the account has one. Owners and erased accounts are left alone.
+- **Business name and personal name are always separate (owner, same day):** *"there is the name of the merchant or
+  business name and the personal name of owner of merchant account .. these must always be separated."* No person's
+  name ever falls back to the business's: the legacy-owner backfill (`merchant-access.ts`), support's owner handover
+  (`admin-merchants.service.ts`) and a new branch's owner row (`merchant-branches.service.ts`) now use the person's
+  own profile name (empty if they have none), and the Team list shows a nameless row under the profile name.
+  Migration `0118_merchant_member_name_not_business` renames team rows that carry their business's name (left by
+  migration 0053's fallback) to the person's own profile name, where they have one.
 - **Upstream:** merchant-mobile A4 and A5 should draw the C5 name pair. The kit is not edited.

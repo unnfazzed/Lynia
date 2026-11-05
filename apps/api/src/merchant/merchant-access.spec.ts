@@ -48,11 +48,11 @@ describe("resolveMerchantAccess (merchant web upgrade L1, plan D2)", () => {
     );
   });
 
-  it("the backfilled name falls back to the business name when the profile has none", async () => {
+  it("D-124: the backfilled name is never the business name — empty when the profile has none", async () => {
     const legacy = { id: "m9", name: "Mama's Kitchen", businessType: "restaurant", ownerProfile: { firstName: "", lastName: "" } };
     const { prisma, create } = prismaWith({ legacy });
     await resolveMerchantAccess(prisma, "owner-1");
-    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ displayName: "Mama's Kitchen" }) });
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ displayName: "" }) });
   });
 
   it("a concurrent backfill (P2002) re-reads the winning row instead of failing the request", async () => {

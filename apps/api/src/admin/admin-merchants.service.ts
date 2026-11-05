@@ -673,7 +673,7 @@ export class AdminMerchantsService {
         const onATeam = await tx.merchantMember.count({ where: { profileId: merchant.ownerProfileId } });
         if (previous && onATeam === 0) {
           await tx.merchantMember.create({
-            data: { merchantId: id, profileId: merchant.ownerProfileId, role: "staff", displayName: personName(previous, merchant.name) },
+            data: { merchantId: id, profileId: merchant.ownerProfileId, role: "staff", displayName: personName(previous) },
           });
         }
       }
@@ -683,7 +683,7 @@ export class AdminMerchantsService {
         // Not on the team yet: they join as its owner. No terms acceptance is recorded for them, because
         // support can't accept on someone's behalf (the runbook's handover steps cover the terms).
         await tx.merchantMember.create({
-          data: { merchantId: id, profileId: next.id, role: "owner", displayName: personName(next, merchant.name), addedByProfileId: null },
+          data: { merchantId: id, profileId: next.id, role: "owner", displayName: personName(next), addedByProfileId: null },
         });
       }
       await tx.merchant.update({ where: { id }, data: { ownerProfileId: next.id } });
@@ -759,6 +759,7 @@ export class AdminMerchantsService {
 }
 
 /** A person's name as a team shows it: their LyniaGo profile name, or the business's when it's empty. */
-function personName(p: { firstName: string; lastName: string }, fallback: string): string {
-  return `${p.firstName} ${p.lastName}`.trim() || fallback;
+/** A person's team name: their own profile name, never the business's (D-124). Empty when they have none yet. */
+function personName(p: { firstName: string; lastName: string }): string {
+  return `${p.firstName} ${p.lastName}`.trim();
 }
