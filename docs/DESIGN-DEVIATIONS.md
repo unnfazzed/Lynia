@@ -6057,6 +6057,18 @@ copy of the whole window every frame, from the bar on the tab screen even while 
   labels, indicator and badges. No `BlurView` is created on Android at all (`blurSupported("android") === false`
   in `src/ui/shell/useGlass.ts`). It is the look Android phones below API 31, low-RAM phones and phones with high
   contrast text already had.
-- **What doesn't.** iOS and the customer web build keep the glass, with every D-56 §6 fallback unchanged.
-- **Undo.** If MOB-WHITE-01 turns out to have another cause, restoring the API-31 check in `blurSupported` brings
-  Android glass back; re-approve here first.
+- **Then everywhere, and nicer (owner, same day, on web iPhone screenshots):** *"I don't like the black outline
+  there .. it shows and sometimes doesn't show .. also the green on android shows in some cases and doesn't show in
+  some cases. It must show. Let's make it solid but making it nice at the same time."*
+  - **Solid on every platform** (iOS and web too). The fill is the handoff's own solid bar (README "## Bar"):
+    opaque `bg` lifted by **`--shadow-float`** (`tokens.shadow.float`), which v1.4 had removed. The owner's D-56 §6
+    hairline edge stays. `useGlass` and the blur are deleted; the `expo-blur` package stays installed so the native
+    runtime (and the OTA lane) is unchanged.
+  - **The mint pill always shows.** v1.4's single indicator slid between cells on a native translateX that waited
+    for the bar's measured width, and on Android it sometimes never drew. Each cell now draws its own `tileMint`
+    pill, cross-faded over 300ms with the cell's existing tone. **Deviation from v1.4 "Motion":** the pill fades
+    between tabs instead of sliding.
+  - **No ink ring after a tap.** The focus ring (handoff: "keyboard or D-pad only") was drawn on any focus, and the
+    web focuses a tapped tab. It now shows on the web only when the focus came from the keyboard; native is unchanged
+    (Android never focuses in touch mode).
+- **Undo.** Re-approve here first; the glass lived in `src/ui/shell/useGlass.ts` (see git history).

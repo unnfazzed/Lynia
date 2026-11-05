@@ -1,13 +1,11 @@
 import { tokens } from "@lynia/shared/tokens";
-import { BlurView } from "expo-blur";
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
+import { Animated, Easing, Platform, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Polygon, Rect } from "react-native-svg";
 import { haptic } from "../haptics";
 import { Tappable } from "../Tappable";
 import { useReduceMotion } from "../useReduceMotion";
-import { useGlass } from "./useGlass";
 
 /*
  * Tab bar v1.4 — floating pill (`packages/design/handoff/tab-bar-v1/`, ledger D-56). A port of the kit's
@@ -23,14 +21,12 @@ export const TAB_BAR_GAP = 12;
 export const TAB_BAR_SPACE = 72;
 
 /**
- * v1.4 glass, raised for readability (owner, ledger D-56 §6): `bg` at 93% over a 24 blur. The handoff's
- * 72% lets an idle `muted` label fall to about 3.2:1 over dark content; 93% holds it at 5:1 even over
- * black. expo-blur's `systemChromeMaterialLight` overlays white (= `bg`) at 0.97 × intensity / 100 and,
- * on Android, blurs at intensity / `blurReductionFactor` (4), so 96 is 93% `bg` and a 24 radius. iOS
- * draws UIKit's light chrome material at that intensity; web, `saturate(180%)` with a 19.2px blur.
+ * The bar is SOLID on every platform (ledger D-123, owner 2026-11-05): the handoff's own solid variant
+ * ("## Bar": opaque `bg`, lifted off content by `--shadow-float`), with the owner's D-56 §6 hairline edge.
+ * The v1.4 glass is gone: on Android its only blur (expo-blur's experimental `dimezisBlurView`, which
+ * redraws the whole window every frame) was the prime suspect for screens that stay white (MOB-WHITE-01),
+ * and the owner chose one solid look everywhere.
  */
-const GLASS_INTENSITY = 96;
-const GLASS_TINT = "systemChromeMaterialLight";
 
 /**
  * The bar's outline: `ink` at 6% (about #F0F1F1 on white), fainter than any design grey, as the owner
@@ -205,6 +201,33 @@ function Badge({ b, centre, animate }: { b: TabBadge; centre: number; animate: b
   );
 }
 
+// ── Focus ───────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The focus ring is for keyboard / D-pad users only (handoff: "Focus (keyboard or D-pad only)"). Android
+ * never focuses a Pressable in touch mode, but the web does focus on a tap, which drew the ink ring
+ * around whichever tab was last tapped, on and off (owner, 2026-11-05, D-123). So on the web the ring
+ * shows only when the focus came from the keyboard: the last input before it was a key, not a pointer.
+ */
+let keyboardModality = false;
+let modalityWired = false;
+function wireModality(): void {
+  if (modalityWired || Platform.OS !== "web") return;
+  const doc = (globalThis as { document?: { addEventListener?: (t: string, f: () => void, o?: boolean) => void } }).document;
+  if (!doc?.addEventListener) return;
+  modalityWired = true;
+  doc.addEventListener("keydown", () => (keyboardModality = true), true);
+  for (const t of ["pointerdown", "mousedown", "touchstart"]) doc.addEventListener(t, () => (keyboardModality = false), true);
+}
+/** Whether a focus that just landed should draw the ring. Exported for tests. */
+export function focusRingWanted(os: string = Platform.OS): boolean {
+  return os !== "web" || keyboardModality;
+}
+/** Test seam. */
+export function __setKeyboardModality(on: boolean): void {
+  keyboardModality = on;
+}
+
 // ── Cell ────────────────────────────────────────────────────────────────────────────────────────
 
 function Cell({
@@ -268,7 +291,7 @@ function Cell({
       onPress={onPress}
       onPressIn={() => setDown(true)}
       onPressOut={() => setDown(false)}
-      onFocus={() => setFocused(true)}
+      onFocus={() => setFocused(focusRingWanted())}
       onBlur={() => setFocused(false)}
       accessibilityRole="tab"
       accessibilityLabel={tabA11yLabel(tab, index, count, badge)}
@@ -276,6 +299,11 @@ function Cell({
       style={styles.cell}
     >
       <Animated.View style={[styles.cellInner, { gap: 2, transform: [{ scale: press }] }, focused ? styles.focus : null]}>
+        {/* The active `tileMint` pill, drawn by the cell itself and cross-faded with `tone` (D-123). It used
+            to be one shared indicator slid by a native translateX that needed the bar's measured width
+            first, and on Android it sometimes didn't draw at all. Owning it per cell means it shows from
+            the first frame, on every phone. */}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.activeFill, { opacity: tone }]} />
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.pressFill, { opacity: fillOpacity }]} />
         <Animated.View style={{ transform: artTransform }}>
           <Animated.View style={{ opacity: offOpacity }}>
@@ -327,13 +355,13 @@ export function TabBar({
   onReselect?: (id: string) => void;
   hidden?: boolean;
   reduceMotion?: boolean;
-  /** The kit's `material`: glass (the default) falls back to solid by itself; `solid` forces it. */
+  /** The kit's `material`. Ignored since D-123: the bar is solid everywhere. */
   material?: "glass" | "solid";
 }): React.ReactElement | null {
   const insets = useSafeAreaInsets();
   const osReduce = useReduceMotion();
   const reduceMotion = reduceMotionProp ?? osReduce;
-  const glass = useGlass(material === "glass");
+  void material; // Kept for callers; the bar is solid everywhere (D-123).
   const n = tabs.length;
   const idx = Math.max(0, tabs.findIndex((t) => t.id === active));
   const cur = tabs[idx]!;
@@ -343,18 +371,7 @@ export function TabBar({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // One shared indicator, `tileMint` on every tab (v1.4): only its translateX moves, 420ms on EASE.
-  const slide = useRef(new Animated.Value(idx)).current;
-  const lastIdx = useRef(idx);
-  useEffect(() => {
-    if (lastIdx.current === idx) return;
-    lastIdx.current = idx;
-    if (reduceMotion) {
-      slide.setValue(idx);
-      return;
-    }
-    Animated.timing(slide, { toValue: idx, duration: 420, easing: EASE, useNativeDriver: true }).start();
-  }, [idx, reduceMotion, slide]);
+  useEffect(wireModality, []);
 
   if (hidden) return null;
 
@@ -372,15 +389,9 @@ export function TabBar({
       accessibilityRole="tablist"
       accessibilityLabel="Main"
       onLayout={(e: LayoutChangeEvent) => setBarW(e.nativeEvent.layout.width)}
-      style={[styles.bar, glass ? styles.barGlass : null, { bottom: TAB_BAR_GAP + insets.bottom }]}
+      style={[styles.bar, { bottom: TAB_BAR_GAP + insets.bottom }]}
     >
-      {glass ? (
-        <BlurView pointerEvents="none" intensity={GLASS_INTENSITY} tint={GLASS_TINT} experimentalBlurMethod="dimezisBlurView" style={styles.glass} />
-      ) : null}
       <View pointerEvents="none" style={styles.edge} />
-      {cellW > 0 ? (
-        <Animated.View pointerEvents="none" style={[styles.indicator, { width: cellW, transform: [{ translateX: Animated.multiply(slide, cellW) }] }]} />
-      ) : null}
       {tabs.map((t, i) => (
         <Cell
           key={t.id}
@@ -402,10 +413,8 @@ export function TabBar({
 /**
  * Hoisted out of render (docs/archive/ANDROID-TAP-RESPONSIVENESS-RCA-2026-08-19.md §2.2): the bar is on screen
  * for the whole session and re-renders on every route change, so its static styles are created once.
- * The fill is the glass (`BlurView` under a transparent bar) or, wherever `useGlass` says the handoff's
- * fallback applies, opaque `bg` — never a translucent bar without blur. No shadow (v1.4). The edge is the
- * owner's one change to v1.4's "no edge" (ledger D-56 §6): a hairline outline, so the white pill doesn't
- * vanish into a white screen.
+ * The fill is opaque `bg` with the handoff's `--shadow-float`, on every platform (D-123). The edge is the
+ * owner's D-56 §6 hairline outline, so the white pill keeps its shape in bright sun.
  */
 const styles = StyleSheet.create({
   bar: {
@@ -418,14 +427,14 @@ const styles = StyleSheet.create({
     backgroundColor: c.bg,
     borderRadius: tokens.radius.pill,
     zIndex: 20,
+    // The handoff's solid bar lifts off content with `--shadow-float` (D-123), so the white pill still
+    // reads over a white screen.
+    ...tokens.shadow.float,
   },
-  barGlass: { backgroundColor: "transparent" },
-  // expo-blur ignores `borderRadius` unless the view clips (its docs: `overflow: "hidden"`).
-  glass: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, overflow: "hidden" },
   // One physical pixel on every phone, barely there. An overlay, so it takes no layout: the cells and the
   // indicator still sit exactly 4 in.
   edge: { ...StyleSheet.absoluteFillObject, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, borderColor: EDGE },
-  indicator: { position: "absolute", top: 4, left: 4, height: 52, borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
+  activeFill: { borderRadius: tokens.radius.pill, backgroundColor: c.tileMint },
   cell: { flex: 1, minWidth: 0, height: 52, borderRadius: tokens.radius.pill },
   cellInner: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.pill },
   pressFill: { borderRadius: tokens.radius.pill, backgroundColor: c.surface },

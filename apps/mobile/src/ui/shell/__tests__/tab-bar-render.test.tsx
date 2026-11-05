@@ -22,7 +22,7 @@ import { ShellTabBar, TabBarSpaceProvider, useCustomerTabBadges, useHideTabBar, 
 
 const METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 24 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
-/** Async so the glass material's OS-settings read (`useGlass`) settles inside act. */
+/** Async so mount-time effects settle inside act. */
 async function mount(el: React.ReactElement): Promise<renderer.ReactTestRenderer> {
   let r!: renderer.ReactTestRenderer;
   await act(async () => {
@@ -118,17 +118,17 @@ describe("TabBar", () => {
     expect(cells.map((c) => c.props.accessibilityState.selected)).toEqual([false, true, false]);
   });
 
-  // v1.4: no edge or shadow on the bar, one `tileMint` pill for every tab, labels always 700.
-  it("draws the v1.4 bar: flat, one mint indicator, every label bold", async () => {
+  // D-123: solid bar with the float shadow, a `tileMint` pill on the active tab only, labels always 700.
+  it("draws the bar: solid, mint on the active tab only, every label bold", async () => {
     const flat = (n: renderer.ReactTestInstance) => StyleSheet.flatten(n.props.style) ?? {};
     for (const active of ["index", "money", "account"]) {
       const r = await mount(<TabBar tabs={RIDER_TABS} active={active} reduceMotion />);
       const bar = flat(r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.type === "string")[0]!);
-      expect([bar.borderWidth, bar.shadowOpacity, bar.elevation, bar.padding]).toEqual([undefined, undefined, undefined, 4]);
+      expect([bar.borderWidth, bar.shadowOpacity, bar.elevation, bar.padding]).toEqual([undefined, tokens.shadow.float.shadowOpacity, tokens.shadow.float.elevation, 4]);
       const host = r.root.findAll((n) => n.props.accessibilityRole === "tablist" && typeof n.props.onLayout === "function")[0]!;
       act(() => host.props.onLayout({ nativeEvent: { layout: { width: 336, height: 60, x: 12, y: 0 } } }));
       const mint = r.root.findAll((n) => typeof n.type === "string" && flat(n).backgroundColor === tokens.color.tileMint);
-      expect(mint).toHaveLength(1);
+      expect(mint.filter((n) => flat(n).opacity === 1)).toHaveLength(1);
       const labels = r.root.findAll((n) => typeof n.type === "string" && ["Jobs", "Money", "Account"].includes(n.props.children));
       expect(new Set(labels.map((n) => flat(n).fontWeight))).toEqual(new Set([tokens.font.weight.bold]));
     }
