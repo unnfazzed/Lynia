@@ -6043,3 +6043,32 @@ Telegram "🪪 Biker docs ready" and "⚠️ Biker licence expired".
 - **Retired when:** Didit is funded again and PR 2 (the "Verify with Didit" nudge) lands; the document rows stay for
   bikers who still hold photos until they pass Didit.
 - **Upstream:** First Run v2 should draw the manual-review document rows, the licence row and F1's pill. The kit is not edited.
+
+## D-123 · Android tab bar is solid, never glass — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"lets fix the floating glass tab bar to remove the possible cause of white screen."*
+Android users on both sides report a screen that stays white (tap Restaurants and nothing draws; same on the
+biker side), recovering after a wait or a restart (`docs/KNOWN_BUGS.md` MOB-WHITE-01). The prime suspect is the
+tab bar's glass on Android: expo-blur's only Android blur is the experimental `dimezisBlurView`, which redraws a
+copy of the whole window every frame, from the bar on the tab screen even while another screen is pushed over it.
+
+- **What changes.** On Android the floating pill is always the tab-bar-v1 handoff's own **solid fallback**
+  (README "Accessibility fallback", D-56 §6): opaque `bg`, the D-56 hairline edge, the same geometry, icons,
+  labels, indicator and badges. No `BlurView` is created on Android at all (`blurSupported("android") === false`
+  in `src/ui/shell/useGlass.ts`). It is the look Android phones below API 31, low-RAM phones and phones with high
+  contrast text already had.
+- **Then everywhere, and nicer (owner, same day, on web iPhone screenshots):** *"I don't like the black outline
+  there .. it shows and sometimes doesn't show .. also the green on android shows in some cases and doesn't show in
+  some cases. It must show. Let's make it solid but making it nice at the same time."*
+  - **Solid on every platform** (iOS and web too). The fill is the handoff's own solid bar (README "## Bar"):
+    opaque `bg` lifted by **`--shadow-float`** (`tokens.shadow.float`), which v1.4 had removed. The owner's D-56 §6
+    hairline edge stays. `useGlass` and the blur are deleted; the `expo-blur` package stays installed so the native
+    runtime (and the OTA lane) is unchanged.
+  - **The mint pill always shows.** v1.4's single indicator slid between cells on a native translateX that waited
+    for the bar's measured width, and on Android it sometimes never drew. Each cell now draws its own `tileMint`
+    pill, cross-faded over 300ms with the cell's existing tone. **Deviation from v1.4 "Motion":** the pill fades
+    between tabs instead of sliding.
+  - **No ink ring after a tap.** The focus ring (handoff: "keyboard or D-pad only") was drawn on any focus, and the
+    web focuses a tapped tab. It now shows on the web only when the focus came from the keyboard; native is unchanged
+    (Android never focuses in touch mode).
+- **Undo.** Re-approve here first; the glass lived in `src/ui/shell/useGlass.ts` (see git history).
