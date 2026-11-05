@@ -131,8 +131,8 @@ const toStep1 = (kind) => async (page) => {
 const toStep2 = async (page) => {
   await toStep1("Car parts")(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByLabel("Your name").waitFor();
-  await page.waitForFunction(() => document.querySelector("#owner-name")?.value === "Tendai Moyo");
+  await page.getByLabel("Surname").waitFor();
+  await page.waitForFunction(() => document.querySelector("#owner-last")?.value === "Moyo");
   await page.getByLabel("Business name").fill("Mbare Auto Spares");
   await page.getByLabel("A landmark riders look for").fill("Next to the Total garage, blue gate");
   await page.getByRole("button", { name: /Your business on the map/ }).press("ArrowLeft");

@@ -352,6 +352,13 @@ describe("MerchantInvitesService (the invited person's side)", () => {
     expect(w.audit.at(-1)).toMatchObject({ actor: "chipo", action: TEAM_JOIN_ACTION, target: "m1", note: inv.id });
   });
 
+  it("D-124: Join's First name · Surname fill an empty profile as typed, not split at the first space", async () => {
+    const inv = w.invite("m1", "+263773000003", "Chip");
+    await w.invitesSvc.join("chipo", inv.id, { name: "Mary Jane Moyo", firstName: "Mary Jane", lastName: "Moyo", termsAccepted: true });
+    expect(w.people.get("chipo")).toMatchObject({ firstName: "Mary Jane", lastName: "Moyo" });
+    expect(w.members.find((m) => m.profileId === "chipo")!.displayName).toBe("Mary Jane Moyo");
+  });
+
   it("never overwrites a name they chose in the app", async () => {
     w.people.get("chipo")!.firstName = "Chipo";
     w.people.get("chipo")!.lastName = "Ncube";

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { JoinMerchantInviteRequest, MerchantProfileResponse, MyMerchantInvitesResponse } from "@lynia/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { listMemberships, lockMembershipsTx } from "./merchant-access";
-import { MerchantService, splitPersonName } from "./merchant.service";
+import { MerchantService, profileNameFrom } from "./merchant.service";
 
 /** The audit actions the invitee's side writes. */
 export const TEAM_JOIN_ACTION = "merchant.team.join";
@@ -124,7 +124,7 @@ export class MerchantInvitesService {
             },
           });
           // Their name fills an empty LyniaGo profile and never overwrites one they chose in the app.
-          if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: splitPersonName(name) });
+          if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: profileNameFrom(name, body.firstName, body.lastName) });
           await tx.auditLog.create({ data: { actor: profileId, action: TEAM_JOIN_ACTION, target: invite.merchantId, note: invite.id } });
         });
       } catch (err) {

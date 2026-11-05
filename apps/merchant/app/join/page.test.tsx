@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MyMerchantInviteResponse } from "@lynia/shared";
 import JoinPage from "./page";
-import { ApiError, getMyMerchant } from "../lib/api-client";
+import { ApiError, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { clearBusinessCache, primeBusiness } from "../lib/business";
 import { clearBranchesCache } from "../lib/branches";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => {
 
 vi.mock("../lib/api-client", async () => {
   const actual = await vi.importActual<typeof import("../lib/api-client")>("../lib/api-client");
-  return { ...actual, getMyMerchant: vi.fn() };
+  return { ...actual, getMyMerchant: vi.fn(), getMyAccount: vi.fn() };
 });
 vi.mock("../lib/team-api", () => ({ listMyInvites: vi.fn(), joinInvite: vi.fn(), declineInvite: vi.fn() }));
 vi.mock("../lib/business", () => ({ primeBusiness: vi.fn(), clearBusinessCache: vi.fn() }));
@@ -35,7 +35,7 @@ function invite(over: Partial<MyMerchantInviteResponse> = {}): MyMerchantInviteR
     businessType: "shop",
     ownerName: "Farai",
     role: "staff",
-    name: "Tendai",
+    name: "Tee from the counter",
     expiresAt: "2026-10-13T10:00:00.000Z",
     ...over,
   };
@@ -43,6 +43,7 @@ function invite(over: Partial<MyMerchantInviteResponse> = {}): MyMerchantInviteR
 
 beforeEach(() => {
   vi.mocked(getMyMerchant).mockRejectedValue(new ApiError(403, "This number isn't on a business on LyniaGo yet.", "not_a_member"));
+  vi.mocked(getMyAccount).mockResolvedValue({ firstName: "Tendai", lastName: "Moyo", phone: "+263771234567" });
 });
 
 afterEach(() => {
@@ -63,15 +64,36 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
     expect(await screen.findByRole("heading", { name: "Join Siyaso Spares" })).toBeTruthy();
     expect(screen.getByText(sub("Farai added you as Staff."))).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
-    const name = screen.getByLabelText("Your name") as HTMLInputElement;
-    expect(name.value).toBe("Tendai");
+    // D-124: First name · Surname from their own account — never the name the owner typed on the invite.
+    const first = screen.getByLabelText("First name") as HTMLInputElement;
+    const last = screen.getByLabelText("Surname") as HTMLInputElement;
+    await waitFor(() => expect(first.value).toBe("Tendai"));
+    expect(last.value).toBe("Moyo");
+    expect(screen.queryByDisplayValue("Tee from the counter")).toBeNull();
 
-    fireEvent.change(name, { target: { value: " Tendai Moyo " } });
+    fireEvent.change(first, { target: { value: " Tendai Rufaro " } });
     fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
-    expect(joinInvite).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", { name: "Tendai Moyo", termsAccepted: true });
+    expect(joinInvite).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      name: "Tendai Rufaro Moyo",
+      firstName: "Tendai Rufaro",
+      lastName: "Moyo",
+      termsAccepted: true,
+    });
     expect(primeBusiness).toHaveBeenCalledWith(joined);
+  });
+
+  it("a number with no name yet starts empty and must give both parts before Join", async () => {
+    vi.mocked(getMyAccount).mockResolvedValue({ firstName: "", lastName: "", phone: "+263771234567" });
+    vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite()] });
+    render(<JoinPage />);
+    const first = (await screen.findByLabelText("First name")) as HTMLInputElement;
+    expect(first.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
+    expect(await screen.findByText("Enter your first name.")).toBeTruthy();
+    expect(screen.getByText("Enter your surname.")).toBeTruthy();
+    expect(joinInvite).not.toHaveBeenCalled();
   });
 
   it("shows the one-business-per-phone refusal as it comes, without naming the other business", async () => {
@@ -81,7 +103,7 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
     );
 
     render(<JoinPage />);
-    await screen.findByLabelText("Your name");
+    await waitFor(() => expect((screen.getByLabelText("Surname") as HTMLInputElement).value).toBe("Moyo"));
     fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
 
     expect((await screen.findByText("Your number already works at another business on LyniaGo. Leave it first to join Siyaso Spares.")).getAttribute("role")).toBe(
@@ -95,7 +117,7 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
     vi.mocked(listMyInvites).mockResolvedValue({ invites: [invite()] });
     vi.mocked(joinInvite).mockRejectedValue(new ApiError(403, "This account is on hold. Message LyniaGo on WhatsApp to sort it out.", "on_hold"));
     render(<JoinPage />);
-    await screen.findByLabelText("Your name");
+    await waitFor(() => expect((screen.getByLabelText("Surname") as HTMLInputElement).value).toBe("Moyo"));
     fireEvent.click(screen.getByRole("button", { name: "Join Siyaso Spares" }));
     const link = await screen.findByRole("link", { name: "Open WhatsApp" });
     expect(link.getAttribute("href")).toBe("https://wa.me/263770000000");
@@ -107,7 +129,9 @@ describe("A5 · Join a team (merchant mobile redesign, D-48)", () => {
     vi.mocked(joinInvite).mockRejectedValue(new ApiError(410, "This invite has expired. Ask Farai to send a new one.", "invite_expired"));
 
     render(<JoinPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Join Siyaso Spares" }));
+    const join = await screen.findByRole("button", { name: "Join Siyaso Spares" });
+    await waitFor(() => expect((screen.getByLabelText("Surname") as HTMLInputElement).value).toBe("Moyo"));
+    fireEvent.click(join);
 
     expect(await screen.findByText("This invite has expired. Ask Farai to send a new one.")).toBeTruthy();
     expect(await screen.findByRole("heading", { name: "Join Sadza Republic" })).toBeTruthy();
