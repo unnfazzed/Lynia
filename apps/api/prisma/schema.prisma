@@ -826,6 +826,27 @@ model Order {
   // (prep already completed before dispatch ever starts — see food-dispatch.service.ts docstring).
   noRiderHoldAt            DateTime? @map("no_rider_hold_at")
 
+  // ── Delivery price ceiling (ledger D-125, docs/plans/2026-11-05-delivery-price-ceiling.md). All null on an
+  // order placed without a ceiling (the flag off, an older app, or before launch): it keeps the fixed fee.
+  // `deliveryFee` stays what the rider is offered / earns (ladder + top-up); `merchantDeliveryShare` carries the
+  // shop's top-up (or the whole fee on a free-delivery venue), so foodOrderMoney is unchanged.
+  deliveryRecommended   Decimal?  @map("delivery_recommended") @db.Decimal(10, 2)
+  // The customer's "Pay no more than" — their part of delivery never goes above it.
+  deliveryCeiling       Decimal?  @map("delivery_ceiling") @db.Decimal(10, 2)
+  // The customer's part currently offered: the ladder rung, start -> ceiling in 50c steps, one per round.
+  deliveryLadder        Decimal?  @map("delivery_ladder") @db.Decimal(10, 2)
+  // The shop's top-up on top of the ladder (M4h), funded from its cash.
+  merchantTopUp         Decimal?  @map("merchant_top_up") @db.Decimal(10, 2)
+  // Free-delivery venue at placement: the shop funds the whole fee; the customer is never asked to raise.
+  deliveryVenueFunded   Boolean?  @map("delivery_venue_funded")
+  // Ladder rounds run so far, and the one a rider accepted in (admin E1).
+  deliveryRound         Int?      @map("delivery_round")
+  deliveryAcceptedRound Int?      @map("delivery_accepted_round")
+  // When the customer is (or was) asked to raise (T11c): the hold + 2 min, or at once on "Keep searching".
+  deliveryAskCustomerAt DateTime? @map("delivery_ask_customer_at")
+  // When the raise push went out (sent once per ask).
+  deliveryRaiseAskedAt  DateTime? @map("delivery_raise_asked_at")
+
   dispatchAttempts FoodDispatchAttempt[]
 
   // ── C4: food money evidence layer (orderType=merchant only) ────────────────────────────────────

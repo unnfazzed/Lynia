@@ -252,7 +252,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
       const deliveryFee = Number(order.deliveryFee ?? 0);
       // D-71: totals are the customer's — a free-delivery venue's share comes off, capped by the goods.
       const wasTotal = foodOrderMoney({ goodsTotal: order.merchantGoodsTotal, deliveryFee, merchantDeliveryShare: order.merchantDeliveryShare }).customerTotal;
-      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee);
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee, order);
       const newTotal = foodOrderMoney({ goodsTotal: goods.goodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
       const hasSwaps = swapLines.length > 0;
       const allGone = !hasSwaps && keptLines === 0;
@@ -530,7 +530,7 @@ export class OrderSubstitutionService implements OnModuleInit, OnModuleDestroy {
     const goods = merchantGoodsForSubtotal(itemsSubtotal);
     const deliveryFee = Number(order.deliveryFee ?? 0);
     // D-71: a free-delivery order stays free once the swaps land (share back up to the fee if goods allow).
-    const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee);
+    const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, goods.goodsTotal, deliveryFee, order);
     const newTotal = foodOrderMoney({ goodsTotal: goods.goodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
 
     let data: Prisma.OrderUpdateManyMutationInput;

@@ -66,5 +66,7 @@ export const OrderFlagsResponse = z.object({
   preferredRetired: z.boolean().optional(),
   /** Own bikers (`FLEET_UI_LIVE`): the `/fleet` routes answer, so the biker app asks `GET /fleet/me`. */
   fleetLive: z.boolean().optional(),
+  /** D-125: the delivery price ceiling ("Pay no more than") on Review & place. Absent = off. */
+  deliveryCeiling: z.boolean().optional(),
 });
 export type OrderFlagsResponse = z.infer<typeof OrderFlagsResponse>;

@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
+  MerchantTopUpRequest,
   MerchantCancelOrderRequest,
   AttachMerchantDoorProofRequest,
   AttachMerchantPickupProofRequest,
@@ -283,6 +284,17 @@ export class MerchantOrderController {
   @UseGuards(MerchantGuard)
   resumeDispatch(@Param("orderId", ParseUUIDPipe) orderId: string, @CurrentUser() profileId: string) {
     return this.dispatch.resumeSearch(profileId, orderId);
+  }
+
+  /** D-125 M4h: add to the riders' offer from the shop's cash (+$0.50 / +$1 / +$2); the search resumes. */
+  @Post(":orderId/top-up")
+  @UseGuards(MerchantGuard)
+  async topUp(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(MerchantTopUpRequest)) body: MerchantTopUpRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    return this.dispatch.topUp(profileId, orderId, body.amount);
   }
 
   @Post(":orderId/dispatch/cancel")

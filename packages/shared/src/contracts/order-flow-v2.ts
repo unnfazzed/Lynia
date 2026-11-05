@@ -255,6 +255,54 @@ export const MerchantOrderPrescriptionView = z
   .strict();
 export type MerchantOrderPrescriptionView = z.infer<typeof MerchantOrderPrescriptionView>;
 
+/** D-125, customer reads only: the delivery price ceiling. Omitted on an order placed without one. Never on a
+ *  rider's read (riders see only the current offer, as `deliveryFee`). */
+export const DeliveryCeilingView = z
+  .object({
+    recommended: z.number(),
+    /** The customer's "Pay no more than". */
+    ceiling: z.number(),
+    /** What a raise may go up to (2 × recommended). */
+    max: z.number(),
+    /** The trip, for the DELIVERY card's "2.5 km". */
+    distanceKm: z.number().nullable(),
+    /** Goods + ceiling (+ any carried balance): the "at most" total until a rider accepts. */
+    totalAtMost: z.number().nullable(),
+    /** A rider accepted: the customer's exact delivery part. Null while searching. */
+    acceptedPrice: z.number().nullable(),
+    /** ceiling − acceptedPrice when positive (T6p "you saved $0.50"). */
+    saved: z.number().nullable(),
+    /** The shop funds delivery: no stepper and no raise prompt. */
+    venueFunded: z.boolean(),
+    /** T11c: the customer is being asked to raise. */
+    askRaise: z.boolean(),
+  })
+  .strict();
+export type DeliveryCeilingView = z.infer<typeof DeliveryCeilingView>;
+
+/** D-125, merchant reads only: the offer bikers see and the shop's top-up (M4h / K-card-h / M6a-t). */
+export const DeliveryTopUpView = z
+  .object({
+    /** What riders are offered now (ladder + top-up). */
+    offer: z.number(),
+    /** The shop's top-up so far (0 = none). */
+    topUp: z.number(),
+    /** The top-up amounts the shop may still add (capped by the goods total). */
+    choices: z.array(z.number()),
+    /** When the customer is asked to raise (null = never: a free-delivery venue, or already accepted). */
+    askCustomerAt: z.string().nullable(),
+  })
+  .strict();
+export type DeliveryTopUpView = z.infer<typeof DeliveryTopUpView>;
+
+/** `POST /merchant/orders/:id/top-up` (M4h). */
+export const MerchantTopUpRequest = z.object({ amount: z.union([z.literal(0.5), z.literal(1), z.literal(2)]) }).strict();
+export type MerchantTopUpRequest = z.infer<typeof MerchantTopUpRequest>;
+
+/** `POST /restaurants/orders/:id/raise-ceiling` (T11c): the new "Pay no more than". */
+export const RaiseCeilingRequest = z.object({ ceiling: z.number().positive().max(100) }).strict();
+export type RaiseCeilingRequest = z.infer<typeof RaiseCeilingRequest>;
+
 /** Shared shape both the customer's order view and the merchant's queue card render. Every
  *  timestamp is an ISO-8601 string (server-authoritative; the client never computes one). */
 export const MerchantOrderResponse = z
@@ -426,6 +474,10 @@ export const MerchantOrderResponse = z
     doorProof: MerchantDoorProofView.nullable().optional(),
     /** BRIEF §11: the customer's own venue rating (customer reads only; omitted until rated). */
     venueRating: VenueRatingView.nullable().optional(),
+    /** D-125: the delivery price ceiling (customer reads only; omitted otherwise). */
+    deliveryCeiling: DeliveryCeilingView.optional(),
+    /** D-125: the offer and the shop's top-up (merchant reads only, ceiling orders only). */
+    deliveryTopUp: DeliveryTopUpView.optional(),
   })
   .strict();
 export type MerchantOrderResponse = z.infer<typeof MerchantOrderResponse>;

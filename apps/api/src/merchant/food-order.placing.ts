@@ -4,9 +4,10 @@
  */
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { addMoney, categoryServedNow, isInServiceArea, serviceTownsLabel, deliveryFeeForDistance, foodOrderMoney, merchantDeliveryShareAtPlacement, effectiveMerchantHours, isMerchantOpenNow, type MerchantHours, nextOpenDescription, RESTAURANTS_AUTO_ACCEPT, haversineKm, BUSY_MODE_EXTRA_MIN, type MerchantOrderResponse, type PaymentPromptRail, type PlaceMerchantOrderRequest, RESTAURANTS_TIMING, roundToCents, smallOrderFeeForSubtotal, type Waypoint } from "@lynia/shared";
+import { addMoney, categoryServedNow, ceilingBounds, isValidCeiling, recommendedDeliveryUsd, startingOffer, isInServiceArea, serviceTownsLabel, deliveryFeeForDistance, foodOrderMoney, merchantDeliveryShareAtPlacement, effectiveMerchantHours, isMerchantOpenNow, type MerchantHours, nextOpenDescription, RESTAURANTS_AUTO_ACCEPT, haversineKm, BUSY_MODE_EXTRA_MIN, type MerchantOrderResponse, type PaymentPromptRail, type PlaceMerchantOrderRequest, RESTAURANTS_TIMING, roundToCents, smallOrderFeeForSubtotal, type Waypoint } from "@lynia/shared";
 import { penaltiesSuspended } from "../common/penalties";
 import { harareWallClock } from "./harare-clock";
+import { withCustomerCeiling } from "./delivery-ceiling.views";
 import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, isDishOutOfStock } from "./merchant-lookup.util";
 import { createOnce, replayFirst } from "../common/idempotency";
 import { carryBalance, openBalance } from "./customer-balance";
@@ -17,6 +18,28 @@ import type { FoodOrderHost } from "./food-order.host";
 
 export class FoodOrderPlacing {
   constructor(private readonly svc: FoodOrderHost) {}
+  /**
+   * D-125: the ceiling an order is placed with, or null for the fixed fee. Validated against the shared bounds
+   * (never trust the client). A free-delivery venue ignores the requested amount: its ceiling is Recommended.
+   */
+  private ceilingAtPlacement(
+    requested: number | undefined,
+    distanceKm: number,
+    freeDelivery: boolean,
+  ): { recommended: number; ceiling: number; ladder: number } | null {
+    if (requested == null || this.svc.env?.DELIVERY_CEILING_ENABLED !== "true") return null;
+    const recommended = recommendedDeliveryUsd(distanceKm);
+    const ceiling = freeDelivery ? recommended : requested;
+    if (!isValidCeiling(ceiling, recommended)) {
+      const b = ceilingBounds(recommended);
+      throw new BadRequestException({
+        reason: "delivery_ceiling_out_of_range",
+        message: "Choose a delivery price from $" + b.min.toFixed(2) + " to $" + b.max.toFixed(2) + ".",
+      });
+    }
+    return { recommended, ceiling, ladder: startingOffer(recommended, ceiling) };
+  }
+
   // ── Customer ─────────────────────────────────────────────────────────────────────────────────────
 
   /** `POST /restaurants/:merchantId/orders`. Price is always server-computed (D-35). */
@@ -49,7 +72,7 @@ export class FoodOrderPlacing {
 
     const key = body.idempotencyKey;
     const existing = await replayFirst(key, () => this.svc.findByIdempotencyKey(customerId, key));
-    if (existing) return this.svc.toResponse(existing);
+    if (existing) return withCustomerCeiling(existing, this.svc.toResponse(existing));
 
     // D-74 (owner, 2026-10-03): Order flow v2 is cash only (BRIEF §14), and the app has placed only cash
     // since D-48. An install from before then can still offer wallet, so a NEW order paying by wallet is
@@ -150,7 +173,10 @@ export class FoodOrderPlacing {
     const rawSubtotal = addMoney(...body.items.map((i) => lineTotal(dishById.get(i.dishId)!.priceUsd, i.quantity)));
     const smallOrderFee = smallOrderFeeForSubtotal(rawSubtotal);
     const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
-    const deliveryFee = deliveryFeeForDistance(distanceKm);
+    // D-125 delivery price ceiling: only when the flag is on AND the app sent a ceiling (an installed app that
+    // never shows the card keeps the fixed fee it displayed). A free-delivery venue's ceiling is Recommended.
+    const ceilingPlan = this.ceilingAtPlacement(body.deliveryCeiling, distanceKm, merchant.freeDelivery);
+    const deliveryFee = ceilingPlan ? ceilingPlan.ladder : deliveryFeeForDistance(distanceKm);
     // D-71: a free-delivery venue pays the rider's fee out of its own cash; the customer pays $0 delivery.
     // Snapshotted here so flipping the switch later never reprices this order.
     const merchantDeliveryShare = merchantDeliveryShareAtPlacement({
@@ -208,6 +234,15 @@ export class FoodOrderPlacing {
           merchantGoodsTotal,
           deliveryFee,
           merchantDeliveryShare,
+          ...(ceilingPlan
+            ? {
+                deliveryRecommended: ceilingPlan.recommended,
+                deliveryCeiling: ceilingPlan.ceiling,
+                deliveryLadder: ceilingPlan.ladder,
+                deliveryVenueFunded: merchantDeliveryShare != null,
+                deliveryRound: 0,
+              }
+            : {}),
           idempotencyKey: body.idempotencyKey ?? null,
           // Order flow v2 (BRIEF §7): null = never chosen = ask.
           outOfStockPref: body.outOfStockPref ?? null,
@@ -248,7 +283,7 @@ export class FoodOrderPlacing {
                 return { ...order, carriedBalance: [{ amount: new Prisma.Decimal(owed.amount) }] };
               }),
       });
-      if (!once.created) return this.svc.toResponse(once.row);
+      if (!once.created) return withCustomerCeiling(once.row, this.svc.toResponse(once.row));
       const created = once.row;
       // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
       if (!slot) this.svc.notifyQueue(merchantId, created.id);
@@ -267,7 +302,7 @@ export class FoodOrderPlacing {
           sender: { firstName: account?.firstName ?? "", lastName: account?.lastName ?? "", phone: account?.phone ?? null },
         }),
       );
-      return this.svc.toResponse(created);
+      return withCustomerCeiling(created, this.svc.toResponse(created));
     }
   }
 
