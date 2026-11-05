@@ -687,6 +687,15 @@
 .m-in[data-invalid="true"] {
   border-color: var(--danger);
 }
+/* D-124: First name · Surname side by side (customer C5's pair). */
+.m-name-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.m-name-pair > .m-fld {
+  min-width: 0;
+}
 .m-hint {
   font-size: 12px;
   color: var(--muted);

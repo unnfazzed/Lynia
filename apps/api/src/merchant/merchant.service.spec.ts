@@ -5,7 +5,7 @@ import type { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import { MerchantController } from "./merchant.controller";
 import { harareWallClock } from "./harare-clock";
-import { endOfToday, MerchantService, OUT_OF_STOCK_UNTIL_BACK } from "./merchant.service";
+import { endOfToday, MerchantService, OUT_OF_STOCK_UNTIL_BACK, profileNameFrom } from "./merchant.service";
 import { withMembershipShim } from "./testing/membership-shim";
 
 /** Mirrors the shared mock shape used across the repo's other *.service.spec.ts files (e.g.
@@ -1999,5 +1999,16 @@ describe("MerchantService customer Shops & Pharmacy reads (D-58)", () => {
     expect(wheres[0]).toEqual({ isDraft: false, ...rxRule });
     // Composes with search's own name/description OR rather than overwriting it.
     expect(wheres[1]).toMatchObject({ ...rxRule, OR: [{ name: { contains: "amox", mode: "insensitive" } }, { description: { contains: "amox", mode: "insensitive" } }] });
+  });
+});
+
+describe("profileNameFrom (D-124)", () => {
+  it("uses First name · Surname as typed when both are sent", () => {
+    expect(profileNameFrom("Mary Jane Moyo", " Mary Jane ", " Moyo ")).toEqual({ firstName: "Mary Jane", lastName: "Moyo" });
+  });
+
+  it("splits the one line when an older page sends only that", () => {
+    expect(profileNameFrom("Tendai Moyo")).toEqual({ firstName: "Tendai", lastName: "Moyo" });
+    expect(profileNameFrom("Tendai Moyo", "Tendai", "")).toEqual({ firstName: "Tendai", lastName: "Moyo" });
   });
 });

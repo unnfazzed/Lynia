@@ -50,7 +50,9 @@ export async function resolveMerchantAccess(prisma: PrismaService, profileId: st
   });
   if (!legacy) return null;
 
-  const displayName = `${legacy.ownerProfile?.firstName ?? ""} ${legacy.ownerProfile?.lastName ?? ""}`.trim() || legacy.name;
+  // The owner's personal name, never the business's (D-124: the two are always kept apart). Empty when the
+  // profile has none yet; the team list then falls back to the profile name once they set one.
+  const displayName = `${legacy.ownerProfile?.firstName ?? ""} ${legacy.ownerProfile?.lastName ?? ""}`.trim();
   try {
     await prisma.merchantMember.create({
       data: { merchantId: legacy.id, profileId, role: "owner", displayName },

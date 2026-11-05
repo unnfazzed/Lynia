@@ -49,14 +49,6 @@ export function validateInvite(form: InviteForm): InviteErrors {
   return errors;
 }
 
-/** Join asks for the person's own name, as they want the team to see it. */
-export function validateJoinName(name: string): string | null {
-  const n = name.trim();
-  if (!n) return "Enter your name.";
-  if (n.length > 60) return "Keep it under 60 letters.";
-  return null;
-}
-
 /** The Account avatar's letters (merchant-mobile C4): "Sadza Republic" → "SR"; one word → its first two. */
 export function initials(name: string): string {
   const [first = "", second = ""] = name.trim().split(/\s+/).filter(Boolean);

@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppBar } from "../components/m/AppBar";
 import { LocationField } from "../components/m/LocationField";
+import { NameFields } from "../components/m/NameFields";
 import { useToast } from "../components/m/Toast";
 import { RetryableError } from "../components/RetryableError";
 import { ApiError, apiErrorMessage, becomeMerchant, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
+import { accountPersonName } from "../lib/person-name";
 import { supportWhatsAppUrl } from "../lib/config";
 import { signOutSession } from "../lib/sign-out";
 import { fieldForReason, needsSupport, pickSellChoice, SIGN_UP_FAILED, type SellChoice, sellChoice, type SignUpErrors, type SignUpForm, toBecomeRequest, validateDetails } from "../lib/sign-up";
@@ -17,12 +19,12 @@ import { useStepBack } from "../lib/use-step-back";
 
 type Gate = { status: "checking" } | { status: "form" } | { status: "error"; message: string };
 
-const EMPTY_FORM: SignUpForm = { businessType: null, ownerName: "", name: "", location: null, contactPhone: "" };
+const EMPTY_FORM: SignUpForm = { businessType: null, ownerFirstName: "", ownerLastName: "", name: "", location: null, contactPhone: "" };
 
 /**
  * A3 · What do you sell? (Restaurant, Shop, or Pharmacy — D-76) and A4 · Your business (packages/design/handoff/merchant-mobile, ledger D-48)
  * — what a signed-in number that isn't on a business sees. Two steps: restaurant or shop, then the
- * business name, your name and where it is: "Use my current location" (GPS, named by a reverse
+ * business name, your name (First name · Surname, D-124) and where it is: "Use my current location" (GPS, named by a reverse
  * lookup) or "Or search street or area" (Google Places). No map pin, no landmark, no contact-phone
  * field (it is the sign-in number) and no privacy tick (accepted on the sign-in screen). It creates the
  * business and the caller's owner membership in one call (`POST /merchant/become`), then goes home.
@@ -81,12 +83,17 @@ export default function OnboardingPage() {
 
     function showForm() {
       setGate({ status: "form" });
-      // Your name and the contact phone come from the person's own account. Best effort.
+      // Your name and the contact phone start from the person's own account. Best effort.
       getMyAccount()
         .then((me) => {
           if (cancelled) return;
-          const fullName = `${me.firstName} ${me.lastName}`.trim();
-          setForm((f) => ({ ...f, ownerName: f.ownerName || fullName, contactPhone: f.contactPhone || me.phone }));
+          const own = accountPersonName(me);
+          setForm((f) => ({
+            ...f,
+            ownerFirstName: f.ownerFirstName || own.firstName,
+            ownerLastName: f.ownerLastName || own.lastName,
+            contactPhone: f.contactPhone || me.phone,
+          }));
         })
         .catch(() => {});
     }
@@ -204,7 +211,12 @@ export default function OnboardingPage() {
           Your business
         </h1>
         <TextField id="biz-name" label="Business name" value={form.name} error={errors.name} autoComplete="organization" onChange={(v) => update("name", v)} />
-        <TextField id="owner-name" label="Your name" value={form.ownerName} error={errors.ownerName} autoComplete="name" onChange={(v) => update("ownerName", v)} />
+        <NameFields
+          idPrefix="owner"
+          value={{ firstName: form.ownerFirstName, lastName: form.ownerLastName }}
+          errors={{ firstName: errors.ownerFirstName, lastName: errors.ownerLastName }}
+          onChange={(key, v) => update(key === "firstName" ? "ownerFirstName" : "ownerLastName", v)}
+        />
         <LocationField
           value={form.location}
           error={errors.location}

@@ -82,7 +82,10 @@ function makeWorld() {
         members
           .filter((m) => (where.merchantId === undefined || m.merchantId === where.merchantId) && (where.profileId === undefined || m.profileId === where.profileId))
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-          .map((m) => ({ ...m, profile: { phone: people.get(m.profileId)!.phone } })),
+          .map((m) => {
+            const p = people.get(m.profileId)!;
+            return { ...m, profile: { phone: p.phone, firstName: p.firstName, lastName: p.lastName } };
+          }),
       // The resolver's active-row read ({ profileId }), or one person on one team.
       findFirst: async ({ where }: { where: { merchantId?: string; profileId: string } }) => {
         const m = members.find((x) => x.profileId === where.profileId && (where.merchantId === undefined || x.merchantId === where.merchantId));
@@ -220,6 +223,15 @@ describe("MerchantTeamService.team (merchant web upgrade L4)", () => {
   });
 });
 
+describe("D-124: a person's name, never the business's", () => {
+  it("a team row with no name shows the person's own profile name", async () => {
+    w.person("staff-1", "+263773000003", { firstName: "Chipo", lastName: "Moyo" });
+    w.member("m1", "staff-1", "staff", "", 10_000);
+    const res = await w.team.team(OWNER, "owner-1");
+    expect(res.members.find((m) => m.profileId === "staff-1")!.name).toBe("Chipo Moyo");
+  });
+});
+
 describe("MerchantTeamService.invite", () => {
   it("creates a 14-day invite and audit-logs it", async () => {
     const res = await w.team.invite(OWNER, "owner-1", { name: "Chipo", phone: "0773 000 003" });
@@ -350,6 +362,13 @@ describe("MerchantInvitesService (the invited person's side)", () => {
     expect(w.people.get("chipo")).toMatchObject({ firstName: "Chipo", lastName: "Moyo" });
     expect(w.invites).toHaveLength(0);
     expect(w.audit.at(-1)).toMatchObject({ actor: "chipo", action: TEAM_JOIN_ACTION, target: "m1", note: inv.id });
+  });
+
+  it("D-124: Join's First name · Surname fill an empty profile as typed, not split at the first space", async () => {
+    const inv = w.invite("m1", "+263773000003", "Chip");
+    await w.invitesSvc.join("chipo", inv.id, { name: "Mary Jane Moyo", firstName: "Mary Jane", lastName: "Moyo", termsAccepted: true });
+    expect(w.people.get("chipo")).toMatchObject({ firstName: "Mary Jane", lastName: "Moyo" });
+    expect(w.members.find((m) => m.profileId === "chipo")!.displayName).toBe("Mary Jane Moyo");
   });
 
   it("never overwrites a name they chose in the app", async () => {

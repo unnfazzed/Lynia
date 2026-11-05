@@ -117,9 +117,11 @@ describe("A3 · What do you sell? (merchant mobile redesign, D-48)", () => {
 });
 
 describe("A4 · Your business", () => {
-  it("is prefilled with your name from your LyniaGo account", async () => {
+  it("asks First name · Surname, prefilled from your LyniaGo account (D-124)", async () => {
     await toDetailsAs("Restaurant");
-    await vi.waitFor(() => expect((screen.getByLabelText("Your name") as HTMLInputElement).value).toBe("Tendai Moyo"));
+    await vi.waitFor(() => expect((screen.getByLabelText("First name") as HTMLInputElement).value).toBe("Tendai"));
+    expect((screen.getByLabelText("Surname") as HTMLInputElement).value).toBe("Moyo");
+    expect(screen.queryByLabelText("Your name")).toBeNull();
     expect(screen.queryByText(/landmark/i)).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
@@ -135,6 +137,8 @@ describe("A4 · Your business", () => {
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith("/deliveries"));
     expect(becomeMerchant).toHaveBeenCalledWith({
       ownerName: "Tendai Moyo",
+      ownerFirstName: "Tendai",
+      ownerLastName: "Moyo",
       name: "Mbare Auto Spares",
       businessType: "shop",
       location: { point: MBARE, address: "5th Street, Mbare", contactPhone: "+263771234567" },
@@ -247,7 +251,8 @@ describe("MJ-M8 · the account read failed when the form opened", () => {
   async function fillAndCreate() {
     await toDetailsAs("Restaurant");
     fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "Sadza Republic" } });
-    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Tendai Moyo" } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Tendai" } });
+    fireEvent.change(screen.getByLabelText("Surname"), { target: { value: "Moyo" } });
     fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
     await screen.findByText("5th Street, Mbare");
     fireEvent.click(screen.getByRole("button", { name: "Create my business" }));

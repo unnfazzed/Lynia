@@ -4,7 +4,8 @@ import { fieldForReason, needsSupport, OUTSIDE_AREA_MESSAGE, pickSellChoice, sel
 
 const filled: SignUpForm = {
   businessType: "shop",
-  ownerName: " Tendai Moyo ",
+  ownerFirstName: " Tendai ",
+  ownerLastName: " Moyo ",
   name: " Mbare Auto Spares ",
   location: { point: { lat: -17.861, lng: 31.036 }, address: "5th Street, Mbare", source: "gps" },
   contactPhone: "+263771234567",
@@ -15,10 +16,11 @@ describe("sign-up step 2: your business (merchant-mobile A4)", () => {
     expect(validateDetails(filled)).toEqual({});
   });
 
-  it("asks for the business name, your name and a location — no pin, landmark or privacy tick any more", () => {
-    expect(validateDetails({ ...filled, name: " ", ownerName: "", location: null })).toEqual({
+  it("asks for the business name, your first name and surname (D-124) and a location — no pin, landmark or privacy tick any more", () => {
+    expect(validateDetails({ ...filled, name: " ", ownerFirstName: "", ownerLastName: " ", location: null })).toEqual({
       name: "Enter the business name.",
-      ownerName: "Enter your name.",
+      ownerFirstName: "Enter your first name.",
+      ownerLastName: "Enter your surname.",
       location: "Use your current location, or search for your street.",
     });
   });
@@ -33,6 +35,8 @@ describe("sign-up step 2: your business (merchant-mobile A4)", () => {
     const body = toBecomeRequest(filled);
     expect(body).toEqual({
       ownerName: "Tendai Moyo",
+      ownerFirstName: "Tendai",
+      ownerLastName: "Moyo",
       name: "Mbare Auto Spares",
       businessType: "shop",
       location: { point: { lat: -17.861, lng: 31.036 }, address: "5th Street, Mbare", contactPhone: "+263771234567" },

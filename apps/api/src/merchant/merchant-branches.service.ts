@@ -152,12 +152,17 @@ export class MerchantBranchesService {
         select: { id: true },
       });
       const me = source.members[0];
+      // The owner's personal name on the new branch: their team name, else their profile's — never the
+      // branch's name (D-124: business name and personal name are always kept apart).
+      const ownName =
+        me?.displayName ??
+        (await tx.profile.findUnique({ where: { id: profileId }, select: { firstName: true, lastName: true } }).then((p) => `${p?.firstName ?? ""} ${p?.lastName ?? ""}`.trim()));
       await tx.merchantMember.create({
         data: {
           merchantId: branch.id,
           profileId,
           role: "owner",
-          displayName: me?.displayName ?? name,
+          displayName: ownName,
           // The owner accepted the merchant terms once, for their business; a branch is more of it.
           termsAcceptedAt: me?.termsAcceptedAt ?? null,
           addedByProfileId: profileId,

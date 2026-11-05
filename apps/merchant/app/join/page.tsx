@@ -5,14 +5,16 @@ import { useRouter } from "next/navigation";
 import type { MyMerchantInviteResponse } from "@lynia/shared";
 import { getAlarmController } from "../components/alarm-singleton";
 import { AppBar } from "../components/m/AppBar";
+import { NameFields } from "../components/m/NameFields";
 import { RetryableError } from "../components/RetryableError";
-import { ApiError, getMyMerchant } from "../lib/api-client";
+import { ApiError, getMyAccount, getMyMerchant } from "../lib/api-client";
 import { homePath } from "../lib/booking";
 import { primeBusiness } from "../lib/business";
 import { supportWhatsAppUrl } from "../lib/config";
 import { signOutSession } from "../lib/sign-out";
+import { accountPersonName, EMPTY_PERSON_NAME, joinPersonName, type PersonName, type PersonNameErrors, validatePersonName } from "../lib/person-name";
 import { needsSupport } from "../lib/sign-up";
-import { ROLE_LABEL, validateJoinName } from "../lib/team";
+import { ROLE_LABEL } from "../lib/team";
 import { declineInvite, joinInvite, listMyInvites } from "../lib/team-api";
 
 type LoadState = { status: "checking" } | { status: "ready"; invites: MyMerchantInviteResponse[] } | { status: "error"; message: string };
@@ -23,10 +25,13 @@ const OWN_BUSINESS_PATH = "/onboarding?own=1";
 /**
  * A5 · Join a team (packages/design/handoff/merchant-mobile): what a signed-in number with a pending
  * invite sees instead of "Set up your business". The business's tile, "Join Siyaso Spares", "Farai
- * added you as **Staff**.", your name, then **Join**, or **Not me** (deletes the invite) · **Start my
+ * added you as **Staff**.", your name (First name · Surname, D-124), then **Join**, or **Not me** (deletes the invite) · **Start my
  * own business**. The privacy notice was accepted on the sign-in screen (README A1), so there is no
  * tick here. "One business per phone" is settled by the API at Join. With more than one invite, the
  * next one shows once the first is joined or declined.
+ *
+ * The name boxes start from the person's own LyniaGo account, never from the name the owner typed on the
+ * invite (D-124): that one only labels the pending invite on the owner's Team list.
  *
  * Outside the `(app)` group, like the sign-up: no tab bar and no queue socket.
  */
@@ -34,8 +39,8 @@ export default function JoinPage() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "checking" });
   const [openId, setOpenId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [errors, setErrors] = useState<{ name?: string }>({});
+  const [name, setName] = useState<PersonName>(EMPTY_PERSON_NAME);
+  const [errors, setErrors] = useState<PersonNameErrors>({});
   const [banner, setBannerText] = useState<string | null>(null);
   const [bannerHelp, setBannerHelp] = useState(false);
   const setBanner = useCallback((text: string | null) => {
@@ -52,7 +57,6 @@ export default function JoinPage() {
 
   const openInvite = useCallback((invite: MyMerchantInviteResponse) => {
     setOpenId(invite.id);
-    setName(invite.name);
     setErrors({});
   }, []);
 
@@ -79,6 +83,13 @@ export default function JoinPage() {
       setState({ status: "ready", invites });
       // The first invite's Join form is open from the start.
       if (invites[0]) openInvite(invites[0]);
+      // Their own name, from their account (best effort; empty for a number that never chose one).
+      getMyAccount()
+        .then((me) => {
+          const own = accountPersonName(me);
+          setName((n) => ({ firstName: n.firstName || own.firstName, lastName: n.lastName || own.lastName }));
+        })
+        .catch(() => {});
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return signOut();
       // An API without Team yet has no invites to show.
@@ -114,15 +125,19 @@ export default function JoinPage() {
   async function onJoin(e: React.FormEvent, invite: MyMerchantInviteResponse) {
     e.preventDefault();
     if (actingRef.current) return;
-    const nameError = validateJoinName(name);
-    const found = nameError ? { name: nameError } : {};
+    const found = validatePersonName(name);
     setErrors(found);
     setBanner(null);
     if (Object.keys(found).length > 0) return;
     actingRef.current = true;
     setBusy(invite.id);
     try {
-      const merchant = await joinInvite(invite.id, { name: name.trim(), termsAccepted: true });
+      const merchant = await joinInvite(invite.id, {
+        name: joinPersonName(name),
+        firstName: name.firstName.trim(),
+        lastName: name.lastName.trim(),
+        termsAccepted: true,
+      });
       primeBusiness(merchant);
       // The Join tap is a gesture: a restaurant's order alarm is ready from the first screen.
       getAlarmController().arm();
@@ -185,13 +200,15 @@ export default function JoinPage() {
               {invite.ownerName ? `${invite.ownerName} added you` : "You were added"} as <b style={{ color: "var(--ink)" }}>{ROLE_LABEL[invite.role]}</b>.
             </p>
           </div>
-          <div className="m-fld">
-            <label htmlFor="join-name">Your name</label>
-            <div className="m-in" data-invalid={errors.name ? true : undefined}>
-              <input id="join-name" value={name} autoComplete="name" aria-invalid={errors.name ? true : undefined} onChange={(e) => setName(e.target.value)} />
-            </div>
-            {errors.name && <span className="m-err">{errors.name}</span>}
-          </div>
+          <NameFields
+            idPrefix="join"
+            value={name}
+            errors={errors}
+            onChange={(key, v) => {
+              setName((n) => ({ ...n, [key]: v }));
+              setErrors((e) => ({ ...e, [key]: undefined }));
+            }}
+          />
           {banner && (
             <div className="m-alert" role="alert">
               {banner}

@@ -115,7 +115,8 @@ export const MyMerchantInviteResponse = z
     /** The owner's first name, as the invite line says it. */
     ownerName: z.string(),
     role: MerchantMemberRole,
-    /** The name the owner gave, which the person confirms or corrects at Join. */
+    /** The name the owner gave when inviting. A label for the pending invite only (D-124): Join asks the
+     *  person for their own name and never starts from this one. */
     name: z.string(),
     expiresAt: z.string(),
   })
@@ -128,7 +129,11 @@ export type MyMerchantInvitesResponse = z.infer<typeof MyMerchantInvitesResponse
 /** `POST /merchant/invites/:id/join`: the person's name as they want it, and the one-tap terms line. */
 export const JoinMerchantInviteRequest = z
   .object({
+    /** The person's own name, one line: their name on the team. */
     name: z.string().trim().min(1).max(60),
+    /** D-124: Join asks First name · Surname. When sent, these fill an empty profile exactly. */
+    firstName: z.string().trim().min(1).max(60).optional(),
+    lastName: z.string().trim().min(1).max(60).optional(),
     termsAccepted: z.literal(true),
   })
   .strict();
