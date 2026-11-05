@@ -205,3 +205,22 @@ it("nothing left to ask: straight to Home", async () => {
   await mount();
   expect(mockReplace).toHaveBeenCalledWith("/home");
 });
+
+it("a fresh Android 13+ phone (notifications read as denied, can ask again): location, then updates straight after, even on Not now", async () => {
+  mockNotifGet = DENIED;
+  await mount();
+  expect(step()).toBe("signup-location");
+  await press("signup-not-now");
+  expect(step()).toBe("signup-notifications");
+  await press("signup-cta");
+  expect(mockKick).toHaveBeenCalled();
+  expect(mockReplace).toHaveBeenCalledWith("/home");
+});
+
+it("blocked notifications (can't ask again) are left to Settings: location only", async () => {
+  mockNotifGet = { status: "denied", granted: false, canAskAgain: false };
+  await mount();
+  expect(step()).toBe("signup-location");
+  await press("signup-cta");
+  expect(mockReplace).toHaveBeenCalledWith("/home");
+});

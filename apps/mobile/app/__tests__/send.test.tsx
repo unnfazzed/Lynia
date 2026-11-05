@@ -55,6 +55,12 @@ jest.mock("expo-router", () => ({
     React_.useEffect(cb, [cb]);
   },
 }));
+// Notifications already on, so a placed order goes straight to its screen. (jest-expo's default reads as a fresh
+// Android 13+ install, which now routes through PC8 first; that is covered in permissions.test.ts.)
+jest.mock("expo-notifications", () => ({
+  ...jest.requireActual("expo-notifications"),
+  getPermissionsAsync: async () => ({ status: "granted", granted: true, canAskAgain: true }),
+}));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: async (k: string) => mockSecureStore[k] ?? null,
   setItemAsync: (...a: [string, string]) => mockSetItemAsync(...a),

@@ -106,11 +106,16 @@ describe("PC8 gate (src/push/ask-in-context.ts)", () => {
     expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
   });
 
-  it("never explains once the OS has an answer (granted, or denied in the dialog)", async () => {
+  it("never explains once notifications are granted or blocked", async () => {
     mockNotif = { status: "granted", granted: true };
     expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
-    mockNotif = { status: "denied", granted: false, canAskAgain: true };
+    mockNotif = { status: "denied", granted: false, canAskAgain: false };
     expect(await routeAfterOrderPlaced("o-1")).toBe("/order/o-1");
+  });
+
+  it("explains while the dialog can still show: a fresh Android 13+ install reads as denied with canAskAgain", async () => {
+    mockNotif = { status: "denied", granted: false, canAskAgain: true };
+    expect(await routeAfterOrderPlaced("o-1")).toBe("/order-updates?next=%2Forder%2Fo-1");
   });
 
   it("never explains in the customer web build, which has no push (ledger D-81)", async () => {

@@ -565,7 +565,7 @@ export default function SendScreen(): React.ReactElement {
       void rememberRecipient({ name: "", phone: recipientPhone.trim() });
       void saveMyPickupPhone(senderPhone.trim());
       // D-55 / D-82 PC8: notifications are asked for after the order goes out — an explainer in front of
-      // the order screen while the permission is undetermined (at most 3 times per install).
+      // the order screen while the OS dialog can still show (notifAskable; at most 3 times per install).
       const next = await routeAfterOrderPlaced(order.id);
       // Seed the order cache so the auction paints at once ("Finding riders near you…"). Not for a replay:
       // the order that answered may be the first attempt's, sent before an edit, so the screen reads it.
