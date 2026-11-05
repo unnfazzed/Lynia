@@ -413,6 +413,10 @@ dashboards or exports.
   result ("No crash or ANR issues found") is a real answer, not an auth failure.
 - **PostHog:** EU org, project `219333` (`https://eu.posthog.com/project/219333/`), via the PostHog
   `exec` tool (`execute-sql` on `events`, e.g. by `$screen_name`).
+- **Both stay on their free plans (owner, 2026-11-05).** Never add telemetry that could push either onto a
+  paid tier: no Sentry performance tracing/profiling/replay sample-rate raises, and PostHog volume (events,
+  mobile recordings) kept well inside the free allocation (2026-11: 1M events, 2,500 mobile recordings a
+  month; PostHog has no card on file, so it caps rather than bills). Cap and sample anything new.
 - After a release or OTA, check both for new issues on that release before calling it healthy. Halt a
   staged rollout in Play Console on a crash spike.
 
