@@ -13,7 +13,7 @@ import { ApiError, redirectIfSessionExpired } from "../../lib/api-client";
 import { loadBusiness } from "../../lib/business";
 import { useFleetMoney } from "../../lib/fleet-money";
 import { getTodaySummary, getWeekSummary } from "../../lib/orders-api";
-import { addDaysToKey, dayKey, dayRow, daySub, dayTitle, hm, weekRange } from "../../lib/money-view";
+import { addDaysToKey, dayKey, dayRow, daySub, dayTitle, hm, topUpKpi, weekRange } from "../../lib/money-view";
 import { money, orderLabel } from "../../lib/orders-view";
 import { bookingHref, orderHref } from "../../lib/routes";
 
@@ -115,6 +115,10 @@ export default function MoneyPage() {
               {period === "week" && weekStartKey && ` · ${weekRange(weekStartKey)}`}
             </span>
             <b className="m-num">{money(total)}</b>
+            {/* D-125 T2-t: today's biker top-ups, under the (already net) sales. */}
+            {period === "today" && day && topUpKpi(count, total, day.lines ?? []) ? (
+              <span className="m-num">{topUpKpi(count, total, day.lines ?? [])}</span>
+            ) : null}
           </div>
         )}
       </div>

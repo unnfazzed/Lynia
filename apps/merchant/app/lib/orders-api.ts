@@ -72,6 +72,11 @@ export function dispatchResume(orderId: string): Promise<{ orderId: string; resu
   return authedFetch(`/merchant/orders/${orderId}/dispatch/resume`, { method: "POST" });
 }
 
+/** D-125 M4h: add to the bikers' offer from the shop's cash; the search resumes. */
+export function topUpOffer(orderId: string, amount: 0.5 | 1 | 2): Promise<{ orderId: string; offer: number; topUp: number }> {
+  return authedFetch(`/merchant/orders/${orderId}/top-up`, { method: "POST", body: { amount } });
+}
+
 /** D-34 hold-screen "cancel the order" (D-13 no-fault). */
 export function dispatchCancel(orderId: string): Promise<{ orderId: string; status: "cancelled" }> {
   return authedFetch(`/merchant/orders/${orderId}/dispatch/cancel`, { method: "POST" });

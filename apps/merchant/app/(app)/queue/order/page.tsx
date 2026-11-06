@@ -24,6 +24,8 @@ import { useBusiness } from "../../../lib/business";
 import { createCoalescedFetch } from "../../../lib/coalesced-fetch";
 import { formatCountdown } from "../../../lib/countdown";
 import { isNoRiderHold } from "../../../lib/order-groups";
+import { TopUpFinding, TopUpHold } from "../../../components/queue/TopUpHold";
+import { DCM, fill } from "../../../lib/delivery-ceiling-copy";
 import {
   cancelPreparing,
   closeOrder,
@@ -32,6 +34,7 @@ import {
   confirmReturnedCash,
   dispatchCancel,
   dispatchResume,
+  topUpOffer,
   extendPrep,
   getOrder,
   markReady,
@@ -680,6 +683,24 @@ function Handover({ order, act, disabled, error, setConfirm, business }: Ctx) {
         {!shop && <ProgressSteps step={3} label="Hand over" />}
         {order.rider ? (
           <RiderCard order={order} />
+        ) : hold && order.deliveryTopUp ? (
+          // D-125 M4h: the hold with the shop's top-up choices.
+          <TopUpHold
+            view={order.deliveryTopUp}
+            customer={order.customerFirstName || "the customer"}
+            disabled={disabled}
+            onTopUp={(amount) =>
+              void act(
+                () => topUpOffer(order.id, amount as 0.5 | 1 | 2),
+                fill(DCM.sentToast, { o: `$${(order.deliveryTopUp!.offer + amount).toFixed(2)}` }),
+              )
+            }
+            onKeep={() => void act(() => dispatchResume(order.id), "Searching again")}
+            onCancel={() => setConfirm("hold_cancel")}
+          />
+        ) : !hold && order.deliveryTopUp && order.deliveryTopUp.topUp > 0 ? (
+          // D-125 M4h-sent: searching again on the topped-up offer.
+          <TopUpFinding view={order.deliveryTopUp} />
         ) : hold ? (
           <div className="m-card" style={{ background: "var(--highlight-wash)", borderColor: "var(--highlight-border)" }}>
             <b style={{ fontSize: 15 }}>No biker yet</b>
@@ -847,6 +868,8 @@ function OnTheWay({ order, act, disabled, error, setConfirm, business, v }: Ctx)
             delivery={order.deliveryFee}
             line={cashLine}
             foodLabel={foodLabel}
+            topUp={ownBiker ? 0 : (order.deliveryTopUp?.topUp ?? 0)}
+            goods={order.merchantGoodsTotal}
             sentence={
               ownBiker && order.deliveryFee != null
                 ? OBM.cashBackApp(

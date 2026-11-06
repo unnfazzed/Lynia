@@ -1,4 +1,6 @@
 import type { NotificationRow } from "../../api/notifications";
+import { DC } from "../orderflow/ceiling-copy";
+import { O, ofFmt } from "../orderflow/copy";
 import type { IconName } from "../Icon";
 import { KYC_LOCK_ATTEMPTS } from "../../logic/gates";
 import { N, NF, NX } from "./copy";
@@ -163,6 +165,12 @@ function lineOf(r: NotificationRow, rider: boolean): string {
     return r.message;
   }
   if (merchant) {
+    // D-125 N-row-u: a ceiling order quotes its delivery "at most" until a biker accepts, then the exact amount.
+    const making = O.svc[r.service === "restaurants" ? "food" : r.service === "pharmacy" ? "pharmacy" : "shops"].makingT;
+    if ((beat === "accepted" || beat === "preparing") && r.deliveryAtMost) {
+      return ofFmt(DC.n.before.replace("Packing your order", making), { d: `$${r.deliveryAtMost}` });
+    }
+    if (beat === "assigned" && r.ceilingAccepted && n && p) return ofFmt(DC.n.after, { n, p: `$${p}` });
     switch (beat) {
       case "accepted":
         return N.mAccepted;

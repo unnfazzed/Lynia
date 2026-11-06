@@ -187,7 +187,7 @@ export class FoodOrderLifecycle {
       const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFee);
       const deliveryFee = Number(order.deliveryFee ?? 0);
       // D-71: a funded order stays funded, capped by the smaller goods total.
-      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee, order);
       const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
 
       await this.svc.prisma.$transaction(async (tx) => {

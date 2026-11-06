@@ -9,6 +9,7 @@ import { Tappable } from "../Tappable";
 import { RiderAvatar, VerifiedTag } from "../order/kit";
 import { codeGroups, type MerchantService } from "../../logic/merchant-order";
 import { O, ofFmt } from "./copy";
+import { DC } from "./ceiling-copy";
 import { OX } from "./kit-copy";
 
 /**
@@ -208,7 +209,10 @@ export function Btn({
   disabled,
   loading,
   flex,
+  height,
 }: {
+  /** A drawn height other than the 52 primary (delivery-ceiling-v1 T11c: "Keep waiting" is 48). */
+  height?: number;
   label: string;
   icon?: IconName;
   kind?: "primary" | "ghost" | "danger";
@@ -228,7 +232,7 @@ export function Btn({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
-      style={{ flex, minHeight: tokens.touchTargetPrimary, borderRadius: tokens.radius.pill, backgroundColor: bg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 4 }}
+      style={{ flex, minHeight: height ?? tokens.touchTargetPrimary, borderRadius: tokens.radius.pill, backgroundColor: bg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 4 }}
     >
       {loading ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={18} color={fg} /> : null}
       <Text style={{ fontSize: 16, fontWeight: "800", letterSpacing: -0.1, color: fg, textAlign: "center", flexShrink: 1, ...TAB }}>{label}</Text>
@@ -315,9 +319,28 @@ export function Lines({ lines }: { lines: LineView[] }): React.ReactElement {
 }
 
 /** ★ OrderSummary: the 44 row "Your order · 3 dishes · $16.50 cash · See order ⌄", expanding to the lines. */
-export function OrderSummary({ count, total, lines, open, onToggle, svc = "food" }: { count: number; total: number; lines: LineView[]; open: boolean; onToggle: () => void; svc?: MerchantService }): React.ReactElement {
+export function OrderSummary({
+  count,
+  total,
+  lines,
+  open,
+  onToggle,
+  svc = "food",
+  atMost = false,
+}: {
+  count: number;
+  total: number;
+  lines: LineView[];
+  open: boolean;
+  onToggle: () => void;
+  svc?: MerchantService;
+  /** D-125 T4u: before a biker accepts, the total is the customer's ceiling, read "at most". */
+  atMost?: boolean;
+}): React.ReactElement {
   const words = O.svc[svc];
-  const what = `${count} ${count === 1 ? words.item : words.items} · ${usdOf(total)} cash`;
+  const what = atMost
+    ? ofFmt(DC.t.orderUpTo, { n: count, items: count === 1 ? words.item : words.items, p: usdOf(total) })
+    : `${count} ${count === 1 ? words.item : words.items} · ${usdOf(total)} cash`;
   return (
     <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 }}>
       <Tappable onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${O.t.order}. ${what}`} style={{ minHeight: tokens.touchTargetMin, flexDirection: "row", alignItems: "center", gap: 10 }}>

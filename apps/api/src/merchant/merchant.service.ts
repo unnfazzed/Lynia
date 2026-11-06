@@ -1103,6 +1103,9 @@ export class MerchantService {
           merchantGoodsTotal: true,
           deliveryFee: true,
           merchantDeliveryShare: true,
+          // D-125 T2-t: the shop's biker top-up.
+          merchantTopUp: true,
+          deliveryVenueFunded: true,
           // Merchant v2 T2 (D-77): whether a delivered order's cash is back, on its way, or late.
           debtStatus: true,
           merchantClosedAt: true,
@@ -1182,6 +1185,7 @@ export class MerchantService {
           amount: earns
             ? roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet)
             : 0,
+          ...(earns && o.deliveryVenueFunded === false && Number(o.merchantTopUp ?? 0) > 0 ? { topUp: Number(o.merchantTopUp) } : {}),
         };
       }),
     };

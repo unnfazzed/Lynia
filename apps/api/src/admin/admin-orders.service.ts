@@ -556,6 +556,16 @@ export class AdminOrdersService {
         proposedFare: true,
         agreedFare: true,
         distanceKm: true,
+        // D-125 E1: the delivery price ceiling.
+        deliveryRecommended: true,
+        deliveryCeiling: true,
+        deliveryStart: true,
+        deliveryLadder: true,
+        merchantTopUp: true,
+        deliveryVenueFunded: true,
+        deliveryRound: true,
+        deliveryAcceptedRound: true,
+        deliveryRaiseAskedAt: true,
         pickup: true,
         dropoff: true,
         itemDesc: true,
@@ -752,6 +762,23 @@ export class AdminOrdersService {
             deliveryFee: order.deliveryFee?.toString() ?? null,
             // D-71: the part of the rider's fee the venue paid (free delivery); null = the customer paid it.
             merchantDeliveryShare: order.merchantDeliveryShare?.toString() ?? null,
+            // D-125 E1: the delivery price ceiling, on an order placed with one (null otherwise).
+            deliveryPrice:
+              order.deliveryCeiling != null
+                ? {
+                    recommended: order.deliveryRecommended?.toString() ?? null,
+                    ceiling: order.deliveryCeiling.toString(),
+                    start: order.deliveryStart?.toString() ?? null,
+                    topUp: order.merchantTopUp?.toString() ?? null,
+                    venueFunded: order.deliveryVenueFunded === true,
+                    // The customer's part once a biker accepted (the rung); the biker's fare is `deliveryFee`.
+                    acceptedPrice: order.deliveryAcceptedRound != null ? (order.deliveryLadder?.toString() ?? null) : null,
+                    riderFare: order.deliveryAcceptedRound != null ? (order.deliveryFee?.toString() ?? null) : null,
+                    acceptedRound: order.deliveryAcceptedRound,
+                    rounds: order.deliveryRound,
+                    askedToRaiseAt: order.deliveryRaiseAskedAt?.toISOString() ?? null,
+                  }
+                : null,
             debt: order.debtStatus
               ? {
                   status: order.debtStatus,

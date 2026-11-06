@@ -41,7 +41,7 @@ function Sub({ card, now }: { card: Card; now: number }) {
   return (
     <span className={`m-bsub${card.subTone === "gold" ? " m-gold-ink" : ""}`}>
       {card.sub}
-      {left !== null && left > 0 ? ` · ${formatCountdown(left)}` : ""}
+      {left !== null && left > 0 ? `${card.subDeadlineInline ? " " : " · "}${formatCountdown(left)}` : ""}
     </span>
   );
 }
@@ -90,7 +90,7 @@ function BoardCard({ card, now }: { card: Card; now: number }) {
   if (card.counter) {
     return (
       <Link href={card.href} className={`${cls} m-row`}>
-        <i className={card.arrived ? "m-disc" : "m-disc m-disc-quiet"}>
+        <i className={card.gold ? "m-disc m-disc-gold" : card.arrived ? "m-disc" : "m-disc m-disc-quiet"}>
           <Icon name="bike" size={20} />
         </i>
         <div className="m-bt">
@@ -99,6 +99,7 @@ function BoardCard({ card, now }: { card: Card; now: number }) {
         </div>
         {/* A1: no button until the rider is here. */}
         {card.arrived && <span className="m-pillbtn">Hand over</span>}
+        {card.pill && <span className="m-pillbtn">{card.pill}</span>}
       </Link>
     );
   }

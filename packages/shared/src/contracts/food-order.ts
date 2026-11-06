@@ -82,6 +82,10 @@ export const PlaceMerchantOrderRequest = z
     // Order flow v2 R2 (BRIEF §7): "If something's out of stock" — Ask me (default) / Remove it. Optional
     // and additive: an installed app that never sends it gets "ask".
     outOfStockPref: OutOfStockPref.optional(),
+    /** D-125: the customer's "Pay no more than" for delivery, on the 50c grid inside `ceilingBounds`. Sent only by
+     *  an app that shows the ceiling; omitted = the fixed delivery fee (an installed app, or the flag off). The
+     *  server re-checks the bounds and ignores it on a free-delivery venue. */
+    deliveryCeiling: z.number().positive().max(100).optional(),
   })
   .strict();
 export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest>;

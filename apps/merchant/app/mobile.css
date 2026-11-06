@@ -5498,3 +5498,141 @@ button.m-ob-row {
   justify-content: center;
   flex: none;
 }
+
+/* ── Delivery ceiling v1 (ledger D-125): M4h hold + top-up, M4h-sent finding card, K-card-h disc ── */
+.m-card.m-hold {
+  background: var(--highlight-wash);
+  border-color: var(--highlight-border);
+  gap: 12px;
+}
+.m-hold-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.m-hold-disc,
+.m-bc .m-disc.m-disc-gold {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--highlight);
+  color: var(--highlight-chip-ink);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-hold-t {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.m-hold-sub {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--highlight-ink);
+}
+.m-hold-top {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.m-topups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+@media (max-width: 340px) {
+  .m-topups {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.m-topup {
+  min-height: 56px;
+  border-radius: 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+.m-topup b {
+  font-size: 16px;
+  font-weight: 700;
+}
+.m-topup span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.m-topup:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.m-hold-keep {
+  min-height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.m-hold-keep:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.m-hold-ask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.m-hold-cancel {
+  align-self: flex-start;
+  min-height: var(--target-min);
+  color: var(--ink);
+}
+.m-card.m-finding {
+  background: var(--accent-wash);
+  border-color: transparent;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.m-finding-disc {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.m-finding-sub {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.m-cashlines {
+  display: grid;
+  gap: 6px;
+}
+.m-cashlines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}

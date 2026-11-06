@@ -7,6 +7,7 @@ export * from "./geo";
 export * from "./pricing";
 export * from "./service-area";
 export * from "./restaurants-order";
+export * from "./delivery-ceiling";
 export * from "./order-outcome";
 export * from "./restaurant-hours";
 export * from "./booking-cod";
