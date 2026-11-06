@@ -103,6 +103,10 @@ export interface Me {
     /** Deploy-wide KYC review mode (not per-rider): "auto" resubmits open a vendor browser session;
      *  "manual" has no vendor step — pending means "waiting on ops review", not "waiting on you". */
     kycMode?: "auto" | "manual";
+    /** D-122 (manual KYC), additive: which document photos are on file, the typed licence and its expiry. */
+    kycDocs?: { idFront: boolean; licence: boolean; selfieId: boolean };
+    licenceNumber?: string | null;
+    licenceExpiresOn?: string | null;
     /**
      * P0-1 / D6 — which KIND of pending, derived server-side from the vendor's own session status:
      * `in_flight` (the check is with the vendor; nothing for the rider to do) vs `unfinished` (they

@@ -91,6 +91,8 @@ export class HealthController {
   orderFlags(): OrderFlagsResponse {
     return {
       rxEnabled: this.env.RX_ENABLED === "true",
+      // D-125: the delivery price ceiling on Review & place (default off).
+      deliveryCeiling: this.env.DELIVERY_CEILING_ENABLED === "true",
       // Own bikers is live for everyone and Preferred riders is retired (owner, 2026-10-20); installed apps still
       // read both.
       preferredRetired: true,

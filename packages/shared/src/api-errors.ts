@@ -39,16 +39,17 @@ export function defaultErrorReason(status: number): string {
 /** Domain reasons thrown by name across the API. */
 export const DOMAIN_ERROR_REASONS = [
   "account_banned", "account_on_hold", "account_restricted", "account_suspended", "admin_sign_in_refused",
-  "already_biker", "already_member", "already_on_team", "already_owner", "already_paid", "already_refunded",
+  "already_accepted", "already_biker", "already_member", "already_on_team", "already_owner", "already_paid", "already_refunded",
   "already_rider", "already_taken", "already_verified", "bad_amount", "bad_cash_on_delivery", "bad_phone",
   "bad_reject_reason", "bad_week", "balance_changed", "branch_limit", "branch_name_taken", "business_on_hold",
   "business_owner", "business_paused", "cash_banned", "category_window", "changed", "checklist_incomplete",
   "code_reissue_limit", "code_required", "commission_low_balance", "cooldown_active", "country_not_served",
+  "delivery_ceiling_out_of_range",
   "fleet_biker", "fleet_disabled", "fleet_off", "fleet_paused", "handed_to_required", "handover_link_invalid",
   "handover_link_unavailable", "id_in_use", "idempotency_key_reused", "invalid_request", "invite_expired",
   "items_changed", "kyc", "kyc_daily_limit", "kyc_in_progress", "kyc_in_review", "kyc_locked", "kyc_mint_limit",
   "licence_incomplete", "licence_not_verified", "line_removed", "location_required", "member_elsewhere",
-  "merchant_order_fare", "name_required", "no_account", "no_cash_on_delivery", "no_items_left", "no_licence",
+  "merchant_order_fare", "name_required", "no_account", "no_cash_on_delivery", "no_ceiling", "no_items_left", "no_licence",
   "no_live_dishes", "no_location", "no_nudge", "no_prescription", "no_selfie_recheck", "not_a_biker",
   "not_a_member", "not_a_merchant", "not_a_pharmacy", "not_a_shop", "not_approved", "not_assigned",
   "not_at_handover", "not_at_restaurant", "not_auto_accepted", "not_cancellable", "not_changeable",
@@ -62,7 +63,7 @@ export const DOMAIN_ERROR_REASONS = [
   "role_not_allowed", "round_closed", "round_expired", "rx_original_not_seen", "rx_pharmacy_only",
   "rx_swap_needs_pharmacist", "rx_swap_needs_prescription", "rx_unavailable", "scheduled_not_started",
   "scheduled_started", "selfie_recheck_unavailable", "shop_no_auto_accept", "slot_full", "slot_unavailable",
-  "standing_changed", "still_live", "substitution_open", "swaps_off", "too_late", "too_many_invites",
+  "standing_changed", "still_live", "substitution_open", "swaps_off", "too_late", "too_many_invites", "top_up_too_large",
   "topup_rail_unavailable", "trip_in_progress", "unreadable_link", "upload_missing", "uploads_unavailable",
   "verified_id_in_use", "wallet_not_accepted", "whatsapp_unavailable", "wrong_state",
 ] as const;

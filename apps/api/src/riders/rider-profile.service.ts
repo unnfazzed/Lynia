@@ -7,6 +7,33 @@ import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { PrismaService } from "../prisma/prisma.service";
 import { domainEvents } from "../common/domain-events";
+import { OwnerAlertsService, ownerAlertText } from "../owner-alerts/owner-alerts.service";
+
+/** Manual KYC (D-122): the three document slots and the Rider column each one writes. */
+export const KYC_DOC_SLOTS = {
+  idFrontKey: "kycIdFrontKey",
+  licenceKey: "kycLicenceKey",
+  selfieIdKey: "kycSelfieIdKey",
+} as const;
+export type KycDocSlot = keyof typeof KYC_DOC_SLOTS;
+const SLOT_NAMES = Object.keys(KYC_DOC_SLOTS) as KycDocSlot[];
+
+/** A driving licence number as typed: trimmed, single spaces, upper-case, 4–30 characters. */
+export const LicenceNumberSchema = z
+  .string()
+  .trim()
+  .min(4)
+  .max(30)
+  .transform((v) => v.replace(/\s+/g, " ").toUpperCase());
+
+/** A calendar date "YYYY-MM-DD" that really exists (no 2026-02-31). */
+export const IsoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((v) => {
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }, "Invalid date");
 
 /**
  * A bike plate as `POST /riders/become` validates it (trimmed, 3–20 characters), stored upper-case with
@@ -28,9 +55,15 @@ export const UpdateRiderProfile = z
   .object({
     photoUrl: UploadObjectKey.optional(),
     bikeReg: BikeRegSchema.optional(),
+    // Manual KYC (D-122): document photo keys from POST /uploads/kyc-photo, and the typed licence.
+    idFrontKey: UploadObjectKey.optional(),
+    licenceKey: UploadObjectKey.optional(),
+    selfieIdKey: UploadObjectKey.optional(),
+    licenceNumber: LicenceNumberSchema.optional(),
+    licenceExpiresOn: IsoDateSchema.optional(),
   })
   .strict()
-  .refine((b) => b.photoUrl !== undefined || b.bikeReg !== undefined, "Nothing to update");
+  .refine((b) => Object.values(b).some((v) => v !== undefined), "Nothing to update");
 export type UpdateRiderProfile = z.infer<typeof UpdateRiderProfile>;
 
 /** The audit action every self-service change here writes (actor = the rider). */
@@ -55,14 +88,40 @@ export class RiderProfileService {
     // spec covers the wired path.
     private readonly uploads?: UploadVerifier,
     @Optional() @Inject(STORAGE) private readonly storage?: StorageAdapter,
+    @Optional() private readonly ownerAlerts?: OwnerAlertsService,
   ) {}
 
-  async updateProfile(profileId: string, data: UpdateRiderProfile): Promise<{ hasPhoto: boolean; bikeReg: string | null; plateStatus: PlateStatus }> {
+  async updateProfile(
+    profileId: string,
+    data: UpdateRiderProfile,
+  ): Promise<{ hasPhoto: boolean; bikeReg: string | null; plateStatus: PlateStatus; kycDocs: KycDocsState }> {
     const rider = await this.prisma.rider.findUnique({
       where: { profileId },
-      select: { photoUrl: true, bikeReg: true, plateStatus: true },
+      select: {
+        photoUrl: true,
+        bikeReg: true,
+        plateStatus: true,
+        kycStatus: true,
+        kycAttempts: true,
+        kycIdFrontKey: true,
+        kycLicenceKey: true,
+        kycSelfieIdKey: true,
+        kycDocsAlertedAt: true,
+        licenceNumber: true,
+        licenceExpiresOn: true,
+        profile: { select: { firstName: true } },
+      },
     });
     if (!rider) throw new NotFoundException("Not a biker");
+
+    // D-122: each document key passes the same two gates as the photo — own namespace first (a rejected
+    // verify DELETES the object), then a real JPEG/PNG in budget.
+    for (const slot of SLOT_NAMES) {
+      const key = data[slot];
+      if (key === undefined) continue;
+      if (!isOwnedUploadKey("kyc", profileId, key)) throw new BadRequestException("Invalid document key");
+      await this.uploads?.verify(key, "kyc");
+    }
 
     // Same rules as becomeRider: the key must sit under the caller's own KYC namespace (so a rider can't
     // point their row at someone else's object), and it must really be a JPEG/PNG in budget. The
@@ -75,6 +134,30 @@ export class RiderProfileService {
     const changed: string[] = [];
     if (data.photoUrl !== undefined && data.photoUrl !== rider.photoUrl) changed.push("photo");
     if (data.bikeReg !== undefined && data.bikeReg !== rider.bikeReg) changed.push("bike_reg");
+    const replacedDocs: string[] = [];
+    for (const slot of SLOT_NAMES) {
+      const key = data[slot];
+      const current = rider[KYC_DOC_SLOTS[slot]];
+      if (key === undefined || key === current) continue;
+      changed.push(slot);
+      if (current) replacedDocs.push(current);
+    }
+    if (data.licenceNumber !== undefined && data.licenceNumber !== rider.licenceNumber) changed.push("licence_number");
+    const expiry = data.licenceExpiresOn !== undefined ? new Date(`${data.licenceExpiresOn}T00:00:00Z`) : undefined;
+    if (expiry && expiry.getTime() !== rider.licenceExpiresOn?.getTime()) changed.push("licence_expiry");
+
+    const docs: KycDocsState = {
+      idFront: (data.idFrontKey ?? rider.kycIdFrontKey) != null,
+      licence: (data.licenceKey ?? rider.kycLicenceKey) != null,
+      selfieId: (data.selfieIdKey ?? rider.kycSelfieIdKey) != null,
+    };
+    const complete = docs.idFront && docs.licence && docs.selfieId;
+    const docsChanged = SLOT_NAMES.some((s) => changed.includes(s));
+    // A biker declined for a photo retake (not locked: < 2 strikes) who sends a complete set again goes back
+    // into the review queue — the same reopen the manual-mode retry does (FS-2). kycResolvedAt is kept.
+    const resubmit = docsChanged && complete && rider.kycStatus === "failed" && rider.kycAttempts < 2;
+    // The owner's Telegram hears once per complete set, while the biker is waiting for a manual review.
+    const alertDocs = docsChanged && complete && !rider.kycDocsAlertedAt && (rider.kycStatus === "pending" || resubmit);
 
     if (changed.length > 0) {
       await this.prisma.$transaction(async (tx) => {
@@ -85,6 +168,14 @@ export class RiderProfileService {
             // First Run v2 E4 (D-82): a new plate is saved at once and reads "Checking" until ops confirm
             // it (admin plate-verify). Only a real change reopens the check.
             ...(changed.includes("bike_reg") ? { bikeReg: data.bikeReg, plateStatus: PlateStatus.CHECKING } : {}),
+            ...(changed.includes("idFrontKey") ? { kycIdFrontKey: data.idFrontKey } : {}),
+            ...(changed.includes("licenceKey") ? { kycLicenceKey: data.licenceKey } : {}),
+            ...(changed.includes("selfieIdKey") ? { kycSelfieIdKey: data.selfieIdKey } : {}),
+            ...(changed.includes("licence_number") ? { licenceNumber: data.licenceNumber } : {}),
+            // A new expiry date re-arms the 30-day reminder.
+            ...(changed.includes("licence_expiry") ? { licenceExpiresOn: expiry, licenceRemindedAt: null } : {}),
+            ...(alertDocs ? { kycDocsAlertedAt: new Date() } : {}),
+            ...(resubmit ? { kycStatus: "pending" as const, idVerified: false } : {}),
           },
         });
         // Ops can see who changed what and when (the plate a customer is shown comes from here). The old
@@ -109,11 +200,29 @@ export class RiderProfileService {
       }
     }
 
+    for (const key of replacedDocs) {
+      if (!isOwnedUploadKey("kyc", profileId, key) || !this.storage) continue;
+      try {
+        await this.storage.deleteObject(key);
+      } catch (err) {
+        this.logger.warn(`Couldn't remove a replaced document photo for ${profileId}: ${(err as Error).message}`);
+      }
+    }
+    if (alertDocs) this.ownerAlerts?.notify(ownerAlertText.bikerDocsReady({ firstName: rider.profile.firstName }));
+
     const photoUrl = data.photoUrl ?? rider.photoUrl;
     return {
       hasPhoto: photoUrl != null,
       bikeReg: data.bikeReg ?? rider.bikeReg,
       plateStatus: changed.includes("bike_reg") ? PlateStatus.CHECKING : rider.plateStatus,
+      kycDocs: docs,
     };
   }
+}
+
+/** Which manual-KYC document photos the biker has on file (never the keys themselves). */
+export interface KycDocsState {
+  idFront: boolean;
+  licence: boolean;
+  selfieId: boolean;
 }

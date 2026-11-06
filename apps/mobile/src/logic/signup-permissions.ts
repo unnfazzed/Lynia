@@ -1,5 +1,5 @@
 import { type LocState, readLocation } from "../permissions/location";
-import { type NotifState, readNotif } from "../permissions/notifications";
+import { type NotifState, notifAskable, readNotif } from "../permissions/notifications";
 import { ensureJobAlertChannel, readPermissions } from "../permissions/state";
 import { CUST_NOTIF_ASK_CAP, custNotifAsks, riderPermFlowDone, signupPermsShown } from "../permissions/store";
 import { isCustomerWebBuild } from "../web-build";
@@ -33,8 +33,9 @@ export function customerSignupSteps(
   const steps: CustomerSignupStep[] = [];
   // "denied" once can still show the dialog; "blocked" can't, and Home's PC5 handles it in context.
   if (loc === "undetermined" || loc === "denied") steps.push("location");
-  // The web build has no push yet (src/push/push.ts, ledger D-81): nothing to ask for there.
-  if (!web && notif === "undetermined" && notifAsksLeft) steps.push("notifications");
+  // Straight after location, like the biker flow. "denied" is a fresh Android 13+ install (notifAskable); a
+  // blocked one is left to Settings. The web build has no push yet (src/push/push.ts, ledger D-81).
+  if (!web && notifAskable(notif) && notifAsksLeft) steps.push("notifications");
   return steps;
 }
 

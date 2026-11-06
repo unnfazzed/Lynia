@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { UploadVerifier } from "../adapters/storage/upload-verifier";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
@@ -62,6 +63,8 @@ export class RiderService {
     readonly metrics?: MetricsService,
     // The owner's new-biker alert. @Global (OwnerAlertsModule); @Optional for the positional spec constructions.
     @Optional() readonly ownerAlerts?: OwnerAlertsService,
+    // D-122: removes manual-KYC document photos a retake decline reopened. @Global StorageModule.
+    @Optional() @Inject(STORAGE) readonly storage?: StorageAdapter,
   ) {}
 
   duplicateIdAccountCount(...args: Parameters<RiderOnboarding["duplicateIdAccountCount"]>): ReturnType<RiderOnboarding["duplicateIdAccountCount"]> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstName, invitedAgo, longMasked, removeConsequence, ROLE_LABEL, shortMasked, signedInLabel, teamInviteLink, teamInviteMessage, validateInvite, validateJoinName } from "./team";
+import { firstName, invitedAgo, longMasked, removeConsequence, ROLE_LABEL, shortMasked, signedInLabel, teamInviteLink, teamInviteMessage, validateInvite } from "./team";
 
 describe("Team's rules (merchant web upgrade L4)", () => {
   it("names the two roles and who is signed in", () => {
@@ -40,7 +40,5 @@ describe("Team's rules (merchant web upgrade L4)", () => {
       phone: "Enter their phone number, like 0771234567.",
     });
     expect(validateInvite({ name: "x".repeat(61), phone: "+263772223333" }).name).toBe("Keep it under 60 letters.");
-    expect(validateJoinName(" ")).toBe("Enter your name.");
-    expect(validateJoinName("Tendai")).toBeNull();
   });
 });

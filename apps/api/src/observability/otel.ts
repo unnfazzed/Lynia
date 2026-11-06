@@ -7,7 +7,10 @@
  * no-op and the (heavy) SDK tree never loads — keeping dev/test boot light, as before.
  */
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
-import type { NodeSDK } from "@opentelemetry/sdk-node";
+// The SDK is loaded with a dynamic import() (ESM resolution), so its type must be resolved the same way:
+// a plain `import type` resolves the CommonJS declarations, and sdk-node 0.300 ships them as a separate
+// class (private `_loggerProviderConfig`), which TypeScript then refuses to assign (TS2322).
+import type { NodeSDK } from "@opentelemetry/sdk-node" with { "resolution-mode": "import" };
 
 let started = false;
 let sdkRef: NodeSDK | undefined;

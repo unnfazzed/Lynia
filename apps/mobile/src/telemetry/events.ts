@@ -115,6 +115,14 @@ export const EVENTS = {
   goOnline: "rider_go_online",
   /** The first time this account went online on this phone: `ms_since_signup`. */
   firstOnline: "rider_first_online",
+  /** D-122 manual KYC: the biker opened their first document-photo slot. */
+  kycDocsStarted: "kyc_docs_started",
+  /** D-122: one document photo attached: `slot` idFront | licence | selfieId. */
+  kycDocUploaded: "kyc_doc_uploaded",
+  /** D-122: all three document photos are on file (the owner's review can start). */
+  kycDocsComplete: "kyc_docs_complete",
   /** The app started cold after its last run ended in the foreground (a crash or an OS kill): `last_screen`. */
   uncleanRestart: "app_unclean_restart",
+  /** The JS thread was blocked mid-use (stall-watch.ts): `stall_ms`, `screen`, `during_boot`, `ram_gb`, `nth`. */
+  jsStall: "js_stall",
 } as const;

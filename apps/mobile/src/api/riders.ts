@@ -33,7 +33,16 @@ export async function becomeRider(body: { bikeReg?: string; photoUrl?: string })
  * minted) and bike plate from Bike & documents. The server validates the plate like sign-up did (3–20
  * characters) and stores it upper-case; it answers with what `/auth/me` would now say.
  */
-export function updateRiderProfile(body: { photoUrl?: string; bikeReg?: string }): Promise<{ hasPhoto: boolean; bikeReg: string | null }> {
+export function updateRiderProfile(body: {
+  photoUrl?: string;
+  bikeReg?: string;
+  // D-122 (manual KYC): document photo keys and the typed licence ("YYYY-MM-DD" expiry).
+  idFrontKey?: string;
+  licenceKey?: string;
+  selfieIdKey?: string;
+  licenceNumber?: string;
+  licenceExpiresOn?: string;
+}): Promise<{ hasPhoto: boolean; bikeReg: string | null; kycDocs?: { idFront: boolean; licence: boolean; selfieId: boolean } }> {
   return apiFetch("/riders/me", { method: "PATCH", body });
 }
 

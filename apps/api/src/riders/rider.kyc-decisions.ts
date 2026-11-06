@@ -4,7 +4,8 @@
  */
 import { BadRequestException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { KycDeclineReason, kycDeclineClass, normalizeNationalId } from "@lynia/shared";
+import { KYC_PHOTO_RETAKE_REASONS, KycDeclineReason, kycDeclineClass, normalizeNationalId } from "@lynia/shared";
+import { isOwnedUploadKey } from "../adapters/storage/upload-kinds";
 import { DIDIT_APPROVED_STATUS, DIDIT_IN_REVIEW_STATUS, isDiditDocumentExpired, kycIdExpiryOnLapse, SELFIE_CAMERA_QUALITY } from "../kyc/didit";
 import { KYC_PUSH_COPY, type KycPushVariant } from "../kyc/kyc-push-copy";
 import { auditData } from "../admin/admin.shared";
@@ -753,6 +754,8 @@ export class RiderKycDecisions {
     // index can still refuse that write; this records that it was attempted, so only THAT P2002 becomes
     // the operator-facing 409 below.
     const adoption = { attempted: false };
+    // D-122: document photos a retake decline reopened, removed from storage after the commit.
+    const retakeKeys: string[] = [];
     const decision = await this.svc.prisma.$transaction(async (tx) => {
       // D-75: the number an approval may adopt is locked like every other claimer of it: its advisory
       // lock is taken before the row lock below, the order the webhook and the ID-writing routes use.
@@ -776,6 +779,9 @@ export class RiderKycDecisions {
           verifiedIdHash: true,
           verifiedIdNumber: true,
           profile: { select: { idNumberHash: true } },
+          kycIdFrontKey: true,
+          kycLicenceKey: true,
+          kycSelfieIdKey: true,
         },
       });
       if (!rider) throw new NotFoundException("Biker not found");
@@ -796,6 +802,17 @@ export class RiderKycDecisions {
         // so guard the increment on "not already a resolved failure". The reason/audit is still re-recorded
         // on every call; only the counter is guarded.
         const isRepeatOfSameDecline = rider.kycStatus === "failed" && rider.kycResolvedAt != null;
+        // D-122 (owner 2026-11-04): a manual-KYC photo decline only asks for a retake. It costs no strike (a
+        // budget phone's blurry shot is not evidence) and reopens just the slots it names.
+        const retakeSlots = reasonCode ? KYC_PHOTO_RETAKE_REASONS[reasonCode as KycDeclineReason] : undefined;
+        const slotColumns = { idFront: "kycIdFrontKey", licence: "kycLicenceKey", selfieId: "kycSelfieIdKey" } as const;
+        const reopen: Record<string, null> = {};
+        for (const slot of retakeSlots ?? []) {
+          const col = slotColumns[slot];
+          const key = rider[col];
+          if (key) retakeKeys.push(key);
+          reopen[col] = null;
+        }
         const updated = await tx.rider.update({
           where: { profileId },
           data: {
@@ -809,7 +826,8 @@ export class RiderKycDecisions {
             kycSessionUrl: null,
             kycVendorStatus: null,
             kycVendorStatusAt: null,
-            ...(isRepeatOfSameDecline ? {} : { kycAttempts: { increment: 1 } }),
+            ...(isRepeatOfSameDecline || retakeSlots ? {} : { kycAttempts: { increment: 1 } }),
+            ...(retakeSlots ? { ...reopen, kycDocsAlertedAt: null } : {}),
             // Stamp the resolution time so applyKycResult's monotonic guard treats this human decision
             // as the latest word: a later (or replayed) vendor webhook with an older eventAt can no
             // longer flip a manually-declined rider back to verified. retryKyc clears it on a genuine
@@ -909,6 +927,12 @@ export class RiderKycDecisions {
     // them from the board rooms + geo index through the standing-demotion funnel too. Best-effort,
     // post-commit; a verified approve is the one outcome that keeps them online-eligible, so no eviction.
     if (decision.kycStatus !== "verified") void this.svc.gateway.evictRiderFromSupply(profileId);
+    for (const key of retakeKeys) {
+      if (!isOwnedUploadKey("kyc", profileId, key) || !this.svc.storage) continue;
+      void this.svc.storage.deleteObject(key).catch((err: unknown) => {
+        this.svc.logger.warn(`Couldn't remove a retaken document photo for ${profileId}: ${(err as Error).message}`);
+      });
+    }
     // Best-effort, post-commit: mirror the vendor-webhook path — tell the rider a manual decision changed their
     // standing. A second decline is the lock (F5's copy, not "try again"); an expiry is F6's; a `pending` reset
     // is "Finish your ID check" — each is something the rider now has to act on, so none is silent any more.

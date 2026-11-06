@@ -55,6 +55,14 @@ describe("customerSignupSteps", () => {
     expect(customerSignupSteps("denied", "granted", opts)).toEqual(["location"]);
     expect(customerSignupSteps("blocked", "granted", opts)).toEqual([]);
   });
+  it("asks for notifications right after location on a fresh Android 13+ phone, which reads as denied-but-askable", () => {
+    expect(customerSignupSteps("undetermined", "denied", opts)).toEqual(["location", "notifications"]);
+    expect(customerSignupSteps("denied", "denied", opts)).toEqual(["location", "notifications"]);
+    expect(customerSignupSteps("granted", "denied", opts)).toEqual(["notifications"]);
+  });
+  it("leaves blocked notifications to Settings", () => {
+    expect(customerSignupSteps("undetermined", "blocked", opts)).toEqual(["location"]);
+  });
   it("skips what the phone already allows", () => {
     expect(customerSignupSteps("granted", "undetermined", opts)).toEqual(["notifications"]);
     expect(customerSignupSteps("coarse", "granted", opts)).toEqual([]);
@@ -69,6 +77,11 @@ describe("customerSignupSteps", () => {
 
 describe("afterSignIn", () => {
   it("customer: the permission screens, then Home", async () => {
+    await expect(afterSignIn("/home")).resolves.toBe("/setup-permissions?next=%2Fhome");
+  });
+  it("customer on a fresh Android 13+ phone (notifications read as denied, can ask again): the permission screens", async () => {
+    mockLocGet = GRANTED;
+    mockNotifGet = DENIED;
     await expect(afterSignIn("/home")).resolves.toBe("/setup-permissions?next=%2Fhome");
   });
   it("customer with everything allowed: straight to Home", async () => {

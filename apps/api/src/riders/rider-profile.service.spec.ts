@@ -8,6 +8,8 @@ import type { PrismaService } from "../prisma/prisma.service";
 import { RIDER_PROFILE_UPDATE_ACTION, RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 import { RidersController } from "./riders.controller";
 
+const NO_DOCS = { idFront: false, licence: false, selfieId: false };
+
 function build(rider: { photoUrl: string | null; bikeReg: string | null; plateStatus?: string } | null) {
   const updates: Array<Record<string, unknown>> = [];
   const audits: Array<Record<string, unknown>> = [];
@@ -66,7 +68,7 @@ describe("RiderProfileService.updateProfile (D-79)", () => {
 
   it("adds a first photo: verified, stored, audited", async () => {
     const { svc, verify, updates, audits, deleteObject } = build({ photoUrl: null, bikeReg: null });
-    expect(await svc.updateProfile("r1", { photoUrl: "kyc/r1/a.jpg" })).toEqual({ hasPhoto: true, bikeReg: null, plateStatus: "none" });
+    expect(await svc.updateProfile("r1", { photoUrl: "kyc/r1/a.jpg" })).toEqual({ hasPhoto: true, bikeReg: null, plateStatus: "none", kycDocs: NO_DOCS });
     expect(verify).toHaveBeenCalledWith("kyc/r1/a.jpg", "kyc");
     expect(updates).toEqual([{ photoUrl: "kyc/r1/a.jpg" }]);
     expect(audits).toEqual([expect.objectContaining({ actor: "r1", action: RIDER_PROFILE_UPDATE_ACTION, target: "r1", reasonCode: "photo", note: null })]);
@@ -88,14 +90,14 @@ describe("RiderProfileService.updateProfile (D-79)", () => {
 
   it("adds or edits the plate with the old and new value in the audit note", async () => {
     const { svc, updates, audits } = build({ photoUrl: "kyc/r1/a.jpg", bikeReg: "AEE 4471" });
-    expect(await svc.updateProfile("r1", { bikeReg: "AFG 2231" })).toEqual({ hasPhoto: true, bikeReg: "AFG 2231", plateStatus: "checking" });
+    expect(await svc.updateProfile("r1", { bikeReg: "AFG 2231" })).toEqual({ hasPhoto: true, bikeReg: "AFG 2231", plateStatus: "checking", kycDocs: NO_DOCS });
     expect(updates).toEqual([{ bikeReg: "AFG 2231", plateStatus: "checking" }]);
     expect(audits[0]).toMatchObject({ reasonCode: "bike_reg", note: "bike_reg: AEE 4471 → AFG 2231" });
   });
 
   it("re-sending the same values writes nothing and logs nothing", async () => {
     const { svc, updates, audits } = build({ photoUrl: null, bikeReg: "AEE 4471" });
-    expect(await svc.updateProfile("r1", { bikeReg: "AEE 4471" })).toEqual({ hasPhoto: false, bikeReg: "AEE 4471", plateStatus: "none" });
+    expect(await svc.updateProfile("r1", { bikeReg: "AEE 4471" })).toEqual({ hasPhoto: false, bikeReg: "AEE 4471", plateStatus: "none", kycDocs: NO_DOCS });
     expect(updates).toEqual([]);
     expect(audits).toEqual([]);
   });

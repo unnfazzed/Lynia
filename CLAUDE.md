@@ -200,6 +200,11 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   OB-R1–R13) and the admin Own bikers page (OB-A1–A4) align to `packages/design/handoff/own-bikers-v1/` (ledger
   D-117, owner 2026-10-19). Its `README.md` wins over the drawings. Invites are shared links, never SMS. Strings come
   from its `copy.ts`, verbatim.
+- **The delivery price ceiling follows its own handoff (`handoff/delivery-ceiling-v1/`).** The customer's "Pay no
+  more than" delivery card on Review & place, the "at most" amounts until a rider accepts, the raise prompt (T11c), the
+  merchant hold top-up (M4h) and its board / cash-back / Money rows, and the admin Delivery price block align to
+  `packages/design/handoff/delivery-ceiling-v1/` (ledger D-125, owner 2026-11-05), behind `DELIVERY_CEILING_ENABLED`.
+  Rules come from `docs/plans/2026-11-05-delivery-price-ceiling.md`. Strings come from its `code/copy.ts`, verbatim.
 - **Customer briefs 06–09 follow their own handoff (`handoff/customer-briefs-06-09/`).** The late-cancel rider contact
   (After Send v2 18d/18e/18b/18f), the venue's note on D3b (D3g), the code-changed CodeCard (2.14b–d) and removing a
   prescription page (R8c–R8e) align to `packages/design/handoff/customer-briefs-06-09/` (ledger D-97, owner
@@ -413,6 +418,10 @@ dashboards or exports.
   result ("No crash or ANR issues found") is a real answer, not an auth failure.
 - **PostHog:** EU org, project `219333` (`https://eu.posthog.com/project/219333/`), via the PostHog
   `exec` tool (`execute-sql` on `events`, e.g. by `$screen_name`).
+- **Both stay on their free plans (owner, 2026-11-05).** Never add telemetry that could push either onto a
+  paid tier: no Sentry performance tracing/profiling/replay sample-rate raises, and PostHog volume (events,
+  mobile recordings) kept well inside the free allocation (2026-11: 1M events, 2,500 mobile recordings a
+  month; PostHog has no card on file, so it caps rather than bills). Cap and sample anything new.
 - After a release or OTA, check both for new issues on that release before calling it healthy. Halt a
   staged rollout in Play Console on a crash spike.
 

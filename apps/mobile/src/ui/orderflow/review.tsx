@@ -10,6 +10,7 @@ import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
 import { O, O_ADDED, ofFmt } from "./copy";
 import { OB } from "./kit-copy";
+import { AtMost } from "./ceiling";
 
 /** `ofAlpha.scrim` — the modal dim the handoff draws. */
 const SCRIM = "rgba(20,24,27,0.45)";
@@ -659,7 +660,16 @@ export const ReviewField = React.forwardRef<TextInput, TextInputProps & { icon?:
 });
 
 /** `.kv`: 13 muted label, 600 value; the Total row is ink 700 + 17/700. */
-function Kv({ k, v, text, total, first }: { k: string; v: number; text?: string; total?: boolean; first?: boolean }): React.ReactElement {
+function Kv({ k, v, text, total, first, atMost }: { k: string; v: number; text?: string; total?: boolean; first?: boolean; atMost?: boolean }): React.ReactElement {
+  if (atMost) {
+    // D-125 (delivery-ceiling-v1 "Ceiling value in rows"): the amount in the row's own weight, then "at most".
+    return (
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12, paddingVertical: 7, borderTopWidth: first ? 0 : 1, borderTopColor: tokens.color.line }}>
+        <Text style={{ flex: 1, fontSize: 13, color: total ? tokens.color.ink : tokens.color.muted, fontWeight: total ? tokens.font.weight.bold : tokens.font.weight.regular }}>{k}</Text>
+        <AtMost amount={v} style={{ fontSize: total ? 17 : 13, fontWeight: total ? tokens.font.weight.bold : tokens.font.weight.semibold, color: tokens.color.ink }} />
+      </View>
+    );
+  }
   return (
     <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12, paddingVertical: 7, borderTopWidth: first ? 0 : 1, borderTopColor: tokens.color.line }}>
       <Text style={{ flex: 1, fontSize: 13, color: total ? tokens.color.ink : tokens.color.muted, fontWeight: total ? tokens.font.weight.bold : tokens.font.weight.regular }}>{k}</Text>
@@ -688,7 +698,10 @@ export function Breakdown({
   goodsLabel = O.r.food,
   owed = 0,
   freeDeliveryBy = null,
+  atMost = false,
 }: {
+  /** D-125: the fee and total are the customer's ceiling, read "at most" (R1c). */
+  atMost?: boolean;
   food: number;
   deliveryFee: number | null;
   smallOrderFee: number;
@@ -703,11 +716,16 @@ export function Breakdown({
     <View style={{ backgroundColor: tokens.color.bg, borderRadius: 16, paddingTop: 6, paddingHorizontal: 16, paddingBottom: 14 }}>
       <Kv k={goodsLabel} v={food} first />
       {deliveryFee != null ? (
-        <Kv k={O.r.fee} v={deliveryFee} text={freeDeliveryBy != null && deliveryFee === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: freeDeliveryBy }) : undefined} />
+        <Kv
+          k={O.r.fee}
+          v={deliveryFee}
+          atMost={atMost && !(freeDeliveryBy != null && deliveryFee === 0)}
+          text={freeDeliveryBy != null && deliveryFee === 0 ? ofFmt(O_ADDED.r.freePaidBy, { v: freeDeliveryBy }) : undefined}
+        />
       ) : null}
       {smallOrderFee > 0 ? <Kv k={O.r.small} v={smallOrderFee} /> : null}
       {owed > 0 ? <Kv k={O_ADDED.r.owed} v={owed} /> : null}
-      <Kv k={O.r.total} v={total} total />
+      <Kv k={O.r.total} v={total} total atMost={atMost && !(freeDeliveryBy != null && deliveryFee === 0)} />
       <Text style={{ marginTop: 6, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{O.r.cancelRule}</Text>
     </View>
   );

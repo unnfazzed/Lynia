@@ -24,6 +24,20 @@ export function classifyNotif(p: PermLike): NotifState {
   return p.canAskAgain === false ? "blocked" : "denied";
 }
 
+/**
+ * Whether the OS dialog can still be shown, so an explainer is worth drawing. Pure.
+ *
+ * Not just "undetermined": on Android 13+ expo-notifications reports a fresh install as `denied` with
+ * `canAskAgain: true`, because `areNotificationsEnabled()` is false until POST_NOTIFICATIONS is granted
+ * (NotificationPermissionsModule.getPermissionsWithPromiseImplApi33). Gating on "undetermined" alone meant
+ * the customer sign-up step and PC8 never showed on any Android phone (PostHog, 2026-10-06..11-05: 25
+ * sign-up location screens, 0 notification screens, 21 of the 25 on Android 13+). "blocked" (can't ask
+ * again) stays out: only the phone's settings can turn it on (PC11 / P11).
+ */
+export function notifAskable(state: NotifState): boolean {
+  return state === "undetermined" || state === "denied";
+}
+
 /** A channel is "muted" for a job alarm when it no longer pops with sound (importance below HIGH). Pure. */
 export function channelIsMuted(ch: { importance?: number | null } | null | undefined): boolean {
   if (!ch || ch.importance == null) return false;

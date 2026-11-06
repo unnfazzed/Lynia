@@ -162,6 +162,12 @@ export class AuthService {
             plateStatus: true,
             // Only its presence leaves this endpoint (`hasPhoto`), never the storage key itself.
             photoUrl: true,
+            // D-122: same rule for the document photos — only their presence leaves (`kycDocs`).
+            kycIdFrontKey: true,
+            kycLicenceKey: true,
+            kycSelfieIdKey: true,
+            licenceNumber: true,
+            licenceExpiresOn: true,
             kycStatus: true,
             ratingAvg: true,
             ratingCount: true,
@@ -314,6 +320,15 @@ export class AuthService {
             // check (Bike & documents shows the reminder; it never blocks going online). `unverified` (verified
             // without a checked selfie, nothing asked yet) and null both mean the app shows nothing.
             selfieCheck: p.rider.kycStatus === "verified" ? p.rider.selfieCheck : null,
+            // D-122 (manual KYC), additive: which document photos are on file (never the storage keys), the
+            // typed licence and its expiry ("YYYY-MM-DD"). Older apps ignore them.
+            kycDocs: {
+              idFront: p.rider.kycIdFrontKey != null,
+              licence: p.rider.kycLicenceKey != null,
+              selfieId: p.rider.kycSelfieIdKey != null,
+            },
+            licenceNumber: p.rider.licenceNumber,
+            licenceExpiresOn: p.rider.licenceExpiresOn ? p.rider.licenceExpiresOn.toISOString().slice(0, 10) : null,
           }
         : null,
     };

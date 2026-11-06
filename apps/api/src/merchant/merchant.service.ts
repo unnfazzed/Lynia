@@ -96,10 +96,20 @@ type DishRow = Prisma.MerchantDishGetPayload<Record<string, never>>;
 type CategoryRow = Prisma.MerchantCategoryGetPayload<{ include: { _count: { select: { dishes: true } } } }>;
 type PlainCategoryRow = Prisma.MerchantCategoryGetPayload<Record<string, never>>;
 
-/** Splits sign-up's single "Your name" into the profile's first/last name (first word, then the rest). */
+/** Splits a one-line name into the profile's first/last name (first word, then the rest). */
 export function splitPersonName(full: string): { firstName: string; lastName: string } {
   const [first = "", ...rest] = full.trim().split(/\s+/);
   return { firstName: first, lastName: rest.join(" ") };
+}
+
+/**
+ * The profile name a merchant sign-up or Join fills an empty profile with. D-124: those screens ask First name ·
+ * Surname, sent as their own fields, and used as typed. An older page sends only the one line: split it.
+ */
+export function profileNameFrom(full: string, first?: string, last?: string): { firstName: string; lastName: string } {
+  const f = first?.trim() ?? "";
+  const l = last?.trim() ?? "";
+  return f && l ? { firstName: f, lastName: l } : splitPersonName(full);
 }
 
 // E4/D-32: `coverPhotoUrl`/`logoUrl`/dish `photoUrl` persist the raw GCS object KEY (the bucket has
@@ -341,9 +351,9 @@ export class MerchantService {
         });
         // Admin console v2 §5: the application starts here (applied, the column default).
         await domainEvents.merchantApplication(tx, merchant.id, "submitted", { actorId: profileId, actorRole: "merchant", data: { businessType: body.businessType } });
-        // "Your name" fills an empty LyniaGo profile (a never-seen number signs up with no name) and
-        // never overwrites a name the person already chose in the app.
-        if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: splitPersonName(ownerName) });
+        // Their name fills an empty LyniaGo profile (a never-seen number signs up with no name) and
+        // never overwrites a name the person already chose in the app (D-124: the two stay separate).
+        if (nameIsEmpty) await tx.profile.update({ where: { id: profileId }, data: profileNameFrom(ownerName, body.ownerFirstName, body.ownerLastName) });
       });
     } catch (err) {
       // The profile lock above is the real guard against a concurrent double submit (the pre-check
@@ -1093,6 +1103,9 @@ export class MerchantService {
           merchantGoodsTotal: true,
           deliveryFee: true,
           merchantDeliveryShare: true,
+          // D-125 T2-t: the shop's biker top-up.
+          merchantTopUp: true,
+          deliveryVenueFunded: true,
           // Merchant v2 T2 (D-77): whether a delivered order's cash is back, on its way, or late.
           debtStatus: true,
           merchantClosedAt: true,
@@ -1172,6 +1185,7 @@ export class MerchantService {
           amount: earns
             ? roundToCents(foodOrderMoney({ goodsTotal: o.merchantGoodsTotal, deliveryFee: o.deliveryFee, merchantDeliveryShare: o.merchantDeliveryShare }).merchantNet)
             : 0,
+          ...(earns && o.deliveryVenueFunded === false && Number(o.merchantTopUp ?? 0) > 0 ? { topUp: Number(o.merchantTopUp) } : {}),
         };
       }),
     };

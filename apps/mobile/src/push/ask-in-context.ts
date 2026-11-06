@@ -1,4 +1,4 @@
-import { readNotif } from "../permissions/notifications";
+import { notifAskable, readNotif } from "../permissions/notifications";
 import { CUST_NOTIF_ASK_CAP, custNotifAsks } from "../permissions/store";
 import { isCustomerWebBuild } from "../web-build";
 
@@ -6,14 +6,15 @@ import { isCustomerWebBuild } from "../web-build";
  * Customers are asked for notifications IN CONTEXT (First Run v2 PC8–PC10, handoff `first-run-v2` README
  * §2A + BRIEF 1–2, ledger D-82): right after an order is placed, an explainer ("Know when it's at the gate")
  * comes BEFORE the Android dialog — the OS dialog only ever opens from its primary button. It shows only
- * while the permission is still undetermined and at most `CUST_NOTIF_ASK_CAP` times per install ("Not now"
+ * while the OS dialog can still show (`notifAskable`: undetermined, or denied but askable — a fresh Android 13+
+ * install reads as the latter) and at most `CUST_NOTIF_ASK_CAP` times per install ("Not now"
  * asks again after the next order). The explainer is its own route (`app/order-updates.tsx`) that hands
  * over to the order screen.
  */
 export async function shouldExplainOrderUpdates(): Promise<boolean> {
   // The customer web build has no push yet (src/push/push.ts, ledger D-81), so there is nothing to ask for.
   if (isCustomerWebBuild()) return false;
-  if ((await readNotif()) !== "undetermined") return false;
+  if (!notifAskable(await readNotif())) return false;
   return (await custNotifAsks()) < CUST_NOTIF_ASK_CAP;
 }
 

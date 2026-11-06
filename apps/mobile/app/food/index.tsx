@@ -13,7 +13,7 @@ import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { usePopularity } from "../../src/query/use-popularity";
 import { rankedVenueMissing } from "../../src/logic/popularity";
 import { EmptyState, emptyCopy } from "../../src/ui";
-import { B, fmt } from "../../src/ui/browse/copy";
+import { B, endLine, fmt } from "../../src/ui/browse/copy";
 
 /** Empty states (handoff empty-states-v2, D-78). */
 const E = emptyCopy.browse;
@@ -290,7 +290,7 @@ export default function RestaurantListScreen(): React.ReactElement {
           ) : total > 0 && !feed.hasMore ? (
             // B12b — the end of the list.
             <Text style={{ textAlign: "center", paddingVertical: 24, paddingHorizontal: 32, fontSize: 13, color: tokens.color.muted }}>
-              {fmt(B.svc.food.end, { n: total, area })}
+              {endLine("food", total, area)}
             </Text>
           ) : (
             <View style={{ height: 24 }} />

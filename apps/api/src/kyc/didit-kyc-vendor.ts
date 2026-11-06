@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { captureException } from "../observability/sentry";
 import type { Env } from "../config/env";
 import { mapDiditPendingState } from "./didit";
 import type { ServerKycPendingState } from "./kyc-pending-state";
@@ -50,12 +51,18 @@ export class DiditKycVendor implements KycVendor {
     } catch (err) {
       // A timeout (or any network failure) surfaces as a clean vendor error rather than a hung request.
       this.logger.error(`Didit session create network error: ${err instanceof Error ? err.message : String(err)}`);
+      captureException(err, { vendor: "didit", op: "session_create", network: true });
       throw new Error("Couldn't reach the ID-check provider", { cause: err });
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Didit session create failed: ${res.status} ${text.slice(0, 200)}`);
+      const err = new Error(`Didit session create failed: ${res.status} ${text.slice(0, 200)}`);
+      // 2026-11-04: a refused session-create (e.g. 402/403 when the Didit balance hit $0) never reached
+      // Sentry, so bikers were stuck for days unseen. Report it here; no PII (status + vendor text only).
+      this.logger.error(err.message);
+      captureException(err, { vendor: "didit", op: "session_create", status: res.status });
+      throw err;
     }
 
     const data = (await res.json()) as {

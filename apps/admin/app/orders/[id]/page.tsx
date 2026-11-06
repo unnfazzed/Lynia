@@ -360,6 +360,28 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             />
           </section>
 
+          {/* D-125 E1 (handoff delivery-ceiling-v1): the delivery price block, on a ceiling order only. */}
+          {o.food?.deliveryPrice ? (
+            <section className="card">
+              <div className="block-title">Delivery price</div>
+              <KeyValue
+                rows={[
+                  { label: "Recommended", value: money(o.food.deliveryPrice.recommended) },
+                  { label: "Customer’s maximum", value: o.food.deliveryPrice.venueFunded ? "Free delivery (paid by the shop)" : money(o.food.deliveryPrice.ceiling) },
+                  { label: "Starting offer", value: money(o.food.deliveryPrice.start) },
+                  { label: "Shop top-up", value: o.food.deliveryPrice.topUp ? money(o.food.deliveryPrice.topUp) : "None" },
+                  { label: "Accepted price (customer pays)", value: o.food.deliveryPrice.acceptedPrice ? money(o.food.deliveryPrice.acceptedPrice) : "Not accepted yet" },
+                  { label: "Rider fare (accepted + top-up)", value: o.food.deliveryPrice.riderFare ? money(o.food.deliveryPrice.riderFare) : "—" },
+                  {
+                    label: "Accepted in round",
+                    value: o.food.deliveryPrice.acceptedRound != null ? String(o.food.deliveryPrice.acceptedRound) : `— (${o.food.deliveryPrice.rounds ?? 0} rounds so far)`,
+                  },
+                  { label: "Customer asked to raise", value: o.food.deliveryPrice.askedToRaiseAt ? `Yes · ${fmtDateTime(o.food.deliveryPrice.askedToRaiseAt)}` : "No" },
+                ]}
+              />
+            </section>
+          ) : null}
+
           {/* X1: food-order evidence panel — merchant/payment rail/debt/handshake/refund. Null for
               every parcel order, so this card is simply absent there. */}
           {o.food ? (

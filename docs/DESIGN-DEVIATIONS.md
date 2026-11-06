@@ -16,7 +16,7 @@ be reported back to Design) · **PROPOSED** (built in an open PR that waits on t
 screenshot sheet; it becomes APPROVED when the owner approves that PR, which doesn't merge before —
 merchant web upgrade plan §10, OV-11).
 
-**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-101, D-102, D-104, D-105, D-106, D-108, D-112, D-113, D-114, D-115.** D-115 is the merchant Shop front redrawn for phone (2026-10-18): the owner's shop-front-v1 handoff replaces D-48's "not redrawn" row. D-114 is the merchant web's crash page (2026-10-18): a screen that throws shows T14b's failure state titled "Couldn't open this screen", inside the tab shell so the order alarm keeps ringing. D-113 is the merchant sign-in reading "Get started" (2026-10-18): one phone-and-code screen for new and returning businesses, "Continue" on the code step, no new screen. D-112 is biker referrals (2026-10-18): a Referrals page and a biker-page card in the admin console, built from the kit's primitives like D-106, and no app screen. D-108 is the customer web app's iPhone Add to Home Screen tip (2026-10-15): a sheet, its states and a pin row on Home from the owner's download-qr-install-tip handoff, web build only. D-106 is the admin console v2 screens the kit doesn't draw (2026-10-13): built only from the kit's own primitives and tokens (route (b)). D-105 is the admin console on a phone (2026-10-13): below 900px the 1440 console reflows onto a top bar, scrolling tables and 44px targets; desktop is unchanged. D-102 and D-104 fit the biker's top-up wall and the Money tab's balance line to the per-job commission rule (2026-10-12): there is no balance floor. D-101 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
+**Currently live deviations: D-03, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-18, D-19, D-23, D-24, D-27, D-29, D-30, D-32, D-34, D-37, D-38, D-39, D-40, D-41, D-42, D-43, D-44, D-45, D-46, D-47, D-48, D-49, D-50, D-51, D-52, D-53, D-54, D-55, D-77, D-80, D-81, D-101, D-102, D-104, D-105, D-106, D-108, D-112, D-113, D-114, D-115, D-124.** D-124 is the merchant sign-up and Join asking First name · Surname, with the team keeping the name the person gave, never the invite's (2026-11-05). D-115 is the merchant Shop front redrawn for phone (2026-10-18): the owner's shop-front-v1 handoff replaces D-48's "not redrawn" row. D-114 is the merchant web's crash page (2026-10-18): a screen that throws shows T14b's failure state titled "Couldn't open this screen", inside the tab shell so the order alarm keeps ringing. D-113 is the merchant sign-in reading "Get started" (2026-10-18): one phone-and-code screen for new and returning businesses, "Continue" on the code step, no new screen. D-112 is biker referrals (2026-10-18): a Referrals page and a biker-page card in the admin console, built from the kit's primitives like D-106, and no app screen. D-108 is the customer web app's iPhone Add to Home Screen tip (2026-10-15): a sheet, its states and a pin row on Home from the owner's download-qr-install-tip handoff, web build only. D-106 is the admin console v2 screens the kit doesn't draw (2026-10-13): built only from the kit's own primitives and tokens (route (b)). D-105 is the admin console on a phone (2026-10-13): below 900px the 1440 console reflows onto a top bar, scrolling tables and 44px targets; desktop is unchanged. D-102 and D-104 fit the biker's top-up wall and the Money tab's balance line to the per-job commission rule (2026-10-12): there is no balance floor. D-101 is "Rider" → "Biker" app-wide (2026-10-12): every user-visible "rider" now reads "biker"; code, routes and data keep "rider". D-81 is the customer web app for iPhone users (2026-10-06): the same customer screens in a browser at app.lyniago.com, with a few web-only differences. D-80 is Google Maps on the web (2026-10-06): the merchant web and the planned customer web app draw maps with Google, replacing D-48's OpenStreetMap. D-77 is Merchant v2 (2026-10-04): the owner's merchant-v2 handoff gives kitchens, shops and pharmacies one shell and one five-step order lifecycle, on top of D-48. D-55 is Calm Mint v2 (2026-10-01): the owner's calm-mint-v2 handoff becomes the authority for the customer Home, customer onboarding and the rider's first run; it retires D-28 for Home and moves `--highlight` to #FFD23F. D-54 is Rider v2 (2026-10-01): the owner's rider-v2 handoff becomes the authority for the rider app and for BOTH Account tabs and Settings; it retires D-15, D-16, D-17, D-22, D-25 and D-26. D-53 is the customer order screen redesign (2026-10-01, with its v2 round the same day): the owner's after-send handoff replaces the gallery's separate auction / tracking / delivered / failure screens with one screen — a full-bleed map and a sheet that follows the order's stage. D-52 is the Send a parcel redesign (2026-10-01): the owner's send-compose-v2 handoff replaces the gallery's one-sheet composer with four steps (Where · What · Price · Review), edits addresses inline on the map, and drops landmarks, declared value and the disclaimer; it retires D-14, D-21 and D-31. D-51 is merchant branches (2026-10-01): the branch switcher, Add a branch, and the not-live Orders home. D-50 is restaurant auto-accept (2026-09-30): for restaurants still taking orders by phone, orders skip the accept window and LyniaGo ops confirm them by phone before a rider is sent. D-49 is the terms & conditions page (2026-09-30): one set of terms for customers, riders and businesses, linked from Settings in the app and the merchant sign-in line. D-48 is the merchant mobile redesign (2026-09-30): its handoff replaces the RM tablet mocks as the merchant authority and retires D-43 to D-47 as each phase lands. D-43 to D-47 are the
 merchant web upgrade (L1–L5: sign-up, Book a rider and the shop's shell, Your riders, Team, and the drawn
 restaurant screens), approved by the owner with PR #986 (2026-09-29). D-42 is the lyniago.com marketing website: the design handoff shipped as-is, with four owner-decided launch items (2026-09-28). D-41 is the iPhone app shipping customer-only (2026-09-27). D-40 reopens D-01
 (WhatsApp OTP copy again, now that Bird Verify can deliver over WhatsApp) on an explicit 2026-09-01 user
@@ -6002,3 +6002,169 @@ the admin kit.
   directory, and "name · owner/staff" in the header of their profile. The pill opens the business.
 - **Bikers.** An own biker carries the same pill in the bikers directory, and "name · own biker" in their profile's header.
 - **Upstream:** the admin kit should draw the people card and the business tag. The kit is not edited.
+
+
+## D-122 · Manual KYC while Didit is unfunded: biker document photos, licence details, F1 "Add your documents" — APPROVED (owner, 2026-11-04)
+
+**Owner (2026-11-04):** Didit's free allowance ended on 1 Nov 2026 and there is no money to top it up, so bikers are
+reviewed by hand. The owner approved the plan in office hours, then in `/plan-design-review` and `/plan-eng-review`
+(decisions recorded in the gstack design doc `manual-kyc`), and approved all follow-up improvements, with the rule that
+**bikers have low-end phones with low-quality cameras**. None of this is drawn in First Run v2 (E1–E6, F1).
+
+- **Bike & documents (E1), manual mode only** (`rider.kycMode === "manual"`, or a biker who already has document photos).
+  Three more rows under National ID, built exactly like the E1 Photo row (soft "+ Add" → the camera/gallery sheet → an
+  upload per row that reuses E2d "Uploading…", E6 "Upload didn't finish" + "Try again", and "Change"). No Submit button.
+  A **Licence details** row (number and expiry date) under them. When no national ID is on file, the National ID row
+  gets a soft "+ Add" that opens a one-field sheet (the existing PD placeholder and format error). The counter reads
+  **"N of 6"** (ID check, three document photos, biker photo, plate); outside manual mode it stays E1's "N of 3".
+- **F1 (manual review).** One soft pill, **"Add your documents"**, under the checklist, opening Bike & documents. It is
+  hidden once all three photos are in. In manual mode, F4's "Try again" opens Bike & documents (there is no check to
+  reopen); a complete re-upload puts the biker back in the review queue.
+- **Go-online refusal** `licence_expired` gets its own gate copy (never "Your ID has expired").
+- **Admin KYC review.** An "ID documents (manual review)" card of three tiles in the Documents style (170px, `doc-ph`
+  placeholder), each opening the full-size image in a new tab; "Licence no." and "Licence expires" in Applicant; the KYC
+  queue gains a muted "Docs x/3" column.
+- **Low-end phones.** Documents shoot on the back camera (the selfie on the front), gallery always allowed, the existing
+  1280px / JPEG 0.7 downscale, the existing E6 retry for dropped connections.
+
+**Copy, verbatim.** Approved by the owner on 2026-11-04 (design review):
+"ID card (front)", "Driver's licence", "Selfie holding your ID", "For your ID check", "Lay it flat, all four corners in
+view, no glare.", "Hold your ID next to your face.", "Add your documents", decline reasons "Photos unreadable",
+"Licence expired", "Selfie doesn't show your face".
+
+New in the build, **awaiting the owner's word check** on the PR (they follow the approved behaviour; change any word and
+the app follows): "Licence details", "Number and expiry date", "Licence number", "Expiry date", "DD/MM/YYYY", "Use the
+format DD/MM/YYYY", "Enter your licence number", "This licence has expired", "Your national ID number", "Save", "of 6";
+gate "Your licence has expired" / "You can't go online until your new driving licence is approved. Add it in Bike &
+documents."; pushes "Your licence expires soon" / "Add your new driving licence in Bike & documents to keep riding." and
+"Your licence has expired" / "You're offline until your new driving licence is approved. Add it in Bike & documents.";
+Telegram "🪪 Biker docs ready" and "⚠️ Biker licence expired".
+
+- **Retired when:** Didit is funded again and PR 2 (the "Verify with Didit" nudge) lands; the document rows stay for
+  bikers who still hold photos until they pass Didit.
+- **Upstream:** First Run v2 should draw the manual-review document rows, the licence row and F1's pill. The kit is not edited.
+
+## D-123 · Android tab bar is solid, never glass — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"lets fix the floating glass tab bar to remove the possible cause of white screen."*
+Android users on both sides report a screen that stays white (tap Restaurants and nothing draws; same on the
+biker side), recovering after a wait or a restart (`docs/KNOWN_BUGS.md` MOB-WHITE-01). The prime suspect is the
+tab bar's glass on Android: expo-blur's only Android blur is the experimental `dimezisBlurView`, which redraws a
+copy of the whole window every frame, from the bar on the tab screen even while another screen is pushed over it.
+
+- **What changes.** On Android the floating pill is always the tab-bar-v1 handoff's own **solid fallback**
+  (README "Accessibility fallback", D-56 §6): opaque `bg`, the D-56 hairline edge, the same geometry, icons,
+  labels, indicator and badges. No `BlurView` is created on Android at all (`blurSupported("android") === false`
+  in `src/ui/shell/useGlass.ts`). It is the look Android phones below API 31, low-RAM phones and phones with high
+  contrast text already had.
+- **Then everywhere, and nicer (owner, same day, on web iPhone screenshots):** *"I don't like the black outline
+  there .. it shows and sometimes doesn't show .. also the green on android shows in some cases and doesn't show in
+  some cases. It must show. Let's make it solid but making it nice at the same time."*
+  - **Solid on every platform** (iOS and web too). The fill is the handoff's own solid bar (README "## Bar"):
+    opaque `bg` lifted by **`--shadow-float`** (`tokens.shadow.float`), which v1.4 had removed. The owner's D-56 §6
+    hairline edge stays. `useGlass` and the blur are deleted; the `expo-blur` package stays installed so the native
+    runtime (and the OTA lane) is unchanged.
+  - **The mint pill always shows.** v1.4's single indicator slid between cells on a native translateX that waited
+    for the bar's measured width, and on Android it sometimes never drew. Each cell now draws its own `tileMint`
+    pill, cross-faded over 300ms with the cell's existing tone. **Deviation from v1.4 "Motion":** the pill fades
+    between tabs instead of sliding.
+  - **No ink ring after a tap.** The focus ring (handoff: "keyboard or D-pad only") was drawn on any focus, and the
+    web focuses a tapped tab. It now shows on the web only when the focus came from the keyboard; native is unchanged
+    (Android never focuses in touch mode).
+- **Undo.** Re-approve here first; the glass lived in `src/ui/shell/useGlass.ts` (see git history).
+
+## D-124 · Merchant sign-up and Join ask First name · Surname; the team keeps the person's own name — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"Merchant side registration puts full name in one box .. I want it to be like customer sign up
+where full name is put .. Check any screens that do that. Then when inviting a user/biker in merchant side, you enter
+number and name but the name that must be recorded in the system is the one the user enters upon registration."*
+Answers to the follow-up questions, same day: both screens; keep the merchant name separate from the account name;
+the invite's name is a pending label only; backfill existing staff.
+
+- **Where it changes.** merchant-mobile **A4 Your business** and **A5 Join a team** (D-48) each drew one "Your name"
+  box. Both now draw customer C5's pair: **First name · Surname** side by side (`grid 1fr 1fr`, gap 12), both
+  required, labels verbatim from C5 (`OB.firstName` / `OB.surname`). The rest of each screen is unchanged. These were
+  the only screens in the apps that asked for a person's name in one box (customer C5 and biker R1 already ask for two).
+- **Where the name starts.** Both screens pre-fill from the person's own LyniaGo account. **Join no longer starts from
+  the name the owner typed on the invite**: that name only labels the pending invite on the owner's Team list (and the
+  Own bikers invite list, which already showed the biker's own profile name once they joined).
+- **What is stored.** The team name (`merchant_members.display_name`) is "First Surname" as typed. It stays separate
+  from the account name: an account that already has a name is never overwritten; an empty one is filled with the two
+  parts as typed (`profileNameFrom`, no more splitting at the first space). The API still accepts the one-line name
+  alone, so an older page keeps working.
+- **Backfill.** Migration `0117_merchant_staff_name_backfill` sets every staff member's team name to their own account
+  name (first + last, at most 60 letters) where the account has one. Owners and erased accounts are left alone.
+- **Business name and personal name are always separate (owner, same day):** *"there is the name of the merchant or
+  business name and the personal name of owner of merchant account .. these must always be separated."* No person's
+  name ever falls back to the business's: the legacy-owner backfill (`merchant-access.ts`), support's owner handover
+  (`admin-merchants.service.ts`) and a new branch's owner row (`merchant-branches.service.ts`) now use the person's
+  own profile name (empty if they have none), and the Team list shows a nameless row under the profile name.
+  Migration `0118_merchant_member_name_not_business` renames team rows that carry their business's name (left by
+  migration 0053's fallback) to the person's own profile name, where they have one.
+- **Upstream:** merchant-mobile A4 and A5 should draw the C5 name pair. The kit is not edited.
+
+## D-125 · Delivery price ceiling v1 — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** agreed the model in `docs/plans/2026-11-05-delivery-price-ceiling.md` ("Proceed with this and
+your recommendations"), then handed over the Claude Design export with *"implement"*.
+
+- **Handoff:** `packages/design/handoff/delivery-ceiling-v1/` (README, `code/copy.ts`, canvas, screenshots), vendored
+  as exported. Its README wins over the drawings; the plan wins over both on a rule (handoff `CLAUDE-CODE-PROMPT.md`).
+- **Plan:** `docs/plans/2026-11-05-delivery-price-ceiling.md`.
+- **Extends, does not replace:** Order flow v2.1 R1/R2a/R2b, T4/T5/T6/T11a; Merchant v2 hold card, board card, M6a,
+  Money; Orders v2 Now card; Notifications v1 row; admin order detail.
+- **New frames:** R1c (+full/320/fs), R1c-low (+320), R1c-high, R1c-max, R1c-free, T4u (+320/fs), T6p, T6p-same,
+  T11c (+320/fs), T11c-toast, T11c-push, O-card-u, N-row-u, M4h (+320/fs), M4h-sent, M6a-t, T2-t, K-card-h, E1.
+- **Copy changed (was → now), only on an order that carries a ceiling:**
+  - `O.r.place` "Place order · {p} cash" → "Place order · {p} cash at most"
+  - `O.r.cashSub` → `DC.r.cashSubUpTo` "Have {p} ready. It may be less. You’ll see the exact amount when a rider accepts."
+  - `O.t.slowRiderSub` → "No rider has taken it at {d} yet. Your order is kept ready at {v}."
+  - Merchant hold sub → "Riders are offered {o}. Nobody has taken it so far."
+  - Push c[3] body → "Have {p} ready at the door."
+- **Wording:** the plan's placeholder "up to" is replaced by the handoff's "Pay no more than" / "$X at most".
+- **Rider offer card:** unchanged by decision (no "Raised" marker).
+- **Tokens:** none added.
+- **Flag:** `DELIVERY_CEILING_ENABLED`, default off. Off, and on any order with no stored ceiling, every screen is
+  today's.
+- **Known export defect (upstream):** `Delivery ceiling v1 - all screens.html` loads its kit from
+  `../order-flow-v2-2026-10/`, but the repo's folder is `order-flow-v2/`, so that canvas renders blank in-repo. Use
+  `Delivery ceiling v1 (standalone).html` or the screenshots. The kit is not edited.
+- **Built in the first PR, and what is not (yet):**
+  - Built: R1c/R1c-low/R1c-high/R1c-max (R1c-free keeps today's free-delivery Review as the brief asked), T4u, T6p,
+    T6p-same, T11c + toast + push, O-card-u, N-row-u (the "after" line rides a new `assigned` feed beat, on ceiling
+    orders only), M4h, M4h-sent, K-card-h, M6a-t (its rows inside the existing D-77 cash card), T2-t (the row and the
+    top-ups line under the existing Money header), E1's Delivery price block.
+  - Not built: E1's **Dispatch rounds** list (the API keeps no per-round price log yet), and the T11c-push
+    **action buttons** (the app registers no notification categories; a tap opens the order, where T11c is). Both
+    are follow-ups, not deviations from the look.
+- **Approved by:** owner, 2026-11-05.
+
+## D-126 · Home shows every live venue: one is enough for a rail, and no address is needed — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** *"Yes make that change .. also show these shops to everyone .. even if they are in Bulawayo."*
+A single live shop, Uptown Liquor, was on the Shops screen while Home said "Coming soon near you".
+
+| | Handoff / earlier ledger | App |
+|---|---|---|
+| Rail minimum (Calm Mint v2 README §2) | A rail with fewer than 2 items is hidden | A rail shows from 1 item (`RAIL_MIN`, both rails) |
+| No address on Home (H6; kept by the owner in D-60) | The "Where should we deliver?" card replaces the rails | The rails show, without fee or ETA. The card only fills a Home with nothing to show. The header still reads "Set your location" |
+| List footer (Browse v2 `end`) | "That’s all {n} shops delivering to {area}." | At 1: "That’s the only shop delivering to {area}." (restaurant, pharmacy alike; `endLine`, `src/ui/browse/copy.ts`) |
+
+- **No server change.** D-99 already made browsing nationwide: the list has no location filter, so a customer in Bulawayo
+  already gets a Harare shop. Delivery rules are untouched: no distance cap, the fee stays per km, venue jobs go to bikers
+  within 15 km of the venue.
+- **Upstream:** the handoff's rail rule and the `end` line should allow for one venue. The kit is not edited.
+
+## D-127 · The store page's info strip drops the "km away" cell — APPROVED (owner, 2026-11-06)
+
+**Owner (2026-11-06), on a screenshot of Uptown Liquor's page ("1.9 km away"):** *"remove the distance here as it’s
+misleading .. not true distance"*
+
+| | Handoff (Browse v2 README §4b "Info strip") | App |
+|---|---|---|
+| Store / shop / pharmacy page info strip (S1–S13) | Up to four cells: rating · ETA · delivery fee · "{km} km away" | Up to three cells: rating · ETA · delivery fee. No distance cell (`InfoStrip`, `src/ui/browse/store.tsx`) |
+
+- **Why:** `km` is the straight-line distance from the delivery point to the venue, not the road distance a biker rides,
+  so it reads shorter than the trip.
+- **Scope:** the store page only. List cards and search rows still show km; the fee and ETA are unchanged.
+- **Upstream:** the handoff's info strip should not draw a straight-line distance. The kit is not edited.

@@ -214,6 +214,11 @@ export interface KycReview {
   /** Short-lived signed GET URL for the rider's submitted document photo, or null (no photo yet, or
    *  the storage adapter failed to sign — the review still loads without it). */
   photoUrl: string | null;
+  /** D-122 (manual KYC): the biker's own document photos as short-lived signed URLs (null = none / unsigned). */
+  kycDocs?: { idFrontUrl: string | null; licenceUrl: string | null; selfieIdUrl: string | null };
+  /** D-122: the typed driving licence and its expiry ("YYYY-MM-DD"). */
+  licenceNumber?: string | null;
+  licenceExpiresOn?: string | null;
   bike: string;
   status: "pending" | "verified" | "failed" | "expired";
   kycRef: string | null;
@@ -325,6 +330,19 @@ export interface FoodOrderPanel {
   deliveryFee: string | null;
   /** D-71: the part of the rider's fee the business paid (free delivery); null = the customer paid it. */
   merchantDeliveryShare?: string | null;
+  /** D-125 E1: the delivery price ceiling (absent/null on an order placed without one). */
+  deliveryPrice?: {
+    recommended: string | null;
+    ceiling: string;
+    start: string | null;
+    topUp: string | null;
+    venueFunded: boolean;
+    acceptedPrice: string | null;
+    riderFare: string | null;
+    acceptedRound: number | null;
+    rounds: number | null;
+    askedToRaiseAt: string | null;
+  } | null;
   debt: {
     status: "open" | "settled_cash" | "settled_goods" | "written_off";
     amount: string | null;

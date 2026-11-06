@@ -50,6 +50,10 @@ export class AdminRidersService {
         plateStatus: true,
         kycStatus: true,
         kycRef: true,
+        // D-122: which manual-KYC document photos are in (count only; keys never leave).
+        kycIdFrontKey: true,
+        kycLicenceKey: true,
+        kycSelfieIdKey: true,
         idVerified: true,
         isOnline: true,
         accountStatus: true,
@@ -90,6 +94,8 @@ export class AdminRidersService {
       plateStatus: r.plateStatus,
       kycStatus: r.kycStatus,
       kycRef: r.kycRef,
+      // D-122: "Docs x/3" in the KYC queue.
+      docsCount: [r.kycIdFrontKey, r.kycLicenceKey, r.kycSelfieIdKey].filter((k) => k != null).length,
       idVerified: r.idVerified,
       isOnline: r.isOnline,
       // Account standing (A-04) so the directory can distinguish an active rider from a

@@ -20,7 +20,7 @@ import { useLocationAskSheet } from "../home/LocationAsk";
 import { ServiceSoonSheet } from "../home/ServiceSoonSheet";
 import { EmptyState } from "../EmptyState";
 import { emptyCopy, fillEmpty } from "../emptyCopy";
-import { B, fmt } from "./copy";
+import { B, endLine, fmt } from "./copy";
 
 /** Empty states (handoff empty-states-v2, D-78). */
 const E = emptyCopy.browse;
@@ -301,7 +301,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
               <Text style={{ textAlign: "center", padding: 4, fontSize: 12.5, color: tokens.color.muted }}>{B.list.more}</Text>
             </View>
           ) : total > 0 && !feed.hasMore ? (
-            <Text style={{ textAlign: "center", paddingVertical: 24, paddingHorizontal: 32, fontSize: 13, color: tokens.color.muted }}>{fmt(s.end, { n: total, area })}</Text>
+            <Text style={{ textAlign: "center", paddingVertical: 24, paddingHorizontal: 32, fontSize: 13, color: tokens.color.muted }}>{endLine(service, total, area)}</Text>
           ) : (
             <View style={{ height: 24 }} />
           )

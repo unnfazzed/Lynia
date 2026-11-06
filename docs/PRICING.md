@@ -270,6 +270,23 @@ deliveryFee(distanceKm) = max( 1.50, round_to_0.50( 0.80 × distanceKm ) )
 A venue with free delivery pays the rider's fee out of its own share (`merchantDeliveryShareAtPlacement`,
 ledger D-71). The customer then pays $0 delivery and the rider still gets the full fee. Payment is cash.
 
+**Delivery price ceiling (ledger D-125, behind `DELIVERY_CEILING_ENABLED`, default off).** When the flag is on and
+the app sends `deliveryCeiling`, the fixed fee above is replaced
+([`packages/shared/src/delivery-ceiling.ts`](../packages/shared/src/delivery-ceiling.ts),
+plan [`docs/plans/2026-11-05-delivery-price-ceiling.md`](plans/2026-11-05-delivery-price-ceiling.md)):
+
+| Name | Rule |
+|---|---|
+| Recommended | Send's `suggestFare(km)`: `max(1.50, round50(1.50 + 0.60 × km))` |
+| Customer's ceiling | default Recommended; `max(1.50, round50(0.8 × Rec))` … `2 × Rec`, 50c grid, checked by the API |
+| Starting offer | `min(ceiling, max(floor, down50(0.85 × Rec)))` |
+| Each later round | +$0.50, never past the ceiling; the shop's top-up rides on top |
+
+`deliveryFee` is always what the rider is offered / earns (rung + top-up); the top-up is carried in
+`merchantDeliveryShare`, so the customer pays goods + rung and the shop's cash back is goods − top-up. A
+free-delivery venue's ceiling is Recommended and the shop funds the whole fee. An order placed without a ceiling
+(flag off, or an installed app that doesn't send one) keeps the fixed fee.
+
 **Preferred riders (merchant "Book a rider").** When a business books a parcel rider from the merchant
 app, it sees offers like a customer does. It ranks them with `MERCHANT_OFFER_WEIGHTS`: the default blend
 plus `PREFERRED_OFFER_BONUS = 0.5` for one of the business's own riders

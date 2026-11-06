@@ -314,3 +314,15 @@ describe("KYC review: a card that couldn't be read three times (owner 2026-10-15
     expect(warnbar("ID card couldn't be read — three tries.")).toContain("This biker is waiting on you");
   });
 });
+
+describe("KYC review: D-122 manual-KYC documents", () => {
+  it("shows each document photo as a tile that opens full size, and the typed licence", async () => {
+    await open(review({ kycDocs: { idFrontUrl: "https://signed/a", licenceUrl: null, selfieIdUrl: "https://signed/c" }, licenceNumber: "AB 12345", licenceExpiresOn: "2028-01-31" }));
+    expect(screen.getByRole("link", { name: "ID card (front), open full size" }).getAttribute("href")).toBe("https://signed/a");
+    expect(screen.getByRole("link", { name: "Selfie holding ID, open full size" }).getAttribute("target")).toBe("_blank");
+    expect(screen.queryByRole("link", { name: /Driver's licence, open full size/ })).toBeNull();
+    expect(document.body.textContent).toContain("(not added yet)");
+    expect(screen.getByText("AB 12345")).toBeTruthy();
+    expect(screen.getByText("2028-01-31")).toBeTruthy();
+  });
+});

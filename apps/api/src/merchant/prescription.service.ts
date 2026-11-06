@@ -153,6 +153,9 @@ export class PrescriptionService {
         merchantPhase: true,
         deliveryFee: true,
         merchantDeliveryShare: true,
+        deliveryCeiling: true,
+        merchantTopUp: true,
+        deliveryVenueFunded: true,
         merchantItems: true,
         merchant: { select: { name: true } },
       },
@@ -195,7 +198,7 @@ export class PrescriptionService {
       const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFeeForSubtotal(rawSubtotal));
       const deliveryFee = Number(order.deliveryFee ?? 0);
       // D-71: a free-delivery order stays free, the venue's share capped by the smaller goods total.
-      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+      const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee, order);
       const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
       const u = await tx.order.updateMany({
         where: { id: orderId, status: "requested", merchantPhase: order.merchantPhase },

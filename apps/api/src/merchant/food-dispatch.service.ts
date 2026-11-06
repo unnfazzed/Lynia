@@ -1,7 +1,13 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
+  ceilingMoney,
+  DELIVERY_CEILING,
+  isValidCeiling,
   dispatchRoundSize,
+  merchantAmountDueUsd,
+  offerForRound,
+  topUpChoices,
   FoodOfferEvent,
   type HeldReason,
   RELIABILITY,
@@ -18,7 +24,7 @@ import { sealHandoverCode } from "../common/handover-code";
 import { penaltiesSuspended } from "../common/penalties";
 import { PiiCryptoService } from "../common/pii-crypto.service";
 import { CANCEL_STRIKE_LIMIT } from "../orders/order-lifecycle.constants";
-import { pushCopy, PUSH_C, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
+import { pushCopy, PUSH_C, PUSH_C_CEILING, PUSH_C_SLOW_RIDER, pushMoney, riderJobTemplate } from "../notifications/merchant-order-push";
 import { NotificationsService } from "../notifications/notifications.service";
 import { pickupPoint, publicWaypoint } from "../orders/waypoints";
 import { RiderNudgeService } from "../tracking/rider-nudge.service";
@@ -107,6 +113,44 @@ function prepReadyMs(o: Pick<EarlyDispatchInput, "prepStartedAt" | "prepMinutes"
   return (o.prepStartedAt?.getTime() ?? nowMs) + (o.prepMinutes ?? 0) * 60_000;
 }
 
+/** The ladder fields {@link ladderRound} reads (D-125). */
+interface LadderInput {
+  merchantGoodsTotal: Prisma.Decimal | null;
+  deliveryCeiling: Prisma.Decimal | null;
+  deliveryLadder: Prisma.Decimal | null;
+  merchantTopUp: Prisma.Decimal | null;
+  deliveryVenueFunded: boolean | null;
+  deliveryRound: number | null;
+}
+
+/**
+ * D-125: the money a round's claim writes, or null on an order without a ceiling (its fixed fee never moves).
+ * Round 1 of a search keeps the stored rung; each later round climbs one 50c step, capped at the ceiling. The
+ * top-up rides on top, and `deliveryFee` / `merchantDeliveryShare` / `agreedFare` follow (`ceilingMoney`), so
+ * every reader of the fee — the offer push, the board card, the commission check, the accept — sees this round.
+ */
+export function ladderRound(order: LadderInput, attempt: number) {
+  if (order.deliveryCeiling == null || order.deliveryLadder == null) return null;
+  const ceiling = Number(order.deliveryCeiling);
+  const current = Number(order.deliveryLadder);
+  const ladder = attempt <= 1 ? Math.min(current, ceiling) : offerForRound({ round: 2, start: current, ceiling });
+  const money = ceilingMoney({
+    goods: Number(order.merchantGoodsTotal ?? 0),
+    ladder,
+    topUp: order.merchantTopUp == null ? 0 : Number(order.merchantTopUp),
+    venueFunded: order.deliveryVenueFunded,
+  });
+  return {
+    deliveryLadder: ladder,
+    deliveryFee: money.deliveryFee,
+    merchantDeliveryShare: money.merchantDeliveryShare,
+    agreedFare: money.customerTotal,
+    suggestedFare: money.customerTotal,
+    proposedFare: money.customerTotal,
+    deliveryRound: (order.deliveryRound ?? 0) + 1,
+  };
+}
+
 @Injectable()
 export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FoodDispatchService.name);
@@ -158,6 +202,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       await this.sweepSearch();
     } catch (err) {
       this.logger.error(`sweepSearch failed: ${(err as Error).message}`);
+    }    try {
+      await this.sweepRaiseAsks();
+    } catch (err) {
+      this.logger.error(`sweepRaiseAsks failed: ${(err as Error).message}`);
     }
   }
 
@@ -281,6 +329,12 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         distanceKm: true,
         merchantPaymentMethod: true,
         merchantCashRule: true,
+        // D-125: the ladder.
+        deliveryCeiling: true,
+        deliveryLadder: true,
+        merchantTopUp: true,
+        deliveryVenueFunded: true,
+        deliveryRound: true,
         // MJ-RM1 / U32: the early search of an auto-accepted order still cooking.
         autoAccepted: true,
         kitchenConfirmedAt: true,
@@ -319,7 +373,14 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     if (attempt > max) {
       const claimed = await this.prisma.order.updateMany({
         where: { id: orderId, status: "requested", dispatchAttempt: order.dispatchAttempt, noRiderHoldAt: null },
-        data: { noRiderHoldAt: new Date(), dispatchNextCheckAt: null },
+        data: {
+          noRiderHoldAt: new Date(),
+          dispatchNextCheckAt: null,
+          // D-125: the shop gets the top-up first; the customer is asked to raise 2 minutes later (T11c).
+          ...(order.deliveryCeiling != null && order.deliveryVenueFunded !== true
+            ? { deliveryAskCustomerAt: new Date(Date.now() + DELIVERY_CEILING.askCustomerAfterMs), deliveryRaiseAskedAt: null }
+            : {}),
+        },
       });
       if (claimed.count === 0) return "skipped";
       this.logger.log(`order ${orderId}: NO_RIDER cap reached — merchant hold (D-34)`);
@@ -361,7 +422,11 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // Owner 2026-10-12: a rider whose wallet doesn't cover this job's commission (10% of the delivery fee,
     // once their free jobs are used) isn't offered it. They're dropped from this round only — a top-up
     // makes them eligible again — and the search looks past them, a couple of passes at most.
-    const commission = jobCommission({ orderType: "merchant", deliveryFee: order.deliveryFee });
+    // D-125: this round's rung. The first round of a search keeps the stored rung (the starting offer, or the
+    // price a rider already accepted before dropping it); every later round climbs 50c, never past the ceiling.
+    const priced = ladderRound(order, attempt);
+    const offerFee = priced ? new Prisma.Decimal(priced.deliveryFee) : order.deliveryFee;
+    const commission = jobCommission({ orderType: "merchant", deliveryFee: offerFee });
     const skipped = new Set<string>();
     // Riders who passed on this order in the last declineCooldownMs sit this round out (coolingDownRiderIds).
     const cooling = await this.coolingDownRiderIds(orderId, nowMs);
@@ -419,6 +484,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           dispatchAttempt: attempt,
           dispatchStartedAt: startedAt,
           dispatchNextCheckAt: new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs),
+          ...priced,
         },
       });
       // Nobody online in reach could take it: ask the offline riders nearby to come online. Throttled per
@@ -437,6 +503,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         dispatchAttempt: attempt,
         dispatchStartedAt: startedAt,
         dispatchNextCheckAt: expiresAt,
+        ...priced,
       },
     });
     if (claimed.count === 0) return "skipped";
@@ -472,6 +539,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     // accept." — a shop job asks for the sealed-bag photo instead. The fare is the delivery fee the rider
     // keeps; the place is the drop-off landmark the offer card already shows.
     const dropLandmark = (order.dropoff as Waypoint | null)?.landmark?.trim() || null;
+    if (priced) {
+      order.deliveryFee = offerFee;
+      order.merchantDeliveryShare = priced.merchantDeliveryShare == null ? null : new Prisma.Decimal(priced.merchantDeliveryShare);
+    }
     if (own.length > 0) this.ringOwnBikers(orderId, own, order, merchant?.name, dropLandmark, expiresAt);
     if (publicIds.length === 0) return "offered";
     void this.notifications.notifyProfiles(publicIds, {
@@ -623,10 +694,10 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
   private async liveOffer(
     orderId: string,
     riderId: string,
-  ): Promise<{ merchantId: string | null; customerId: string; merchantPhase: string | null; roundExpiresAt: Date | null; deliveryFee: Prisma.Decimal | null }> {
+  ): Promise<{ merchantId: string | null; customerId: string; merchantPhase: string | null; roundExpiresAt: Date | null; deliveryFee: Prisma.Decimal | null; ceilingRound: number | null }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, orderType: "merchant" },
-      select: { status: true, merchantId: true, customerId: true, merchantPhase: true, dispatchOfferExpiresAt: true, deliveryFee: true },
+      select: { status: true, merchantId: true, customerId: true, merchantPhase: true, dispatchOfferExpiresAt: true, deliveryFee: true, deliveryCeiling: true, deliveryRound: true },
     });
     if (!order) throw new NotFoundException("Order not found");
     const offer = await this.prisma.foodDispatchAttempt.findUnique({
@@ -642,6 +713,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       merchantPhase: order.merchantPhase ?? null,
       roundExpiresAt: order.dispatchOfferExpiresAt,
       deliveryFee: order.deliveryFee ?? null,
+      // D-125: the round a rider accepts in (admin E1); null on an order without a ceiling.
+      ceilingRound: order.deliveryCeiling != null ? (order.deliveryRound ?? 0) : null,
     };
   }
 
@@ -768,6 +841,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // T9: the fleet tag and fee snapshot ride in the assigning write (both null for a public biker).
       fleetMerchantId: fleetFee == null ? null : order.merchantId,
       fleetFee,
+      // D-125: the price is now exact; the customer is no longer asked to raise.
+      ...(order.ceilingRound != null ? { deliveryAcceptedRound: order.ceilingRound, deliveryAskCustomerAt: null } : {}),
     });
     try {
       // First writer wins. The CAS is on the round itself, so a rider whose round closed (and maybe
@@ -824,14 +899,23 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
     });
     const fresh = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true, merchant: { select: { name: true } }, rider: { select: { profile: { select: { firstName: true } } } } },
+      select: {
+        customerId: true,
+        merchant: { select: { name: true } },
+        rider: { select: { profile: { select: { firstName: true } } } },
+        deliveryCeiling: true,
+        agreedFare: true,
+        carriedBalance: { select: { amount: true } },
+      },
     });
     if (fresh) {
+      const due = fresh.deliveryCeiling != null ? merchantAmountDueUsd(fresh) : null;
       // Order flow v2 G3a (O.g.push.c[3]): "Tendai is heading to Gava’s Kitchen" / "He’ll collect your order soon."
       void this.notifications.notifyProfiles([fresh.customerId], {
         ...pushCopy(
-          PUSH_C.riderToVenue,
-          { n: fresh.rider?.profile?.firstName?.trim() || null, v: fresh.merchant?.name?.trim() || null },
+          // D-125: a ceiling order's push names the exact amount the customer pays (DC.push.accepted).
+          due != null ? PUSH_C_CEILING.riderToVenue : PUSH_C.riderToVenue,
+          { n: fresh.rider?.profile?.firstName?.trim() || null, v: fresh.merchant?.name?.trim() || null, p: due != null ? pushMoney(due) : null },
           { n: "Your biker", v: "the venue" },
         ),
         // to+orderType so the tap opens the food tracker: "assigned" alone routes to /rider/job (the
@@ -916,6 +1000,8 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           // The next search rings the business's own bikers first again.
           fleetMerchantId: null,
           fleetFee: null,
+          // D-125: the price is open again ("at most"); the next search starts from the rung already accepted.
+          deliveryAcceptedRound: null,
           // MJ-RM1: a rider found early drops while the kitchen is still cooking — it keeps cooking, and
           // the early search picks it up again. Otherwise the food is ready and waiting.
           merchantPhase: order.merchantPhase === "preparing" ? "preparing" : "ready_for_pickup",
@@ -1026,8 +1112,159 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
       // Ends every pass's cooldown, with the resume (one transaction, so the next tick sees both). `expired`
       // is what the round would have read had they not answered; the next offer resets it to `pending`.
       await tx.foodDispatchAttempt.updateMany({ where: { orderId, outcome: "declined" }, data: { outcome: "expired" } });
+      // D-125 (handoff Behaviour): "Keep searching" without a top-up asks the customer to raise at once.
+      await tx.order.updateMany({
+        where: { id: orderId, deliveryCeiling: { not: null }, deliveryVenueFunded: false, deliveryAcceptedRound: null, deliveryRaiseAskedAt: null },
+        data: { deliveryAskCustomerAt: new Date() },
+      });
     });
     return { orderId, resumed: true };
+  }
+
+  /**
+   * D-125 M4h: the shop adds to the riders' offer from its own cash, and the search resumes at once. The customer's
+   * price doesn't change: the top-up rides in `merchantDeliveryShare`, so the rider's fee rises and the customer's
+   * part (fee − share) stays the rung. Capped by the goods total (`topUpChoices`). Cancels the pending raise ask.
+   */
+  async topUp(profileId: string, orderId: string, amount: number): Promise<{ orderId: string; offer: number; topUp: number }> {
+    const merchantId = await this.ownMerchantId(profileId);
+    const held = { id: orderId, merchantId, orderType: "merchant" as const, status: "requested" as const, merchantPhase: "ready_for_pickup" as const, noRiderHoldAt: { not: null } };
+    const order = await this.prisma.order.findFirst({
+      where: held,
+      select: { merchantGoodsTotal: true, deliveryCeiling: true, deliveryLadder: true, merchantTopUp: true, deliveryVenueFunded: true },
+    });
+    if (!order) throw new ConflictException("This order isn't waiting on a biker decision");
+    if (order.deliveryCeiling == null || order.deliveryLadder == null) {
+      throw new ConflictException({ reason: "no_ceiling", message: "This order's delivery price can't be topped up." });
+    }
+    const goods = Number(order.merchantGoodsTotal ?? 0);
+    const before = order.merchantTopUp == null ? 0 : Number(order.merchantTopUp);
+    if (!topUpChoices(goods, before).includes(amount)) {
+      throw new BadRequestException({ reason: "top_up_too_large", message: "That top-up is more than this order's goods." });
+    }
+    const topUp = before + amount;
+    const money = ceilingMoney({ goods, ladder: Number(order.deliveryLadder), topUp, venueFunded: order.deliveryVenueFunded });
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        // CAS on the top-up read above: two taps (or two team members) never add twice on one reading.
+        where: { ...held, merchantTopUp: order.merchantTopUp },
+        data: {
+          merchantTopUp: topUp,
+          deliveryFee: money.deliveryFee,
+          merchantDeliveryShare: money.merchantDeliveryShare,
+          agreedFare: money.customerTotal,
+          suggestedFare: money.customerTotal,
+          proposedFare: money.customerTotal,
+          deliveryAskCustomerAt: null,
+          noRiderHoldAt: null,
+          dispatchAttempt: 0,
+          dispatchStartedAt: null,
+          dispatchNextCheckAt: null,
+        },
+      });
+      if (claimed.count === 0) throw new ConflictException("This order isn't waiting on a biker decision");
+      await tx.foodDispatchAttempt.updateMany({ where: { orderId, outcome: "declined" }, data: { outcome: "expired" } });
+    });
+    return { orderId, offer: money.deliveryFee, topUp };
+  }
+
+  /**
+   * D-125 T11c: the customer raises "Pay no more than". Bounds come from the shared `ceilingBounds` (never above
+   * 2 × Recommended). With no round live the new ceiling is offered at once (and a held order searches again);
+   * during a live round the next round climbs toward it, so a rider never accepts a price their card didn't show.
+   */
+  async raiseCeiling(customerId: string, orderId: string, ceiling: number): Promise<{ orderId: string; ceiling: number }> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, customerId, orderType: "merchant" },
+      select: {
+        status: true,
+        riderId: true,
+        noRiderHoldAt: true,
+        merchantGoodsTotal: true,
+        deliveryRecommended: true,
+        deliveryCeiling: true,
+        deliveryLadder: true,
+        merchantTopUp: true,
+        deliveryVenueFunded: true,
+      },
+    });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.deliveryCeiling == null || order.deliveryRecommended == null || order.deliveryLadder == null || order.deliveryVenueFunded) {
+      throw new ConflictException({ reason: "no_ceiling", message: "This order's delivery price can't be raised." });
+    }
+    if (order.riderId || (order.status !== "requested" && order.status !== "open_for_offers")) {
+      throw new ConflictException({ reason: "already_accepted", message: "A biker already has your order." });
+    }
+    const current = Number(order.deliveryCeiling);
+    if (!(ceiling > current) || !isValidCeiling(ceiling, Number(order.deliveryRecommended))) {
+      throw new BadRequestException({ reason: "delivery_ceiling_out_of_range", message: "Choose a higher delivery price." });
+    }
+    const idle = order.status === "requested";
+    const ladder = idle ? ceiling : Number(order.deliveryLadder);
+    const money = ceilingMoney({
+      goods: Number(order.merchantGoodsTotal ?? 0),
+      ladder,
+      topUp: order.merchantTopUp == null ? 0 : Number(order.merchantTopUp),
+      venueFunded: false,
+    });
+    const resume = idle && order.noRiderHoldAt != null;
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, customerId, status: order.status, riderId: null, deliveryCeiling: order.deliveryCeiling },
+        data: {
+          deliveryCeiling: ceiling,
+          deliveryAskCustomerAt: null,
+          ...(idle
+            ? {
+                deliveryLadder: ladder,
+                deliveryFee: money.deliveryFee,
+                merchantDeliveryShare: money.merchantDeliveryShare,
+                agreedFare: money.customerTotal,
+                suggestedFare: money.customerTotal,
+                proposedFare: money.customerTotal,
+              }
+            : {}),
+          ...(resume ? { noRiderHoldAt: null, dispatchAttempt: 0, dispatchStartedAt: null, dispatchNextCheckAt: null } : {}),
+        },
+      });
+      if (claimed.count === 0) throw new ConflictException("Your order just changed. Try again.");
+      if (resume) await tx.foodDispatchAttempt.updateMany({ where: { orderId, outcome: "declined" }, data: { outcome: "expired" } });
+    });
+    const merchant = await this.prisma.order.findUnique({ where: { id: orderId }, select: { merchantId: true } });
+    this.notifyQueue(merchant?.merchantId ?? null, orderId);
+    return { orderId, ceiling };
+  }
+
+  /**
+   * D-125 T11c-push: once the ask is due (2 minutes into the hold, or at once on "Keep searching"), push the
+   * customer once. Skipped when their ceiling is already the highest (there is nothing to raise to).
+   */
+  async sweepRaiseAsks(now: Date = new Date()): Promise<{ asked: number }> {
+    const due = await this.prisma.order.findMany({
+      where: {
+        orderType: "merchant",
+        status: { in: ["requested", "open_for_offers"] },
+        riderId: null,
+        deliveryAskCustomerAt: { lte: now },
+        deliveryRaiseAskedAt: null,
+      },
+      select: { id: true, customerId: true, deliveryCeiling: true, deliveryRecommended: true, merchant: { select: { name: true } } },
+      take: 50,
+    });
+    let asked = 0;
+    for (const o of due) {
+      const claimed = await this.prisma.order.updateMany({ where: { id: o.id, deliveryRaiseAskedAt: null }, data: { deliveryRaiseAskedAt: now } });
+      if (claimed.count === 0 || o.deliveryCeiling == null || o.deliveryRecommended == null) continue;
+      const next = Number(o.deliveryCeiling) + DELIVERY_CEILING.raiseStepUsd;
+      if (!isValidCeiling(next, Number(o.deliveryRecommended))) continue;
+      asked++;
+      void this.notifications.notifyProfiles([o.customerId], {
+        ...pushCopy(PUSH_C_CEILING.raise, { v: o.merchant?.name?.trim() || null, d: pushMoney(next) }, { v: "your" }),
+        data: { orderId: o.id, status: "requested", to: "customer", orderType: "merchant", kind: "food_raise_ceiling" },
+        collapseKey: `order:${o.id}:raise_ceiling`,
+      });
+    }
+    return { asked };
   }
 
   /** D-13 no-fault cancel from the D-34 hold screen — nothing charged, apology copy, doesn't touch

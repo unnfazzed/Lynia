@@ -80,8 +80,13 @@ export function merchantWaypoint(input: MerchantLocationInput, businessName: str
  *  `{reason:"already_member"}`, which the web treats as success (a lost-response retry). */
 export const BecomeMerchantRequest = z
   .object({
-    /** The person's own name ("Your name"). Saved to their profile only when it is still empty. */
+    /** The person's own name, one line ("Tendai Moyo"): their name on the team. Saved to their profile only
+     *  when it is still empty. */
     ownerName: z.string().trim().min(1).max(60),
+    /** D-124: the sign-up asks First name · Surname. When sent, these fill an empty profile exactly (instead of
+     *  splitting `ownerName` at its first space). Optional so an older page still signs up. */
+    ownerFirstName: z.string().trim().min(1).max(60).optional(),
+    ownerLastName: z.string().trim().min(1).max(60).optional(),
     name: z.string().trim().min(1).max(120),
     businessType: MerchantBusinessType,
     /** Refused for a restaurant. Optional for a shop since the mobile redesign (D-48): its "What do you

@@ -3,6 +3,7 @@ import {
   ApproveMerchantOrderItemsRequest,
   ConfirmSubstitutionRequest,
   PlaceMerchantOrderRequest,
+  RaiseCeilingRequest,
   RateVenueRequest,
   SendPaymentPromptRequest,
   SubmitMerchantPaymentReferenceRequest,
@@ -11,6 +12,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { ZodBody } from "../common/zod.pipe";
 import { FoodDebtService } from "./food-debt.service";
+import { FoodDispatchService } from "./food-dispatch.service";
 import { FoodOrderService } from "./food-order.service";
 import { OrderSubstitutionService } from "./order-substitution.service";
 import { VenueRatingService } from "./venue-rating.service";
@@ -30,7 +32,19 @@ export class FoodOrderController {
     private readonly debt: FoodDebtService,
     private readonly substitutions: OrderSubstitutionService,
     private readonly venueRatings: VenueRatingService,
+    private readonly dispatch: FoodDispatchService,
   ) {}
+
+  /** D-125 T11c: raise "Pay no more than" while no biker has the order; returns the order. */
+  @Post("orders/:orderId/raise-ceiling")
+  async raiseCeiling(
+    @Param("orderId", ParseUUIDPipe) orderId: string,
+    @Body(new ZodBody(RaiseCeilingRequest)) body: RaiseCeilingRequest,
+    @CurrentUser() profileId: string,
+  ) {
+    await this.dispatch.raiseCeiling(profileId, orderId, body.ceiling);
+    return this.foodOrders.getMyOrder(orderId, profileId);
+  }
 
   @Post(":merchantId/orders")
   placeOrder(

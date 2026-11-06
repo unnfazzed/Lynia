@@ -14,6 +14,7 @@ import { customerBalance } from "./customer-balance";
 import { venueNoteOf } from "./venue-note";
 import { ORDER_WITH_ITEMS_INCLUDE, type OrderWithItems, RESPONSE_NULL_OMIT_FIELDS, type StampedRejectionReason, VENUE_DECLINED, keptSubtotalOf, orderFlowV2BFields, orderFlowV2Fields } from "./food-order.helpers";
 import type { FoodOrderHost } from "./food-order.host";
+import { merchantTopUpView, withCustomerCeiling } from "./delivery-ceiling.views";
 
 export class FoodOrderViews {
   constructor(private readonly svc: FoodOrderHost) {}
@@ -54,7 +55,8 @@ export class FoodOrderViews {
 
   async getMyOrder(orderId: string, customerId: string): Promise<MerchantOrderResponse> {
     const order = await this.svc.findOwnAsCustomer(orderId, customerId);
-    return this.svc.withDetail(order, this.svc.toResponse(order));
+    // D-125: the customer's delivery ceiling view (and only their own part of the fee).
+    return this.svc.withDetail(order, withCustomerCeiling(order, this.svc.toResponse(order)));
   }
 
   /** Order flow v2 (D-59): what only single-order reads carry — the pickup/door proof with signed read
@@ -138,6 +140,8 @@ export class FoodOrderViews {
       // Merchant v2 (D-77): "at your counter" and "arrives 07:38", from the rider's location pings.
       ...(order.riderArrivedAt ? { riderArrivedAt: order.riderArrivedAt.toISOString() } : {}),
       ...(order.riderEtaAt ? { riderEtaAt: order.riderEtaAt.toISOString() } : {}),
+      // D-125: the offer riders see and the shop's top-up (M4h / K-card-h / M6a-t).
+      ...(merchantTopUpView(order) ? { deliveryTopUp: merchantTopUpView(order) } : {}),
     };
   }
 

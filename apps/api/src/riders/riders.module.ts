@@ -6,6 +6,7 @@ import { ReferralsModule } from "../referrals/referrals.module";
 import { TrackingModule } from "../tracking/tracking.module";
 import { RidersController } from "./riders.controller";
 import { RiderProfileService } from "./rider-profile.service";
+import { ManualKycJobsService } from "./manual-kyc-jobs.service";
 import { RiderService } from "./rider.service";
 
 @Module({
@@ -20,6 +21,7 @@ import { RiderService } from "./rider.service";
   controllers: [RidersController, KycController],
   // KYC-R26-03 / -08: the lost-webhook reconciler and the ID-expiry sweep. Here, not in KycModule, because
   // they write through RiderService (KycModule must stay free of it — AuthModule imports KycModule).
-  providers: [RiderService, RiderProfileService, KycReconcileService],
+  // D-122: the manual-KYC licence/retention sweep.
+  providers: [RiderService, RiderProfileService, KycReconcileService, ManualKycJobsService],
 })
 export class RidersModule {}
