@@ -2,6 +2,7 @@ import type { MerchantBookingResponse, MerchantOrderResponse } from "@lynia/shar
 import { isFinding } from "./booking";
 import { shortName } from "./booking-view";
 import { isNoRiderHold, isReadyBucket, needsKitchenConfirm } from "./order-groups";
+import { DCM, fill } from "./delivery-ceiling-copy";
 import { hm, isAfterPickup, isGoodsReturn, money, orderLabel, riderFirstName } from "./orders-view";
 import { openRound } from "./substitution";
 import { countOf, type Vocabulary } from "./vocabulary";
@@ -48,6 +49,12 @@ export interface BoardCard {
   /** K1b (D-77 follow-ups): a cash-to-come-back row — gold with a LATE chip once overdue, and a Call
    *  pill to the rider (in place of the chevron) when the number is known. */
   cash?: { late: boolean; phone: string | null };
+  /** D-125 K-card-h: the gold bike disc of a held order. */
+  gold?: boolean;
+  /** D-125 K-card-h: a pill button on a counter card ("Top up"). */
+  pill?: string;
+  /** D-125 K-card-h: the countdown follows the sub with a space ("we ask Rudo in 1:42"), not " · ". */
+  subDeadlineInline?: boolean;
 }
 
 export interface BoardSection {
@@ -134,6 +141,28 @@ function orderCards(
   }
   if (isReadyBucket(o)) {
     if (isNoRiderHold(o)) {
+      // D-125 K-card-h: a ceiling order's hold shows the offer, when the customer is asked, and a Top up pill.
+      const t = o.deliveryTopUp;
+      if (t) {
+        const c = o.customerFirstName || "the customer";
+        const asking = t.askCustomerAt != null && Date.parse(t.askCustomerAt) > Date.now();
+        return {
+          section: "needs",
+          rank: 1,
+          card: {
+            key: o.id,
+            href,
+            urgent: true,
+            counter: true,
+            gold: true,
+            pill: DCM.boardBtn,
+            title: fill(DCM.boardT, { id: label.replace(/^#/, "") }),
+            sub: asking ? fill(DCM.boardSub, { o: money(t.offer), c, t: "" }).trimEnd() : `Offered ${money(t.offer)}`,
+            subDeadline: asking ? t.askCustomerAt : null,
+            subDeadlineInline: true,
+          },
+        };
+      }
       return {
         section: "needs",
         rank: 1,

@@ -1,6 +1,7 @@
 /** Merchant v2 T2 / T2b (follow-ups 2026-10-05, ledger D-77): the Money tab's rows, day lines and dates. */
 import type { MerchantEndOfDaySummaryResponse, MerchantRejectionReasonCode, MerchantWeekSummaryResponse } from "@lynia/shared";
 import { money } from "./orders-view";
+import { DCM, fill } from "./delivery-ceiling-copy";
 
 type Line = NonNullable<MerchantEndOfDaySummaryResponse["lines"]>[number];
 type Tone = "credit" | "late" | "muted" | "plain";
@@ -15,6 +16,21 @@ const REJECTED_REASON: Partial<Record<MerchantRejectionReasonCode, string>> = {
 
 /** T2's ledger row for one of the day's orders: what happened, its figure, and how it reads. */
 export function dayRow(l: Line): { sub: string; amount: string; tone: Tone } {
+  const row = dayRowBase(l);
+  // D-125 T2-t: a delivered ceiling order the shop topped up says so ("Delivered · biker top-up −$1.00").
+  if (l.outcome !== "delivered" || !l.topUp) return row;
+  const top = fill(DCM.moneySub, { t: money(l.topUp) });
+  return { ...row, sub: l.cash === "due" || l.cash === "late" ? `${row.sub} · ${top.replace(/^Delivered · /, "")}` : top };
+}
+
+/** The Money tab's header sub when today had biker top-ups: "3 orders · $104.50 sales · biker top-ups −$1.00". */
+export function topUpKpi(orders: number, sales: number, lines: readonly Line[]): string | null {
+  const topUps = lines.reduce((sum, l) => sum + Math.round((l.topUp ?? 0) * 100), 0) / 100;
+  if (topUps <= 0) return null;
+  return fill(DCM.moneyKpi, { n: orders, s: money(Math.round((sales + topUps) * 100) / 100), t: money(topUps) });
+}
+
+function dayRowBase(l: Line): { sub: string; amount: string; tone: Tone } {
   if (l.outcome === "delivered") {
     if (l.cash === "in") return { sub: "Delivered · cash back in", amount: `+${money(l.amount)}`, tone: "credit" };
     if (l.cash === "late") return { sub: "Delivered · cash late", amount: money(l.amount), tone: "late" };
