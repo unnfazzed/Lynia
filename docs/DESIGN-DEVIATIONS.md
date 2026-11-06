@@ -6154,3 +6154,17 @@ A single live shop, Uptown Liquor, was on the Shops screen while Home said "Comi
   already gets a Harare shop. Delivery rules are untouched: no distance cap, the fee stays per km, venue jobs go to bikers
   within 15 km of the venue.
 - **Upstream:** the handoff's rail rule and the `end` line should allow for one venue. The kit is not edited.
+
+## D-127 · The store page's info strip drops the "km away" cell — APPROVED (owner, 2026-11-06)
+
+**Owner (2026-11-06), on a screenshot of Uptown Liquor's page ("1.9 km away"):** *"remove the distance here as it’s
+misleading .. not true distance"*
+
+| | Handoff (Browse v2 README §4b "Info strip") | App |
+|---|---|---|
+| Store / shop / pharmacy page info strip (S1–S13) | Up to four cells: rating · ETA · delivery fee · "{km} km away" | Up to three cells: rating · ETA · delivery fee. No distance cell (`InfoStrip`, `src/ui/browse/store.tsx`) |
+
+- **Why:** `km` is the straight-line distance from the delivery point to the venue, not the road distance a biker rides,
+  so it reads shorter than the trip.
+- **Scope:** the store page only. List cards and search rows still show km; the fee and ETA are unchanged.
+- **Upstream:** the handoff's info strip should not draw a straight-line distance. The kit is not edited.
