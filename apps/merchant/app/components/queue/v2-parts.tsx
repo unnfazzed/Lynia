@@ -3,6 +3,7 @@
 import type { MerchantOrderResponse } from "@lynia/shared";
 import { hm, money, riderFirstName } from "../../lib/orders-view";
 import { Icon } from "../icons";
+import { DCM } from "../../lib/delivery-ceiling-copy";
 
 /**
  * Merchant v2's shared ticket parts (packages/design/handoff/merchant-v2 README "Components", ledger
@@ -92,7 +93,13 @@ export function CashCard({
   line,
   foodLabel = "Food",
   sentence,
+  topUp = 0,
+  goods,
 }: {
+  /** D-125 M6a-t: the shop's biker top-up, deducted from the cash that comes back. */
+  topUp?: number;
+  /** D-125 M6a-t: the goods total, for the Goods row when there is a top-up. */
+  goods?: number | null;
   amount: number;
   food: number;
   delivery: number | null;
@@ -107,7 +114,22 @@ export function CashCard({
         <span>CASH BACK TO YOU</span>
         <b className="m-num">{money(amount)}</b>
       </div>
-      {sentence ? (
+      {topUp > 0 && goods != null ? (
+        <div className="m-num m-cashlines">
+          <div>
+            <span>{DCM.cashGoods}</span>
+            <b>{money(goods)}</b>
+          </div>
+          <div>
+            <span>{DCM.cashTop}</span>
+            <b>−{money(topUp)}</b>
+          </div>
+          <div>
+            <b>{DCM.cashBack}</b>
+            <b>{money(amount)}</b>
+          </div>
+        </div>
+      ) : sentence ? (
         <div className="m-num m-cashsum">{sentence}</div>
       ) : (
         <div className="m-num">

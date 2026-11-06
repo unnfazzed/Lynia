@@ -58,6 +58,16 @@ export const PUSH_C_SLOW_RIDER = {
   body: ["We’re asking more bikers now.", "Your food is kept warm — same food, same price, nothing extra to pay."],
 } as const satisfies Template;
 
+/**
+ * Delivery ceiling v1 (`DC.push`, ledger D-125), on an order that carries a ceiling only. `riderToVenue` replaces
+ * G3a's c[3] body with the exact amount ("Have $69.50 ready at the door."); `raise` is T11c's push. The handoff's
+ * "rider" reads "biker" (D-101); its sample "Tendai" is the rider's first name.
+ */
+export const PUSH_C_CEILING = {
+  riderToVenue: { title: "{n} is heading to {v}", body: ["Have {p} ready at the door."] },
+  raise: { title: "No biker yet for your {v} order", body: ["Raise delivery to {d} at most, or keep waiting."] },
+} as const satisfies Record<string, Template>;
+
 /** Merchant (G3b), index-aligned with `O.g.push.m`. */
 export const PUSH_M = {
   newOrder: { title: "New order #{id} · {p}", body: ["{n} {items}.", "Confirm you’re making it."] },

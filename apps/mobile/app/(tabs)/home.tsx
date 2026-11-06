@@ -191,7 +191,7 @@ function useBootHomePaintMark(): void {
 
 /** "Popular restaurants" carries up to this many cards; the rail scrolls (2.2 show at 360px). */
 const RAIL_LIMIT = 8;
-/** Ledger D-125 (owner 2026-11-05), replacing README §2's 2: one live venue is enough for its rail. */
+/** Ledger D-126 (owner 2026-11-05), replacing README §2's 2: one live venue is enough for its rail. */
 const RAIL_MIN = 1;
 
 /**
@@ -405,7 +405,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
           <ServiceGrid narrow={narrow} onTile={onTile} />
         </BootEntrance>
         <BootEntrance index={2}>
-          {/* D-125: venues show whether or not there is an address; the H6 card only fills an empty Home. */}
+          {/* D-126: venues show whether or not there is an address; the H6 card only fills an empty Home. */}
           {showRestaurants || showShops ? (
             <View>
               {showRestaurants ? (

@@ -6103,7 +6103,43 @@ the invite's name is a pending label only; backfill existing staff.
   migration 0053's fallback) to the person's own profile name, where they have one.
 - **Upstream:** merchant-mobile A4 and A5 should draw the C5 name pair. The kit is not edited.
 
-## D-125 · Home shows every live venue: one is enough for a rail, and no address is needed — APPROVED (owner, 2026-11-05)
+## D-125 · Delivery price ceiling v1 — APPROVED (owner, 2026-11-05)
+
+**Owner (2026-11-05):** agreed the model in `docs/plans/2026-11-05-delivery-price-ceiling.md` ("Proceed with this and
+your recommendations"), then handed over the Claude Design export with *"implement"*.
+
+- **Handoff:** `packages/design/handoff/delivery-ceiling-v1/` (README, `code/copy.ts`, canvas, screenshots), vendored
+  as exported. Its README wins over the drawings; the plan wins over both on a rule (handoff `CLAUDE-CODE-PROMPT.md`).
+- **Plan:** `docs/plans/2026-11-05-delivery-price-ceiling.md`.
+- **Extends, does not replace:** Order flow v2.1 R1/R2a/R2b, T4/T5/T6/T11a; Merchant v2 hold card, board card, M6a,
+  Money; Orders v2 Now card; Notifications v1 row; admin order detail.
+- **New frames:** R1c (+full/320/fs), R1c-low (+320), R1c-high, R1c-max, R1c-free, T4u (+320/fs), T6p, T6p-same,
+  T11c (+320/fs), T11c-toast, T11c-push, O-card-u, N-row-u, M4h (+320/fs), M4h-sent, M6a-t, T2-t, K-card-h, E1.
+- **Copy changed (was → now), only on an order that carries a ceiling:**
+  - `O.r.place` "Place order · {p} cash" → "Place order · {p} cash at most"
+  - `O.r.cashSub` → `DC.r.cashSubUpTo` "Have {p} ready. It may be less. You’ll see the exact amount when a rider accepts."
+  - `O.t.slowRiderSub` → "No rider has taken it at {d} yet. Your order is kept ready at {v}."
+  - Merchant hold sub → "Riders are offered {o}. Nobody has taken it so far."
+  - Push c[3] body → "Have {p} ready at the door."
+- **Wording:** the plan's placeholder "up to" is replaced by the handoff's "Pay no more than" / "$X at most".
+- **Rider offer card:** unchanged by decision (no "Raised" marker).
+- **Tokens:** none added.
+- **Flag:** `DELIVERY_CEILING_ENABLED`, default off. Off, and on any order with no stored ceiling, every screen is
+  today's.
+- **Known export defect (upstream):** `Delivery ceiling v1 - all screens.html` loads its kit from
+  `../order-flow-v2-2026-10/`, but the repo's folder is `order-flow-v2/`, so that canvas renders blank in-repo. Use
+  `Delivery ceiling v1 (standalone).html` or the screenshots. The kit is not edited.
+- **Built in the first PR, and what is not (yet):**
+  - Built: R1c/R1c-low/R1c-high/R1c-max (R1c-free keeps today's free-delivery Review as the brief asked), T4u, T6p,
+    T6p-same, T11c + toast + push, O-card-u, N-row-u (the "after" line rides a new `assigned` feed beat, on ceiling
+    orders only), M4h, M4h-sent, K-card-h, M6a-t (its rows inside the existing D-77 cash card), T2-t (the row and the
+    top-ups line under the existing Money header), E1's Delivery price block.
+  - Not built: E1's **Dispatch rounds** list (the API keeps no per-round price log yet), and the T11c-push
+    **action buttons** (the app registers no notification categories; a tap opens the order, where T11c is). Both
+    are follow-ups, not deviations from the look.
+- **Approved by:** owner, 2026-11-05.
+
+## D-126 · Home shows every live venue: one is enough for a rail, and no address is needed — APPROVED (owner, 2026-11-05)
 
 **Owner (2026-11-05):** *"Yes make that change .. also show these shops to everyone .. even if they are in Bulawayo."*
 A single live shop, Uptown Liquor, was on the Shops screen while Home said "Coming soon near you".

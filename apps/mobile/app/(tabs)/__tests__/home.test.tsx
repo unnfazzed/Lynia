@@ -170,7 +170,7 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     expect(has(activeTree, "SOON")).toBe(false);
   });
 
-  it("D-125: one live shop shows its rail, even with no address, in place of the H6 card", async () => {
+  it("D-126: one live shop shows its rail, even with no address, in place of the H6 card", async () => {
     mockServiceFlags = { shopsEnabled: true, pharmacyEnabled: false };
     mockShops = [
       {

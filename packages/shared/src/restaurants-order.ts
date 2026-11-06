@@ -65,7 +65,17 @@ export function recomputeMerchantDeliveryShare(
   previousShare: number | { toString(): string } | null | undefined,
   goodsTotal: number,
   deliveryFee: number,
+  /** D-125: on a ceiling order the share is the shop's top-up (unless the venue funds the whole fee). */
+  ceiling?: {
+    deliveryCeiling?: number | { toString(): string } | null;
+    merchantTopUp?: number | { toString(): string } | null;
+    deliveryVenueFunded?: boolean | null;
+  },
 ): number | null {
+  if (ceiling?.deliveryCeiling != null && ceiling.deliveryVenueFunded !== true) {
+    const topUp = toCents(Number(ceiling.merchantTopUp ?? 0));
+    return topUp > 0 ? fromCents(Math.min(topUp, toCents(deliveryFee), Math.max(0, toCents(goodsTotal)))) : null;
+  }
   if (previousShare == null) return null;
   return fromCents(Math.max(0, Math.min(toCents(deliveryFee), toCents(goodsTotal))));
 }

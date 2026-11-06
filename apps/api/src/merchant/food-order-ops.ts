@@ -145,7 +145,7 @@ export async function editOrderItems(
   const merchantGoodsTotal = addMoney(rawSubtotal, smallOrderFeeForSubtotal(rawSubtotal));
   const deliveryFee = Number(order.deliveryFee ?? 0);
   // D-71: a free-delivery order stays free, the venue's share capped by the new goods total.
-  const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee);
+  const merchantDeliveryShare = recomputeMerchantDeliveryShare(order.merchantDeliveryShare, merchantGoodsTotal, deliveryFee, order);
   const agreedFare = foodOrderMoney({ goodsTotal: merchantGoodsTotal, deliveryFee, merchantDeliveryShare }).customerTotal;
   const now = new Date();
 

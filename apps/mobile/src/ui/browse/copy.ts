@@ -251,7 +251,7 @@ export const fmt = (s: string, o: Record<string, string | number>) =>
 
 const END_ONE = { food: "restaurant", shops: "shop", pharmacy: "pharmacy" } as const;
 
-/** The list's last line. Ledger D-125: the handoff's `end` reads "That’s all 1 shops" at one venue. */
+/** The list's last line. Ledger D-126: the handoff's `end` reads "That’s all 1 shops" at one venue. */
 export function endLine(service: keyof typeof B.svc, n: number, area: string): string {
   return n === 1 ? `That’s the only ${END_ONE[service]} delivering to ${area}.` : fmt(B.svc[service].end, { n, area });
 }

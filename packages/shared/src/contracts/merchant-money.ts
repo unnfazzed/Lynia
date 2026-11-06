@@ -139,6 +139,8 @@ export const MerchantEndOfDaySummaryResponse = z
            *  `shop_closed` / `kitchen_unconfirmed` for one nobody answered ("Missed · no answer in time"). */
           reason: MerchantRejectionReasonCode.optional(),
           amount: z.number(),
+          /** D-125 T2-t: the shop's biker top-up on a delivered ceiling order, already off `amount`. */
+          topUp: z.number().optional(),
         }),
       )
       .optional(),

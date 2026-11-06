@@ -7,7 +7,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AccessibilityInfo, ActivityIndicator, BackHandler, Linking, ScrollView, Share, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaInsetsContext, SafeAreaView } from "react-native-safe-area-context";
 import { ApiError } from "../api/client";
-import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
+import { DoorAmountRow, RaiseBarBody, RaiseCard, SearchingRow } from "../ui/orderflow/ceiling";
+import { DC } from "../ui/orderflow/ceiling-copy";
+import { cancelUnpaidFoodOrder, changeFoodOrderSchedule, confirmFoodCustomerCash, confirmFoodSubstitution, raiseFoodOrderCeiling, rateFoodVenue, respondToFoodOrderItems } from "../api/food-orders";
 import { cancelOrder, getOrder, type OrderSnapshot, rateOrder, revealDeliveryCode, rotateDeliveryCode } from "../api/orders";
 import { raiseIssue, raiseSos } from "../api/safety";
 import {
@@ -587,6 +589,26 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   useEffect(() => {
     setAnswers({});
   }, [roundId]);
+  // D-125 T11c: the raise prompt — the stepper starts at +$0.50; "Keep waiting" dismisses it for this visit.
+  const [keepWaiting, setKeepWaiting] = useState(false);
+  const [raisePickState, setRaisePick] = useState<number | null>(null);
+  const raiseCeil = order?.deliveryCeiling ?? null;
+  const raiseMin = raiseCeil ? Math.min(raiseCeil.max, Math.round(raiseCeil.ceiling * 100 + 50) / 100) : 0;
+  const raiseTo = raiseCeil ? Math.min(raiseCeil.max, Math.max(raiseMin, raisePickState ?? raiseMin)) : 0;
+  const raiseM = useMutation({
+    mutationFn: (ceiling: number) => raiseFoodOrderCeiling(orderId, ceiling),
+    onSuccess: (o, ceiling) => {
+      haptic("tap");
+      qc.setQueryData(foodOrderKey(orderId), o);
+      setRaisePick(null);
+      showToast({ text: ofFmt(DC.t.raisedToast, { d: usd(ceiling) }), icon: "circle-check" });
+      invalidate();
+    },
+    onError: (e) => {
+      showToast({ text: failText(e, O.c.noData) });
+      invalidate();
+    },
+  });
   const subM = useMutation({
     mutationFn: (p: { roundId: string; answers: { lineId: string; accept: boolean }[] }) => confirmFoodSubstitution(orderId, p),
     onSuccess: (o) => {
@@ -1025,7 +1047,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   }
 
   // ── view model ──
-  const total = amountDueOf(order);
+  // D-125: before a biker accepts, every amount the customer sees is goods + ceiling, read "at most".
+  const ceil = order.deliveryCeiling ?? null;
+  const ceilOpen = ceil != null && ceil.acceptedPrice == null && !ceil.venueFunded;
+  const total = ceilOpen && ceil.totalAtMost != null ? ceil.totalAtMost : amountDueOf(order);
   const keptItems = order.items.filter((i) => i.available !== false);
   const lines: LineView[] = keptItems.map((i) => ({ qty: i.quantity, name: i.name, price: i.priceUsd * i.quantity, note: i.note }));
   const count = keptItems.reduce((a, i) => a + i.quantity, 0);
@@ -1062,7 +1087,8 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
   };
   const riderCard = rider ? <RiderCard r={rider} onCall={phone ? () => dial(phone) : null} onWhatsApp={phone ? whatsapp : null} /> : null;
   const venueRow = <VenueRow svc={svc} name={venueName} sub={orderNo} onCall={order.restaurantPhone ? () => dial(order.restaurantPhone) : null} />;
-  const summary = <OrderSummary svc={svc} count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} />;
+  const summary = <OrderSummary svc={svc} count={count} total={total} lines={lines} open={summaryOpen} onToggle={() => setSummaryOpen((o) => !o)} atMost={ceilOpen} />;
+  const searchingRow = ceilOpen ? <SearchingRow ceiling={ceil.ceiling} /> : null;
   // D5a's "Reason from the pharmacist" card (the chip's words, then the pharmacist's note) — also on D5b (U28).
   const rxReasonCard = (
     <Card style={{ gap: 4 }}>
@@ -1634,6 +1660,7 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           {track}
           {roundNote}
           {prep ? <PrepBar making={S.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note /> : null}
+          {searchingRow}
           {/* T5b: the pharmacy seals the bag. */}
           {svc === "pharmacy" ? (
             <Note tone="ok" icon="shield-check">
@@ -1699,11 +1726,21 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
       );
       break;
     }
-    case "slowRider":
+    case "slowRider": {
+      // D-125 T11c: on a ceiling order the old "same price, nothing extra to pay" is no longer true — the sub names
+      // the price nobody took, with no ETA (no biker, so no honest one); the raise prompt shows once it is due.
+      const ceilSlow = ceil != null && !ceil.venueFunded && ceil.acceptedPrice == null;
+      const asking = ceilSlow && ceil.askRaise && !keepWaiting;
       content = (
         <>
-          <StageTop title={O.t.slowRider} eta={eta} sub={O.t.slowRiderSub} />
-          {track}
+          <StageTop
+            title={O.t.slowRider}
+            eta={ceilSlow ? null : eta}
+            sub={ceilSlow ? ofFmt(DC.t.slowRiderSub, { d: usd(ceil.ceiling), v: venueName }) : O.t.slowRiderSub}
+          />
+          {asking ? <RaiseCard next={raiseTo} /> : null}
+          {asking ? null : track}
+          {asking ? null : searchingRow}
           {order.readyAt ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Icon name="circle-check" size={18} color={C.accentText} />
@@ -1715,7 +1752,23 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           {noRiderHold ? cancelLink(O.t.cancelFree) : null}
         </>
       );
+      if (asking && ceil) {
+        bar = (
+          <Bar>
+            <RaiseBarBody
+              value={raiseTo}
+              min={raiseMin}
+              max={ceil.max}
+              totalAtMost={(ceil.totalAtMost ?? 0) + (raiseTo - ceil.ceiling)}
+              onChange={setRaisePick}
+              primary={<Btn label={ofFmt(DC.t.raiseBtn, { d: usd(raiseTo) })} onPress={once(raiseM, () => raiseM.mutate(raiseTo))} loading={sending(raiseM)} />}
+              secondary={<Btn kind="ghost" height={48} label={DC.t.keepWaiting} onPress={() => setKeepWaiting(true)} />}
+            />
+          </Bar>
+        );
+      }
       break;
+    }
     case "riderDropped":
       content = (
         <>
@@ -1742,6 +1795,10 @@ export function MerchantOrderScreen({ orderId }: { orderId: string }): React.Rea
           <StageTop title={title} eta={noFix ? null : eta} sub={sub} />
           {paused ? <Note icon="clock">{withRider(O.t.paused, rFirst)}</Note> : null}
           {track}
+          {/* D-125 T6p: the exact amount once a biker accepted, and the saving once (T6 only). */}
+          {!collecting && ceil?.acceptedPrice != null && !ceil.venueFunded ? (
+            <DoorAmountRow due={amountDueOf(order)} delivery={ceil.acceptedPrice} saved={ceil.saved} />
+          ) : null}
           {cooking ? <PrepBar making={S.making} minutesLeft={prep.minutesLeft} pct={prep.pct} note={false} /> : riderCard}
           <PeekMark />
           {cooking ? riderCard : null}

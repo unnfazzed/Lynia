@@ -25,7 +25,7 @@ async function tryFetchOrderFlags(fetchImpl: typeof fetch = fetch, timeoutMs = B
     // Lazy, like use-service-flags: the contracts load on the first fetch, not on the launch path.
     const { OrderFlagsResponse: schema } = require("@lynia/shared") as typeof import("@lynia/shared");
     const parsed = schema.safeParse(await res.json());
-    return parsed.success ? { rxEnabled: parsed.data.rxEnabled } : null;
+    return parsed.success ? { rxEnabled: parsed.data.rxEnabled, deliveryCeiling: parsed.data.deliveryCeiling === true } : null;
   } catch {
     return null;
   } finally {

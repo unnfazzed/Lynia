@@ -37,6 +37,11 @@ export function rateFoodVenue(orderId: string, body: RateVenueRequest): Promise<
   return apiFetch(`/restaurants/orders/${orderId}/venue-rating`, { method: "POST", body });
 }
 
+/** D-125 T11c: raise "Pay no more than" while no biker has the order; returns the order. */
+export function raiseFoodOrderCeiling(orderId: string, ceiling: number): Promise<MerchantOrderResponse> {
+  return apiFetch(`/restaurants/orders/${orderId}/raise-ceiling`, { method: "POST", body: { ceiling } });
+}
+
 /** R-17: free, any time before the kitchen starts cooking. */
 export function cancelUnpaidFoodOrder(orderId: string): Promise<MerchantOrderResponse> {
   return apiFetch(`/restaurants/orders/${orderId}/cancel`, { method: "POST" });

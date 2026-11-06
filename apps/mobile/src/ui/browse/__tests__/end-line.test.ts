@@ -1,6 +1,6 @@
 import { endLine } from "../copy";
 
-describe("endLine (D-125)", () => {
+describe("endLine (D-126)", () => {
   it("reads in the singular at one venue", () => {
     expect(endLine("shops", 1, "Bulawayo")).toBe("That’s the only shop delivering to Bulawayo.");
     expect(endLine("food", 1, "Belgravia")).toBe("That’s the only restaurant delivering to Belgravia.");
