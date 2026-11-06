@@ -89,8 +89,9 @@ let mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
 jest.mock("../../../src/net/use-service-flags", () => ({
   useServiceFlags: () => mockServiceFlags,
 }));
+let mockShops: Record<string, unknown>[] = [];
 jest.mock("../../../src/api/shops", () => ({
-  getShops: async () => ({ shops: [] }),
+  getShops: async () => ({ shops: mockShops }),
 }));
 
 import LauncherHomeScreen from "../home";
@@ -149,6 +150,7 @@ afterEach(() => {
   mockMe = { profileId: "p1", role: "customer", firstName: "Rudo", lastName: "M." };
   mockGetActiveOrder.mockImplementation(async () => null);
   mockServiceFlags = { shopsEnabled: false, pharmacyEnabled: false };
+  mockShops = [];
   jest.clearAllMocks();
 });
 
@@ -166,6 +168,32 @@ describe("(tabs)/home.tsx — Home tab states", () => {
     // The four service tiles are live — no SOON chip is drawn.
     for (const label of ["Send", "Food", "Shops", "Pharmacy"]) expect(has(activeTree, label)).toBe(true);
     expect(has(activeTree, "SOON")).toBe(false);
+  });
+
+  it("D-126: one live shop shows its rail, even with no address, in place of the H6 card", async () => {
+    mockServiceFlags = { shopsEnabled: true, pharmacyEnabled: false };
+    mockShops = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Uptown Liquor",
+        shopKind: "other",
+        coverPhotoUrl: null,
+        coverThumbUrl: null,
+        hours: null,
+        location: { point: { lat: -17.8, lng: 31.05 } },
+        ratingAvg: null,
+        ratingCount: 0,
+        prepBaselineMinutes: 15,
+        freeDelivery: false,
+      },
+    ];
+    mockGetActiveCustomerOrders.mockResolvedValue([]);
+    activeTree = renderHome();
+    await settle();
+    expect(has(activeTree, "Uptown Liquor")).toBe(true);
+    expect(has(activeTree, "NO ADDRESS YET")).toBe(true);
+    expect(has(activeTree, "Where should we deliver?")).toBe(false);
+    expect(has(activeTree, "Coming soon near you")).toBe(false);
   });
 
   it("default: an active parcel renders the one live-order bar", async () => {
