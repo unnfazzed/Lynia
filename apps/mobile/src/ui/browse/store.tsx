@@ -163,7 +163,7 @@ export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
   }
   if (v.freeDelivery) cells.push({ key: "fee", value: <CellValue text={B.store.free} color={tokens.color.free} />, label: B.store.delivery });
   else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue text={formatMoney(v.feeUsd)} />, label: B.store.delivery });
-  if (v.km != null) cells.push({ key: "km", value: <CellValue text={`${v.km.toFixed(1)} km`} />, label: B.store.away });
+  // No "km away" cell (D-127): the figure is a straight line, not the road distance.
   return (
     <View style={{ flexDirection: "row", marginTop: 14, marginHorizontal: 16, borderRadius: 16, backgroundColor: tokens.color.surface }}>
       {cells.map((c, k) => (
