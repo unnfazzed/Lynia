@@ -111,14 +111,13 @@ updates:
       # @expo/* (metro-runtime, config-plugins, ...) carries the SDK's own version numbers, so a
       # "major" is a jump to another SDK. #1079 moved @expo/metro-runtime 6 -> 57 and #1090 moved
       # @expo/config-plugins 54 -> 58, both against expo ~54.0.
+      # Patches too, since 2026-11-06: any version change here moves the native fingerprint
+      # (runtimeVersion), so an auto-merged patch (#1310: expo 54.0.37 -> 54.0.38) cut every installed
+      # binary off from OTA updates until a new store build. These move only with a store build.
       - dependency-name: "@expo/*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "react-native-*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "expo"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "expo-*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Keep GitHub Actions pinned versions current (also surfaces action security advisories).
   - package-ecosystem: github-actions
