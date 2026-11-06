@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deliveryPriceRange,
   ceilingBounds,
   ceilingMoney,
   topUpChoices,
@@ -95,5 +96,23 @@ describe("ceilingMoney / topUpChoices", () => {
     expect(topUpChoices(67, 0)).toEqual([0.5, 1, 2]);
     expect(topUpChoices(1.5, 0)).toEqual([0.5, 1]);
     expect(topUpChoices(3, 2)).toEqual([0.5, 1]);
+  });
+});
+
+describe("deliveryPriceRange (D-128)", () => {
+  it("runs from the starting offer, at least $1 wide", () => {
+    expect(deliveryPriceRange(1.9)).toEqual({ low: 2, high: 3 });
+    expect(deliveryPriceRange(0)).toEqual({ low: 1.5, high: 2.5 });
+  });
+
+  it("always holds Recommended and stays on the 50c grid", () => {
+    for (let km = 0; km <= 30; km += 0.25) {
+      const { low, high } = deliveryPriceRange(km);
+      const rec = recommendedDeliveryUsd(km);
+      expect(high - low).toBeGreaterThanOrEqual(1);
+      expect(rec).toBeGreaterThanOrEqual(low);
+      expect(rec).toBeLessThanOrEqual(high);
+      expect((high * 100) % 50).toBe(0);
+    }
   });
 });

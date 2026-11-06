@@ -3,9 +3,9 @@
 // order-tracking.ts. (The "Send again" rail was removed 2026-08-12 per the design AppHome contract:
 // "no order-again / send-again rails" — owner decision resolving home.prompt.md's conflicting spec.)
 import type { LatLng, MerchantHours, RestaurantListItem } from "@lynia/shared";
-import { deliveryFeeForDistance, harareWallClock, haversineKm, isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
+import { deliveryFeeForDistance, deliveryPriceRange, harareWallClock, haversineKm, isMerchantOpenNow, nextOpenDescription } from "@lynia/shared";
 import { ETA_SPEED_KMH, liveEta, ROAD_WINDING_FACTOR } from "./eta";
-import { formatMoney } from "./money";
+import { formatMoney, formatMoneyRange } from "./money";
 import { comparePopularity, deliversTo, NO_POPULARITY, type PopularityIndex } from "./popularity";
 
 // Mirrors the customer-view step order in `src/ui/index.tsx`'s Stepper (STEP_ORDER) — the same
@@ -252,6 +252,13 @@ export interface PopularVenue {
   distanceKm: number | null;
 }
 
+/** The card's price: the range with the price ceiling on (D-128), else the fixed fee. */
+function feeLabel(distanceKm: number, ceilingOn: boolean): string {
+  if (!ceilingOn) return formatMoney(deliveryFeeForDistance(distanceKm));
+  const { low, high } = deliveryPriceRange(distanceKm);
+  return formatMoneyRange(low, high);
+}
+
 /**
  * The home's venue rail: the most POPULAR open venues that deliver to the customer first (ledger D-72 —
  * ranked by delivered orders over 30 days, time-decayed, `popularity`), nearer first on a tie; then the
@@ -277,6 +284,7 @@ export function popularNearYou(
   customer: LatLng | null,
   limit: number = POPULAR_LIMIT,
   popularity: PopularityIndex = NO_POPULARITY,
+  ceilingOn = false,
 ): PopularVenue[] {
   const venues = restaurants.map((r) => {
     const distanceKm = customer && r.location ? haversineKm(r.location, customer) : null;
@@ -290,7 +298,7 @@ export function popularNearYou(
       thumbUrl: r.coverThumbUrl ?? null,
       rating: r.ratingCount > 0 && r.ratingAvg != null ? r.ratingAvg.toFixed(1) : null,
       etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
-      deliveryFee: distanceKm == null ? null : formatMoney(deliveryFeeForDistance(distanceKm)),
+      deliveryFee: distanceKm == null ? null : feeLabel(distanceKm, ceilingOn),
       freeDelivery: r.freeDelivery === true,
       closed: !isMerchantOpenNow(r.hours, harareWallClock(now)),
       distanceKm,

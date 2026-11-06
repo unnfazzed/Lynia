@@ -14,6 +14,7 @@ import { useNow } from "../../src/logic/use-now";
 import { useFoodOrdersPeek } from "../../src/query/use-food-order";
 import { merchantLive } from "../../src/ui/orderflow/live-copy";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useOrderFlags } from "../../src/net/use-order-flags";
 import { useServiceFlags } from "../../src/net/use-service-flags";
 import { useShopListFeed } from "../../src/query/use-shops";
 import { usePopularity } from "../../src/query/use-popularity";
@@ -226,6 +227,7 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const firstName = (meQ.data?.firstName ?? "").trim().split(/\s+/)[0] || null;
   const unreadCount = useNotificationsUnreadCount();
   const location = useHomeLocation();
+  const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const noAddress = location.source === "none" && !location.locating;
   const [locationOpen, setLocationOpen] = useState(false);
   const [locationSearch, setLocationSearch] = useState(false);
@@ -297,8 +299,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
   const feed = useRestaurantListFeed(restaurantsEnabled);
   const restaurantPopularity = usePopularity("restaurants", restaurantsEnabled);
   const venues = useMemo(
-    () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT, restaurantPopularity) : []),
-    [restaurantsEnabled, feed.restaurants, now, location.point, restaurantPopularity],
+    () => (restaurantsEnabled ? popularNearYou(feed.restaurants ?? [], now, location.point, RAIL_LIMIT, restaurantPopularity, ceilingOn) : []),
+    [restaurantsEnabled, feed.restaurants, now, location.point, restaurantPopularity, ceilingOn],
   );
   // D-72: a ranked venue past the first page is fetched, so the rail can lead with it.
   const restaurantsMissing = restaurantsEnabled && rankedVenueMissing(restaurantPopularity, feed.restaurants);
@@ -317,8 +319,8 @@ export default function LauncherHomeScreen(): React.ReactElement {
     const all = [...(shopsEnabled ? (shopsFeed.shops ?? []) : []), ...(pharmacyEnabled ? (pharmacyFeed.shops ?? []) : [])];
     const kindOf = new Map(all.map((x) => [x.id, x.shopKind] as const));
     const popularity = mergePopularity(shopsPopularity, pharmacyPopularity);
-    return popularNearYou(all, now, location.point, RAIL_LIMIT, popularity).map((v) => ({ ...v, shopKind: kindOf.get(v.id) ?? "other" }));
-  }, [shopsEnabled, pharmacyEnabled, shopsFeed.shops, pharmacyFeed.shops, now, location.point, shopsPopularity, pharmacyPopularity]);
+    return popularNearYou(all, now, location.point, RAIL_LIMIT, popularity, ceilingOn).map((v) => ({ ...v, shopKind: kindOf.get(v.id) ?? "other" }));
+  }, [shopsEnabled, pharmacyEnabled, shopsFeed.shops, pharmacyFeed.shops, now, location.point, shopsPopularity, pharmacyPopularity, ceilingOn]);
   const shopsMissing = shopsEnabled && rankedVenueMissing(shopsPopularity, shopsFeed.shops);
   const pharmacyMissing = pharmacyEnabled && rankedVenueMissing(pharmacyPopularity, pharmacyFeed.shops);
   useEffect(() => {

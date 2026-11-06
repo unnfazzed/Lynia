@@ -95,7 +95,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
     if (narrowing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
   }, [narrowing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
-  const venues = useMemo(() => (feed.shops ?? []).map((r) => shopVenue(r, location.point, now)), [feed.shops, location.point, now]);
+  const venues = useMemo(() => (feed.shops ?? []).map((r) => shopVenue(r, location.point, now, orderFlags.deliveryCeiling === true)), [feed.shops, location.point, now, orderFlags.deliveryCeiling]);
   const list = useMemo(() => browseList(venues, filters, popularity), [venues, filters, popularity]);
   const showFree = anyFreeDelivery(venues);
   const total = list.open.length + list.closed.length;

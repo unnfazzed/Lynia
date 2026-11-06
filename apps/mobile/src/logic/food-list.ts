@@ -1,5 +1,5 @@
 import type { LatLng, RestaurantListItem } from "@lynia/shared";
-import { deliveryFeeForDistance, harareWallClock, haversineKm, isMerchantOpenNow } from "@lynia/shared";
+import { deliveryFeeForDistance, deliveryPriceRange, harareWallClock, haversineKm, isMerchantOpenNow } from "@lynia/shared";
 import { DEFAULT_PREP_MINUTES } from "./home-feed";
 import { ETA_SPEED_KMH, ROAD_WINDING_FACTOR } from "./eta";
 
@@ -40,21 +40,25 @@ export interface FoodListMeta {
   distanceKm: number | null;
   /** Prep + road-inflated travel, in whole minutes. Null when distance is unknown. */
   etaMinutes: number | null;
-  /** Estimated delivery fee in USD. Null when distance is unknown. */
+  /** Estimated delivery fee in USD: the top of the price range with the ceiling on (D-128). Null when distance is unknown. */
   feeUsd: number | null;
+  /** The low end of the price range with the ceiling on (the starting offer). Null otherwise. */
+  feeLowUsd: number | null;
   /** The star average, only once at least one customer has actually rated. Null otherwise. */
   rating: number | null;
 }
 
 /** Everything derived for one restaurant against one customer point. Pure. */
-export function restaurantMeta(r: RestaurantListItem, customer: LatLng | null): FoodListMeta {
+export function restaurantMeta(r: RestaurantListItem, customer: LatLng | null, ceilingOn = false): FoodListMeta {
   const distanceKm = customer && r.location ? haversineKm(r.location, customer) : null;
   const roadKm = distanceKm == null ? null : distanceKm * ROAD_WINDING_FACTOR;
   const prep = r.prepBaselineMinutes ?? DEFAULT_PREP_MINUTES;
+  const range = ceilingOn && distanceKm != null ? deliveryPriceRange(distanceKm) : null;
   return {
     distanceKm,
     etaMinutes: roadKm == null ? null : prep + Math.max(1, Math.ceil((roadKm / ETA_SPEED_KMH) * 60)),
-    feeUsd: distanceKm == null ? null : deliveryFeeForDistance(distanceKm),
+    feeUsd: distanceKm == null ? null : range ? range.high : deliveryFeeForDistance(distanceKm),
+    feeLowUsd: range ? range.low : null,
     // An unrated shop shows no star rather than an invented "0" (not-drawn ⇒ not-rendered).
     rating: r.ratingCount > 0 && r.ratingAvg != null ? r.ratingAvg : null,
   };

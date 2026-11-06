@@ -23,6 +23,8 @@ export const DELIVERY_CEILING = {
   startShare: 0.85,
   /** Never below the restaurant fee's old minimum. */
   minUsd: 1.5,
+  /** The narrowest price range the browse screens show (owner 2026-11-06, D-128). */
+  displayRangeMinUsd: 1,
   /** One rung of the ladder and one stepper tap. */
   stepUsd: 0.5,
   /** The shop's top-up choices on the hold (M4h). */
@@ -73,6 +75,16 @@ export function startingOffer(recommended: number, ceiling: number): number {
   const b = ceilingBounds(recommended);
   const start = Math.max(b.min, down50(b.recommended * DELIVERY_CEILING.startShare));
   return fromCents(Math.min(toCents(start), toCents(ceiling)));
+}
+
+/**
+ * The delivery price range the browse screens show (D-128): from the starting offer up to Recommended, and at least
+ * `displayRangeMinUsd` wide, so Recommended always sits inside it. Display only: Review sets the real ceiling.
+ */
+export function deliveryPriceRange(distanceKm: number): { low: number; high: number } {
+  const recommended = roundFare(recommendedDeliveryUsd(distanceKm));
+  const low = startingOffer(recommended, recommended);
+  return { low, high: fromCents(Math.max(toCents(recommended), toCents(low) + toCents(DELIVERY_CEILING.displayRangeMinUsd))) };
 }
 
 /**

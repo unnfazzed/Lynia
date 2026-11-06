@@ -54,6 +54,8 @@ export interface VenueView {
   /** Null with no customer location (or no venue location): no km, fee or time is shown then. */
   km: number | null;
   feeUsd: number | null;
+  /** The low end of the delivery price range (D-128). Absent or null: `feeUsd` is one price. */
+  feeLowUsd?: number | null;
   etaLow: number | null;
   etaHigh: number | null;
   /** Merchant-funded delivery. No venue flag exists yet (README §7), so this is false today. */
@@ -69,8 +71,8 @@ export interface VenueView {
 }
 
 /** A restaurant from `GET /restaurants` → the browse view model. */
-export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, now: Date): VenueView {
-  const meta = restaurantMeta(r, customer);
+export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, now: Date, ceilingOn = false): VenueView {
+  const meta = restaurantMeta(r, customer, ceilingOn);
   // Hours are Harare's, whatever the phone's zone (D-116: customers abroad).
   const harare = harareWallClock(now);
   const open = isMerchantOpenNow(r.hours, harare);
@@ -89,6 +91,7 @@ export function restaurantVenue(r: RestaurantListItem, customer: LatLng | null, 
     ratingCount: r.ratingCount,
     km: meta.distanceKm,
     feeUsd: meta.feeUsd,
+    feeLowUsd: meta.feeLowUsd,
     etaLow: meta.etaMinutes,
     etaHigh: meta.etaMinutes == null ? null : meta.etaMinutes + ETA_BAND_MINUTES,
     // D-71: "Free delivery" only when the venue funds it (browse-v2 README §7).
@@ -115,9 +118,9 @@ export const SHOP_KIND_LABEL: Readonly<Record<MerchantShopKind, string>> = {
 };
 
 /** A shop from `GET /shops` → the browse view model (ledger D-58). The kind is its category and sub-line. */
-export function shopVenue(s: ShopListItem, customer: LatLng | null, now: Date): VenueView {
+export function shopVenue(s: ShopListItem, customer: LatLng | null, now: Date, ceilingOn = false): VenueView {
   const kind = SHOP_KIND_LABEL[s.shopKind] ?? SHOP_KIND_LABEL.other;
-  return { ...restaurantVenue(s, customer, now), categories: [kind], sub: kind, kind };
+  return { ...restaurantVenue(s, customer, now, ceilingOn), categories: [kind], sub: kind, kind };
 }
 
 export interface BrowseFilters {

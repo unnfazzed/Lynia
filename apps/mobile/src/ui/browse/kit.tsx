@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueOpening, VenueView } from "../../logic/browse";
-import { formatMoney } from "../../logic/money";
+import { formatMoneyRange } from "../../logic/money";
 import { EmptyRow, EmptyState } from "../EmptyState";
 import { emptyCopy, fillEmpty } from "../emptyCopy";
 import { PharmacyStickerV2, RestaurantsSticker, ShopsSticker } from "../art/stickers";
@@ -380,7 +380,7 @@ export function ClosedGroupHeader(): React.ReactElement {
 function FeeText({ v }: { v: VenueView }): React.ReactElement | null {
   if (v.freeDelivery) return <Text style={{ fontSize: 13, fontWeight: tokens.font.weight.bold, color: tokens.color.free }}>{B.list.free}</Text>;
   if (v.feeUsd == null) return null;
-  return <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{`${formatMoney(v.feeUsd)} ${B.store.delivery}`}</Text>;
+  return <Text style={{ fontSize: 13, color: tokens.color.muted, ...TABULAR }}>{`${formatMoneyRange(v.feeLowUsd, v.feeUsd)} ${B.store.delivery}`}</Text>;
 }
 
 /** bike · fee · km — absent without a location (no numbers we can't stand behind). */

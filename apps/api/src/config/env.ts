@@ -444,9 +444,10 @@ export const envSchema = z.object({
   // refused. The pharmacist check stays mandatory either way.
   RX_ENABLED: z.enum(["true", "false"]).default("true"),
   // Delivery price ceiling (ledger D-125, docs/plans/2026-11-05-delivery-price-ceiling.md): the customer sets
-  // "Pay no more than", dispatch offers below it and climbs 50c a round. Default OFF: off, every order keeps the
-  // fixed delivery fee and no screen changes. Served to mobile via GET /app/order-flags (`deliveryCeiling`).
-  DELIVERY_CEILING_ENABLED: z.enum(["true", "false"]).default("false"),
+  // "Pay no more than", dispatch offers below it and climbs 50c a round. Adopted (owner 2026-11-06, ledger D-128), so
+  // unset means ON; "false" is the kill switch: every order keeps the fixed delivery fee. Served to mobile via
+  // GET /app/order-flags (`deliveryCeiling`).
+  DELIVERY_CEILING_ENABLED: z.enum(["true", "false"]).default("true"),
   // Penalty suspension (owner 2026-10-12, see common/penalties.ts): unset means SUSPENDED — no
   // automatic holds, strike cooldowns, merchant cash-debt job lock or customer cash ban, and existing ones
   // are ignored. "false" switches penalties back on. Read at point of use via penaltiesSuspended().

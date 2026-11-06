@@ -8,6 +8,7 @@ import { useHomeLocation } from "../../src/logic/home-location";
 import { useNow } from "../../src/logic/use-now";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
 import { useFeatureFlags } from "../../src/net/use-feature-flags";
+import { useOrderFlags } from "../../src/net/use-order-flags";
 import { useReachable } from "../../src/net/use-reachable";
 import { useRestaurantListFeed } from "../../src/query/use-restaurants";
 import { usePopularity } from "../../src/query/use-popularity";
@@ -58,6 +59,7 @@ export default function RestaurantListScreen(): React.ReactElement {
   // D-72: "Recommended" is the popularity ranking (nearest-open until there's enough history to rank).
   const popularity = usePopularity("restaurants", restaurantsEnabled);
   const location = useHomeLocation();
+  const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const now = useNow();
   const reachable = useReachable();
   const { width } = useWindowDimensions();
@@ -88,7 +90,7 @@ export default function RestaurantListScreen(): React.ReactElement {
     if (narrowing && feed.hasMore && !feed.isLoadingMore) feed.loadMore();
   }, [narrowing, feed.hasMore, feed.isLoadingMore, feed.loadMore]);
 
-  const venues = useMemo(() => (feed.restaurants ?? []).map((r) => restaurantVenue(r, location.point, now)), [feed.restaurants, location.point, now]);
+  const venues = useMemo(() => (feed.restaurants ?? []).map((r) => restaurantVenue(r, location.point, now, ceilingOn)), [feed.restaurants, location.point, now, ceilingOn]);
   const categories = useMemo(() => browseCategories(venues), [venues]);
   const list = useMemo(() => browseList(venues, filters, popularity), [venues, filters, popularity]);
   const showFree = anyFreeDelivery(venues);

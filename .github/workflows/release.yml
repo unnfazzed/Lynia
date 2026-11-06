@@ -502,6 +502,8 @@ jobs:
           # Pharmacy prescriptions (D-59, BRIEF §13) are launched with Pharmacy, so unset means ON; set the
           # Variable to "false" to stop Rx items being listed or ordered (the kill switch).
           RX_ENABLED: ${{ vars.RX_ENABLED || 'true' }}
+          # Delivery price ceiling (D-128): adopted, so unset means on; "false" is the kill switch.
+          DELIVERY_CEILING_ENABLED: ${{ vars.DELIVERY_CEILING_ENABLED || 'true' }}
           # Penalty suspension (owner 2026-10-12, apps/api/src/common/penalties.ts): unset means SUSPENDED (no
           # automatic holds, strike cooldowns, cash-debt job lock or cash ban); set the Variable to "false" to
           # switch penalties back on.
@@ -562,7 +564,7 @@ jobs:
           # MICRO_CACHE_REDIS_L2 rides the same true|false Variable lane: it turns on the shared
           # Redis L2 behind the read-through micro-caches (PR #809) over the REDIS_URL the service
           # already mounts — no new infra. Unset yields "false" (the env schema's own default).
-          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do
+          for _flag in RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED PHARMACY_ENABLED RX_ENABLED DELIVERY_CEILING_ENABLED PENALTIES_SUSPENDED MICRO_CACHE_REDIS_L2; do
             _val="${!_flag:-false}"
             case "$_val" in
               true|false) ;;

@@ -134,7 +134,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
   }, [toast]);
 
   const name = catalogue?.shop.name ?? "";
-  const v = useMemo(() => (catalogue ? shopVenue(catalogue.shop, location.point, now) : null), [catalogue, location.point, now]);
+  const v = useMemo(() => (catalogue ? shopVenue(catalogue.shop, location.point, now, orderFlags.deliveryCeiling === true) : null), [catalogue, location.point, now, orderFlags.deliveryCeiling]);
   const open = v?.open ?? false;
 
   // S9 — interrupt once on a genuine open → closed transition while a basket is held (not on first load).

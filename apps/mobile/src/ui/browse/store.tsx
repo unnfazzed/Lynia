@@ -5,7 +5,7 @@ import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
-import { formatMoney } from "../../logic/money";
+import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { EmptyRow } from "../EmptyState";
 import { emptyCopy } from "../emptyCopy";
 import { Icon } from "../Icon";
@@ -162,7 +162,7 @@ export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
     cells.push({ key: "eta", value: <CellValue text={`${v.etaLow}–${v.etaHigh}`} />, label: B.store.min });
   }
   if (v.freeDelivery) cells.push({ key: "fee", value: <CellValue text={B.store.free} color={tokens.color.free} />, label: B.store.delivery });
-  else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue text={formatMoney(v.feeUsd)} />, label: B.store.delivery });
+  else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue fit text={formatMoneyRange(v.feeLowUsd, v.feeUsd)} />, label: B.store.delivery });
   // No "km away" cell (D-127): the figure is a straight line, not the road distance.
   return (
     <View style={{ flexDirection: "row", marginTop: 14, marginHorizontal: 16, borderRadius: 16, backgroundColor: tokens.color.surface }}>
@@ -183,9 +183,9 @@ export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
   );
 }
 
-function CellValue({ text, color = tokens.color.ink }: { text: string; color?: string }): React.ReactElement {
+function CellValue({ text, color = tokens.color.ink, fit = false }: { text: string; color?: string; fit?: boolean }): React.ReactElement {
   return (
-    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color, ...TABULAR }}>
+    <Text numberOfLines={1} adjustsFontSizeToFit={fit} minimumFontScale={fit ? 0.75 : undefined} style={{ fontSize: 16, fontWeight: tokens.font.weight.bold, color, ...TABULAR }}>
       {text}
     </Text>
   );

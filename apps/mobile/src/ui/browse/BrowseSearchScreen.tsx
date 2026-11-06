@@ -6,10 +6,11 @@ import { ScrollView, Text, TextInput, View, useWindowDimensions } from "react-na
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { restaurantVenue, shopVenue } from "../../logic/browse";
 import { useHomeLocation } from "../../logic/home-location";
-import { formatMoney } from "../../logic/money";
+import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { loadRecentSearches, saveRecentSearches, withRecent } from "../../logic/recent-searches";
 import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
 import { useNow } from "../../logic/use-now";
+import { useOrderFlags } from "../../net/use-order-flags";
 import { useReachable } from "../../net/use-reachable";
 import { useServiceFlags } from "../../net/use-service-flags";
 import { useBrowseSearch, useSearchPopular, type SearchItemHit, type SearchScope } from "../../query/use-search";
@@ -84,6 +85,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
   const { width } = useWindowDimensions();
   const narrow = width < NARROW_MAX;
   const location = useHomeLocation();
+  const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const now = useNow();
   const reachable = useReachable();
   const [query, setQuery] = useState(initialQuery);
@@ -129,9 +131,9 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
   };
 
   const venueHit = (base: string) => (r: RestaurantListItem | ShopListItem): React.ReactElement => {
-    const v = "shopKind" in r ? shopVenue(r, location.point, now) : restaurantVenue(r, location.point, now);
+    const v = "shopKind" in r ? shopVenue(r, location.point, now, ceilingOn) : restaurantVenue(r, location.point, now, ceilingOn);
     const time = v.etaLow != null && v.etaHigh != null ? fmt(B.list.range, { a: v.etaLow, b: v.etaHigh }) : null;
-    const fee = v.freeDelivery ? B.list.free : v.feeUsd != null ? `${formatMoney(v.feeUsd)} ${B.store.delivery}` : null;
+    const fee = v.freeDelivery ? B.list.free : v.feeUsd != null ? `${formatMoneyRange(v.feeLowUsd, v.feeUsd)} ${B.store.delivery}` : null;
     const km = v.km != null ? `${v.km.toFixed(1)} km` : null;
     const sub = [v.kind, time, fee, v.kind ? null : km].filter(Boolean).join(" · ");
     return (
