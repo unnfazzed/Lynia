@@ -16,6 +16,7 @@ import { useScheduleSlots } from "../../src/query/use-order-flow";
 import { useReopenReminder, useRestaurantMenu } from "../../src/query/use-restaurants";
 import { haptic, Icon } from "../../src/ui";
 import { emptyCopy, EmptyState, fillEmpty } from "../../src/ui";
+import { useOrderFlags } from "../../src/net/use-order-flags";
 import { B, fmt } from "../../src/ui/browse/copy";
 import { CompactBar, IconButton, NARROW_MAX, STORE_EMPTY_TOP, TABULAR } from "../../src/ui/browse/kit";
 import { ItemSheet, JustClosedModal, NewCartSheet } from "../../src/ui/browse/sheets";
@@ -94,6 +95,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   const { menu, isLoading, isError, isFetching, refetch } = useRestaurantMenu(id, true);
   const cart = useFoodCart();
   const location = useHomeLocation();
+  const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const now = useNow();
 
   const [openItem, setOpenItem] = useState<StoreItem | null>(null);
@@ -130,7 +132,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
     () => setToast({ text: B.toast.err }),
   );
 
-  const v = useMemo(() => (menu ? restaurantVenue(menu.restaurant, location.point, now) : null), [menu, location.point, now]);
+  const v = useMemo(() => (menu ? restaurantVenue(menu.restaurant, location.point, now, ceilingOn) : null), [menu, location.point, now, ceilingOn]);
   const open = v?.open ?? false;
 
   // S9 — interrupt once on a genuine open → closed transition while browsing (not on first load).

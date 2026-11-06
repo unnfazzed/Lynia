@@ -6,9 +6,10 @@ import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { shopVenue, type VenueView } from "../../logic/browse";
 import { useHomeLocation } from "../../logic/home-location";
-import { formatMoney } from "../../logic/money";
+import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
 import { useNow } from "../../logic/use-now";
+import { useOrderFlags } from "../../net/use-order-flags";
 import { useReachable } from "../../net/use-reachable";
 import { useShopSearch } from "../../query/use-shops";
 import { Icon } from "../Icon";
@@ -39,7 +40,7 @@ function GroupLabel({ text }: { text: string }): React.ReactElement {
 function venueMeta(v: VenueView): string {
   const parts: string[] = [];
   if (v.etaLow != null && v.etaHigh != null) parts.push(`${v.etaLow}–${v.etaHigh} min`);
-  if (v.feeUsd != null) parts.push(`${formatMoney(v.feeUsd)} delivery`);
+  if (v.feeUsd != null) parts.push(`${formatMoneyRange(v.feeLowUsd, v.feeUsd)} delivery`);
   if (v.km != null) parts.push(`${v.km.toFixed(1)} km`);
   return parts.length > 0 ? parts.join(" · ") : v.sub;
 }
@@ -56,6 +57,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
   const insets = useSafeAreaInsets();
   const reachable = useReachable();
   const location = useHomeLocation();
+  const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const now = useNow();
   const params = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(typeof params.q === "string" ? params.q : "");
@@ -64,7 +66,7 @@ export function ShopSearchScreen({ service }: { service: ShopService }): React.R
   const { data, isFetching, isError, refetch } = useShopSearch(service, q, true);
   const s = B.svc[service];
 
-  const places = useMemo(() => (data?.shops ?? []).map((x) => shopVenue(x, location.point, now)), [data, location.point, now]);
+  const places = useMemo(() => (data?.shops ?? []).map((x) => shopVenue(x, location.point, now, ceilingOn)), [data, location.point, now, ceilingOn]);
   const items = data?.items ?? [];
   const searched = q.length >= 2 && data != null;
   const idle = service === "pharmacy" ? emptyCopy.search.idlePharmacy : emptyCopy.search.idleShops;

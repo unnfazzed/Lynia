@@ -15,3 +15,13 @@ export function formatMoney(value: string | number | null | undefined): string {
   const sign = safe < 0 && abs !== "0.00" ? "-" : "";
   return `${sign}$${abs}`;
 }
+
+/**
+ * A delivery price range for a tight row, as the ETA reads "37–47": "$2–2.50", "$2.50–3". A whole dollar drops
+ * its ".00" so the store's four-cell strip fits at 320px. Equal ends, or no low end, read as one price: "$1.50".
+ */
+export function formatMoneyRange(low: number | null | undefined, high: number): string {
+  if (low == null || low === high) return formatMoney(high);
+  const short = (n: number): string => formatMoney(n).replace(/^\$/, "").replace(/\.00$/, "");
+  return `$${short(low)}–${short(high)}`;
+}

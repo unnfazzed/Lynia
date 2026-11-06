@@ -6154,3 +6154,22 @@ A single live shop, Uptown Liquor, was on the Shops screen while Home said "Comi
   already gets a Harare shop. Delivery rules are untouched: no distance cap, the fee stays per km, venue jobs go to bikers
   within 15 km of the venue.
 - **Upstream:** the handoff's rail rule and the `end` line should allow for one venue. The kit is not edited.
+
+## D-127 · The price ceiling is adopted, and browse shows a delivery price range — APPROVED (owner, 2026-11-06)
+
+**Owner (2026-11-06):** *"Adopt price ceiling"*, then *"and on display put price range"*, then *"keep it within 1 or more range"*.
+
+| | Handoff / earlier ledger | App |
+|---|---|---|
+| `DELIVERY_CEILING_ENABLED` (D-125) | Default off | Default on; `"false"` is the kill switch |
+| Delivery price on Home cards, lists, search and the store strip (Browse v2, Calm Mint v2) | One price: "$1.50 delivery" | With the ceiling on, a range at least $1 wide: "$2–3 delivery", the store cell "$2–3" |
+
+- **The range:** `deliveryPriceRange` (`packages/shared/src/delivery-ceiling.ts`). Low is the starting offer. High is
+  Recommended, raised where needed to make the range $1 wide (`displayRangeMinUsd`). Display only: Review & place
+  still shows Recommended and the stepper (R1c), and the default ceiling stays Recommended.
+- **Sorting:** "Lowest fee" ranks by the high end.
+- **Format:** `formatMoneyRange` drops a whole dollar's ".00" so the four-cell store strip fits at 320px; that cell
+  also shrinks to fit.
+- **Older apps:** they keep one price until they take the update. An app that sends no ceiling keeps the fixed fee
+  (D-125), so the two can differ until the OTA lands.
+- **Upstream:** Browse v2 and Calm Mint v2 draw one price. The kit is not edited.

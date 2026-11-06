@@ -203,7 +203,7 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
 - **The delivery price ceiling follows its own handoff (`handoff/delivery-ceiling-v1/`).** The customer's "Pay no
   more than" delivery card on Review & place, the "at most" amounts until a rider accepts, the raise prompt (T11c), the
   merchant hold top-up (M4h) and its board / cash-back / Money rows, and the admin Delivery price block align to
-  `packages/design/handoff/delivery-ceiling-v1/` (ledger D-125, owner 2026-11-05), behind `DELIVERY_CEILING_ENABLED`.
+  `packages/design/handoff/delivery-ceiling-v1/` (ledger D-125, owner 2026-11-05), on by default since D-127 (`DELIVERY_CEILING_ENABLED=false` is the kill switch).
   Rules come from `docs/plans/2026-11-05-delivery-price-ceiling.md`. Strings come from its `code/copy.ts`, verbatim.
 - **Customer briefs 06–09 follow their own handoff (`handoff/customer-briefs-06-09/`).** The late-cancel rider contact
   (After Send v2 18d/18e/18b/18f), the venue's note on D3b (D3g), the code-changed CodeCard (2.14b–d) and removing a
