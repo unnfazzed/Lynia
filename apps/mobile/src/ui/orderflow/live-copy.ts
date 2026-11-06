@@ -15,6 +15,7 @@ import {
 import type { IconName } from "../Icon";
 import { clock, hhmm } from "../order/copy";
 import { O, ofFmt } from "./copy";
+import { DC } from "./ceiling-copy";
 
 /**
  * G1 (Home's live-order bar) and G2 (the Orders tab's Now cards) for a MERCHANT order — Order flow v2.1
@@ -209,11 +210,23 @@ export function merchantLive(
       return at(ofFmt(OG.answer, { v }), null, null, 1);
     case "cooking":
     case "slowRider":
-    case "riderDropped":
-      return at(S.makingT, range, range, 2);
+    case "riderDropped": {
+      const view = at(S.makingT, range, range, 2);
+      // D-125 O-card-u: before a biker accepts, the sub reads "{Making} · $70.00 cash at most".
+      const c = order?.deliveryCeiling;
+      if (c && !c.venueFunded && c.acceptedPrice == null && c.totalAtMost != null) {
+        return { ...view, line: ofFmt(DC.o.before.replace("Packing", S.making), { p: usd(c.totalAtMost) }) };
+      }
+      return view;
+    }
     case "toVenue":
-    case "collecting":
-      return at(ofFmt(OG.toVenue, { v }), range, range, 2);
+    case "collecting": {
+      const view = at(ofFmt(OG.toVenue, { v }), range, range, 2);
+      // D-125 O-card-u: once a biker accepted, the exact amount ("Have $69.50 ready at the door").
+      const c = order?.deliveryCeiling;
+      if (c && !c.venueFunded && c.acceptedPrice != null) return { ...view, line: ofFmt(DC.o.after, { p: usd(total) }) };
+      return view;
+    }
     case "onWay": {
       const one = eta?.kind === "one" ? eta : null;
       const sub = one

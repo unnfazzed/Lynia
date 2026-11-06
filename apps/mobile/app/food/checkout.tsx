@@ -1,4 +1,4 @@
-import { harareWallClock, isMerchantOpenNow, normalizePhone } from "@lynia/shared";
+import { ceilingBounds, harareWallClock, haversineKm, isMerchantOpenNow, normalizePhone, recommendedDeliveryUsd, roundToCents } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
@@ -55,6 +55,8 @@ import { ServiceSticker } from "../../src/ui/browse/kit";
 import { AddressEdit } from "../../src/ui/orderflow/AddressEdit";
 import { O, ofFmt } from "../../src/ui/orderflow/copy";
 import { OB } from "../../src/ui/orderflow/kit-copy";
+import { DeliveryCeilingCard } from "../../src/ui/orderflow/ceiling";
+import { DC } from "../../src/ui/orderflow/ceiling-copy";
 import {
   Breakdown,
   ItemLine,
@@ -122,6 +124,11 @@ interface Drop {
   label: string;
 }
 
+/** D-125: the trip the API prices (venue → drop, great-circle, 2dp), for the DELIVERY card. */
+function tripKm(venue: { lat: number; lng: number }, drop: { lat: number; lng: number }): number {
+  return roundToCents(haversineKm(venue, drop));
+}
+
 export default function FoodReviewScreen(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -154,6 +161,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   const venue = cart.cart.restaurantName ?? restaurant?.name ?? "";
   const svc = O.svc[service];
   const flags = useOrderFlags();
+  const ceilingOn = flags.deliveryCeiling === true;
 
   // ── Deliver to ────────────────────────────────────────────────────────────────────────────────────
   // Starts at the customer's deliver-to (the address the storefront was browsed from) until they set one.
@@ -321,15 +329,27 @@ export default function FoodReviewScreen(): React.ReactElement {
   const balance = useCarriedBalance(cart.ready && !!rid);
   const owed = balance.owed;
 
+  // D-125 delivery ceiling (handoff delivery-ceiling-v1 R1c): behind the server's flag. The ceiling starts at the
+  // Recommended price and resets to it whenever the trip changes. A free-delivery venue shows no card (R1c-free)
+  // but still sends Recommended, so the shop keeps any saving.
+  const trip = drop && restaurant?.location ? tripKm(restaurant.location, drop) : null;
+  const recommended = ceilingOn && trip != null ? recommendedDeliveryUsd(trip) : null;
+  const bounds = recommended != null ? ceilingBounds(recommended) : null;
+  const [ceilingPick, setCeilingPick] = useState<{ rec: number; value: number } | null>(null);
+  const ceiling = recommended == null ? null : ceilingPick && ceilingPick.rec === recommended ? ceilingPick.value : recommended;
+  const freeVenue = restaurant?.freeDelivery === true;
+  const showCeiling = ceiling != null && !freeVenue;
+  const deliveryFee = drop && restaurant ? (showCeiling ? ceiling : estimateDeliveryFee(restaurant.location, drop)) : null;
+  const money = reviewBreakdown(cart.cart.lines, recommended != null && freeVenue ? recommended : deliveryFee, owed, freeVenue);
+  const ceilingKey = showCeiling ? String(ceiling) : recommended != null ? `rec${recommended}` : "";
+
   // U02: seeded by the cart's nonce too, so the same basket ordered again (a new cart) is a new order,
   // while a retry of this attempt (double tap, timeout, restart — the cart is persisted) still dedupes.
   const idempotencyKey = useMemo(
-    () => foodOrderIdempotencyKey(cart.cart, `${drop?.lat},${drop?.lng}|cash|${sched?.slot.start ?? "asap"}|${isShop ? oos : ""}|${rxKeys}`),
-    [cart.cart, drop?.lat, drop?.lng, sched?.slot.start, isShop, oos, rxKeys],
+    () => foodOrderIdempotencyKey(cart.cart, `${drop?.lat},${drop?.lng}|cash|${sched?.slot.start ?? "asap"}|${isShop ? oos : ""}|${rxKeys}|${ceilingKey}`),
+    [cart.cart, drop?.lat, drop?.lng, sched?.slot.start, isShop, oos, rxKeys, ceilingKey],
   );
 
-  const deliveryFee = drop && restaurant ? estimateDeliveryFee(restaurant.location, drop) : null;
-  const money = reviewBreakdown(cart.cart.lines, deliveryFee, owed, restaurant?.freeDelivery === true);
   const eta = drop && restaurant ? arrivalWindow(etaRange([restaurantMeta(restaurant, drop)]), now) : null;
   const closed = restaurant != null && !isMerchantOpenNow(restaurant.hours, harareWallClock(now));
   const phoneOk = normalizePhone(phone) !== null;
@@ -463,6 +483,7 @@ export default function FoodReviewScreen(): React.ReactElement {
       scheduledFor: sched?.slot.start ?? null,
       outOfStockPref: isShop ? oos : null,
       prescription: rxNeeded ? { photoKeys: rx.keys, patientName: patient.trim(), consent: true } : null,
+      deliveryCeiling: showCeiling ? ceiling : recommended,
     });
     unsettled.current = null;
     try {
@@ -540,7 +561,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   }
 
   const changed = changes.gone.length > 0 || Object.keys(changes.priceChanges).length > 0;
-  const placeLabel = ofFmt(O.r.place, { p: formatMoney(money.total) });
+  const placeLabel = ofFmt(showCeiling ? DC.r.place : O.r.place, { p: formatMoney(money.total) });
   const hint = editingAddr
     ? draftOut
       ? outAreaBlock(venue)
@@ -778,12 +799,23 @@ export default function FoodReviewScreen(): React.ReactElement {
                 )}
               </ReviewBlock>
 
+              {showCeiling && bounds && recommended != null && ceiling != null ? (
+                <DeliveryCeilingCard
+                  km={trip}
+                  recommended={recommended}
+                  ceiling={ceiling}
+                  min={bounds.min}
+                  max={bounds.max}
+                  onChange={(value) => setCeilingPick({ rec: recommended, value })}
+                />
+              ) : null}
+
               <ReviewBlock label={O.r.pay}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <Icon name="banknote" size={20} color={tokens.color.accentText} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 15, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>{O.r.cash}</Text>
-                    <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{ofFmt(O.r.cashSub, { p: formatMoney(money.total) })}</Text>
+                    <Text style={{ fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{ofFmt(showCeiling ? DC.r.cashSubUpTo : O.r.cashSub, { p: formatMoney(money.total) })}</Text>
                   </View>
                 </View>
               </ReviewBlock>
@@ -796,6 +828,7 @@ export default function FoodReviewScreen(): React.ReactElement {
                 smallOrderFee={money.smallOrderFee}
                 owed={money.owed}
                 total={money.total}
+                atMost={showCeiling}
               />
             </>
           )}

@@ -55,6 +55,10 @@ export interface NotificationRow {
   count?: number;
   /** Merchant orders: the kitchen's prep estimate in minutes. */
   prepMinutes?: number;
+  /** D-125 N-row-u: the customer's delivery ceiling while no biker has accepted ("delivery $3.00 at most"). */
+  deliveryAtMost?: string;
+  /** D-125 N-row-u: a biker accepted a ceiling order, so `amount` is the exact door amount. */
+  ceilingAccepted?: true;
   /** Swap rows: the first swapped line ("Panado 24s" → "Paracetamol 24s", "same price" | "+$0.10"). */
   swap?: { item: string; sub: string; diff: string };
   /** Status rows: the order's stage history inside the window in the viewer's own voice, latest first —
@@ -331,6 +335,21 @@ const MERCHANT_FEED_NOTICES: Record<string, { icon: string; title: string; messa
   cancelled: { icon: "triangle-alert", title: "Order cancelled", message: "Nothing was charged." },
 };
 
+/** D-125: a ceiling order adds the biker's accept (the push "Have {p} ready at the door.") as a customer beat. */
+const MERCHANT_CEILING_FEED_NOTICES: Record<string, { icon: string; title: string; message: string }> = {
+  ...MERCHANT_FEED_NOTICES,
+  assigned: { icon: "bike", title: "Biker accepted", message: "Have your cash ready at the door." },
+};
+
+/** D-125 N-row-u: the row fields of a ceiling order, for its own customer only. */
+function ceilingFeedFields(
+  o: { orderType: string; customerId: string; deliveryCeiling?: { toString(): string } | null; deliveryVenueFunded?: boolean | null; deliveryAcceptedRound?: number | null },
+  userId: string,
+): { deliveryAtMost?: string; ceilingAccepted?: true } {
+  if (o.orderType !== "merchant" || o.customerId !== userId || o.deliveryCeiling == null || o.deliveryVenueFunded === true) return {};
+  return o.deliveryAcceptedRound != null ? { ceilingAccepted: true } : { deliveryAtMost: amountOf(o.deliveryCeiling) };
+}
+
 /** Order statuses that are still running — an SOS on such an order is still in force. */
 const LIVE_STATUSES = new Set(["requested", "open_for_offers", "assigned", "confirmed", "en_route_pickup", "picked_up", "en_route_dropoff"]);
 
@@ -497,6 +516,10 @@ export class NotificationsFeedService {
           // D5 / U12 (2026-10-07): the rider's "I'm here" at the drop-off — the merchant customer's
           // "{rider} is at your door" step (the en_route_dropoff event fires right after pickup).
           riderAtDropoffAt: true,
+          // D-125 N-row-u: the delivery ceiling and whether a biker accepted it.
+          deliveryCeiling: true,
+          deliveryVenueFunded: true,
+          deliveryAcceptedRound: true,
           merchant: { select: { name: true, businessType: true, shopKind: true } },
           rider: { select: { profile: { select: { firstName: true } } } },
           customer: { select: { firstName: true } },
@@ -701,6 +724,7 @@ export class NotificationsFeedService {
           o.orderType === "merchant" && o.customerId === userId ? merchantAmountDueUsd({ agreedFare: o.agreedFare, carriedBalance: o.carriedBalance }) : o.agreedFare,
         ),
         prepMinutes: o.prepMinutes ?? undefined,
+        ...ceilingFeedFields(o, userId),
       };
     };
 
@@ -720,7 +744,9 @@ export class NotificationsFeedService {
       const isCustomerView = order.riderId !== userId;
       const audience = isCustomerView ? "customer" : "rider";
       const merchantCustomer = isMerchant && isCustomerView;
-      const notices = merchantCustomer ? MERCHANT_FEED_NOTICES : isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
+      // D-125 N-row-u: on a ceiling order the biker accepting is the customer's news (the exact amount).
+      const ceilingOrder = merchantCustomer && order.deliveryCeiling != null && order.deliveryVenueFunded !== true;
+      const notices = merchantCustomer ? (ceilingOrder ? MERCHANT_CEILING_FEED_NOTICES : MERCHANT_FEED_NOTICES) : isCustomerView ? FEED_NOTICES : FEED_NOTICES_RIDER;
 
       /**
        * Is this status addressed to the viewer? Normally {@link FEED_AUDIENCE} decides, mirroring the

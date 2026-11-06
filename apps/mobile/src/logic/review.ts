@@ -172,6 +172,8 @@ export interface PlaceInput {
   outOfStockPref?: OutOfStockPref | null;
   /** R8: the prescription, when a line needs one (and `rxEnabled`). */
   prescription?: PrescriptionInput | null;
+  /** D-125: the customer's "Pay no more than", sent only when the DELIVERY card was shown. */
+  deliveryCeiling?: number | null;
 }
 
 /**
@@ -193,6 +195,8 @@ export function placeOrderBody(input: PlaceInput): PlaceMerchantOrderRequest {
     ...(input.scheduledFor ? { scheduledFor: input.scheduledFor } : {}),
     ...(input.outOfStockPref ? { outOfStockPref: input.outOfStockPref } : {}),
     ...(input.prescription ? { prescription: input.prescription } : {}),
+    // D-125: the customer's "Pay no more than" (only when the card was shown).
+    ...(input.deliveryCeiling != null ? { deliveryCeiling: input.deliveryCeiling } : {}),
   };
 }
 

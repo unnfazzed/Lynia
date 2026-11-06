@@ -37,6 +37,10 @@ export interface NotificationRow {
   riderName?: string;
   customerName?: string;
   amount?: string;
+  /** D-125 N-row-u: the delivery ceiling while no biker has accepted ("3.00"). */
+  deliveryAtMost?: string;
+  /** D-125 N-row-u: a biker accepted a ceiling order; `amount` is the exact door amount. */
+  ceilingAccepted?: true;
   count?: number;
   prepMinutes?: number;
   swap?: { item: string; sub: string; diff: string };
