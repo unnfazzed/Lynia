@@ -252,7 +252,7 @@ export interface PopularVenue {
   distanceKm: number | null;
 }
 
-/** The card's price: the range with the price ceiling on (D-127), else the fixed fee. */
+/** The card's price: the range with the price ceiling on (D-128), else the fixed fee. */
 function feeLabel(distanceKm: number, ceilingOn: boolean): string {
   if (!ceilingOn) return formatMoney(deliveryFeeForDistance(distanceKm));
   const { low, high } = deliveryPriceRange(distanceKm);

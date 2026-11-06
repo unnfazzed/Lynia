@@ -54,7 +54,7 @@ export interface VenueView {
   /** Null with no customer location (or no venue location): no km, fee or time is shown then. */
   km: number | null;
   feeUsd: number | null;
-  /** The low end of the delivery price range (D-127). Absent or null: `feeUsd` is one price. */
+  /** The low end of the delivery price range (D-128). Absent or null: `feeUsd` is one price. */
   feeLowUsd?: number | null;
   etaLow: number | null;
   etaHigh: number | null;

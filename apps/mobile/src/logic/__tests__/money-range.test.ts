@@ -1,6 +1,6 @@
 import { formatMoneyRange } from "../money";
 
-describe("formatMoneyRange (D-127)", () => {
+describe("formatMoneyRange (D-128)", () => {
   it("drops a whole dollar's .00 and keeps cents", () => {
     expect(formatMoneyRange(2, 3)).toBe("$2–3");
     expect(formatMoneyRange(2.5, 3.5)).toBe("$2.50–3.50");

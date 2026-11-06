@@ -40,7 +40,7 @@ export interface FoodListMeta {
   distanceKm: number | null;
   /** Prep + road-inflated travel, in whole minutes. Null when distance is unknown. */
   etaMinutes: number | null;
-  /** Estimated delivery fee in USD: the top of the price range with the ceiling on (D-127). Null when distance is unknown. */
+  /** Estimated delivery fee in USD: the top of the price range with the ceiling on (D-128). Null when distance is unknown. */
   feeUsd: number | null;
   /** The low end of the price range with the ceiling on (the starting offer). Null otherwise. */
   feeLowUsd: number | null;

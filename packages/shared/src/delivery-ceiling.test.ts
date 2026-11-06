@@ -99,7 +99,7 @@ describe("ceilingMoney / topUpChoices", () => {
   });
 });
 
-describe("deliveryPriceRange (D-127)", () => {
+describe("deliveryPriceRange (D-128)", () => {
   it("runs from the starting offer, at least $1 wide", () => {
     expect(deliveryPriceRange(1.9)).toEqual({ low: 2, high: 3 });
     expect(deliveryPriceRange(0)).toEqual({ low: 1.5, high: 2.5 });

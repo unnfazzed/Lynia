@@ -270,7 +270,7 @@ deliveryFee(distanceKm) = max( 1.50, round_to_0.50( 0.80 × distanceKm ) )
 A venue with free delivery pays the rider's fee out of its own share (`merchantDeliveryShareAtPlacement`,
 ledger D-71). The customer then pays $0 delivery and the rider still gets the full fee. Payment is cash.
 
-**Delivery price ceiling (ledger D-125, D-127; `DELIVERY_CEILING_ENABLED`, default on, `"false"` is the kill switch).** When the flag is on and
+**Delivery price ceiling (ledger D-125, D-128; `DELIVERY_CEILING_ENABLED`, default on, `"false"` is the kill switch).** When the flag is on and
 the app sends `deliveryCeiling`, the fixed fee above is replaced
 ([`packages/shared/src/delivery-ceiling.ts`](../packages/shared/src/delivery-ceiling.ts),
 plan [`docs/plans/2026-11-05-delivery-price-ceiling.md`](plans/2026-11-05-delivery-price-ceiling.md)):

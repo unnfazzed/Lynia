@@ -23,7 +23,7 @@ export const DELIVERY_CEILING = {
   startShare: 0.85,
   /** Never below the restaurant fee's old minimum. */
   minUsd: 1.5,
-  /** The narrowest price range the browse screens show (owner 2026-11-06, D-127). */
+  /** The narrowest price range the browse screens show (owner 2026-11-06, D-128). */
   displayRangeMinUsd: 1,
   /** One rung of the ladder and one stepper tap. */
   stepUsd: 0.5,
@@ -78,7 +78,7 @@ export function startingOffer(recommended: number, ceiling: number): number {
 }
 
 /**
- * The delivery price range the browse screens show (D-127): from the starting offer up to Recommended, and at least
+ * The delivery price range the browse screens show (D-128): from the starting offer up to Recommended, and at least
  * `displayRangeMinUsd` wide, so Recommended always sits inside it. Display only: Review sets the real ceiling.
  */
 export function deliveryPriceRange(distanceKm: number): { low: number; high: number } {

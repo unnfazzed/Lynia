@@ -417,7 +417,7 @@ describe("loadEnv — pharmacy prescriptions (D-76)", () => {
   });
 });
 
-describe("loadEnv — delivery price ceiling (D-127)", () => {
+describe("loadEnv — delivery price ceiling (D-128)", () => {
   it("is on when DELIVERY_CEILING_ENABLED is unset, and off only when it is \"false\"", () => {
     expect(loadEnv({ ...base }).DELIVERY_CEILING_ENABLED).toBe("true");
     expect(loadEnv({ ...base, DELIVERY_CEILING_ENABLED: "false" }).DELIVERY_CEILING_ENABLED).toBe("false");

@@ -148,7 +148,7 @@ describe("popularNearYou (home 8c venue grid)", () => {
     expect(popularNearYou([venue({ km: 6 })], NOW, CUSTOMER)[0]?.deliveryFee).toBe("$5.00");
   });
 
-  it("shows a range at least $1 wide with the price ceiling on (D-127)", () => {
+  it("shows a range at least $1 wide with the price ceiling on (D-128)", () => {
     const fee = (km: number): string | null | undefined =>
       popularNearYou([venue({ km })], NOW, CUSTOMER, undefined, undefined, true)[0]?.deliveryFee;
     expect(fee(1.3)).toBe("$2–3");

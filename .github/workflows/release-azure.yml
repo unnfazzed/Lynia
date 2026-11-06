@@ -475,7 +475,7 @@ jobs:
           # Pharmacy prescriptions (D-59, BRIEF §13) are launched with Pharmacy, so unset means ON; set the
           # Variable to "false" to stop Rx items being listed or ordered (the kill switch).
           RX_ENABLED: ${{ vars.RX_ENABLED || 'true' }}
-          # Delivery price ceiling (D-127): adopted, so unset means on; "false" is the kill switch.
+          # Delivery price ceiling (D-128): adopted, so unset means on; "false" is the kill switch.
           DELIVERY_CEILING_ENABLED: ${{ vars.DELIVERY_CEILING_ENABLED || 'true' }}
           # Penalty suspension (owner 2026-10-12, apps/api/src/common/penalties.ts): unset means SUSPENDED (no
           # automatic holds, strike cooldowns, cash-debt job lock or cash ban); set the Variable to "false" to
