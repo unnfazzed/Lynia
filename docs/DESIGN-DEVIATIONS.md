@@ -6129,4 +6129,12 @@ your recommendations"), then handed over the Claude Design export with *"impleme
 - **Known export defect (upstream):** `Delivery ceiling v1 - all screens.html` loads its kit from
   `../order-flow-v2-2026-10/`, but the repo's folder is `order-flow-v2/`, so that canvas renders blank in-repo. Use
   `Delivery ceiling v1 (standalone).html` or the screenshots. The kit is not edited.
+- **Built in the first PR, and what is not (yet):**
+  - Built: R1c/R1c-low/R1c-high/R1c-max (R1c-free keeps today's free-delivery Review as the brief asked), T4u, T6p,
+    T6p-same, T11c + toast + push, O-card-u, N-row-u (the "after" line rides a new `assigned` feed beat, on ceiling
+    orders only), M4h, M4h-sent, K-card-h, M6a-t (its rows inside the existing D-77 cash card), T2-t (the row and the
+    top-ups line under the existing Money header), E1's Delivery price block.
+  - Not built: E1's **Dispatch rounds** list (the API keeps no per-round price log yet), and the T11c-push
+    **action buttons** (the app registers no notification categories; a tap opens the order, where T11c is). Both
+    are follow-ups, not deviations from the look.
 - **Approved by:** owner, 2026-11-05.

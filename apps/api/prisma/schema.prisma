@@ -835,6 +835,8 @@ model Order {
   deliveryCeiling       Decimal?  @map("delivery_ceiling") @db.Decimal(10, 2)
   // The customer's part currently offered: the ladder rung, start -> ceiling in 50c steps, one per round.
   deliveryLadder        Decimal?  @map("delivery_ladder") @db.Decimal(10, 2)
+  // The rung the first round offered (admin E1 "Starting offer").
+  deliveryStart         Decimal?  @map("delivery_start") @db.Decimal(10, 2)
   // The shop's top-up on top of the ladder (M4h), funded from its cash.
   merchantTopUp         Decimal?  @map("merchant_top_up") @db.Decimal(10, 2)
   // Free-delivery venue at placement: the shop funds the whole fee; the customer is never asked to raise.

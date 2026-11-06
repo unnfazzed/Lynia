@@ -3,6 +3,7 @@
 ALTER TABLE "orders" ADD COLUMN "delivery_recommended" DECIMAL(10,2);
 ALTER TABLE "orders" ADD COLUMN "delivery_ceiling" DECIMAL(10,2);
 ALTER TABLE "orders" ADD COLUMN "delivery_ladder" DECIMAL(10,2);
+ALTER TABLE "orders" ADD COLUMN "delivery_start" DECIMAL(10,2);
 ALTER TABLE "orders" ADD COLUMN "merchant_top_up" DECIMAL(10,2);
 ALTER TABLE "orders" ADD COLUMN "delivery_venue_funded" BOOLEAN;
 ALTER TABLE "orders" ADD COLUMN "delivery_round" INTEGER;

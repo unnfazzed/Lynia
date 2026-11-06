@@ -239,6 +239,7 @@ export class FoodOrderPlacing {
                 deliveryRecommended: ceilingPlan.recommended,
                 deliveryCeiling: ceilingPlan.ceiling,
                 deliveryLadder: ceilingPlan.ladder,
+                deliveryStart: ceilingPlan.ladder,
                 deliveryVenueFunded: merchantDeliveryShare != null,
                 deliveryRound: 0,
               }

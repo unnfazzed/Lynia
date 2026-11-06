@@ -484,7 +484,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
           dispatchAttempt: attempt,
           dispatchStartedAt: startedAt,
           dispatchNextCheckAt: new Date(now.getTime() + RESTAURANTS_DISPATCH.offerWindowMs),
-          ...(priced ?? {}),
+          ...priced,
         },
       });
       // Nobody online in reach could take it: ask the offline riders nearby to come online. Throttled per
@@ -503,7 +503,7 @@ export class FoodDispatchService implements OnModuleInit, OnModuleDestroy {
         dispatchAttempt: attempt,
         dispatchStartedAt: startedAt,
         dispatchNextCheckAt: expiresAt,
-        ...(priced ?? {}),
+        ...priced,
       },
     });
     if (claimed.count === 0) return "skipped";
