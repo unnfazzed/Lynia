@@ -1,4 +1,5 @@
-import { Controller, Get, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Header, Param, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Throttle } from "../common/throttle.guard";
 import { CurrentMerchantAccess, MerchantGuard } from "./merchant.guard";
@@ -25,6 +26,32 @@ export class ShareController {
   @Throttle({ limit: 60, windowSec: 300, keyPrefix: "share-resolve" })
   resolve(@Param("code") code: string) {
     return this.share.resolve(code);
+  }
+
+  /** The WhatsApp preview image (SH-W7a/b/c). The website proxies it at lyniago.com/s/<CODE>/card.jpg. */
+  @Get(":code/card.jpg")
+  @Throttle({ limit: 60, windowSec: 300, keyPrefix: "share-card-image" })
+  async cardImage(@Param("code") code: string, @Res() res: Response) {
+    const { live, jpeg } = await this.share.cardImage(code);
+    res
+      .status(200)
+      .set({
+        "content-type": "image/jpeg",
+        // A shop's card follows its name and photos within a day; a dead code's within the hour.
+        "cache-control": `public, max-age=${live ? 86_400 : 3_600}`,
+        "x-content-type-options": "nosniff",
+      })
+      .send(jpeg);
+  }
+
+  /** The desktop landing's QR (SH-W4/W4b). */
+  @Get(":code/qr.svg")
+  @Header("content-type", "image/svg+xml")
+  @Header("cache-control", "public, max-age=3600")
+  @Header("content-security-policy", "default-src 'none'")
+  @Throttle({ limit: 120, windowSec: 300, keyPrefix: "share-qr" })
+  qr(@Param("code") code: string) {
+    return this.share.qrSvg(code);
   }
 
   @Get(":code/card")

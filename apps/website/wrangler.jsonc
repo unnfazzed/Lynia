@@ -1,7 +1,7 @@
 // lyniago.com — the marketing site (docs/WEBSITE.md). A static-asset Worker: every request is a free,
 // unmetered static-asset request served from Cloudflare's edge, except /download, /r/<code> and /j/<code>, the
 // paths that run worker.js (the smart download link: Play on Android, the web app on iPhone, the QR section on
-// desktop; a biker's referral link, D-112; an Own bikers invite link, D-117; `run_worker_first`). Even unknown paths never reach the
+// desktop; a biker's referral link, D-112; an Own bikers invite link, D-117; a shop's share link /s/<name>-<CODE> and its preview card, D-129; `run_worker_first`). Even unknown paths never reach the
 // script. `site/` is the approved design handoff (packages/design/handoff/lyniago-website/site) plus the
 // launch edits that scripts/check-website.mjs allows; it is deployed as-is, there is no build step.
 //
@@ -14,11 +14,13 @@
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
-    "run_worker_first": ["/download", "/download/", "/r/*", "/j/*"],
+    "run_worker_first": ["/download", "/download/", "/r/*", "/j/*", "/s/*"],
     // Unknown paths (including /about until its copy exists) get site/404.html with a real 404 status.
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash"
   },
+  // Where the /s/ landing reads a shop's public card (GET /share/:code/card) and its preview image.
+  "vars": { "API_ORIGIN": "https://api.lyniago.com" },
   // Custom Domain: Cloudflare creates the DNS record and the edge certificate itself.
   "routes": [{ "pattern": "lyniago.com", "custom_domain": true }],
   // One public host only. The canonical tag says https://lyniago.com/, so no *.workers.dev copy.

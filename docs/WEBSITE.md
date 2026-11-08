@@ -104,6 +104,26 @@ number, so the Join card is on their board as soon as they open LyniaGo with tha
 fleet code can never be read back as a biker referral code. No page, copy or asset changes, so this is not a launch
 edit. Pinned by `apps/website/worker.test.mjs`.
 
+## Shop share links: `/s/<name>-<CODE>`
+
+A restaurant's, shop's or pharmacy's share link (owner 2026-11-08, ledger D-129, plan
+`docs/plans/2026-11-07-shop-share-links.md`, handoff `packages/design/handoff/shop-share-v1/` README §2 and §4).
+`apps/website/shop.js` answers three paths:
+
+- `/s/<name>-<CODE>`: the landing. It reads the shop's public card from the API (`GET /share/:code/card`, edge-cached
+  5 minutes) and renders by device: Android fires the app intent (`intent://s/<CODE>`, falling back to Play with the code
+  in the install referrer, `utm_medium=shop_share`), iPhone gets **Order on the web** (`app.lyniago.com/s/<CODE>`),
+  desktop gets a QR and **Copy link**. Only the code picks the shop: a bare code, an old or made-up name `301`s to the
+  shop's current link. An unknown, paused or not-live code, and an unreachable API, render the generic page that names
+  no shop (never a 5xx). `noindex`, `private, no-store`, a per-response CSP nonce.
+- `/s/<CODE>/card.jpg`: the 1200×630 WhatsApp preview, drawn by the API (`GET /share/:code/card.jpg`, sharp in the
+  design's Inter and Fredoka, `apps/api/assets/share-card/`) and edge-cached a day. API down: the site's own
+  `og-image.png`.
+- `/s/<CODE>/qr.svg`: the desktop landing's QR (`GET /share/:code/qr.svg`).
+
+The page is Worker HTML in website tokens, built from the shop-share handoff, not from `site/`, so it is not a launch
+edit and `site/` is unchanged. `API_ORIGIN` is a `vars` entry in `wrangler.jsonc`. Pinned by `apps/website/worker.test.mjs`.
+
 ## Search and AI visibility
 
 The plan for ranking lyniago.com in Harare, and for getting it cited by AI assistants, is in

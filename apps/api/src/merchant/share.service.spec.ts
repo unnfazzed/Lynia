@@ -89,7 +89,9 @@ function setup(opts: { env?: Partial<Env>; draws?: string[] } = {}) {
       },
     },
   };
+  const stored = new Map<string, Buffer>();
   const storage = {
+    readHead: async (key: string) => stored.get(key) ?? null,
     createReadUrl: async (key: string) => {
       signed.push(key);
       return `https://signed.example/${key}`;
@@ -100,7 +102,7 @@ function setup(opts: { env?: Partial<Env>; draws?: string[] } = {}) {
     storage as unknown as StorageAdapter,
     { ...ON, ...opts.env } as Env,
   );
-  return { svc, add, codes, signed, merchants };
+  return { svc, add, codes, signed, merchants, stored };
 }
 
 describe("ShareService.linkFor (merchant app)", () => {
@@ -246,6 +248,50 @@ describe("ShareService.card (public, DR16)", () => {
     const code = await svc.codeFor(KITCHEN);
     merchants.get(KITCHEN)!.pilotEnabled = false;
     await expect(svc.card(code)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("ShareService.cardImage / qrSvg (public)", () => {
+  const size = async (jpeg: Buffer) => {
+    const sharp = (await import("sharp")).default;
+    const { width, height, format } = await sharp(jpeg).metadata();
+    return { width, height, format };
+  };
+
+  it("a live shop gets its own 1200×630 JPEG, drawn from the current thumbnails", async () => {
+    const sharp = (await import("sharp")).default;
+    const { svc, add, stored } = setup();
+    add({ id: KITCHEN, name: "Chicken Inn Avondale", coverPhotoUrl: "p/c.jpg", coverThumbKey: "p/c.jpg.thumb.jpg" });
+    stored.set("p/c.jpg.thumb.jpg", await sharp({ create: { width: 1200, height: 400, channels: 3, background: "#c33" } }).jpeg().toBuffer());
+    const { live, jpeg } = await svc.cardImage(await svc.codeFor(KITCHEN));
+    expect(live).toBe(true);
+    expect(await size(jpeg)).toEqual({ width: 1200, height: 630, format: "jpeg" });
+    expect(jpeg.length).toBeLessThan(300_000);
+    // The cover is drawn: the top-left pixel is the photo's red, not the restaurant tint.
+    const { data } = await sharp(jpeg).extract({ left: 10, top: 10, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
+    expect(data[0]).toBeGreaterThan(180);
+    expect(data[1]).toBeLessThan(90);
+  });
+
+  it("R6: an unknown or paused code gets the generic card, never an error", async () => {
+    const { svc, add, merchants } = setup();
+    add({ id: KITCHEN, name: "Chicken Inn Avondale" });
+    const code = await svc.codeFor(KITCHEN);
+    merchants.get(KITCHEN)!.pilotEnabled = false;
+    for (const c of [code, "ZZZZZZ", "nope"]) {
+      const { live, jpeg } = await svc.cardImage(c);
+      expect(live).toBe(false);
+      expect(await size(jpeg)).toMatchObject({ width: 1200, height: 630 });
+    }
+  });
+
+  it("the QR is an SVG; a dead code's names no shop", async () => {
+    const { svc, add } = setup();
+    add({ id: KITCHEN, name: "Chicken Inn Avondale" });
+    const code = await svc.codeFor(KITCHEN);
+    const live = await svc.qrSvg(code);
+    expect(live).toMatch(/^<svg[^>]*xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    expect(await svc.qrSvg("ZZZZZZ")).not.toBe(live);
   });
 });
 

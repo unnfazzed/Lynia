@@ -11,6 +11,7 @@ import {
   type ShopShareService,
 } from "@lynia/shared";
 import { Prisma } from "@prisma/client";
+import QRCode from "qrcode";
 import { currentThumbKey } from "../adapters/storage/photo-thumbnail";
 import { STORAGE, type StorageAdapter } from "../adapters/storage/storage.interface";
 import { ENV } from "../config/config.module";
@@ -18,9 +19,15 @@ import type { Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
 import { CUSTOMER_VISIBLE_RESTAURANT, customerVisibleShop, shopServiceEnabled } from "./merchant-lookup.util";
 import { PHOTO_READ_URL_TTL_SECONDS } from "./merchant.service";
+import { renderShareCard } from "./share-card";
 
 /** The one answer for every code that doesn't open a shop (unknown, not live, paused, suspended): never say which (R6). */
 const GONE = "Shop not found";
+
+/** Read at most this much of a thumbnail (thumbs are ~400px JPEGs, far below it). */
+const CARD_PHOTO_MAX_BYTES = 2 * 1024 * 1024;
+/** What a dead or unknown code's QR opens: the site, which names no shop. */
+const SITE = "https://lyniago.com";
 
 const LIVE_FIELDS = { id: true, name: true, businessType: true, shopKind: true } as const;
 type LiveMerchant = Prisma.MerchantGetPayload<{ select: typeof LIVE_FIELDS }>;
@@ -76,6 +83,38 @@ export class ShareService {
     };
   }
 
+  /**
+   * `GET /share/:code/card.jpg` (public): the 1200×630 WhatsApp preview (SH-W7). A live shop gets its own card;
+   * anything else the generic one, which names no shop, so the image never says whether a code exists (R6).
+   */
+  async cardImage(rawCode: string): Promise<{ live: boolean; jpeg: Buffer }> {
+    const found = await this.liveByCode(rawCode).catch((err: unknown) => {
+      if (err instanceof NotFoundException) return null;
+      throw err;
+    });
+    if (!found) return { live: false, jpeg: await renderShareCard(null) };
+    const { merchant } = found;
+    const photos = await this.prisma.merchant.findUnique({
+      where: { id: merchant.id },
+      select: { logoUrl: true, logoThumbKey: true, coverPhotoUrl: true, coverThumbKey: true },
+    });
+    const [logo, cover] = await Promise.all([
+      this.readThumb(photos?.logoUrl, photos?.logoThumbKey),
+      this.readThumb(photos?.coverPhotoUrl, photos?.coverThumbKey),
+    ]);
+    return { live: true, jpeg: await renderShareCard({ name: merchant.name, service: serviceOf(merchant), logo, cover }) };
+  }
+
+  /** `GET /share/:code/qr.svg` (public): the desktop landing's QR (SH-W4) for the shop's link, or the site's (W4b). */
+  async qrSvg(rawCode: string): Promise<string> {
+    const found = await this.liveByCode(rawCode).catch((err: unknown) => {
+      if (err instanceof NotFoundException) return null;
+      throw err;
+    });
+    const target = found ? shopLink(found.merchant.name, found.code) : SITE;
+    return QRCode.toString(target, { type: "svg", errorCorrectionLevel: "M", margin: 0, color: { dark: "#14181BFF", light: "#FFFFFFFF" } });
+  }
+
   /** The business's code, minted on first ask (the referral-code loop: a P2002 is a collision or a concurrent mint). */
   async codeFor(merchantId: string): Promise<string> {
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -107,6 +146,13 @@ export class ShareService {
     if (shopServiceEnabled(this.env)) visible.push(customerVisibleShop(this.env));
     if (visible.length === 0) return Promise.resolve(null);
     return this.prisma.merchant.findFirst({ where: { ...where, OR: visible }, select: LIVE_FIELDS });
+  }
+
+  /** A photo's current thumbnail bytes, or null (no photo, no current thumb, a storage hiccup: the card uses the tint). */
+  private async readThumb(photoKey: string | null | undefined, thumbKey: string | null | undefined): Promise<Buffer | null> {
+    const key = currentThumbKey(photoKey, thumbKey);
+    if (!key) return null;
+    return this.storage.readHead(key, CARD_PHOTO_MAX_BYTES).catch(() => null);
   }
 
   /** The signed thumbnail of a photo, or null (no photo, no current thumb, or a signing hiccup: the card falls back). */
