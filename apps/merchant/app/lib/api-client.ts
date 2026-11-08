@@ -414,7 +414,7 @@ function clearSessionIfStill(session: MerchantSession): void {
  *  only surface once the next queue poll or 20s active probe (LC-C04) happened to catch it. Since
  *  every authenticated mutation routes through this one function, wiring it here closes the gap
  *  for the whole surface instead of at each call site. */
-export async function authedFetch<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function authedFetch<T>(path: string, opts: { method?: string; body?: unknown; as?: "json" | "text" } = {}): Promise<T> {
   // MJ-P2: a write may change what a shared read said (the business, its invites) — forget them before
   // it goes and again once it's done, so a read that raced it is never kept.
   const write = (opts.method ?? "GET") !== "GET";
@@ -427,7 +427,7 @@ export async function authedFetch<T>(path: string, opts: { method?: string; body
   }
 }
 
-async function authedRequest<T>(path: string, opts: { method?: string; body?: unknown }): Promise<T> {
+async function authedRequest<T>(path: string, opts: { method?: string; body?: unknown; as?: "json" | "text" }): Promise<T> {
   const session = loadMerchantSession();
   if (!session) throw new ApiError(401, "Not signed in.");
   const reachability = getReachabilityStore(API_BASE_URL);
@@ -496,5 +496,7 @@ async function authedRequest<T>(path: string, opts: { method?: string; body?: un
     err.fromServer = typeof (body as { message?: unknown } | null)?.message === "string" && !!(body as { message: string }).message;
     throw err;
   }
+  // The counter QR (D-129) is an SVG; every other read is JSON.
+  if (opts.as === "text") return (await res.text()) as T;
   return (await res.json()) as T;
 }

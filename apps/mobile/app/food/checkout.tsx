@@ -77,6 +77,7 @@ import {
 } from "../../src/ui/orderflow/review";
 import { LOCATION_OFF_MSG } from "../../src/permissions/location";
 import { releaseInstallTipHold } from "../../src/share/link-tip-hold";
+import { EVENTS, track } from "../../src/telemetry/events";
 import { clearShopArrival, shareCodeForOrder } from "../../src/share/pending-shop";
 
 /**
@@ -509,6 +510,7 @@ export default function FoodReviewScreen(): React.ReactElement {
       }
       void saveMyPickupPhone(phone.trim());
       void clearShopArrival();
+      if (shareCode) track(EVENTS.shopLinkOrdered, { service: service === "food" ? "restaurants" : service });
       releaseInstallTipHold();
       // P23: the order screen's snapshot too (its map's venue and drop pins), not only the food order.
       seedFoodOrder(queryClient, order, restaurant?.location ? { venue: restaurant.location, venueName: venue, drop, total: money.total } : undefined);

@@ -8,7 +8,9 @@ the public `GET /share/:code/card`, `GET /merchant/share-link`) and **lane B, th
 Play's referrer once per install, C1 skipped, the "Taking you to" chip on C2/C4/C5 and the permission asks, SH-A1/A4/A5/A7).
 Then **lane C, the rest**: SH-A2 ("Set where to deliver" in the store strip), `Order.shareCode` (migration 0121, kept only
 when it is the shop's own code), the iPhone install tip held until the first order from a link (DR12); A6/A8 reuse I3 and
-the S8 closed strip, A3 has no trigger (D-129). Next: lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
+the S8 closed strip, A3 has no trigger (D-129). And **lane D, the share buttons**: the store's Share disc (cover and compact
+bar, `GET /share/for/:merchantId`), the merchant's Share your shop row, sheet and counter QR (`GET /merchant/share-link/qr.svg`,
+`?src=qr`; Save to phone as an A6 PNG, Print), and the customer app's three PostHog events. SH-M5's branch picker is not built (D-129). `Order.shareCode` moves to lane C, where checkout first writes it.
 
 **Applies to:** restaurants, shops and pharmacies (every `Merchant` row, one link per branch), the merchant app, the
 customer app (Android, the customer web app, and the iPhone app once it is in the App Store) and lyniago.com.

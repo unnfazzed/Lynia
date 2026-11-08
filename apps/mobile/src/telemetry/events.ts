@@ -93,6 +93,12 @@ export function __resetEvents(): void {
 
 /** The funnel's event names, in one place so a dashboard and the code can't drift. */
 export const EVENTS = {
+  /** Shop share links (D-129): a customer shared a store from its Share disc. `service`, `channel` (system sheet). */
+  shopLinkShared: "shop_link_shared",
+  /** A shop link opened a store in the app: `service`, `cold` (signed out first). */
+  shopLinkOpened: "shop_link_opened",
+  /** An order went through with a shop link's code (`Order.shareCode`). */
+  shopLinkOrdered: "shop_link_ordered",
   /** A rider-side page the route can't name: `screen` = F1…F8 / R2 / R3 / board / become. */
   riderScreen: "rider_screen_shown",
   /** One ID-check launch: `lane` sheet | browser | none, `outcome` completed | cancelled | failed. */

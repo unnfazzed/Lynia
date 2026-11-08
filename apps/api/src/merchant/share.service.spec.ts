@@ -295,6 +295,24 @@ describe("ShareService.cardImage / qrSvg (public)", () => {
   });
 });
 
+describe("ShareService.counterQrSvg (SH-M4)", () => {
+  it("encodes the live business's link with ?src=qr; nothing while not live", async () => {
+    const QRCode = (await import("qrcode")).default;
+    const { svc, add, merchants } = setup();
+    add({ id: KITCHEN, name: "Chicken Inn Avondale" });
+    const code = await svc.codeFor(KITCHEN);
+    const expected = await QRCode.toString(`https://lyniago.com/s/chicken-inn-avondale-${code}?src=qr`, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 0,
+      color: { dark: "#14181BFF", light: "#FFFFFFFF" },
+    });
+    expect(await svc.counterQrSvg(KITCHEN)).toBe(expected);
+    merchants.get(KITCHEN)!.pilotEnabled = false;
+    expect(await svc.counterQrSvg(KITCHEN)).toBeNull();
+  });
+});
+
 describe("serviceOf", () => {
   it("maps business type and kind to the store section", () => {
     expect(serviceOf({ businessType: "restaurant", shopKind: null })).toBe("restaurants");

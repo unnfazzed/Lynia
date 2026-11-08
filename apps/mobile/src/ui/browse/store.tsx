@@ -32,6 +32,8 @@ export function StoreCover({
   onBack,
   onSearch,
   searchLabel,
+  onShare,
+  shareLabel,
 }: {
   service: BrowseService;
   photoUrl: string | null;
@@ -39,6 +41,9 @@ export function StoreCover({
   onBack: () => void;
   onSearch: () => void;
   searchLabel: string;
+  /** SH-C (D-129): the third disc, `share-2`, after Search (gap 8). */
+  onShare?: () => void;
+  shareLabel?: string;
 }): React.ReactElement {
   const insets = useSafeAreaInsets();
   const [failed, markFailed] = usePhotoFailed(photoUrl);
@@ -59,7 +64,10 @@ export function StoreCover({
         )}
         <View style={{ position: "absolute", top: 8, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between" }}>
           <IconButton icon="chevron-left" size={22} label="Back" bg={tokens.color.bg} onPress={onBack} />
-          <IconButton icon="search" label={searchLabel} bg={tokens.color.bg} onPress={onSearch} />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <IconButton icon="search" label={searchLabel} bg={tokens.color.bg} onPress={onSearch} />
+            {onShare ? <IconButton icon="share-2" label={shareLabel ?? "Share"} bg={tokens.color.bg} onPress={onShare} /> : null}
+          </View>
         </View>
       </View>
     </View>

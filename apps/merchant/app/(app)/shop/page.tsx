@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MerchantProfileResponse } from "@lynia/shared";
+import type { MerchantProfileResponse, MerchantShareLinkResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { Icon } from "../../components/icons";
@@ -10,12 +10,14 @@ import { AppBar } from "../../components/m/AppBar";
 import { useToast } from "../../components/m/Toast";
 import { PhotoCropSheet } from "../../components/menu/PhotoCropSheet";
 import { useBackGuard, useKeyboardOpen } from "../../components/shop/hooks";
+import { ShareRow, ShopShareSheet, type SharePreview } from "../../components/share/ShopShare";
 import { ShopFrontCard, type CardPhoto } from "../../components/shop/ShopFrontCard";
 import { useShopPhoto, type ShopPhotoKind, type ShopPhotoState } from "../../components/shop/useShopPhoto";
 import { redirectIfSessionExpired, serverMessage } from "../../lib/api-client";
 import { refreshBranches } from "../../lib/branches";
 import { primeBusiness } from "../../lib/business";
 import { getMerchantProfile, updateProfile } from "../../lib/menu-api";
+import { getShareLink } from "../../lib/share-api";
 import {
   addTag,
   canSave,
@@ -133,6 +135,32 @@ function Editor({
   const dirty = isDirty(form, saved, banner, logo);
   const nameEmpty = form.name.trim().length === 0;
   const enabled = canSave(form, dirty, saving, photoBusy) && !actionsDisabled;
+
+  // SH-M1 (D-129): the Share your shop row, only while the shop is live (DR6). The link is this branch's own.
+  const [shareLink, setShareLink] = useState<(MerchantShareLinkResponse & { link: string }) | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  useEffect(() => {
+    if (notLive) {
+      setShareLink(null);
+      return;
+    }
+    let live = true;
+    getShareLink().then(
+      (r) => {
+        if (live && r.live && r.link) setShareLink({ ...r, link: r.link });
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [notLive]);
+  const sharePreview: SharePreview = {
+    name: profile.name,
+    coverUrl: profile.coverPhotoUrl,
+    logoUrl: profile.logoUrl,
+    service: profile.businessType !== "shop" ? "restaurants" : profile.shopKind === "pharmacy" ? "pharmacy" : "shops",
+  };
   const { release } = useBackGuard(dirty && !saving, () => setLeaveAsked(true));
 
   useEffect(
@@ -249,7 +277,10 @@ function Editor({
             <span className="m-sf-strip-body">{SF.introNotLive}</span>
           </div>
         ) : (
-          <p className="m-sf-intro">{SF.intro}</p>
+          <>
+            <p className="m-sf-intro">{SF.intro}</p>
+            {shareLink ? <ShareRow onOpen={() => setShareOpen(true)} /> : null}
+          </>
         )}
 
         <div className="m-sf-grp">
@@ -481,6 +512,9 @@ function Editor({
       <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
       <input ref={galleryInput} type="file" accept="image/*" hidden onChange={onFile} />
 
+      {shareOpen && shareLink ? (
+        <ShopShareSheet link={shareLink} preview={sharePreview} onClose={() => setShareOpen(false)} onToast={(m) => toast(m, { tone: "saved" })} />
+      ) : null}
       {photoSheet && (
         <Sheet onDismiss={() => setPhotoSheet(null)} labelledBy="sf-photo-t">
           <div className="m-sf-sheet-t" id="sf-photo-t">

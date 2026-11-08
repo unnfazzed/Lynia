@@ -40,6 +40,8 @@ import {
   type StoreItem,
 } from "../../src/ui/browse/store";
 import { useStoreAddress } from "../../src/ui/browse/useStoreAddress";
+import { useShareStore } from "../../src/share/use-share-store";
+import { fill, SH } from "../../src/ui/share/copy";
 
 /**
  * Restaurant storefront — Browse v2 S1–S13 + I1–I3 (`packages/design/handoff/browse-v2`, ledger
@@ -120,6 +122,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   }, [toast]);
 
   const name = menu?.restaurant.name ?? "";
+  // SH-C (D-129): the store's Share disc.
+  const share = useShareStore(id, name, "restaurants");
   const reminder = useReopenReminder(
     id,
     (res) => {
@@ -414,7 +418,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={32} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: hasCart ? 96 + insets.bottom : 24 }}>
-        <StoreCover service="food" photoUrl={v.photoUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} />
+        <StoreCover service="food" photoUrl={v.photoUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} onShare={share} shareLabel={fill(SH.customer.shareA11y, { shop: name })} />
         <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={null} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service="food" /> : null}
@@ -440,7 +444,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
       </ScrollView>
       {collapsed ? (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-          <CompactBar title={name} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} />
+          <CompactBar title={name} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} onShare={share} shareLabel={fill(SH.customer.shareA11y, { shop: name })} />
           <StoreTabs names={tabNames} active={active} onPick={jump} />
         </View>
       ) : null}
