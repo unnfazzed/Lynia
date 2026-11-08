@@ -27,8 +27,8 @@ it("SH-C4: opens the share menu with the handoff's text and the full link, and c
   });
   await act(async () => share());
   expect(spy).toHaveBeenCalledWith({
-    message: "Avondale Fresh is on LyniaGo: https://lyniago.com/s/avondale-fresh-7KQ2MX",
-    title: "Avondale Fresh on LyniaGo",
+    message: "See what’s on, order in a tap. From Avondale Fresh to your door: https://lyniago.com/s/avondale-fresh-7KQ2MX",
+    title: "From Avondale Fresh to your door",
   });
   expect(mockTrack).toHaveBeenCalledWith("shop_link_shared", { service: "shops", channel: "system" });
 });

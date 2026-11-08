@@ -6251,3 +6251,7 @@ DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its READ
 - **PostHog:** `shop_link_shared` (customer Share disc), `shop_link_opened` and `shop_link_ordered` fire in the customer
   app. The merchant app has no PostHog, so merchant shares (WhatsApp, copy, QR) are not counted; counter scans show up
   as orders whose link carried `?src=qr` once the website passes it on.
+
+## D-130 · Shop share copy: "From {shop} to your door" — APPROVED (owner, 2026-11-08)
+
+Owner instruction (2026-11-08): every shop-share string drops "{shop} on LyniaGo" / "{shop} is on LyniaGo" / "Delivered by bike in Harare". The landing line, link-preview description, share text and WhatsApp text read **"See what’s on, order in a tap. From {shop} to your door."** (the share texts end ": {link}"); the page title, link-preview title and email subject read **"From {shop} to your door"**. Applied in `apps/website/shop.js`, `apps/merchant/app/lib/shop-share-copy.ts` and `apps/mobile/src/ui/share/copy.ts`; the handoff (`packages/design/handoff/shop-share-v1/copy.ts`) is unchanged and still the record of the drawn copy.
