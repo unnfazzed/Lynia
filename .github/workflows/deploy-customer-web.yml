@@ -111,6 +111,12 @@ jobs:
           # Empty until the iPhone app is on the App Store; set the Variable to switch the Add to Home Screen
           # tip to its "Delivered" sheet (docs/CUSTOMER-WEB.md § Add to Home Screen tip, ledger D-108).
           EXPO_PUBLIC_APP_STORE_URL: ${{ vars.APP_STORE_URL }}
+          # Telemetry (owner 2026-11-08, free plans): Sentry errors only (no tracing) and PostHog. Public, write-only
+          # ingest keys, set as repository variables; unset = off.
+          EXPO_PUBLIC_SENTRY_DSN: ${{ vars.CUSTOMER_WEB_SENTRY_DSN }}
+          EXPO_PUBLIC_SENTRY_ENVIRONMENT: web
+          EXPO_PUBLIC_POSTHOG_API_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          EXPO_PUBLIC_POSTHOG_HOST: https://eu.i.posthog.com
         run: pnpm exec expo export --platform web --output-dir ../customer-web/dist
 
       - name: Finish the build (Home Screen manifest, icons, headers)

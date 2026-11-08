@@ -94,7 +94,10 @@ jobs:
           S_API_BASE_URL: ${{ vars.STAGING_ADMIN_API_BASE_URL }}
           P_ALLOWED_OPERATORS: ${{ vars.ADMIN_CONSOLE_ALLOWED_OPERATORS }}
           S_ALLOWED_OPERATORS: ${{ vars.STAGING_ADMIN_CONSOLE_ALLOWED_OPERATORS }}
-          OPTIONAL: API_BASE_URL ALLOWED_OPERATORS
+          # Sentry for the console's browser errors (owner 2026-11-08): a public ingest key; unset = off.
+          P_SENTRY_DSN: ${{ vars.ADMIN_SENTRY_DSN }}
+          S_SENTRY_DSN: ${{ vars.STAGING_ADMIN_SENTRY_DSN }}
+          OPTIONAL: API_BASE_URL ALLOWED_OPERATORS SENTRY_DSN
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
@@ -104,7 +107,7 @@ jobs:
           if [ "$TIER" = "production" ] && [ "$REF" != "refs/heads/main" ]; then
             echo "::error::Production deploys run from main only (got ${REF})."; exit 1
           fi
-          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG ACR REGISTRY APP API_BASE_URL ALLOWED_OPERATORS
+          bash scripts/azure-target.sh "$TIER" CLIENT_ID RG ACR REGISTRY APP API_BASE_URL ALLOWED_OPERATORS SENTRY_DSN
 
       - name: Azure login (OIDC)
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
@@ -175,6 +178,7 @@ jobs:
           )
           UNSET=(ADMIN_CONSOLE_IAP_AUDIENCE)
           [ -z "${API_BASE_URL:-}" ] || SET+=("API_BASE_URL=$API_BASE_URL")
+          if [ -n "${SENTRY_DSN:-}" ]; then SET+=("ADMIN_SENTRY_DSN=$SENTRY_DSN"); else UNSET+=(ADMIN_SENTRY_DSN); fi
           # ADM-11 (header): the allowlist is applied only behind a confirmed Easy Auth. Otherwise it is
           # removed, and the console answers 403 to any principal header and 401 without one.
           ALLOWLIST=none

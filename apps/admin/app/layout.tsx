@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { AlertStrip } from "./components/AlertStrip";
+import { SentryInit } from "./components/SentryInit";
 import { SearchBox } from "./components/SearchBox";
 import { Sidebar } from "./components/Sidebar";
 import { adminFetch } from "./lib/api";
@@ -38,6 +39,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
+        {/* Error reporting, errors only (components/SentryInit.tsx); off without ADMIN_SENTRY_DSN. */}
+        <SentryInit dsn={process.env.ADMIN_SENTRY_DSN || null} />
         {/* Skip link — first focusable element; lets a keyboard/SR user jump past the nav to the content. */}
         <a href="#main-content" className="skip-link">
           Skip to main content
