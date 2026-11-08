@@ -11,7 +11,8 @@ import { requestPushRegistration } from "../src/push/push-kick";
 import { EVENTS, track } from "../src/telemetry/events";
 import { Body, FirstRunScreen, HeroDisc, HeroPanel, PinnedFooter, SampleNotification, SplitTitle } from "../src/ui";
 import { PC } from "../src/ui/firstrun/copy";
-import { TakingYouToChip, usePendingShop } from "../src/ui/share/TakingYouToChip";
+import { usePendingShop } from "../src/share/use-pending-shop";
+import { TakingYouToChip } from "../src/ui/share/TakingYouToChip";
 
 /** PC8's second sample, 6 digits shown 3+3 like every real code (D-59; the same exception as app/order-updates.tsx, D-82 §4). */
 const EX2_BODY = PC.ex2B.replace("4821", "482 193");

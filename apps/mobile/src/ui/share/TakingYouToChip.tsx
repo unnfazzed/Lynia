@@ -1,44 +1,12 @@
 import type { ShopShareCardResponse } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Text, View } from "react-native";
-import { getShopCard } from "../../api/share";
-import { loadPendingShop } from "../../share/pending-shop";
+import type { PendingShopView } from "../../share/use-pending-shop";
 import { initial, kindTint } from "../browse/kit";
 import { Icon } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
 import { fill, SH } from "./copy";
-
-/** What the chip needs: the pending code, and the shop's public card once it answers (null = no name to show). */
-export interface PendingShopView {
-  code: string;
-  card: ShopShareCardResponse | null;
-}
-
-/**
- * The shop a share link is taking this signed-out person to, for the sign-in screens. `undefined` while reading,
- * `null` with no link pending. A card that can't be read (offline, a shop that went quiet) leaves `card` null and
- * the chip says "the shop" (SH-S5).
- */
-export function usePendingShop(): PendingShopView | null | undefined {
-  const [view, setView] = useState<PendingShopView | null | undefined>(undefined);
-  useEffect(() => {
-    let live = true;
-    void loadPendingShop().then((p) => {
-      if (!live) return;
-      if (!p) return setView(null);
-      setView({ code: p.code, card: null });
-      getShopCard(p.code).then(
-        (card) => live && setView({ code: p.code, card }),
-        () => undefined,
-      );
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return view;
-}
 
 /** No-photo logo tint, as Browse v2 draws it: the kind's tint for shops and pharmacies, the warm tint for kitchens. */
 function tintOf(card: ShopShareCardResponse): { bg: string; ink: string } {

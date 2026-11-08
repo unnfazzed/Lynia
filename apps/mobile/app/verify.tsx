@@ -18,7 +18,8 @@ import { useReachability } from "../src/net/use-reachability";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
 import { BackButton, Cta, H2, OnbScreen, Pad } from "../src/ui/onboarding/kit";
-import { TakingYouToChip, usePendingShop } from "../src/ui/share/TakingYouToChip";
+import { usePendingShop } from "../src/share/use-pending-shop";
+import { TakingYouToChip } from "../src/ui/share/TakingYouToChip";
 
 /**
  * Test seam: the parity lane stages the code screen's states by mounting it directly (expo-router passes

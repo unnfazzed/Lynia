@@ -15,7 +15,8 @@ import { DismissKeyboardArea, useActionError } from "../src/ui";
 import { OB, RO } from "../src/ui/onboarding/copy";
 import { CountrySegment, CountrySheet } from "../src/ui/onboarding/CountrySheet";
 import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/onboarding/kit";
-import { TakingYouToChip, usePendingShop } from "../src/ui/share/TakingYouToChip";
+import { usePendingShop } from "../src/share/use-pending-shop";
+import { TakingYouToChip } from "../src/ui/share/TakingYouToChip";
 
 /**
  * C2 / C3 · Phone (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger

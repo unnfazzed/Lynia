@@ -14,7 +14,8 @@ import { afterSignIn } from "../../src/logic/signup-permissions";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { OB } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, Note, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
-import { TakingYouToChip, usePendingShop } from "../../src/ui/share/TakingYouToChip";
+import { usePendingShop } from "../../src/share/use-pending-shop";
+import { TakingYouToChip } from "../../src/ui/share/TakingYouToChip";
 
 /** How long typing must pause before the draft is written to the keystore (not on every keystroke). */
 const DRAFT_SAVE_DEBOUNCE_MS = 500;
