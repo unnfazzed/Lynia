@@ -62,64 +62,31 @@
 #
 # Re-review on expiry: check whether upstream has shipped a fix (`npm view image-size versions`), and
 # whether Metro has moved off the 1.x line. Renew only if both are still true.
+#
+# RENEWED 2026-11-08 to 2026-12-08 (owner-approved, PR for the expired exceptions). The premise "no fixed
+# version exists" is no longer true: image-size 2.0.3+ is fixed. A bump still can't clear it, because the
+# 2.x export breaks metro@0.81.5's `require("image-size")(content)` call (Expo SDK 54 pins that Metro),
+# and the reachability argument above is unchanged. Next expiry: drop this the day the app's Metro
+# accepts image-size >= 2.0.3, or renew again only with the owner's approval.
 [[IgnoredVulns]]
 id = "GHSA-5p2g-fcmc-qvqq"
-ignoreUntil = 2026-11-08
-reason = "JXL/HEIF infinite-loop DoS in image-size. No fixed version exists in any major (OSV last_affected 2.0.2 = current npm latest). Build-time only: sole importer is metro@0.81.5, which parses the repo's own committed assets — never attacker-supplied input — and is not shipped in the mobile bundle or used by apps/api. Availability-only impact, bounded to a local/CI bundler process."
+ignoreUntil = 2026-12-08
+reason = "JXL/HEIF infinite-loop DoS in image-size. Fixed only in image-size 2.0.3+, whose 2.x export breaks metro@0.81.5's callable require (Expo SDK 54). Build-time only: sole importer is metro@0.81.5, which parses the repo's own committed assets — never attacker-supplied input — and is not shipped in the mobile bundle or used by apps/api. Availability-only impact, bounded to a local/CI bundler process."
 
 [[IgnoredVulns]]
 id = "GHSA-w3rx-r6r6-pgpr"
-ignoreUntil = 2026-11-08
-reason = "ICNS infinite-loop DoS in image-size. Same package, same single build-time importer (metro@0.81.5), same absence of any fixed version upstream (OSV last_affected 2.0.2 = current npm latest). Not reachable from a production surface: no untrusted image ever reaches this parser."
+ignoreUntil = 2026-12-08
+reason = "ICNS infinite-loop DoS in image-size. Same package, same single build-time importer (metro@0.81.5), same block: the only fixed line (2.0.3+) breaks metro@0.81.5's callable require. Not reachable from a production surface: no untrusted image ever reaches this parser."
 
 # node-forge GHSA-86w9-cpqp-85rv: exception removed 2026-11-04 (PR #1313); node-forge 1.4.3 (pnpm override
 # `node-forge@<1.4.1`) is no longer affected per OSV.
 
 
-# ── @azure/msal-node (2026-10-24) ──────────────────────────────────────────────────────────────
-# GHSA-xcx6-jx8p-x3h5 (CVSS 7.5, confidentiality): in MSAL Node's AUTHORIZATION-CODE flow,
-# `acquireTokenByCode` can send request parameters to an attacker-controlled endpoint. Fixed in 7.1.0.
-# Owner asked for the dependency upgrade on PR #1296 (2026-10-24); this one entry is the part a bump
-# can't do yet, flagged on that PR for the owner's review.
-#
-# Accepted, time-boxed, because THERE IS NO COMPATIBLE FIX: the only importer is @azure/identity, and
-# its latest (4.14.0) still declares `@azure/msal-node: ^6.0.0`. Forcing 7.x with an override would put
-# a major the SDK wasn't built against under the API's only Azure auth path (blob storage SAS signing).
-#
-# REACHABILITY: apps/api uses MSAL only through `new DefaultAzureCredential(...)` with a user-assigned
-# managed identity (apps/api/src/adapters/storage/azure-blob.storage.ts). That is the managed-identity /
-# client-credential path; nothing in the repo calls `acquireTokenByCode` or any auth-code flow, so the
-# vulnerable code path is never run.
-#
-# Re-check on or before ignoreUntil: drop this entry the day @azure/identity accepts msal-node >= 7.1.0
-# (then a plain `pnpm install` or an override clears it).
-[[IgnoredVulns]]
-id = "GHSA-xcx6-jx8p-x3h5"
-ignoreUntil = 2026-11-07
-reason = "MSAL Node auth-code flow parameter disclosure. Fixed only in msal-node 7.1.0, but its sole importer @azure/identity (latest 4.14.0) still requires ^6.0.0. apps/api uses MSAL only via DefaultAzureCredential with a managed identity; no code calls acquireTokenByCode or any auth-code flow, so the vulnerable path is unreachable."
+# @azure/msal-node GHSA-xcx6-jx8p-x3h5: exception removed 2026-11-08; @azure/identity 4.14.1 depends on
+# @azure/msal-node ^7.1.0, so apps/api now resolves msal-node 7.2.1 (fixed).
 
-# ── braces (2026-10-03) ──────────────────────────────────────────────────────────────────────────
-# GHSA-vfj7-8cjw-p6xm (CVE-2026-93687, CVSS 8.7, availability only): the recursive AST walkers in
-# braces <= 3.0.3 have no depth guard, so a deeply nested brace pattern exhausts the stack and throws
-# an uncaught RangeError. GitHub reviewed it at 2026-10-02T22:36Z, turning the gate red on every PR.
-# Owner approved this time-boxed acceptance on 2026-10-03 (PR #1050).
-#
-# Accepted, time-boxed, because THERE IS NO FIXED VERSION: OSV records `last_affected: 3.0.3`, and
-# 3.0.3 is npm's `latest`. A bump cannot clear it.
-#
-# REACHABILITY — why this is acceptable rather than merely unavoidable:
-#   • Build/test tooling only. The importers are `micromatch` (jest, metro, @expo/cli) and `chokidar`
-#     (ts-node-dev). `pnpm why braces --prod` in apps/api is empty, and nothing in the device bundle
-#     expands globs.
-#   • No untrusted patterns. Every glob these tools expand comes from the repo's own config (jest
-#     testMatch, metro watchFolders, tsconfig), never from a request or a user.
-#
-# Re-check on or before ignoreUntil: drop this entry the day a fixed braces ships (add a
-# `pnpm.overrides` bump if micromatch has not moved to it yet).
-[[IgnoredVulns]]
-id = "GHSA-vfj7-8cjw-p6xm"
-ignoreUntil = 2026-11-03
-reason = "braces stack-exhaustion DoS via deeply nested patterns. No fixed version exists (OSV last_affected 3.0.3 = npm latest). Build/test tooling only: importers are micromatch (jest, metro, @expo/cli) and chokidar (ts-node-dev); not in apps/api's production tree or the mobile bundle, and every pattern comes from repo config, never attacker input."
+# braces GHSA-vfj7-8cjw-p6xm: exception removed 2026-11-08; GitHub withdrew the advisory ("not a
+# practically exploitable vulnerability"), so osv-scanner no longer reports braces 3.0.3.
 
 # ── decode-uri-component (2026-11-04) ────────────────────────────────────────────────────────────────
 # GHSA-qr28-fpjm-wq7f (CVSS 8.2, availability only): decodeUriComponent() takes quadratic time on
