@@ -176,7 +176,7 @@ test("the canonical link renders the shop's landing with its preview tags", asyn
     const html = await res.text();
     assert.match(html, /<title>Chicken Inn Avondale on LyniaGo<\/title>/);
     assert.match(html, /<meta property="og:image" content="https:\/\/lyniago.com\/s\/7KQ2MX\/card.jpg">/);
-    assert.match(html, /og:description" content="Order from Chicken Inn Avondale on LyniaGo. Delivered by bike in Harare."/);
+    assert.match(html, /og:description" content="Order from Chicken Inn Avondale on LyniaGo. We deliver to your door."/);
     assert.match(html, /og:url" content="https:\/\/lyniago.com\/s\/chicken-inn-avondale-7KQ2MX"/);
     assert.equal(calls[0], "https://api.test/share/7KQ2MX/card");
   });

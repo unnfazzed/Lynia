@@ -6251,3 +6251,11 @@ DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its READ
 - **PostHog:** `shop_link_shared` (customer Share disc), `shop_link_opened` and `shop_link_ordered` fire in the customer
   app. The merchant app has no PostHog, so merchant shares (WhatsApp, copy, QR) are not counted; counter scans show up
   as orders whose link carried `?src=qr` once the website passes it on.
+
+## D-130 · Shop share landing line — APPROVED (owner, 2026-11-08)
+
+Owner instruction (2026-11-08): the `/s/` landing card and its link preview drop "Order on LyniaGo. Delivered by bike
+in Harare." `SH.web.line` reads **"View our offerings and place your order. We deliver to your door."** and `SH.og.desc`
+reads **"Order from {shop} on LyniaGo. We deliver to your door."** Applied in `apps/website/shop.js`,
+`apps/merchant/app/lib/shop-share-copy.ts` and `apps/mobile/src/ui/share/copy.ts`; the handoff
+(`packages/design/handoff/shop-share-v1/copy.ts`) is unchanged and still the record of the drawn copy.

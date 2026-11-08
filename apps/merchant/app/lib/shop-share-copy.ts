@@ -39,7 +39,7 @@ export const SH = {
   },
   web:{
     pageTitle:'{shop} on LyniaGo',
-    line:'Order on LyniaGo. Delivered by bike in Harare.',
+    line:'View our offerings and place your order. We deliver to your door.',
     openApp:'Open in LyniaGo',
     opening:'Opening LyniaGo…',
     stalled:'Didn’t open? Tap Open in LyniaGo.',
@@ -59,7 +59,7 @@ export const SH = {
   },
   og:{
     title:'{shop} on LyniaGo',
-    desc:'Order from {shop} on LyniaGo. Delivered by bike in Harare.',
+    desc:'Order from {shop} on LyniaGo. We deliver to your door.',
     genericTitle:'LyniaGo',
     genericDesc:'Food, shops and pharmacy, delivered by bike',
     imgAlt:'{shop} on LyniaGo',
