@@ -105,6 +105,17 @@ export class ShareService {
     return { live: true, jpeg: await renderShareCard({ name: merchant.name, service: serviceOf(merchant), logo, cover }) };
   }
 
+  /**
+   * `GET /merchant/share-link/qr.svg` (SH-M4): the counter QR for the merchant's own link. It encodes the link with
+   * `?src=qr` (README §4, so attribution can tell a counter scan from a share; the website ignores it for routing).
+   * Null while the business isn't live.
+   */
+  async counterQrSvg(merchantId: string): Promise<string | null> {
+    const { link } = await this.linkFor(merchantId);
+    if (!link) return null;
+    return QRCode.toString(`${link}?src=qr`, { type: "svg", errorCorrectionLevel: "M", margin: 0, color: { dark: "#14181BFF", light: "#FFFFFFFF" } });
+  }
+
   /** `GET /share/:code/qr.svg` (public): the desktop landing's QR (SH-W4) for the shop's link, or the site's (W4b). */
   async qrSvg(rawCode: string): Promise<string> {
     const found = await this.liveByCode(rawCode).catch((err: unknown) => {

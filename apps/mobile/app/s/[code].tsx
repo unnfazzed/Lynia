@@ -12,6 +12,7 @@ import { loadRolePreference } from "../../src/auth/device-state";
 import { replaceClearingStack } from "../../src/logic/nav";
 import { switchToCustomer } from "../../src/logic/switch-to-customer";
 import { riderModeAvailable } from "../../src/rider-mode";
+import { EVENTS, track } from "../../src/telemetry/events";
 import { holdInstallTipForLink } from "../../src/share/link-tip-hold";
 import { clearPendingShop, saveShopArrival, savePendingShop } from "../../src/share/pending-shop";
 import { EmptyState } from "../../src/ui";
@@ -85,6 +86,7 @@ export default function ShopLinkScreen(): React.ReactElement {
       await clearPendingShop();
       // Order.shareCode (D-129): an order at this shop in the next day counts as coming from the link.
       await saveShopArrival(res.merchantId, code);
+      track(EVENTS.shopLinkOpened, { service: res.service });
       const store = { pathname: STORE_ROUTE[res.service], params: { id: res.merchantId } } as const;
       // Back from a cold start goes to Home; from a warm start, to where the person was (README §2).
       if (router.canGoBack()) router.replace(store);

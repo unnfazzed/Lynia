@@ -6239,3 +6239,15 @@ DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its READ
 - **SH-A6 and SH-A8 reuse the shipped states:** the first + on a store with a cart elsewhere opens Browse v2 I3
   (`NewCartSheet`, naming both shops), and a closed shop shows the S8 closed strip with Schedule (Order flow v2 R5c).
   A link changes nothing about either.
+
+**Share buttons, as built (lane D, 2026-11-08)**
+- **SH-M5 (branch picker in the share sheet) is not built.** The sheet shares the branch the merchant app is working
+  on (each branch has its own link, `GET /merchant/share-link`); an owner switches branch the way they already do. The
+  picker needs a per-branch link read the API doesn't have yet.
+- **SH-M4's "raise screen brightness" is not possible** in the merchant web app (no browser API). The QR is drawn at
+  280 as specified.
+- **Save to phone** downloads the SH-M4p card as a PNG (A6, 1240×1748, the QR at 75 mm); a browser can't write to the
+  photo gallery directly. Print uses the browser's print dialog on an A6 page.
+- **PostHog:** `shop_link_shared` (customer Share disc), `shop_link_opened` and `shop_link_ordered` fire in the customer
+  app. The merchant app has no PostHog, so merchant shares (WhatsApp, copy, QR) are not counted; counter scans show up
+  as orders whose link carried `?src=qr` once the website passes it on.

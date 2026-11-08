@@ -282,7 +282,22 @@ export function ListHeader({
 }
 
 /** README §4 "Collapsed list bar": white, 56 high, hairline bottom — back · title · search. */
-export function CompactBar({ title, onBack, onSearch, searchLabel }: { title: string; onBack: () => void; onSearch?: () => void; searchLabel?: string }): React.ReactElement {
+export function CompactBar({
+  title,
+  onBack,
+  onSearch,
+  searchLabel,
+  onShare,
+  shareLabel,
+}: {
+  title: string;
+  onBack: () => void;
+  onSearch?: () => void;
+  searchLabel?: string;
+  /** SH-C2 (D-129): Share 44 after Search. */
+  onShare?: () => void;
+  shareLabel?: string;
+}): React.ReactElement {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
@@ -292,6 +307,7 @@ export function CompactBar({ title, onBack, onSearch, searchLabel }: { title: st
           {title}
         </Text>
         {onSearch ? <IconButton icon="search" label={searchLabel ?? "Search"} onPress={onSearch} /> : null}
+        {onShare ? <IconButton icon="share-2" label={shareLabel ?? "Share"} onPress={onShare} /> : null}
       </View>
     </View>
   );

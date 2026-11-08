@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Res, UseGuards } from "@nestjs/common";
+import { Controller, Get, Header, NotFoundException, Param, ParseUUIDPipe, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Throttle } from "../common/throttle.guard";
@@ -54,6 +54,17 @@ export class ShareController {
     return this.share.qrSvg(code);
   }
 
+  /**
+   * SH-C (lane D): the Share disc on a store. `GET /share/for/:merchantId` (signed in) → that business's link,
+   * minted on first ask; `{ live: false }` when it isn't live (the disc then shares nothing).
+   */
+  @Get("for/:merchantId")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ limit: 60, windowSec: 300, keyPrefix: "share-for" })
+  forMerchant(@Param("merchantId", new ParseUUIDPipe()) merchantId: string) {
+    return this.share.linkFor(merchantId);
+  }
+
   @Get(":code/card")
   @Throttle({ limit: 120, windowSec: 300, keyPrefix: "share-card" })
   card(@Param("code") code: string) {
@@ -71,5 +82,16 @@ export class MerchantShareController {
   @Get()
   mine(@CurrentMerchantAccess() access: MerchantAccess) {
     return this.share.linkFor(access.merchantId);
+  }
+
+  /** SH-M4: the counter QR (encodes the link with `?src=qr`). 404 while the business isn't live. */
+  @Get("qr.svg")
+  @Header("content-type", "image/svg+xml")
+  @Header("cache-control", "private, max-age=3600")
+  @Header("content-security-policy", "default-src 'none'")
+  async qr(@CurrentMerchantAccess() access: MerchantAccess) {
+    const svg = await this.share.counterQrSvg(access.merchantId);
+    if (!svg) throw new NotFoundException("Your shop isn't live yet");
+    return svg;
   }
 }

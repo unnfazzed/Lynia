@@ -58,9 +58,20 @@ export type IconName =
   | "user-plus"
   | "send"
   | "message-circle"
-  | "pause";
+  | "pause"
+  | "share-2"
+  | "copy"
+  | "qr-code"
+  | "download"
+  | "printer";
 
 const PATHS: Record<IconName, string[]> = {
+  // Shop share links v1 (D-129): Share your shop row, Copy link, Show QR, Save to phone, Print (lucide paths).
+  "share-2": ["M21 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0", "M9 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0", "M21 19a3 3 0 1 1-6 0 3 3 0 0 1 6 0", "m8.59 13.51 6.83 3.98", "m15.41 6.51-6.82 3.98"],
+  copy: ["M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"],
+  "qr-code": ["M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z", "M15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z", "M4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z", "M21 16h-3a2 2 0 0 0-2 2v3", "M21 21v.01", "M12 7v3a2 2 0 0 1-2 2H7", "M3 12h.01", "M12 3h.01", "M12 16v.01", "M16 12h1", "M21 12v.01", "M12 21v-1"],
+  download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
+  printer: ["M6 9V2h12v7", "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2", "M6 14h12v8H6z"],
   // Own bikers v1 (D-117): Invite a biker, Get invite link / Share again, Share on WhatsApp.
   "user-plus": ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", "M19 8v6", "M22 11h-6"],
   send: ["m22 2-7 20-4-9-9-4Z", "M22 2 11 13"],
