@@ -89,6 +89,10 @@ jobs:
           NEXT_PUBLIC_API_BASE_URL: ${{ vars.MERCHANT_API_BASE_URL || 'https://api.lyniago.com' }}
           NEXT_PUBLIC_SUPPORT_WHATSAPP: ${{ vars.MERCHANT_SUPPORT_WHATSAPP }}
           NEXT_PUBLIC_GOOGLE_PLACES_KEY: ${{ vars.MERCHANT_GOOGLE_PLACES_KEY }}
+          # Telemetry (owner 2026-11-08, free plans; app/lib/telemetry.ts): public write-only keys, unset = off.
+          NEXT_PUBLIC_SENTRY_DSN: ${{ vars.MERCHANT_SENTRY_DSN }}
+          NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          NEXT_PUBLIC_RELEASE: merchant@${{ github.sha }}
         run: |
           set -euo pipefail
           pnpm --filter @lynia/shared build

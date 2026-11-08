@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@lynia/shared": "workspace:*",
+    "@sentry/browser": "10.12.0",
     "next": "^16.4.3",
+    "posthog-js": "1.260.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "socket.io-client": "^4.8.4"

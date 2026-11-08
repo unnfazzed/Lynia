@@ -4,6 +4,7 @@ import "./globals.css";
 import "./mobile.css";
 import { AccessGate } from "./components/AccessGate";
 import { ToastProvider } from "./components/m/Toast";
+import { Telemetry } from "./components/Telemetry";
 
 export const metadata: Metadata = {
   title: "LyniaGo Merchant",
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+        <Telemetry />
         <ToastProvider>
           <AccessGate>
             <Suspense fallback={null}>{children}</Suspense>
