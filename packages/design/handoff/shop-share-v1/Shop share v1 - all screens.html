@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Shop share v1 · all screens</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="fonts.css">
+<style>
+body{margin:0;background:#EEF0F2;font-family:Inter,system-ui,sans-serif;color:#14181b}
+a{color:#006630}a:hover{color:#063b22}
+header.top{position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid #e2e6ea;padding:14px 32px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+header.top h1{font:700 18px Inter;margin:0;letter-spacing:-.3px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chips a{height:36px;padding:0 14px;border-radius:999px;background:#f6f7f8;display:flex;align-items:center;font:600 13px Inter;text-decoration:none;color:#14181b}.chips a.on{background:#14181b;color:#fff}
+section.grp{padding:28px 32px 40px}section.grp>h2{font:700 22px Inter;letter-spacing:-.4px;margin:0 0 4px}section.grp>p{margin:0 0 20px;color:#5b6670;font-size:14px;max-width:820px}
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.pair{display:flex;gap:16px;align-items:flex-start;padding:14px;background:#e6e9ec;border-radius:20px}
+body.one{background:#fff}body.one header.top,body.one .flabel{display:none}body.one section.grp{padding:0}body.one .ph{border-radius:0;box-shadow:none}body.one .pair{padding:0;background:none}
+.legend{height:36px;padding:0 14px;border-radius:999px;border:1px solid #e2e6ea;background:#fff;font:600 13px Inter;color:#14181b;display:flex;gap:8px;align-items:center;cursor:pointer;margin-left:auto}
+body.marks .legend{background:#ece8ff;border-color:#4b2fbf;color:#4b2fbf}
+body:not(.marks) .newtag{display:none}body:not(.marks) [style*="dashed #4b2fbf"]{outline:none!important}
+.meta{font-size:12px;color:#5b6670}
+</style></head><body>
+<header class="top"><h1>Shop share v1</h1><span class="meta">Handoff · 2026-11-08 · D-129</span><div class="chips" id="chips"></div><button class="legend" id="marks" type="button"><span style="outline:2px dashed #4b2fbf;width:14px;height:10px;border-radius:3px"></span>Show what’s new</button></header>
+<div id="root"></div>
+<script src="ss-copy.js"></script><script src="ss-kit.js"></script><script src="ss-app.js"></script><script src="ss-merchant.js"></script><script src="ss-web.js"></script>
+<script>
+(function(){
+const K=SK,A=SSApp,M=SSM,W=SSW,V=K.V;
+const LONG=V.mb;
+const web=h=>`<div class="web" style="display:flex;flex-direction:column;height:100%">${h}</div>`;
+/* registry: [id, label, render(o), opts]  — every phone state is drawn at 360×720 and 320×640 unless one:1 */
+const G=[
+{t:'Merchant · Share your shop',p:'Merchant v2 shell + Shop front v1. The row sits at the top of Shop front, only while the shop is live (DR1, DR6). The sheet follows the Own bikers invite sheet (DR2).',s:[
+['SH-M1','Shop front · live: Share your shop row',o=>M.shopFront(o)],
+['SH-M1b','Shop front · not live yet: no row',o=>M.shopFront(Object.assign({notLive:1,v:M.MA},o))],
+['SH-M2','Share sheet',o=>M.shopFront(Object.assign({mark:false},o))+M.shareSheet(o)],
+['SH-M3','Link copied',o=>M.shopFront(Object.assign({mark:false},o))+M.shareSheet(Object.assign({copied:1},o))],
+['SH-M4','QR for your counter',o=>M.qrScreen(o)],
+['SH-M4p','Saved image / print card · A6 (shown at 420×594)',null,{custom:()=>M.qrPrint()}],
+['SH-M5','Several branches · Borrowdale picked',o=>M.shopFront(Object.assign({mark:false},o))+M.shareSheet(Object.assign({branch:'Borrowdale',code:'4HPW8R',v:Object.assign({},M.CI,{n:'Chicken Inn Borrowdale'})},o))],
+['SH-M6','45-character name',o=>M.shopFront(Object.assign({mark:false,v:Object.assign({},V.mb,{line:'Sadza, stews and grills',tags:['Sadza','Grills']})},o))+M.shareSheet(Object.assign({v:LONG},o))]
+]},
+{t:'Customer · Share button',p:'Browse v2 store page. A third 44px white disc beside Search, on the cover, the no-cover band and the compact bar, for all three services (DR3). It opens the phone’s own share menu.',s:[
+['SH-C1','Restaurant · cover (S1)',o=>A.store(V.ci,Object.assign({mark:1},o))],
+['SH-C1L','Restaurant · 45-character name',o=>A.store(LONG,o)],
+['SH-C2','Scrolled · compact bar (S2)',o=>A.compact(V.ci,o)],
+['SH-C3a','No cover · tint band (S11)',o=>A.store(V.kh,Object.assign({mark:1},o))],
+['SH-C3b','Shop (S3)',o=>A.store(V.af,o)],
+['SH-C3c','Pharmacy (S4)',o=>A.store(V.bp,o)],
+['SH-C4','Phone share menu over the store',o=>A.store(V.ci,o)+A.sysShare(V.ci)]
+]},
+{t:'The way in · chip',p:'Link visitors skip C1 and go straight to the phone screen (DR11). The chip names the shop on phone, code, profile and permission screens; it is announced once.',s:[
+['SH-S1','Phone · chip',o=>A.signPhone(V.ci,Object.assign({tag:1},o))],
+['SH-S1L','Phone · 45-character name',o=>A.signPhone(LONG,o)],
+['SH-S2','Code · chip',o=>A.signCode(V.ci,o)],
+['SH-S3','Profile · chip',o=>A.signName(V.ci,o)],
+['SH-S4a','Location ask (PC1, full screen) · chip',o=>A.perm(V.ci,'loc',o)],
+['SH-S4b','Notifications ask (PC8, if asked in setup) · chip',o=>A.perm(V.ci,'notif',o)],
+['SH-S5','Chip without a name',o=>A.signPhone(null,o)],
+['SH-S6','Web app on iPhone · phone screen',o=>A.webPhone(V.ci,o)]
+]},
+{t:'Arrival',p:'The store opened from a link. Skeleton first (DR7), then honest address states (DR8). Busy users are never interrupted (DR9). Bikers get one sheet (DR13).',s:[
+['SH-A1','Skeleton while the link resolves',o=>A.skeleton(o)],
+['SH-A2','No delivery address',o=>A.store(V.ci,Object.assign({noAddr:1,mark:1},o))],
+['SH-A2L','No address · 45-character name',o=>A.store(LONG,Object.assign({noAddr:1},o))],
+['SH-A3','Outside the delivery area · + off',o=>A.store(V.ci,Object.assign({out:1,plusOff:1},o))],
+['SH-A4','Shop not available (unknown / not live / paused)',o=>A.backBar()+K.empty({icon:'store',tone:'info',t:SH.arrival.goneT,s:SH.arrival.goneS,pill:SH.arrival.goneCta,top:o.w===320?96:140})],
+['SH-A5','Can’t reach LyniaGo',o=>A.backBar()+K.empty({icon:'wifioff',tone:'error',t:SH.arrival.netT,s:SH.arrival.netS,pill:K.I('refresh',16)+SH.arrival.netCta,top:o.w===320?96:140})],
+['SH-A6','Cart at another shop · Start a new cart? (I3)',o=>A.store(V.ci,o)+A.cartBar()+A.newCart(V.ci)],
+['SH-A7','Biker taps a shop link',o=>A.board()+A.bikerSheet(V.ci)],
+['SH-A7b','Biker on an active job',o=>A.board()+A.bikerSheet(V.ci,1)],
+['SH-A8','Closed shop from a link',o=>A.store(V.ci,Object.assign({closed:1,plusOff:1},o))]
+]},
+{t:'Landing · lyniago.com/s/7KQ2MX',p:'Shop-first, in lyniago.com’s language: the shop’s cover and logo, its name, one line, one primary for the device, one quiet secondary (DR4, DR14). Before sign-in only name, logo and cover are public (DR16).',s:[
+['SH-W1a','Android with Play · handing off (first ~2 s)',o=>web(W.P.w1a(o))],
+['SH-W1b','Android with Play · didn’t open (after 3 s)',o=>web(W.P.w1b(o))],
+['SH-W2','Android without Play',o=>web(W.P.w2(o))],
+['SH-W3','iPhone',o=>web(W.P.w3(o))],
+['SH-W4','Desktop 1440×900 · QR',null,{custom:()=>W.desktop()}],
+['SH-W4b','Desktop · dead code',null,{custom:()=>W.desktop({dead:1})}],
+['SH-W5','Dead or not-live code · generic',o=>web(W.P.w5(o))],
+['SH-W6','No-photo shop · tint + initial',o=>web(W.P.w6(o))]
+]},
+{t:'WhatsApp preview cards',p:'og:image 1200×630 at lyniago.com/s/<CODE>/card.jpg (E2), shown at 50%. The dashed square is the 630×630 centre crop WhatsApp uses for small thumbnails: the logo always sits inside it.',s:[
+['SH-W7a','Card · normal',null,{custom:()=>W.og('normal')}],
+['SH-W7b','Card · no photo',null,{custom:()=>W.og('nophoto')}],
+['SH-W7c','Card · generic (dead code)',null,{custom:()=>W.og('generic')}],
+['SH-W7d','In a chat · normal + generic',o=>web(W.chat(o)),{one:1}]
+]}
+];
+const q=new URLSearchParams(location.search),one=q.get('screen'),sec=q.get('s');
+if(q.get('marks')==='1')document.body.classList.add('marks');
+document.getElementById('marks').onclick=()=>{const on=document.body.classList.toggle('marks');const u=new URL(location);on?u.searchParams.set('marks','1'):u.searchParams.delete('marks');history.replaceState(null,'',u);};
+const frame=(id,label,html,w)=>K.phone({id,label,w,html});
+function render(e,w){const[id,label,fn]=e,op=e[3]||{};
+ if(op.custom)return `<div class="frame" data-screen-label="${id} · ${label}" data-id="${id}"><div class="flabel"><b>${id}</b>${label}</div>${op.custom()}</div>`;
+ return frame(w===320?id+'-320':id,(w===320?'320×640 · ':'')+label,fn({w}),w);}
+const root=document.getElementById('root');let html='';
+window.SS_show=(id,z)=>{document.body.classList.add('one');let h='';const base=id.replace(/-320$/,''),w=id.endsWith('-320')?320:360;
+ G.forEach(g=>g.s.forEach(e=>{if(e[0]===base)h=render(e,w)}));root.innerHTML=`<section class="grp">${h||'Unknown id'}</section>`;document.body.style.zoom=z||'';};
+if(one)SS_show(one,q.get('z'));
+if(!one){G.forEach((g,gi)=>{if(sec!=null&&sec!=='all'&&+sec!==gi)return;
+ html+=`<section class="grp" id="s${gi}"><h2>${g.t}</h2><p>${g.p}</p><div class="row">${g.s.map(e=>{const op=e[3]||{};return op.custom||op.one?render(e,360):`<div class="pair">${render(e,360)}${render(e,320)}</div>`}).join('')}</div></section>`;});
+ root.innerHTML=html;}
+document.getElementById('chips').innerHTML=[['all','All']].concat(G.map((g,i)=>[i,g.t.split(' ·')[0]])).map(([k,l])=>`<a href="?s=${k}${q.get('marks')==='1'?'&marks=1':''}" class="${String(sec??'all')===String(k)?'on':''}">${l}</a>`).join('');
+window.SS_IDS=[];G.forEach(g=>g.s.forEach(e=>{window.SS_IDS.push(e[0]);const op=e[3]||{};if(!op.custom&&!op.one)window.SS_IDS.push(e[0]+'-320')}));
+})();
+</script>
+</body></html>

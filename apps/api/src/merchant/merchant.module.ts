@@ -1,3 +1,5 @@
+import { MerchantShareController, ShareController } from "./share.controller";
+import { ShareService } from "./share.service";
 import { MerchantFleetController, RiderFleetController } from "./fleet.controller";
 import { AdminFleetsController } from "./admin-fleets.controller";
 import { AdminShopFrontController } from "./admin-shop-front.controller";
@@ -103,8 +105,12 @@ import { PrescriptionService } from "./prescription.service";
     // Admin assist: ops editing a shop front on the business's behalf.
     AdminShopFrontController,
     RiderFleetController,
+    // Shop share links (D-129).
+    ShareController,
+    MerchantShareController,
   ],
   providers: [
+    ShareService,
     MerchantService,
     MerchantBookingService,
     MerchantTeamService,

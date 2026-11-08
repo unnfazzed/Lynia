@@ -15,3 +15,4 @@ export * from "./contracts/merchant-money";
 export * from "./contracts/merchant-bookings";
 export * from "./contracts/merchant-team";
 export * from "./contracts/own-bikers";
+export * from "./contracts/shop-share";
