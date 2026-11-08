@@ -14,6 +14,8 @@ import { afterSignIn } from "../../src/logic/signup-permissions";
 import { DismissKeyboardArea, useActionError } from "../../src/ui";
 import { OB } from "../../src/ui/onboarding/copy";
 import { Cta, H2, NameFields, Note, OnbScreen, Pad, Sub, VerifiedPhoneRow } from "../../src/ui/onboarding/kit";
+import { usePendingShop } from "../../src/share/use-pending-shop";
+import { TakingYouToChip } from "../../src/ui/share/TakingYouToChip";
 
 /** How long typing must pause before the draft is written to the keystore (not on every keystroke). */
 const DRAFT_SAVE_DEBOUNCE_MS = 500;
@@ -35,6 +37,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 500;
  */
 export default function ProfileSetupScreen(): React.ReactElement {
   const router = useRouter();
+  const pendingShop = usePendingShop();
   const qc = useQueryClient();
   const { session, updateSession } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; intent?: string }>();
@@ -134,6 +137,7 @@ export default function ProfileSetupScreen(): React.ReactElement {
     <DismissKeyboardArea>
       <OnbScreen footer={<Cta label={OB.startUsing} onPress={() => void submit()} busy={busy} disabled={!canSubmit} />}>
         <Pad>
+          {pendingShop ? <TakingYouToChip shop={pendingShop} style={{ marginBottom: 12 }} /> : null}
           <H2>{OB.nameTitle}</H2>
           <Sub>{OB.nameSub}</Sub>
           {draftRestored ? (

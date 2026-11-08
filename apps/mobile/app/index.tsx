@@ -8,6 +8,7 @@ import { type StartRole } from "../src/auth/session";
 import { getBootReadiness, reportBootDestination, useBootReadiness } from "../src/boot/boot-readiness";
 import { prewarmBootReads } from "../src/boot/prewarm";
 import { bootRedirectTarget } from "../src/logic/boot-route";
+import { pendingShopAtBoot } from "../src/share/pending-shop";
 import { isRiderDestination } from "../src/logic/side-nav";
 import { enqueueBoot } from "../src/telemetry/rum";
 
@@ -36,8 +37,24 @@ export default function Index(): React.ReactElement {
     void boot.coldStartData.then(setColdStartData);
   }, []);
 
+  // D-129: a first launch from a shop share link (a saved link, or Play's install referrer) skips C1 and opens C2.
+  // Read only when it can change the answer (signed out, intro not seen); Play's read is bounded (1.5 s).
+  const [pendingShop, setPendingShop] = useState<boolean | undefined>(undefined);
+  const needsShopRead = !loading && onboardingSeen === false && !session;
+  useEffect(() => {
+    if (!needsShopRead) return;
+    let live = true;
+    void pendingShopAtBoot().then((code) => {
+      if (live) setPendingShop(code != null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [needsShopRead]);
+
   // Every gate the boot decision waits on, in one expression. `false` = still on the splash.
-  const bootResolved = !loading && onboardingSeen !== null && rolePref !== undefined && coldStartData !== undefined;
+  const bootResolved =
+    !loading && onboardingSeen !== null && rolePref !== undefined && coldStartData !== undefined && (!needsShopRead || pendingShop !== undefined);
 
   // The end of the cold start as the user experiences it: the splash is being replaced by a real
   // screen. `boot_home - boot_paint` isolates the device-read segment (see rum.ts). In an effect, not
@@ -54,7 +71,7 @@ export default function Index(): React.ReactElement {
   const [endedBeforeMount] = useState(() => getBootReadiness().endedAt != null);
   const gaveUp = endedAt != null && !endedBeforeMount;
   const target = bootResolved
-    ? bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData })
+    ? bootRedirectTarget({ session, onboardingSeen, rolePref: rolePref ?? null, coldStartData, pendingShop: pendingShop === true })
     : gaveUp
       ? bootRedirectTarget({ session: loading ? null : session, onboardingSeen: onboardingSeen ?? true, rolePref: rolePref ?? null, coldStartData: coldStartData ?? null })
       : null;

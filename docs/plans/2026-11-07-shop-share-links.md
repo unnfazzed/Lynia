@@ -3,8 +3,10 @@
 **Status:** design handoff landed 2026-11-08 (`packages/design/handoff/shop-share-v1/`, ledger D-129). Built so far:
 the link format (`packages/shared/src/shop-link.ts`, O6) and **lane A, the API** (`merchant_share_codes`, `GET /share/:code`,
 the public `GET /share/:code/card`, `GET /merchant/share-link`) and **lane B, the website** (`apps/website/shop.js`: the
-`/s/` landing, the preview image `GET /share/:code/card.jpg` drawn in Inter, the desktop QR; docs/WEBSITE.md). Next:
-lane C (app pending shop + arrival), lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
+`/s/` landing, the preview image `GET /share/:code/card.jpg` drawn in Inter, the desktop QR; docs/WEBSITE.md) and
+**lane C, first part, the app's way in** (`app/s/[code].tsx`, `src/share/pending-shop.ts`: the pending shop through sign-up,
+Play's referrer once per install, C1 skipped, the "Taking you to" chip on C2/C4/C5 and the permission asks, SH-A1/A4/A5/A7).
+Next: lane C's store states (SH-A2/A3/A6/A8), `Order.shareCode`, holding the iPhone install tip (DR12); lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
 
 **Applies to:** restaurants, shops and pharmacies (every `Merchant` row, one link per branch), the merchant app, the
 customer app (Android, the customer web app, and the iPhone app once it is in the App Store) and lyniago.com.

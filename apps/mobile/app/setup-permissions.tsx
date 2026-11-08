@@ -11,6 +11,8 @@ import { requestPushRegistration } from "../src/push/push-kick";
 import { EVENTS, track } from "../src/telemetry/events";
 import { Body, FirstRunScreen, HeroDisc, HeroPanel, PinnedFooter, SampleNotification, SplitTitle } from "../src/ui";
 import { PC } from "../src/ui/firstrun/copy";
+import { usePendingShop } from "../src/share/use-pending-shop";
+import { TakingYouToChip } from "../src/ui/share/TakingYouToChip";
 
 /** PC8's second sample, 6 digits shown 3+3 like every real code (D-59; the same exception as app/order-updates.tsx, D-82 §4). */
 const EX2_BODY = PC.ex2B.replace("4821", "482 193");
@@ -36,6 +38,9 @@ export default function SetupPermissionsScreen(): React.ReactElement {
   const [idx, setIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const counted = useRef(false);
+  // D-129: the chip above the hero while a share link waits; the hero shrinks to 200 to keep the footer clear.
+  const pendingShop = usePendingShop();
+  const chip = pendingShop ? <TakingYouToChip shop={pendingShop} style={{ marginBottom: 12 }} /> : null;
 
   // Set once the screen has moved on. An OS prompt still open when "Not now" is tapped (a browser prompt can
   // wait indefinitely) must not move the user a second time when it is finally answered.
@@ -113,7 +118,8 @@ export default function SetupPermissionsScreen(): React.ReactElement {
           />
         }
       >
-        <HeroPanel>
+        {chip}
+        <HeroPanel {...(chip ? { height: 200 } : {})}>
           <HeroDisc icon="navigation" />
         </HeroPanel>
         <SplitTitle a={PC.locA} b={PC.locB} />
@@ -132,7 +138,8 @@ export default function SetupPermissionsScreen(): React.ReactElement {
         />
       }
     >
-      <HeroPanel height={250} decor={false}>
+      {chip}
+      <HeroPanel height={chip ? 200 : 250} decor={false}>
         <View style={{ alignItems: "center", gap: 10 }}>
           <SampleNotification icon="bike" title={PC.ex1T} body={PC.ex1B} behind />
           <SampleNotification icon="lock" title={PC.ex2T} body={EX2_BODY} />

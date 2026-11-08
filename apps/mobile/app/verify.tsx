@@ -18,6 +18,8 @@ import { useReachability } from "../src/net/use-reachability";
 import { DismissKeyboardArea, Icon, Tappable, useActionError } from "../src/ui";
 import { OB } from "../src/ui/onboarding/copy";
 import { BackButton, Cta, H2, OnbScreen, Pad } from "../src/ui/onboarding/kit";
+import { usePendingShop } from "../src/share/use-pending-shop";
+import { TakingYouToChip } from "../src/ui/share/TakingYouToChip";
 
 /**
  * Test seam: the parity lane stages the code screen's states by mounting it directly (expo-router passes
@@ -115,6 +117,7 @@ function ResendRow({ endsAt, label, resending, onResend }: { endsAt: number; lab
  */
 export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, initialLocked = false }: VerifyScreenProps = {}): React.ReactElement {
   const router = useRouter();
+  const pendingShop = usePendingShop();
   const { signIn, session, loading } = useAuth();
   const params = useLocalSearchParams<{ phone?: string; deliveryChannel?: string; intent?: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
@@ -305,7 +308,15 @@ export default function VerifyScreen({ initialCooldownS = RESEND_COOLDOWN_S, ini
         }
       >
         <Pad>
-          <BackButton onPress={back} />
+          {pendingShop ? (
+            // C4 keeps its Back to C2; the chip shares its row.
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <BackButton onPress={back} />
+              <TakingYouToChip shop={pendingShop} style={{ flexShrink: 1 }} />
+            </View>
+          ) : (
+            <BackButton onPress={back} />
+          )}
           <H2>{OB.codeTitle}</H2>
           <Text style={{ marginBottom: 20, fontSize: 15, lineHeight: 21.75, color: tokens.color.muted }}>
             {prefilled ? (
