@@ -213,6 +213,11 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   Add to Home Screen sheet, its small/launched states and the Home pin row (`src/ui/install/*`, customer web build
   only) align to §2 of that handoff (ledger D-108, owner 2026-10-15). Its §1, the website's QR popup, is website
   launch edits (D-42). Strings come from `src/ui/install/copy.ts` (the handoff's `copy.ts`, byte-identical).
+- **Shop share links follow their own handoff (`handoff/shop-share-v1/`).** The merchant Share your shop row, share
+  sheet and QR card, the store page's Share disc, the "Taking you to" chip on sign-in, the link arrival states and the
+  lyniago.com `/s/` landing and preview card align to `packages/design/handoff/shop-share-v1/` (ledger D-129, owner
+  2026-11-08). Its `README.md` wins over the drawings. Links carry the shop's name (`lyniago.com/s/<name>-<CODE>`, plan
+  O6, `packages/shared/src/shop-link.ts`). Strings come from its `copy.ts`, verbatim.
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

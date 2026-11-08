@@ -1583,6 +1583,19 @@ model MerchantFleetStatement {
   @@map("merchant_fleet_statements")
 }
 
+/// Shop share links (plan docs/plans/2026-11-07-shop-share-links.md, ledger D-129): a restaurant's, shop's or
+/// pharmacy's code for `lyniago.com/s/<name>-<code>`. Minted the first time the business (or anyone) needs its
+/// link, one per business row (each branch has its own), kept for good so a shared link keeps working. The name
+/// part of the link is built from the business's current name and never stored (packages/shared shop-link.ts).
+model MerchantShareCode {
+  // Plain id (no relation), the referral_codes / merchant_invites precedent.
+  merchantId String   @id @map("merchant_id") @db.Uuid
+  code       String   @unique
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("merchant_share_codes")
+}
+
 /// Biker referrals (owner 2026-10-18, ledger D-112): a biker's share code for `lyniago.com/r/<code>`, minted
 /// when ops first open the biker's referral link in the console. One per biker, never reused.
 model ReferralCode {

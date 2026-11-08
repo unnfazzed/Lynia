@@ -20,7 +20,7 @@ web app for restaurants, shops and pharmacies). Customers order food, shop items
 pharmacy items, and pay cash at the door. Restaurants, shops and pharmacies are all live.
 
 **The feature in one line:** a restaurant, shop or pharmacy shares a link to its shop, e.g.
-`lyniago.com/s/7KQ2MX`, mostly on WhatsApp (Status, groups, chats). Customers can share the same link
+`lyniago.com/s/chicken-inn-avondale-7KQ2MX`, mostly on WhatsApp (Status, groups, chats). Customers can share the same link
 with friends. Whoever taps it **downloads LyniaGo, signs up, lands on that shop**, and buys through the
 checkout that already exists. Nobody sees a shop's menu before signing in.
 
@@ -35,7 +35,7 @@ handoff package (deliverables below). It **extends existing screens**; it does n
 1. **Merchant: "Share your shop"** — a row on the merchant **Shop front** tab, and the **share sheet**
    it opens.
 2. **Customer: the share button** on the store page (restaurant, shop and pharmacy).
-3. **The landing page** `lyniago.com/s/<CODE>` and the **WhatsApp preview card**.
+3. **The landing page** `lyniago.com/s/<shop-name>-<CODE>` and the **WhatsApp preview card**.
 4. **The way in:** the "Taking you to <Shop>" chip across sign-in, code, profile and permission screens.
 5. **Arrival:** the store page opened from a link, with its loading, no-address, out-of-area,
    not-found, busy-user and biker states.
@@ -98,7 +98,7 @@ handoff package (deliverables below). It **extends existing screens**; it does n
 ```
 Merchant (Shop front) ── Share your shop ──► share sheet ──► WhatsApp Status / group / chat
 Customer (store page) ── Share button ────► phone share menu ─┘
-                                                              │ lyniago.com/s/7KQ2MX
+                                                              │ lyniago.com/s/chicken-inn-avondale-7KQ2MX
                                                               ▼
                       landing page (shop card) ── Android + Play ──► app installed? open it on the shop
                                     │                                 not installed? Play → install
@@ -129,7 +129,10 @@ Customer (store page) ── Share button ────► phone share menu ─�
   Kitchen & Grill Borrowdale Village* (45 characters).
 - **Shop:** Avondale Fresh (Grocery). **No-photo shop:** Kensington Hardware (tint + initial).
 - **Pharmacy:** Belgravia Pharmacy.
-- **Link:** `lyniago.com/s/7KQ2MX` (6 characters, no 0/O/1/I/L).
+- **Link:** `lyniago.com/s/chicken-inn-avondale-7KQ2MX`: the shop's name, then a 6-character code (no 0/O/1/I/L).
+  The name part is made from the shop's name and capped at 40 characters, so a long name is shortened at a word:
+  *Mbuya's Traditional Kitchen & Grill Borrowdale Village* → `lyniago.com/s/mbuyas-traditional-kitchen-and-grill-Q8N5ZA`.
+  Draw links this way everywhere (share sheet, QR caption, preview card, landing page); show the long-name case at 320px.
 - **Customer:** Rudo, 12 Lanark Rd, Belgravia. **Out of area:** Ruwa. **Biker:** Tendai.
 - **Merchant owner:** Farai, Chicken Inn Avondale (one branch of three; each branch has its own link).
 
@@ -139,8 +142,8 @@ Customer (store page) ── Share button ────► phone share menu ─�
 |---|---|
 | Merchant row | "Share your shop" · "Customers who open your link can order from you" |
 | Sheet | "Share on WhatsApp" · "Copy link" · "Show QR for your counter" · toast "Link copied" |
-| WhatsApp pre-filled text | "Order from Chicken Inn Avondale on LyniaGo: lyniago.com/s/7KQ2MX" |
-| Customer share text | "Chicken Inn Avondale is on LyniaGo: lyniago.com/s/7KQ2MX" |
+| WhatsApp pre-filled text | "Order from Chicken Inn Avondale on LyniaGo: lyniago.com/s/chicken-inn-avondale-7KQ2MX" |
+| Customer share text | "Chicken Inn Avondale is on LyniaGo: lyniago.com/s/chicken-inn-avondale-7KQ2MX" |
 | Chip | "Taking you to (logo) Chicken Inn Avondale" / "Taking you to the shop" |
 | Landing primary | Android: "Open in LyniaGo" / no Play: "Order on the web" / iPhone: "Order on the web" / desktop: "Scan to order on your phone" |
 | DR5 empty state | "This shop isn't on LyniaGo right now" · pill "Browse restaurants" |

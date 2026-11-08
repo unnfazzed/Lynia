@@ -1,0 +1,22 @@
+// Writes a 2× PNG of every state in "Shop share v1 - all screens.html" to ./screens/.
+// Usage (from this folder):  npx -y playwright@1 install chromium && node export-pngs.mjs
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const page_url = pathToFileURL(new URL('./Shop share v1 - all screens.html', import.meta.url).pathname).href;
+mkdirSync(new URL('./screens/', import.meta.url), { recursive: true });
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, deviceScaleFactor: 2 });
+await page.goto(page_url);
+await page.evaluate(() => document.fonts.ready);
+const ids = await page.evaluate(() => window.SS_IDS);
+let n = 0;
+for (const id of ids) {
+  await page.evaluate((i) => window.SS_show(i), id);
+  await page.waitForTimeout(150);
+  const el = (await page.$('.ph')) || (await page.$('.frame > :last-child'));
+  const file = `screens/${String(++n).padStart(2, '0')}-${id}.png`;
+  await el.screenshot({ path: new URL('./' + file, import.meta.url).pathname });
+  console.log(file);
+}
+await browser.close();

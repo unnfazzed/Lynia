@@ -1,7 +1,9 @@
 # Shop share links
 
-**Status:** plan, shaped with the owner on 2026-11-07. Not built. **Next step:** gstack plan reviews (design + eng),
-then a design handoff (§6). Nothing in §7 is built until that handoff lands and its ledger entry is approved.
+**Status:** design handoff landed 2026-11-08 (`packages/design/handoff/shop-share-v1/`, ledger D-129). Built so far:
+the link format (`packages/shared/src/shop-link.ts`, O6) and **lane A, the API** (`merchant_share_codes`, `GET /share/:code`,
+the public `GET /share/:code/card`, `GET /merchant/share-link`). Next: lane B (website), lane C (app pending shop + arrival),
+lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
 
 **Applies to:** restaurants, shops and pharmacies (every `Merchant` row, one link per branch), the merchant app, the
 customer app (Android, the customer web app, and the iPhone app once it is in the App Store) and lyniago.com.
@@ -29,12 +31,13 @@ taps it downloads LyniaGo, signs up, lands on **that shop**, and buys through th
 | O2 | **Customers can share too**, not only merchants. Same link. |
 | O3 | **The goal is a purchase through the existing checkout** ("booking" = a normal order, including a scheduled one). No table reservations, no new checkout. |
 | O4 | **The link leads to the app: download, then sign up**, on Android and on iPhone. |
+| O6 | **Links carry the shop's name in front of the code** (owner, 2026-11-08): `lyniago.com/s/chicken-inn-avondale-7KQ2MX`. Only the 6-character code picks the shop; the name part is for people. A bare code, an old name after a rename, or a made-up name (`/s/kfc-7KQ2MX`) all open the shop that owns the code and redirect to its current link. Built in `packages/shared/src/shop-link.ts` (`shopSlug`, `shopLink`, `parseShopLink`, `isCanonicalShopLink`, the `shop_share` install referrer), with tests. |
 | O5 | **iPhone before the App Store release: the customer web app** at `app.lyniago.com` (decided 2026-11-08 in the design review, DR12). |
 
 ## 4. The flow
 
 ```
-lyniago.com/s/<CODE>      (one code per Merchant row; shared by the merchant or by a customer)
+lyniago.com/s/<name>-<CODE>   e.g. /s/chicken-inn-avondale-7KQ2MX (O6; one code per Merchant row)
         │
         ├── Android, no app ──► Play (code in the install referrer) ──► install ──► splash ──► sign up
         │                                                                                      │
@@ -109,7 +112,7 @@ D2 merchant share sheet           D3 customer store header          D7 lyniago.c
 │ └──────────────────────┘ │      │ info strip               │      │ └──────────────────────┘ │
 │ [  Share on WhatsApp   ] │      │ tabs …                   │      │ [ primary: per state ]   │
 │ [ Copy link ] [ QR ]     │      └──────────────────────────┘      │ secondary: per state     │
-│ lyniago.com/s/7KQ2MX     │                                        └──────────────────────────┘
+│ …/s/chicken-inn-…-7KQ2MX │                                        └──────────────────────────┘
 └──────────────────────────┘
 ```
 
@@ -179,9 +182,9 @@ The website landing (D7, D8) is a new path in `apps/website`, not a change to th
 
 | Lane | Work | Ships by |
 |---|---|---|
-| L1 | **Share code.** `Merchant.shareCode`: 6 characters from the referral alphabet, unique, random (not a readable slug, so nobody can claim "KFC"). Migration + backfill. Shown to the merchant and in admin. | API deploy |
+| L1 | **Share code.** `Merchant.shareCode`: 6 characters from the referral alphabet, unique, random. The link is `shopLink(name, shareCode)` from `@lynia/shared` (O6): the name part is built from the shop's current name, never stored, so a rename needs no migration and nobody can claim "KFC" (the code, not the name, picks the shop). Migration + backfill. Shown to the merchant and in admin. | API deploy |
 | L2 | **Resolve API.** `GET /share/:code` behind `JwtAuthGuard` → `{ merchantId, service: restaurants | shops | pharmacy }`, or 404 for unknown / not live (same answer, so not-live shops can't be enumerated). Rate-limited. | API deploy |
-| L3 | **Website `/s/<CODE>`.** Android → Play with `utm_medium=shop_share&utm_content=<CODE>`. iPhone → the landing page (D7), whose *Get the app* goes to the App Store or, before that (O5), to `app.lyniago.com/s/<CODE>`. Desktop → landing with QR. OG tags and image (D8) need the shop's name, logo and cover: a small **public** endpoint that returns only those three for a live shop (see §8 R1). | Website deploy |
+| L3 | **Website `/s/<name>-<CODE>`.** The Worker reads the code with the same rule as `parseShopLink` (code = after the last dash; the Worker can't import `@lynia/shared`, so it keeps a copy pinned by shared test cases) and **301s to the canonical link** when the name part doesn't match the shop's current name (`isCanonicalShopLink`). Android → Play with `utm_medium=shop_share&utm_content=<CODE>`. iPhone → the landing page (D7), whose *Get the app* goes to the App Store or, before that (O5), to `app.lyniago.com/s/<CODE>`. Desktop → landing with QR. OG tags and image (D8) need the shop's name, logo and cover: a small **public** endpoint that returns only those three for a live shop (see §8 R1). | Website deploy |
 | L4 | **Pending destination in the app.** A `/s/[code]` route plus a stored "pending share code" that survives install, onboarding, sign-up, profile setup and the permission asks, then opens the store once the session exists. Sources: the deep link (when signed in it resolves at once), the Play install referrer (`utm_medium=shop_share`, read beside the referral code, never mixed up with it), and the web URL. Cleared once used or on 404. `/s/[code]` is added to the signed-out routes so the boot route watch doesn't throw it away. | OTA |
 | L5 | **Customer share icon** (D3) on the three store pages: `Share.share` with the link and a line of copy. | OTA |
 | L6 | **Android App Links**: intent filter for `lyniago.com/s/*` (and `/j/*`, closing the TODOS item) + `/.well-known/assetlinks.json`. | Next production store build |

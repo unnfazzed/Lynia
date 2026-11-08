@@ -275,6 +275,8 @@ describe("merchant surfaces are dead when disabled, alive behind guards when ena
       "MerchantFleetController",
       "MerchantInvitesController",
       "MerchantOrderController",
+      // Shop share links (D-129): the merchant's own link (SH-M1/M2).
+      "MerchantShareController",
       "MerchantTeamController",
       "OrderFlowCustomerController",
       "OrderFlowMerchantController",

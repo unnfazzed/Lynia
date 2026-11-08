@@ -6187,3 +6187,46 @@ misleading .. not true distance"*
 - **Older apps:** they keep one price until they take the update. An app that sends no ceiling keeps the fixed fee
   (D-125), so the two can differ until the OTA lands.
 - **Upstream:** Browse v2 and Calm Mint v2 draw one price. The kit is not edited.
+
+## D-129 · Shop share links v1 — APPROVED (owner, 2026-11-08)
+
+**Owner (2026-11-07/08):** a restaurant, shop or pharmacy (and any customer) shares a link to the shop; whoever taps
+it downloads LyniaGo, signs up and lands on that shop. Plan `docs/plans/2026-11-07-shop-share-links.md` (O1–O6,
+DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its README wins over its drawings). No new tokens.
+
+**Browse v2 (store page)**
+- Third 44px white disc **Share** (`share-2`) beside Search on the cover (S1), the no-cover tint band (S11) and the
+  compact bar (S2), for restaurants, shops and pharmacies. Opens the system share sheet. Label "Share {shop}".
+- Arrival from a link: S13a skeleton with only Back real (SH-A1); **no-address cell** "Set where to deliver" merging
+  the time/fee cells (SH-A2); **out-of-area strip** with + discs removed (SH-A3); I3 unchanged, naming both shops
+  (SH-A6); closed row + "Schedule for {t}" soft pill (SH-A8).
+- Biker sheet "This is a shop link. Open as a customer?" and its active-job variant (SH-A7/A7b).
+
+**Calm Mint v2 / First Run v2 (sign-in)**
+- With a pending shop code, C1 is skipped and C2 opens first; C2 loses its Back.
+- New **chip** "Taking you to {shop}" (or "the shop") on C2, C4, C5 and the permission asks; PC1/PC8 drawn full
+  screen in the First Run shell when on the link path. Same on the customer web app (iPhone). Add to Home Screen tip
+  held until after the first order from a link.
+- C5 heading "riders" → "bikers" (D-101).
+
+**Merchant v2 / Shop front v1**
+- "Share your shop" row on Shop front, only while the shop is live.
+- Share sheet (OB-M6 structure): preview card, Share on WhatsApp (`wa.me/?text=`), Copy link, Show QR, link text;
+  branch picker for multi-branch owners; copied toast moved to the top.
+- QR screen and A6 print / save card. New icons: `copy`, `qr-code`, `download`, `printer`.
+
+**Empty States v2**
+- Two new uses of `EmptyState`: "This shop isn't on LyniaGo right now" (info, `store`, pill "Browse restaurants")
+  and "Can't reach LyniaGo" (error, `wifi-off`, pill "Try again"). No component change.
+
+**Website**
+- New Worker paths `/s/…` (shop-first landing, four device states + dead code) and `/s/…/card.jpg` (og:image:
+  normal, no-photo, generic). `site/` untouched (D-42).
+
+**Where the app differs from the drawings**
+
+| | Handoff | App |
+|---|---|---|
+| The link everywhere (sheet, QR caption, landing, preview, share text) | `lyniago.com/s/7KQ2MX` | `lyniago.com/s/chicken-inn-avondale-7KQ2MX` (plan O6, owner 2026-11-08, after the brief went out). Only the code picks the shop; a bare code or an old / made-up name redirects to the current link. Format: `packages/shared/src/shop-link.ts`. |
+
+- **Upstream:** the kit draws bare-code links. The kit is not edited.

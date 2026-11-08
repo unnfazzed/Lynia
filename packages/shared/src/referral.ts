@@ -11,6 +11,8 @@
  * tests pin it.
  */
 
+import { installReferrerParams } from "./install-referrer";
+
 /** No 0/O, 1/I/L: a code read out loud or copied by hand stays unambiguous. */
 export const REFERRAL_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const REFERRAL_CODE_LENGTH = 6;
@@ -43,21 +45,7 @@ export function referralInstallReferrer(code: string): string {
  * (organic, the website's own /download, an ad). Play may hand the referrer back URL-encoded or not.
  */
 export function referralCodeFromInstallReferrer(referrer: unknown): string | null {
-  if (typeof referrer !== "string" || !referrer) return null;
-  let text = referrer.trim();
-  if (!text.includes("=") && text.includes("%3D")) {
-    try {
-      text = decodeURIComponent(text);
-    } catch {
-      return null;
-    }
-  }
-  // A hand-rolled query parse: this package targets no DOM or Node lib, so URLSearchParams isn't typed here.
-  const params = new Map<string, string>();
-  for (const pair of (text.startsWith("?") ? text.slice(1) : text).split("&")) {
-    const at = pair.indexOf("=");
-    if (at > 0) params.set(pair.slice(0, at), pair.slice(at + 1));
-  }
+  const params = installReferrerParams(referrer);
   if (params.get("utm_medium") !== REFERRAL_UTM_MEDIUM) return null;
   return normalizeReferralCode(params.get("utm_content"));
 }
