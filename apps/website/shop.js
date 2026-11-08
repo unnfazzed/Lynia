@@ -254,7 +254,7 @@ export function landingHtml({ shop, code, platform, noPlay, nonce }) {
   let fireIntent = false;
   if (platform === "android" && !noPlay) {
     fireIntent = true;
-    status = `<div class="status" id="st" role="status"><span class="spin" aria-hidden="true"></span><span>${esc(W.opening)}</span></div>`;
+    status = `<div class="status" id="st" role="status" data-stalled="${esc(W.stalled)}"><span class="spin" aria-hidden="true"></span><span>${esc(W.opening)}</span></div>`;
     primary = `<a class="btn" id="open" href="${esc(intentUrl(code))}">${ICON.play}${esc(shop ? W.openApp : W.deadApp)}</a>`;
     secondary = shop ? `<a class="lnk" href="${esc(webApp)}">${esc(W.orderWeb)}</a>` : `<a class="lnk" href="${HELP}">${esc(W.help)}</a>`;
   } else if (platform === "android") {
@@ -279,15 +279,15 @@ export function landingHtml({ shop, code, platform, noPlay, nonce }) {
 <div class="body"><h1>${heading}</h1><p>${line}</p></div></div>
 <div class="right"><img class="qr" src="/s/${code || "-"}/qr.svg" alt="" width="260" height="260" id="qr">
 <h2>${esc(W.scan)}</h2><p>${esc(W.scanSub)}</p><hr><div class="or">${esc(W.orLink)}</div>
-<div class="field"><span class="url">${esc(shortLink)}</span><button type="button" id="copy" data-link="${esc(link)}">${ICON.copy}<span>${esc(W.copyLink)}</span></button></div></div></div></main>`;
+<div class="field"><span class="url">${esc(shortLink)}</span><button type="button" id="copy" data-link="${esc(link)}" data-copy="${esc(W.copyLink)}" data-copied="${esc(W.copied)}">${ICON.copy}<span>${esc(W.copyLink)}</span></button></div></div></div></main>`;
 
   const script = desktop
     ? `document.getElementById("qr").addEventListener("error",function(){this.style.visibility="hidden"});
-var b=document.getElementById("copy");b.addEventListener("click",function(){navigator.clipboard&&navigator.clipboard.writeText(b.dataset.link).then(function(){b.lastChild.textContent=${JSON.stringify(W.copied)};setTimeout(function(){b.lastChild.textContent=${JSON.stringify(W.copyLink)}},2000)})});`
+var b=document.getElementById("copy");b.addEventListener("click",function(){navigator.clipboard&&navigator.clipboard.writeText(b.dataset.link).then(function(){b.lastChild.textContent=b.dataset.copied;setTimeout(function(){b.lastChild.textContent=b.dataset.copy},2000)})});`
     : fireIntent
       ? `var u=document.getElementById("open").href,st=document.getElementById("st");
 setTimeout(function(){location.href=u},300);
-setTimeout(function(){if(document.visibilityState==="visible"){st.className="status stalled";st.textContent=${JSON.stringify(W.stalled)}}},3000);`
+setTimeout(function(){if(document.visibilityState==="visible"){st.className="status stalled";st.textContent=st.dataset.stalled}},3000);`
       : "";
 
   return `<!doctype html>
