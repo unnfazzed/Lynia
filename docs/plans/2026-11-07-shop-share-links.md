@@ -65,7 +65,7 @@ device fingerprinting are rejected: one shows an iOS paste banner, the other bre
 | Unknown or mistyped code | Home, with a toast that the shop wasn't found (copy from the handoff) |
 | Shop not live (`pilotEnabled` false, `applicationStatus` ≠ live, suspended) | Same as unknown: never reveal a shop that isn't live |
 | Shop closed now / closed by hand | The normal store page: closed strip, prices, "Schedule for …" where slots exist |
-| Service switched off (`SHOPS_ENABLED`, `PHARMACY_ENABLED`, `RESTAURANTS_ENABLED`, order switches) | The normal browse-only page. **Pre-launch check:** confirm production's switches for shops and pharmacies |
+| Service switched off (`SHOPS_ENABLED`, `PHARMACY_ENABLED`, `RESTAURANTS_ENABLED`, order switches) | The normal browse-only page. Shops and pharmacies are live in production (owner, 2026-11-08) |
 | Customer outside the delivery area | The store page's existing out-of-range handling. The design pass decides whether that's enough |
 | A cart from another shop | The existing "Start a new cart?" sheet (I3) |
 | A rider account taps the link | The rider app has no customer browse: open the store only on the customer side, otherwise the rider board with a toast |
@@ -170,7 +170,7 @@ STEP | USER DOES                         | USER FEELS                 | PLAN SPE
 |---|---|
 | DR16 | **A narrow public exception to O1:** the name, logo and cover of a **live** shop can be read without sign-in, for the preview card (D8) and the DR11 chip. Menu, prices, hours and everything else stay behind sign-in. |
 
-Still open, not design: production values of the service switches (§9 Q3); whether to record who shared (§9 Q4).
+Still open, not design: whether to record who shared (§9 Q4). (§9 Q3 answered: shops and pharmacies are live.)
 
 The website landing (D7, D8) is a new path in `apps/website`, not a change to the handed-off `site/`, so the
 "ship the handoff as-is" rule is not touched (same as `/r/` and `/j/`).
@@ -209,7 +209,7 @@ Order: L1–L5, L7, L8 ship with no store build. L6 rides the next Android produ
 
 1. ~~O5~~ decided: web app (DR12).
 2. ~~R1~~ decided: name, logo and cover of a live shop are public; nothing else (DR16).
-3. Production values of `SHOPS_ENABLED` / `PHARMACY_ENABLED` and their order switches at launch.
+3. ~~Production values of the shop and pharmacy switches~~ answered: shops and pharmacies are live (owner, 2026-11-08).
 4. Should "who shared it" (a customer id on the link) be tracked now, for a future customer referral reward? The plan
    leaves it out: a plain shop link can gain it later without breaking old links.
 
