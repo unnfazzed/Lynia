@@ -1,5 +1,5 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useState } from "react";
+import React from "react";
 import { ScrollView, Text, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { avatarTint } from "../../logic/avatar";
@@ -7,7 +7,7 @@ import { PharmacyStickerV2, RestaurantsSticker, SendStickerV2, ShopsSticker } fr
 import { EmptyState } from "../EmptyState";
 import { emptyCopy } from "../emptyCopy";
 import { Icon, type IconName } from "../Icon";
-import { RemoteImage } from "../RemoteImage";
+import { RemoteImage, usePhotoFailed } from "../RemoteImage";
 import { useTabBarSpace } from "../shell/TabShell";
 import { Tappable } from "../Tappable";
 import { H } from "./copy";
@@ -330,7 +330,7 @@ export function VenueCard({
   closed?: boolean;
   onPress: () => void;
 }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(photoUrl);
   const photo = !!photoUrl && !failed;
   const tint = kind ? kindColors(kind) : { bg: avatarTint(name), ink: tokens.color.ink };
   return (
@@ -345,7 +345,7 @@ export function VenueCard({
           <RemoteImage
             source={{ uri: photoUrl! }}
             fallbackUri={fallbackUrl}
-            onError={() => setFailed(true)}
+            onError={() => markFailed()}
             accessibilityElementsHidden
             importantForAccessibility="no"
             style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}

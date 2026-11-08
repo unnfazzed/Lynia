@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useState } from "react";
+import React from "react";
 import { Text, View, type ViewStyle } from "react-native";
-import { RemoteImage } from "./RemoteImage";
+import { RemoteImage, usePhotoFailed } from "./RemoteImage";
 
 /**
  * Round shop logo — the RN port of the design kit's `ShopLogo` (r-parts.jsx :: ShopLogo): a circular
@@ -30,7 +30,7 @@ export function ShopLogo({
   photo?: boolean | string;
   style?: ViewStyle;
 }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(typeof photo === "string" ? photo : null);
   const uri = typeof photo === "string" && photo.length > 0 ? photo : null;
   const showPhoto = !!uri && !failed;
   const initial = ([...String(name).trim()][0] || "•").toUpperCase();
@@ -53,7 +53,7 @@ export function ShopLogo({
       ]}
     >
       {showPhoto ? (
-        <RemoteImage source={{ uri: uri! }} onError={() => setFailed(true)} accessibilityElementsHidden importantForAccessibility="no" style={{ width: "100%", height: "100%" }} />
+        <RemoteImage source={{ uri: uri! }} onError={() => markFailed()} accessibilityElementsHidden importantForAccessibility="no" style={{ width: "100%", height: "100%" }} />
       ) : (
         <Text style={{ fontSize: size * 0.42, fontWeight: "800", color: tokens.color.onAccent }}>{initial}</Text>
       )}

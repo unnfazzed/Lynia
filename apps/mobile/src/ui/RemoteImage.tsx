@@ -19,6 +19,20 @@ export function imageCacheKey(uri: string): string | undefined {
 }
 
 /**
+ * "This photo failed to load" for a placeholder fallback, remembered PER URL — `[failed, markFailed]`.
+ *
+ * A plain `useState(false)` stuck: venue lists are restored from the on-device query cache for up to
+ * a week (src/query/persist.ts) but their signed photo URLs live 24 h, so a cold start drew an expired
+ * URL, it failed, and the card stayed on its letter tile even after the refetch brought a fresh URL
+ * (the card never remounts — same key). Keyed on the URL, a new URL is tried afresh.
+ */
+export function usePhotoFailed(uri: string | null | undefined): [boolean, () => void] {
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const failed = !!uri && failedUri === uri;
+  return [failed, () => setFailedUri(uri ?? null)];
+}
+
+/**
  * The one remote-photo component (deferred-item D5, RCA 2026-08-17 §5.1 follow-through — ranked
  * backlog #3 in docs/PERFORMANCE.md since wave 1, unlocked now that the API serves byte-stable
  * signed URLs): a thin seam over `expo-image` with the exact prop surface the app's RN `Image`

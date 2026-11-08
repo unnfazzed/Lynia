@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useState } from "react";
+import React from "react";
 import { Text, View } from "react-native";
-import { RemoteImage } from "./RemoteImage";
+import { RemoteImage, usePhotoFailed } from "./RemoteImage";
 
 /**
  * Restaurant cover band — the RN port of the design kit's `CoverPhoto` (r-parts.jsx :: CoverPhoto). A
@@ -36,7 +36,7 @@ export function CoverPhoto({
   label?: string;
   children?: React.ReactNode;
 }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(typeof photo === "string" ? photo : null);
   const uri = typeof photo === "string" && photo.length > 0 ? photo : null;
   const showPhoto = !!uri && !failed;
   return (
@@ -44,7 +44,7 @@ export function CoverPhoto({
       {showPhoto ? (
         <RemoteImage
           source={{ uri: uri! }}
-          onError={() => setFailed(true)}
+          onError={() => markFailed()}
           accessibilityLabel={label}
           style={{ height, width: "100%", backgroundColor: tokens.color.surface }}
         />
