@@ -29,8 +29,8 @@ export const HELP = "https://wa.me/263778831938";
 /** SH.web / SH.og from the handoff's copy.ts, verbatim (website copy; the apps import the TS file). */
 export const COPY = {
   web: {
-    pageTitle: "{shop} on LyniaGo",
-    line: "View our offerings and place your order. We deliver to your door.",
+    pageTitle: "From {shop} to your door",
+    line: "See what’s on, order in a tap. From {shop} to your door.",
     openApp: "Open in LyniaGo",
     opening: "Opening LyniaGo…",
     stalled: "Didn’t open? Tap Open in LyniaGo.",
@@ -49,8 +49,8 @@ export const COPY = {
     footer: "© 2026 LyniaGo",
   },
   og: {
-    title: "{shop} on LyniaGo",
-    desc: "Order from {shop} on LyniaGo. We deliver to your door.",
+    title: "From {shop} to your door",
+    desc: "See what’s on, order in a tap. From {shop} to your door.",
     genericTitle: "LyniaGo",
     genericDesc: "Food, shops and pharmacy, delivered by bike",
     imgAlt: "{shop} on LyniaGo",
@@ -267,7 +267,7 @@ export function landingHtml({ shop, code, platform, noPlay, nonce }) {
 
   const desktop = platform === "desktop";
   const heading = name ? esc(name) : esc(W.deadT);
-  const line = esc(name ? W.line : W.deadS);
+  const line = esc(name ? W.line.replace("{shop}", name) : W.deadS);
 
   const mobileBody = `<main class="m"><span class="c b1"></span><span class="c b2"></span><span class="c b3"></span>
 <div class="card">${cover(shop, "auto")}<div class="lw">${logo(shop)}</div>
