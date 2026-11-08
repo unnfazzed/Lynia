@@ -1,6 +1,6 @@
 import { tokens } from "@lynia/shared/tokens";
 import { FirstRunToast } from "../firstrun/toast";
-import React, { useRef, useState } from "react";
+import React, { useRef } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
@@ -9,7 +9,7 @@ import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { EmptyRow } from "../EmptyState";
 import { emptyCopy } from "../emptyCopy";
 import { Icon } from "../Icon";
-import { RemoteImage } from "../RemoteImage";
+import { RemoteImage, usePhotoFailed } from "../RemoteImage";
 import { Tappable } from "../Tappable";
 import { O, O_ADDED, ofFmt } from "../orderflow/copy";
 import { RxTag } from "../orderflow/review";
@@ -40,7 +40,7 @@ export function StoreCover({
   searchLabel: string;
 }): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(photoUrl);
   const photo = !!photoUrl && !failed;
   return (
     <View style={{ backgroundColor: tokens.color.bg, paddingTop: insets.top }}>
@@ -48,7 +48,7 @@ export function StoreCover({
         {photo ? (
           <RemoteImage
             source={{ uri: photoUrl! }}
-            onError={() => setFailed(true)}
+            onError={() => markFailed()}
             accessibilityElementsHidden
             importantForAccessibility="no"
             style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
@@ -78,7 +78,7 @@ export function StoreLogo({
   name: string;
   kind: string | null;
 }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(logoThumbUrl ?? logoUrl);
   const photo = !!logoUrl && !failed;
   const tint = kindTint(kind);
   return (
@@ -103,7 +103,7 @@ export function StoreLogo({
         <RemoteImage
           source={{ uri: logoThumbUrl ?? logoUrl! }}
           fallbackUri={logoUrl}
-          onError={() => setFailed(true)}
+          onError={() => markFailed()}
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
         />
       ) : (

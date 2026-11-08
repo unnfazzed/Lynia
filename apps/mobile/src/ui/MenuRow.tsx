@@ -1,7 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
-import React, { useState } from "react";
+import React from "react";
 import { Text, View } from "react-native";
-import { RemoteImage } from "./RemoteImage";
+import { RemoteImage, usePhotoFailed } from "./RemoteImage";
 import { Icon } from "./Icon";
 import { Money } from "./Money";
 
@@ -46,13 +46,13 @@ const THUMB_RADIUS = 12;
 
 function Thumb({ name, cat, photo }: { name: string; cat: MenuCategory; photo?: boolean | string }): React.ReactElement {
   const { bg, fg } = CAT[cat] ?? CAT.mains;
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(typeof photo === "string" ? photo : null);
   const uri = typeof photo === "string" && photo.length > 0 ? photo : null;
   if (uri && !failed) {
     return (
       <RemoteImage
         source={{ uri }}
-        onError={() => setFailed(true)}
+        onError={() => markFailed()}
         accessibilityElementsHidden
         importantForAccessibility="no"
         style={{ width: THUMB, height: THUMB, borderRadius: THUMB_RADIUS, backgroundColor: tokens.color.surface }}

@@ -3,7 +3,7 @@ import { FirstRunToast } from "../firstrun/toast";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Text, type TextStyle, View, type ViewStyle } from "react-native";
 import { Icon, type IconName } from "../Icon";
-import { RemoteImage } from "../RemoteImage";
+import { RemoteImage, usePhotoFailed } from "../RemoteImage";
 import { Tappable } from "../Tappable";
 import { LABEL_STYLE } from "../send/kit";
 import { clock, ORDER_COPY as A } from "./copy";
@@ -261,13 +261,13 @@ export function WindowProgress({ expiresAt, windowMs }: { expiresAt: string | nu
 
 /** Rider avatar: the photo, else initials 15/700 accent-text on accent-wash (or a User glyph on surface). */
 export function RiderAvatar({ photoUrl, initials, size = 44 }: { photoUrl?: string | null; initials?: string | null; size?: number }): React.ReactElement {
-  const [failed, setFailed] = useState(false);
+  const [failed, markFailed] = usePhotoFailed(photoUrl);
   const r = size / 2;
   if (photoUrl && !failed) {
     return (
       <RemoteImage
         source={{ uri: photoUrl }}
-        onError={() => setFailed(true)}
+        onError={() => markFailed()}
         accessibilityElementsHidden
         importantForAccessibility="no"
         style={{ width: size, height: size, borderRadius: r, backgroundColor: tokens.color.surface }}
