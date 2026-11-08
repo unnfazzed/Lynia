@@ -86,6 +86,9 @@ export const PlaceMerchantOrderRequest = z
      *  an app that shows the ceiling; omitted = the fixed delivery fee (an installed app, or the flag off). The
      *  server re-checks the bounds and ignores it on a free-delivery venue. */
     deliveryCeiling: z.number().positive().max(100).optional(),
+    /** D-129: the shop share link (`lyniago.com/s/<name>-<CODE>`) the customer arrived through. Attribution only: the
+     *  server keeps it when it is this venue's code and silently drops it otherwise, so it never fails an order. */
+    shareCode: z.string().trim().max(16).optional(),
   })
   .strict();
 export type PlaceMerchantOrderRequest = z.infer<typeof PlaceMerchantOrderRequest>;

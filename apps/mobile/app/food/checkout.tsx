@@ -76,6 +76,8 @@ import {
   WhenScheduled,
 } from "../../src/ui/orderflow/review";
 import { LOCATION_OFF_MSG } from "../../src/permissions/location";
+import { releaseInstallTipHold } from "../../src/share/link-tip-hold";
+import { clearShopArrival, shareCodeForOrder } from "../../src/share/pending-shop";
 
 /**
  * Review & place — Order flow v2.1 R1, R3a/b, R4, R6a/b, R7a–c, R9a/b (packages/design/handoff/order-flow-v2,
@@ -473,7 +475,9 @@ export default function FoodReviewScreen(): React.ReactElement {
     // since (they feed the key) — so the server replays the order it may already hold instead of taking a
     // second one. Only a different venue's basket starts afresh.
     const pin = unsettled.current && unsettled.current.rid === rid ? unsettled.current : null;
-    const body = pin ? pin.body : placeOrderBody({
+    // D-129: the shop share link this basket's shop was opened from, if any (Order.shareCode, attribution only).
+    const shareCode = pin ? undefined : await shareCodeForOrder(rid);
+    const built = pin ? null : placeOrderBody({
       lines: cart.cart.lines,
       orderNote: cart.cart.orderNote,
       drop,
@@ -485,6 +489,7 @@ export default function FoodReviewScreen(): React.ReactElement {
       prescription: rxNeeded ? { photoKeys: rx.keys, patientName: patient.trim(), consent: true } : null,
       deliveryCeiling: showCeiling ? ceiling : recommended,
     });
+    const body = pin ? pin.body : shareCode ? { ...built!, shareCode } : built!;
     unsettled.current = null;
     try {
       let order: Awaited<ReturnType<typeof placeFoodOrder>>;
@@ -503,6 +508,8 @@ export default function FoodReviewScreen(): React.ReactElement {
         }
       }
       void saveMyPickupPhone(phone.trim());
+      void clearShopArrival();
+      releaseInstallTipHold();
       // P23: the order screen's snapshot too (its map's venue and drop pins), not only the food order.
       seedFoodOrder(queryClient, order, restaurant?.location ? { venue: restaurant.location, venueName: venue, drop, total: money.total } : undefined);
       // D-82 PC8: the "Know when it's at the gate" explainer in front of the order, while it should ask.

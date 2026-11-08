@@ -39,6 +39,7 @@ import {
   useStableItems,
   type StoreItem,
 } from "../../src/ui/browse/store";
+import { useStoreAddress } from "../../src/ui/browse/useStoreAddress";
 
 /**
  * Restaurant storefront — Browse v2 S1–S13 + I1–I3 (`packages/design/handoff/browse-v2`, ledger
@@ -95,6 +96,8 @@ export default function RestaurantMenuScreen(): React.ReactElement {
   const { menu, isLoading, isError, isFetching, refetch } = useRestaurantMenu(id, true);
   const cart = useFoodCart();
   const location = useHomeLocation();
+  // SH-A2 (D-129): no delivery address → "Set where to deliver" in the info strip.
+  const address = useStoreAddress(location);
   const ceilingOn = useOrderFlags().deliveryCeiling === true;
   const now = useNow();
 
@@ -379,6 +382,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
           }}
           onClose={() => setOpenItem(null)}
         />
+        {address.sheets}
         <NewCartSheet
           pending={
             pending
@@ -414,7 +418,7 @@ export default function RestaurantMenuScreen(): React.ReactElement {
         <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={null} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service="food" /> : null}
-        <InfoStrip v={v} />
+        <InfoStrip v={v} onSetAddress={address.onSetAddress} />
         {closingStrip ? <ClosingStrip minutes={v.closesInMin!} orderBy={v.closeTime!} /> : null}
         {!open ? <ClosedStrip label={closedLabel(v)} remindOn={reminder.isSet} remindBusy={reminder.isPending || reminder.isLoading} onRemind={reminder.toggle} /> : null}
         {empty ? (

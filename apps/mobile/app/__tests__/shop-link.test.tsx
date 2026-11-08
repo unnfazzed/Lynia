@@ -25,7 +25,12 @@ const mockSwitch = jest.fn(async (_job: boolean | null) => true);
 jest.mock("../../src/logic/switch-to-customer", () => ({ switchToCustomer: (j: boolean | null) => mockSwitch(j) }));
 const mockSave = jest.fn(async (c: unknown) => c);
 const mockClear = jest.fn(async () => undefined);
-jest.mock("../../src/share/pending-shop", () => ({ savePendingShop: (c: unknown) => mockSave(c), clearPendingShop: () => mockClear() }));
+const mockArrival = jest.fn(async (_m: string, _c: string) => undefined);
+jest.mock("../../src/share/pending-shop", () => ({
+  savePendingShop: (c: unknown) => mockSave(c),
+  clearPendingShop: () => mockClear(),
+  saveShopArrival: (m: string, c: string) => mockArrival(m, c),
+}));
 let mockResolve: () => Promise<unknown> = async () => ({ merchantId: "m-1", service: "pharmacy", link: "https://lyniago.com/s/x-7KQ2MX" });
 jest.mock("../../src/api/share", () => ({
   resolveShopLink: () => mockResolve(),
@@ -76,6 +81,8 @@ it("signed in: opens the link's store and clears the pending code", async () => 
   await mount();
   expect(mockReplace).toHaveBeenCalledWith({ pathname: "/pharmacy/[id]", params: { id: "m-1" } });
   expect(mockClear).toHaveBeenCalled();
+  // Order.shareCode: an order at this shop now counts as coming from the link.
+  expect(mockArrival).toHaveBeenCalledWith("m-1", "7KQ2MX");
 });
 
 it("a cold start puts Home under the store, so Back goes Home", async () => {

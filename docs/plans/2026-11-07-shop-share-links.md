@@ -6,7 +6,9 @@ the public `GET /share/:code/card`, `GET /merchant/share-link`) and **lane B, th
 `/s/` landing, the preview image `GET /share/:code/card.jpg` drawn in Inter, the desktop QR; docs/WEBSITE.md) and
 **lane C, first part, the app's way in** (`app/s/[code].tsx`, `src/share/pending-shop.ts`: the pending shop through sign-up,
 Play's referrer once per install, C1 skipped, the "Taking you to" chip on C2/C4/C5 and the permission asks, SH-A1/A4/A5/A7).
-Next: lane C's store states (SH-A2/A3/A6/A8), `Order.shareCode`, holding the iPhone install tip (DR12); lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
+Then **lane C, the rest**: SH-A2 ("Set where to deliver" in the store strip), `Order.shareCode` (migration 0121, kept only
+when it is the shop's own code), the iPhone install tip held until the first order from a link (DR12); A6/A8 reuse I3 and
+the S8 closed strip, A3 has no trigger (D-129). Next: lane D (share buttons). `Order.shareCode` moves to lane C, where checkout first writes it.
 
 **Applies to:** restaurants, shops and pharmacies (every `Merchant` row, one link per branch), the merchant app, the
 customer app (Android, the customer web app, and the iPhone app once it is in the App Store) and lyniago.com.

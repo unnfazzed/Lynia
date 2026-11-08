@@ -6230,3 +6230,12 @@ DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its READ
 | The link everywhere (sheet, QR caption, landing, preview, share text) | `lyniago.com/s/7KQ2MX` | `lyniago.com/s/chicken-inn-avondale-7KQ2MX` (plan O6, owner 2026-11-08, after the brief went out). Only the code picks the shop; a bare code or an old / made-up name redirects to the current link. Format: `packages/shared/src/shop-link.ts`. |
 
 - **Upstream:** the kit draws bare-code links. The kit is not edited.
+
+**Arrival states, as built (lane C, 2026-11-08)**
+- **SH-A3 (outside the delivery area) is not built: nothing can trigger it.** The service area is the whole country
+  (D-99) and there is no shop-to-customer distance cap; an address outside the country is refused where it is set
+  (`home-location.ts`), so the store shows SH-A2 instead. If a per-shop delivery reach is ever added, A3 is drawn
+  and ready (`SH.arrival.outT` / `outCta`).
+- **SH-A6 and SH-A8 reuse the shipped states:** the first + on a store with a cart elsewhere opens Browse v2 I3
+  (`NewCartSheet`, naming both shops), and a closed shop shows the S8 closed strip with Schedule (Order flow v2 R5c).
+  A link changes nothing about either.

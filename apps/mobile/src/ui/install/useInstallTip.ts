@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Linking, useWindowDimensions } from "react-native";
 import { INSTALL_TIP_KEYS, INSTALL_TIP_SMALL_WIDTH, installTipSurface } from "../../logic/install-tip";
+import { installTipHeldForLink } from "../../share/link-tip-hold";
 import { isCustomerWebBuild } from "../../web-build";
 import { browser, installParamPending } from "./install-param";
 
@@ -63,7 +64,8 @@ export function useInstallTip(): InstallTip {
   );
   const [reopened, setReopened] = useState(false);
 
-  const surface = web
+  // DR12 (D-129): held until the first order for someone who came in through a shop share link.
+  const surface = web && !installTipHeldForLink()
     ? installTipSurface({
         webBuild: true,
         userAgent: browser.navigator?.userAgent ?? "",

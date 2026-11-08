@@ -912,6 +912,9 @@ model Order {
   // BRIEF §7: "If something's out of stock" — "ask" | "remove" (validated at the wire, OutOfStockPref).
   // Null = never chosen = ask. With "remove" the server refuses swap proposals.
   outOfStockPref          String?             @map("out_of_stock_pref")
+  // Shop share links (D-129, plan §7): the share code of the link this order came through, checked at placement to
+  // belong to this order's business. Null = not from a link. Attribution only; nothing reads it for money.
+  shareCode               String?             @map("share_code") @db.VarChar(6)
   // BRIEF §9 pickup proof on merchant orders: when the rider's photo (pickupPhotoKey, shared with the
   // parcel flow) was attached, and the rider's "Bag is sealed" tick. Null = not taken / not ticked.
   pickupPhotoAt           DateTime?           @map("pickup_photo_at")

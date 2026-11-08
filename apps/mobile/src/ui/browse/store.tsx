@@ -14,6 +14,7 @@ import { Tappable } from "../Tappable";
 import { O, O_ADDED, ofFmt } from "../orderflow/copy";
 import { RxTag } from "../orderflow/review";
 import { B, fmt } from "./copy";
+import { SH } from "../share/copy";
 import { HAIRLINE, HeaderCircles, IconButton, RADIO_OFF, SERVICE_TILE, SKELETON, Star, TABULAR, VenueImage, initial, kindTint } from "./kit";
 
 /**
@@ -142,7 +143,7 @@ export function OpenLine({ v, service }: { v: VenueView; service: BrowseService 
 }
 
 /** README §4b "Info strip": surface, radius 16, up to four cells. Cells with no honest value drop out. */
-export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
+export function InfoStrip({ v, onSetAddress }: { v: VenueView; onSetAddress?: () => void }): React.ReactElement {
   const cells: Array<{ key: string; value: React.ReactNode; label: string }> = [
     {
       key: "rating",
@@ -164,6 +165,7 @@ export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
   if (v.freeDelivery) cells.push({ key: "fee", value: <CellValue text={B.store.free} color={tokens.color.free} />, label: B.store.delivery });
   else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue fit text={formatMoneyRange(v.feeLowUsd, v.feeUsd)} />, label: B.store.delivery });
   // No "km away" cell (D-127): the figure is a straight line, not the road distance.
+  if (onSetAddress) return <NoAddressStrip rating={cells[0]!} onPress={onSetAddress} />;
   return (
     <View style={{ flexDirection: "row", marginTop: 14, marginHorizontal: 16, borderRadius: 16, backgroundColor: tokens.color.surface }}>
       {cells.map((c, k) => (
@@ -179,6 +181,38 @@ export function InfoStrip({ v }: { v: VenueView }): React.ReactElement {
           </Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * SH-A2 (handoff shop-share-v1 README §4 "No-address cell", D-129): with no delivery address the strip keeps the
+ * rating cell and the other cells merge into one (1fr 3fr), min 62: map-pin 20, "Set where to deliver" 15/700 and
+ * "to see time and fee" 12 muted, chevron 18. The whole cell is the target.
+ */
+function NoAddressStrip({ rating, onPress }: { rating: { value: React.ReactNode; label: string }; onPress: () => void }): React.ReactElement {
+  return (
+    <View testID="store-no-address" style={{ flexDirection: "row", marginTop: 14, marginHorizontal: 16, borderRadius: 16, backgroundColor: tokens.color.surface, minHeight: 62 }}>
+      <View accessible accessibilityLabel={rating.label} style={{ flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 4, alignItems: "center", justifyContent: "center" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>{rating.value}</View>
+        <Text numberOfLines={1} style={{ marginTop: 1, fontSize: 12, color: tokens.color.muted, ...TABULAR }}>
+          {rating.label}
+        </Text>
+      </View>
+      <Tappable
+        onPress={onPress}
+        tone="row"
+        accessibilityRole="button"
+        accessibilityLabel={`${SH.arrival.setAddr}, ${SH.arrival.setAddrSub}`}
+        style={{ flex: 3, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingLeft: 14, paddingRight: 10, borderLeftWidth: 1, borderLeftColor: tokens.color.line }}
+      >
+        <Icon name="map-pin" size={20} color={tokens.color.accentText} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ fontSize: 15, lineHeight: 19, fontWeight: tokens.font.weight.bold, color: tokens.color.accentText }}>{SH.arrival.setAddr}</Text>
+          <Text style={{ fontSize: 12, lineHeight: 16, color: tokens.color.muted }}>{SH.arrival.setAddrSub}</Text>
+        </View>
+        <Icon name="chevron-right" size={18} color={tokens.color.muted} />
+      </Tappable>
     </View>
   );
 }
