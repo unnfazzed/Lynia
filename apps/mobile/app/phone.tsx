@@ -15,6 +15,7 @@ import { DismissKeyboardArea, useActionError } from "../src/ui";
 import { OB, RO } from "../src/ui/onboarding/copy";
 import { CountrySegment, CountrySheet } from "../src/ui/onboarding/CountrySheet";
 import { BackButton, Cta, FieldLabel, H2, OnbScreen, Pad, Sub } from "../src/ui/onboarding/kit";
+import { TakingYouToChip, usePendingShop } from "../src/ui/share/TakingYouToChip";
 
 /**
  * C2 / C3 · Phone (Calm Mint v2, `packages/design/handoff/calm-mint-v2-2026-10` README §3; ledger
@@ -135,11 +136,16 @@ export default function PhoneScreen(): React.ReactElement {
   // Android Back does what the on-screen arrow does. C1 hands over with a replace, so with nothing behind
   // this screen the system Back used to close the app. Only while this screen is the focused one: the code
   // screen is pushed on top of it and has its own Back.
+  // D-129: a shop share link skips C1, so C2 has no Back; the chip sits where Back would be.
+  const pendingShop = usePendingShop();
   const backRef = useRef(back);
   backRef.current = back;
+  const pendingShopRef = useRef(false);
+  pendingShopRef.current = pendingShop != null;
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (navigation.isFocused && !navigation.isFocused()) return false;
+      if (pendingShopRef.current) return false; // nothing behind C2 on a link: the system Back leaves the app
       backRef.current();
       return true;
     });
@@ -168,7 +174,7 @@ export default function PhoneScreen(): React.ReactElement {
         }
       >
         <Pad>
-          <BackButton onPress={back} />
+          {pendingShop ? <TakingYouToChip shop={pendingShop} style={{ marginBottom: 12 }} /> : <BackButton onPress={back} />}
           <H2>{OB.phoneTitle}</H2>
           <Sub>{OB.phoneSub}</Sub>
           <FieldLabel>{OB.phoneLabel}</FieldLabel>

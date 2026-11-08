@@ -58,6 +58,7 @@ import { InstallTipSheet } from "../../src/ui/install/InstallTipSheet";
 import { useInstallTip } from "../../src/ui/install/useInstallTip";
 import { usePrewarmRoutes, type PrewarmRoute } from "../../src/boot/prewarm-routes";
 import { prewarmGoogleMapsOnWeb } from "../../src/web/maps-prewarm";
+import { usePendingShopHandoff } from "../../src/share/use-pending-shop-handoff";
 
 const ACTIVE_ORDERS_KEY = ["activeCustomerOrders"] as const;
 
@@ -207,6 +208,8 @@ const RAIL_MIN = 1;
  */
 export default function LauncherHomeScreen(): React.ReactElement {
   const router = useRouter();
+  // D-129: a shop share link that was waiting for sign-up opens now.
+  usePendingShopHandoff();
   const { scrollRef, bottomPad } = useTabRoot<ScrollView>("home");
   const qc = useQueryClient();
   const { restaurantsEnabled } = useFeatureFlags();

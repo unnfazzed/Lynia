@@ -15,9 +15,11 @@ export function bootDestination(params: {
   session: { needsProfile?: boolean; role?: string } | null;
   onboardingSeen: boolean;
   rolePref: StartRole | null;
+  /** A share link is taking this signed-out person to a shop (D-129): the link skips C1 and opens C2. */
+  pendingShop?: boolean;
 }): "/onboarding" | "/phone" | "/profile/setup" | "/rider" | "/home" {
   const { session, onboardingSeen, rolePref } = params;
-  if (!session && !onboardingSeen) return "/onboarding";
+  if (!session && !onboardingSeen && !params.pendingShop) return "/onboarding";
   if (!session) return "/phone";
   if (session.needsProfile) return "/profile/setup";
   // The role saved on this device wins (the Customer/Rider toggle); with none saved, the session's
@@ -47,6 +49,7 @@ export function bootRedirectTarget(params: {
   onboardingSeen: boolean;
   rolePref: StartRole | null;
   coldStartData: unknown;
+  pendingShop?: boolean;
 }): string {
   const { session, coldStartData } = params;
   const deepLink = session ? pushDestination(coldStartData, session.role === "rider") : null;
@@ -82,5 +85,7 @@ export const SIGNED_OUT_ROUTES: readonly string[] = [
 /** Whether `pathname` (expo-router's `usePathname()`, no query string) is usable with no session. */
 export function isSignedOutRoute(pathname: string): boolean {
   const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  // A shop share link (`/s/<CODE>`, D-129) opens signed out too: it saves the shop and hands over to sign-in.
+  if (/^\/s\/[^/]+$/.test(path)) return true;
   return SIGNED_OUT_ROUTES.includes(path);
 }

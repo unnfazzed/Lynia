@@ -1,5 +1,5 @@
 import { riderModeAvailable } from "../../rider-mode";
-import { bootDestination, bootRedirectTarget } from "../boot-route";
+import { bootDestination, bootRedirectTarget, isSignedOutRoute } from "../boot-route";
 import { signedInDestination, startRoleFor } from "../sign-in-route";
 
 const s = { accessToken: "a", refreshToken: "r", expiresIn: 900, profileId: "p1", role: "customer", needsProfile: false };
@@ -162,5 +162,23 @@ describe("sign-in and boot routing on the customer-only iPhone app (D-41)", () =
       coldStartData: { orderId: "o1", status: "assigned" },
     });
     expect(target).toBe("/home");
+  });
+});
+
+describe("shop share links (D-129)", () => {
+  it("a signed-out first launch from a link skips C1 and opens C2", () => {
+    expect(bootDestination({ session: null, onboardingSeen: false, rolePref: null, pendingShop: true })).toBe("/phone");
+    expect(bootDestination({ session: null, onboardingSeen: false, rolePref: null, pendingShop: false })).toBe("/onboarding");
+  });
+
+  it("a signed-in account is unaffected", () => {
+    expect(bootDestination({ session: { role: "customer" }, onboardingSeen: true, rolePref: null, pendingShop: true })).toBe("/home");
+  });
+
+  it("/s/<code> works without a session; deeper paths don't", () => {
+    expect(isSignedOutRoute("/s/7KQ2MX")).toBe(true);
+    expect(isSignedOutRoute("/s/chicken-inn-7KQ2MX/")).toBe(true);
+    expect(isSignedOutRoute("/s/7KQ2MX/x")).toBe(false);
+    expect(isSignedOutRoute("/shops/7KQ2MX")).toBe(false);
   });
 });

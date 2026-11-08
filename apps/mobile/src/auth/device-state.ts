@@ -15,6 +15,7 @@ import { PICKUP_PHOTO_DRAFT_KEY } from "../logic/pickup-photo-draft";
 import { SEND_DRAFT_KEY } from "../logic/send-draft-key";
 import { FOOD_CART_SNAPSHOT_KEY } from "../net/food-cart-store";
 import { FOOD_ORDER_SNAPSHOT_KEY } from "../net/food-order-store";
+import { PENDING_SHOP_KEY } from "../share/pending-shop";
 import type { UndeliveredReason } from "@lynia/shared";
 
 // The one-time delivery handover code is returned once by `select`; persist it per-order so it
@@ -708,6 +709,8 @@ export async function clearDeviceState(): Promise<void> {
       // The customer's durable pending-rating marker (an order id + armed score) must not survive to
       // the next user on a shared device, or auto-submit a rating on the next user's account.
       SecureStore.deleteItemAsync(PENDING_RATING_KEY),
+      // The shop a share link was taking this person to (D-129, plan E3): cleared on sign-out.
+      SecureStore.deleteItemAsync(PENDING_SHOP_KEY),
       // The rider's durable pending-sender-rating marker — same shared-device hazard as above.
       SecureStore.deleteItemAsync(PENDING_SENDER_RATING_KEY),
       // The rider's durable pending-topup marker — same shared-device hazard as above.
