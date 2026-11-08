@@ -85,3 +85,21 @@ describe("pendingShopAtBoot (Play's install referrer, once per install)", () => 
     expect(mockStore[REFERRER_SHOP_USED_KEY]).toBe("1");
   });
 });
+
+import { clearShopArrival, saveShopArrival, SHOP_ARRIVAL_TTL_MS, shareCodeForOrder } from "../pending-shop";
+
+describe("shop arrival → Order.shareCode", () => {
+  const M = "11111111-1111-4111-8111-111111111111";
+  it("sends the code only with an order at the shop the link opened, within a day", async () => {
+    await saveShopArrival(M, "7KQ2MX", NOW);
+    expect(await shareCodeForOrder(M, NOW + 1000)).toBe("7KQ2MX");
+    expect(await shareCodeForOrder("other", NOW)).toBeUndefined();
+    expect(await shareCodeForOrder(M, NOW + SHOP_ARRIVAL_TTL_MS + 1)).toBeUndefined();
+  });
+
+  it("is gone once cleared (after the order goes through)", async () => {
+    await saveShopArrival(M, "7KQ2MX", NOW);
+    await clearShopArrival();
+    expect(await shareCodeForOrder(M, NOW)).toBeUndefined();
+  });
+});

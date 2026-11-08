@@ -4,7 +4,7 @@
  */
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { addMoney, categoryServedNow, ceilingBounds, isValidCeiling, recommendedDeliveryUsd, startingOffer, isInServiceArea, serviceTownsLabel, deliveryFeeForDistance, foodOrderMoney, merchantDeliveryShareAtPlacement, effectiveMerchantHours, isMerchantOpenNow, type MerchantHours, nextOpenDescription, RESTAURANTS_AUTO_ACCEPT, haversineKm, BUSY_MODE_EXTRA_MIN, type MerchantOrderResponse, type PaymentPromptRail, type PlaceMerchantOrderRequest, RESTAURANTS_TIMING, roundToCents, smallOrderFeeForSubtotal, type Waypoint } from "@lynia/shared";
+import { addMoney, normalizeShopCode, categoryServedNow, ceilingBounds, isValidCeiling, recommendedDeliveryUsd, startingOffer, isInServiceArea, serviceTownsLabel, deliveryFeeForDistance, foodOrderMoney, merchantDeliveryShareAtPlacement, effectiveMerchantHours, isMerchantOpenNow, type MerchantHours, nextOpenDescription, RESTAURANTS_AUTO_ACCEPT, haversineKm, BUSY_MODE_EXTRA_MIN, type MerchantOrderResponse, type PaymentPromptRail, type PlaceMerchantOrderRequest, RESTAURANTS_TIMING, roundToCents, smallOrderFeeForSubtotal, type Waypoint } from "@lynia/shared";
 import { penaltiesSuspended } from "../common/penalties";
 import { harareWallClock } from "./harare-clock";
 import { withCustomerCeiling } from "./delivery-ceiling.views";
@@ -208,6 +208,10 @@ export class FoodOrderPlacing {
         }
       : { merchantPhase: "awaiting_accept" as const, acceptDeadlineAt: new Date(now.getTime() + RESTAURANTS_TIMING.acceptWindowMs) };
 
+    // D-129: keep the share link's code only when it is this business's own (a stale or foreign code is dropped,
+    // never an error: attribution must not fail an order).
+    const shareCode = await this.shareCodeFor(merchantId, body.shareCode);
+
     {
       const create = (db: Pick<Prisma.TransactionClient, "order">) => db.order.create({
         data: {
@@ -247,6 +251,7 @@ export class FoodOrderPlacing {
           idempotencyKey: body.idempotencyKey ?? null,
           // Order flow v2 (BRIEF §7): null = never chosen = ask.
           outOfStockPref: body.outOfStockPref ?? null,
+          shareCode,
           events: { create: { status: "requested" } },
           merchantItems: {
             create: body.items.map((i) => {
@@ -503,5 +508,17 @@ export class FoodOrderPlacing {
       take: 200,
     });
     return orders.map((o) => this.svc.forMerchant(o));
+  }
+
+  /** The share code to record on a new order: `raw` when it is `merchantId`'s own share code, else null. Never throws. */
+  async shareCodeFor(merchantId: string, raw: string | undefined): Promise<string | null> {
+    const code = normalizeShopCode(raw);
+    if (!code) return null;
+    try {
+      const row = await this.svc.prisma.merchantShareCode.findUnique({ where: { code }, select: { merchantId: true } });
+      return row?.merchantId === merchantId ? code : null;
+    } catch {
+      return null;
+    }
   }
 }

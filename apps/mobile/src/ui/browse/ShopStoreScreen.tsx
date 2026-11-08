@@ -44,6 +44,7 @@ import {
   useStableItems,
   type StoreItem,
 } from "./store";
+import { useStoreAddress } from "./useStoreAddress";
 
 /** The ink toast's life (README §3 "Errors show once, as an ink toast (~4 s)"). */
 const TOAST_MS = 4000;
@@ -102,6 +103,8 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
   const { catalogue, isLoading, isError, isFetching, refetch } = useShopCatalogue(id, true);
   const cart = useFoodCart();
   const location = useHomeLocation();
+  // SH-A2 (D-129): no delivery address → "Set where to deliver" in the info strip.
+  const address = useStoreAddress(location);
   const now = useNow();
   const serviceFlags = useServiceFlags();
   const orderFlags = useOrderFlags();
@@ -297,6 +300,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
           }}
           onClose={() => setOpenItem(null)}
         />
+        {address.sheets}
         <NewCartSheet
           pending={pending ? { oldVenue: cart.cart.restaurantName ?? "", oldCount: cart.itemCount, oldTotal: cart.subtotal, item: pending.item.name, newVenue: name } : null}
           onConfirm={() => {
@@ -438,7 +442,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
         <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={v.kind} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service={service} /> : null}
-        <InfoStrip v={v} />
+        <InfoStrip v={v} onSetAddress={address.onSetAddress} />
         {closingStrip && sectionOn ? <ClosingStrip minutes={v.closesInMin!} orderBy={v.closeTime!} /> : null}
         {closingStrip && !sectionOn ? <OpenLine v={v} service={service} /> : null}
         {!open ? <ClosedStrip label={closedLabel(v)} /> : null}

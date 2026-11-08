@@ -12,7 +12,8 @@ import { loadRolePreference } from "../../src/auth/device-state";
 import { replaceClearingStack } from "../../src/logic/nav";
 import { switchToCustomer } from "../../src/logic/switch-to-customer";
 import { riderModeAvailable } from "../../src/rider-mode";
-import { clearPendingShop, savePendingShop } from "../../src/share/pending-shop";
+import { holdInstallTipForLink } from "../../src/share/link-tip-hold";
+import { clearPendingShop, saveShopArrival, savePendingShop } from "../../src/share/pending-shop";
 import { EmptyState } from "../../src/ui";
 import { BrowseButton, IconButton, initial } from "../../src/ui/browse/kit";
 import { Sheet } from "../../src/ui/browse/sheets";
@@ -82,6 +83,8 @@ export default function ShopLinkScreen(): React.ReactElement {
     try {
       const res = await withTimeout(resolveShopLink(code), RESOLVE_TIMEOUT_MS);
       await clearPendingShop();
+      // Order.shareCode (D-129): an order at this shop in the next day counts as coming from the link.
+      await saveShopArrival(res.merchantId, code);
       const store = { pathname: STORE_ROUTE[res.service], params: { id: res.merchantId } } as const;
       // Back from a cold start goes to Home; from a warm start, to where the person was (README §2).
       if (router.canGoBack()) router.replace(store);
@@ -100,6 +103,8 @@ export default function ShopLinkScreen(): React.ReactElement {
   useEffect(() => {
     if (loading || started.current) return;
     started.current = true;
+    // DR12: on the web app, the Add to Home Screen tip waits until this person's first order.
+    if (code) holdInstallTipForLink();
     if (!session) {
       // Signed out: keep the shop and start sign-up on C2 (the link skips C1).
       void savePendingShop(code).then(() => replaceClearingStack(router, "/phone"));
