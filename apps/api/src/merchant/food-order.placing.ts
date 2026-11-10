@@ -92,6 +92,8 @@ export class FoodOrderPlacing {
         name: true,
         // The venue's number for the owner's new-order alert (the same one customers see).
         ownerProfile: { select: { phone: true } },
+        // Everyone on the venue's team (owner + staff) gets the new-order WhatsApp (owner, 2026-11-10).
+        members: { select: { profile: { select: { phone: true } } } },
         location: true,
         closedUntil: true,
         hours: true,
@@ -294,8 +296,12 @@ export class FoodOrderPlacing {
       // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
       if (!slot) {
         this.svc.notifyQueue(merchantId, created.id);
-        // The venue's WhatsApp (Bird, owner 2026-11-10): same moment as the queue push, so a scheduled order skips it.
-        this.svc.merchantWhatsApp?.newOrder({ phone: merchant.ownerProfile?.phone, orderId: created.id, total: agreedFare });
+        // The venue team's WhatsApp (Bird, owner 2026-11-10): same moment as the queue push, so a scheduled order skips it.
+        this.svc.merchantWhatsApp?.newOrder({
+          phones: [merchant.ownerProfile?.phone, ...merchant.members.map((m) => m.profile.phone)],
+          orderId: created.id,
+          total: agreedFare,
+        });
       }
       this.svc.ownerAlerts?.notify(
         ownerAlertText.merchantOrder({

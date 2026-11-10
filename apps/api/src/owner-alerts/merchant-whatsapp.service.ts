@@ -39,8 +39,13 @@ export function newOrderMessage(input: { phone: string; orderId: string; total: 
   };
 }
 
+/** The distinct, non-blank phones of a team, in order. */
+export function teamPhones(phones: readonly (string | null | undefined)[]): string[] {
+  return [...new Set(phones.map((p) => p?.trim()).filter((p): p is string => !!p))];
+}
+
 /**
- * Tells a restaurant / shop / pharmacy on WhatsApp that a customer has placed an order with it, alongside the
+ * Tells everyone on a restaurant / shop / pharmacy team on WhatsApp that a customer has placed an order with it, alongside the
  * in-app queue push (owner request 2026-11-10). Sent through Bird's WhatsApp API with the workspace key the
  * API already holds for Bird Verify.
  *
@@ -62,14 +67,19 @@ export class MerchantWhatsAppService {
     return this.env.WHATSAPP_ORDER_ALERTS_ENABLED === "true" && !!this.key;
   }
 
-  newOrder(input: { phone: string | null | undefined; orderId: string; total: unknown }): void {
-    if (!this.enabled || !input.phone) return;
-    const phone = input.phone;
-    void this.send(newOrderMessage({ phone, orderId: input.orderId, total: input.total })).catch((err: unknown) => {
-      this.logger.warn(
-        `new-order WhatsApp not sent to ${maskPhone(phone)} (order ${orderShortId(input.orderId)}): ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+  /**
+   * One WhatsApp per distinct phone on the venue's team (owner + staff, owner 2026-11-10): blanks dropped,
+   * the same number never messaged twice. Each send fails on its own; one bad number never stops the rest.
+   */
+  newOrder(input: { phones: readonly (string | null | undefined)[]; orderId: string; total: unknown }): void {
+    if (!this.enabled) return;
+    for (const phone of teamPhones(input.phones)) {
+      void this.send(newOrderMessage({ phone, orderId: input.orderId, total: input.total })).catch((err: unknown) => {
+        this.logger.warn(
+          `new-order WhatsApp not sent to ${maskPhone(phone)} (order ${orderShortId(input.orderId)}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
   }
 
   private async send(body: ReturnType<typeof newOrderMessage>): Promise<void> {
