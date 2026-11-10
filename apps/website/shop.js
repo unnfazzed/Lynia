@@ -155,9 +155,25 @@ async function fetchCard(api, code) {
   }
 }
 
+/**
+ * The card image's version: a short hash of the shop's name and its logo and cover thumbnails (paths only, the
+ * signature query changes daily). WhatsApp caches a preview image by its URL, so a fixed `card.jpg` URL kept an old
+ * render (no photos) for good; a new photo or name now gives the og:image a new URL.
+ */
+export function cardVersion(shop) {
+  const path = (u) => (typeof u === "string" ? u.split("?")[0] : "");
+  const src = `${shop.name}|${path(shop.logoThumbUrl)}|${path(shop.coverThumbUrl)}|2`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(36);
+}
+
 async function cardImage(request, env, api, code) {
+  // The version rides into the edge-cache key, so a renamed or re-photographed shop never gets yesterday's render.
+  const v = new URL(request.url).searchParams.get("v");
+  const qs = v && /^[a-z0-9]{1,13}$/.test(v) ? `?v=${v}` : "";
   try {
-    const res = await fetch(`${api}/share/${code ?? "-"}/card.jpg`, {
+    const res = await fetch(`${api}/share/${code ?? "-"}/card.jpg${qs}`, {
       cf: { cacheTtl: 86400, cacheEverything: true },
       signal: AbortSignal.timeout(5000),
     });
@@ -244,7 +260,8 @@ export function landingHtml({ shop, code, platform, noPlay, nonce }) {
   const ogTitle = name ? fill(COPY.og.title, name) : COPY.og.genericTitle;
   const ogDesc = name ? fill(COPY.og.desc, name) : COPY.og.genericDesc;
   const ogAlt = name ? fill(COPY.og.imgAlt, name) : COPY.og.genericAlt;
-  const cardUrl = `https://lyniago.com/s/${code || "-"}/card.jpg`;
+  const v = shop ? cardVersion(shop) : "";
+  const cardUrl = `https://lyniago.com/s/${code || "-"}/card.jpg${v ? `?v=${v}` : ""}`;
   const webApp = code ? `${WEB_APP}/s/${code}` : WEB_APP;
 
   // Buttons per device (README §2 "Signed out", SH-W1–W5).
