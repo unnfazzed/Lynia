@@ -448,6 +448,10 @@ export const envSchema = z.object({
   // unset means ON; "false" is the kill switch: every order keeps the fixed delivery fee. Served to mobile via
   // GET /app/order-flags (`deliveryCeiling`).
   DELIVERY_CEILING_ENABLED: z.enum(["true", "false"]).default("true"),
+  // New-order WhatsApp to the venue (owner 2026-11-10, owner-alerts/merchant-whatsapp.service.ts): Bird's managed
+  // `bird_order_confirmation` template, from Bird's number, using BIRD_VERIFY_API_KEY (or BIRD_ACCESS_KEY). Off
+  // unless "true", since each message is billed by Bird and Meta.
+  WHATSAPP_ORDER_ALERTS_ENABLED: z.enum(["true", "false"]).default("false"),
   // Penalty suspension (owner 2026-10-12, see common/penalties.ts): unset means SUSPENDED — no
   // automatic holds, strike cooldowns, merchant cash-debt job lock or customer cash ban, and existing ones
   // are ignored. "false" switches penalties back on. Read at point of use via penaltiesSuspended().

@@ -17,6 +17,7 @@ import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { OrderScheduleService } from "./order-schedule.service";
 import { PrescriptionService } from "./prescription.service";
+import { MerchantWhatsAppService } from "../owner-alerts/merchant-whatsapp.service";
 import { OwnerAlertsService } from "../owner-alerts/owner-alerts.service";
 import { FoodOrderPlacing } from "./food-order.placing";
 import { FoodOrderLifecycle } from "./food-order.lifecycle";
@@ -95,6 +96,8 @@ export class FoodOrderService implements OnModuleInit, OnModuleDestroy {
     @Optional() readonly codeCrypto?: PiiCryptoService,
     // The owner's new-order alert. @Global (OwnerAlertsModule); optional like the rest.
     @Optional() readonly ownerAlerts?: OwnerAlertsService,
+    // The venue's new-order WhatsApp (Bird). @Global (OwnerAlertsModule); optional like the rest.
+    @Optional() readonly merchantWhatsApp?: MerchantWhatsAppService,
   ) {}
 
   microCacheBypassed(...args: Parameters<FoodOrderViews["microCacheBypassed"]>): ReturnType<FoodOrderViews["microCacheBypassed"]> {

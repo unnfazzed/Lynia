@@ -292,7 +292,11 @@ export class FoodOrderPlacing {
       if (!once.created) return withCustomerCeiling(once.row, this.svc.toResponse(once.row));
       const created = once.row;
       // A scheduled order stays off the merchant's live queue until it rings — nothing to push yet.
-      if (!slot) this.svc.notifyQueue(merchantId, created.id);
+      if (!slot) {
+        this.svc.notifyQueue(merchantId, created.id);
+        // The venue's WhatsApp (Bird, owner 2026-11-10): same moment as the queue push, so a scheduled order skips it.
+        this.svc.merchantWhatsApp?.newOrder({ phone: merchant.ownerProfile?.phone, orderId: created.id, total: agreedFare });
+      }
       this.svc.ownerAlerts?.notify(
         ownerAlertText.merchantOrder({
           orderId: created.id,
