@@ -440,6 +440,7 @@ export class AuthService {
   async requestOtp(
     rawPhone: string,
     ip: string,
+    opts: { app?: "merchant" } = {},
   ): Promise<{ sent: true; channel: string; deliveryChannel: OtpDeliveryChannel; devCode?: string }> {
     // Canonicalize to E.164 at the boundary so every downstream key (OTP store, rate limit, and the
     // profile identity in verifyOtp) is the same string regardless of how the number was typed.
@@ -462,8 +463,10 @@ export class AuthService {
     const rl = rlFrom(this.env);
     // `otp_send_limit` + `retryAfter` let the app say "try again in N min" for the per-phone cap, the
     // one a real person hits (five sends an hour); the per-IP and global caps carry `retryAfter` only.
+    // Merchant sign-in (owner, 2026-11-10): no per-phone cap — a merchant must never be told to wait
+    // to get into their shop. The per-IP and global caps still bound spend and abuse.
     const rlSteps: Array<[string, { max: number; windowSec: number }, string?]> = [
-      [`rl:phone:${phone}`, rl.phone, "otp_send_limit"],
+      ...(opts.app === "merchant" ? [] : [[`rl:phone:${phone}`, rl.phone, "otp_send_limit"] as [string, { max: number; windowSec: number }, string]]),
       [`rl:ip:${ip}`, rl.ip],
       ["rl:global", rl.global],
     ];

@@ -127,7 +127,7 @@ export function confirmHandoverLink(token: string, code: string): Promise<{ orde
 }
 
 export function requestOtp(phone: string): Promise<OtpRequestResult> {
-  return rawFetch<OtpRequestResult>("/auth/otp/request", { method: "POST", body: { phone } });
+  return rawFetch<OtpRequestResult>("/auth/otp/request", { method: "POST", body: { phone, app: "merchant" } });
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<VerifyResult> {
