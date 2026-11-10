@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { MerchantProfileResponse } from "@lynia/shared";
+import { MERCHANT_PREP_MINUTES, RESTAURANTS_AUTO_ACCEPT, type MerchantProfileResponse } from "@lynia/shared";
 import { Kitchen } from "../../components/Kitchen";
 import { useKitchenConnection } from "../../components/KitchenConnectionProvider";
 import { AppBar } from "../../components/m/AppBar";
@@ -13,7 +13,7 @@ import { primeBusiness } from "../../lib/business";
 import { getMerchantProfile, updateOrderSettings } from "../../lib/menu-api";
 
 type LoadState = { status: "loading" } | { status: "ready"; profile: MerchantProfileResponse } | { status: "error"; message: string };
-type Setting = "autoAccept" | "showPhoneToCustomers" | "freeDelivery";
+type Setting = "autoAccept" | "showPhoneToCustomers" | "freeDelivery" | "prepBaselineMinutes";
 
 const SETTINGS: { key: Setting; title: string; body: string }[] = [
   {
@@ -62,7 +62,7 @@ export default function OrderingPage() {
     refresh();
   }, [refresh]);
 
-  async function onToggle(key: Setting, value: boolean) {
+  async function onToggle(key: Setting, value: boolean | number) {
     if (state.status !== "ready" || saving) return;
     setSaving(key);
     setError(null);
@@ -83,6 +83,8 @@ export default function OrderingPage() {
   // D-71: a shop or pharmacy never auto-accepts (Order flow v2), so it sees only the free-delivery switch.
   const shop = state.status === "ready" && state.profile.businessType === "shop";
   const settings = shop ? SETTINGS.filter((s) => s.key === "freeDelivery") : SETTINGS;
+  // The kitchen's usual prep time — shops have no prep quote, so restaurants only.
+  const prep = state.status === "ready" ? (state.profile.prepBaselineMinutes ?? RESTAURANTS_AUTO_ACCEPT.defaultPrepMinutes) : null;
 
   return (
     <Kitchen active="account" tabs={false}>
@@ -110,6 +112,31 @@ export default function OrderingPage() {
                 />
               </div>
             ))}
+          {state.status === "ready" && !staff && !shop && prep !== null && (
+            <div className="m-card" style={{ padding: "10px 14px", gap: 8 }}>
+              <div>
+                <b style={{ display: "block", fontSize: 15 }}>Usual prep time</b>
+                <span className="m-hint" style={{ display: "block", lineHeight: 1.35, marginTop: 2 }}>
+                  How long an order usually takes to get ready. Customers see it in their delivery time, and bikers are sent so they arrive when it's ready.
+                </span>
+              </div>
+              <div className="m-chips" style={{ flexWrap: "wrap" }} role="radiogroup" aria-label="Usual prep time">
+                {MERCHANT_PREP_MINUTES.choices.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={prep === m}
+                    className={`m-chip${prep === m ? " m-on" : ""}`}
+                    disabled={actionsDisabled || saving !== null}
+                    onClick={() => prep !== m && void onToggle("prepBaselineMinutes", m)}
+                  >
+                    {m} min
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {error && (
             <div className="m-alert" role="alert">
               {error}

@@ -6255,3 +6255,15 @@ DR1–DR16, E1–E4); handoff `packages/design/handoff/shop-share-v1/` (its READ
 ## D-130 · Shop share copy: "From {shop} to your door" — APPROVED (owner, 2026-11-08)
 
 Owner instruction (2026-11-08): every shop-share string drops "{shop} on LyniaGo" / "{shop} is on LyniaGo" / "Delivered by bike in Harare". The landing line, link-preview description, share text and WhatsApp text read **"See what’s on, order in a tap. From {shop} to your door."** (the share texts end ": {link}"); the page title, link-preview title and email subject read **"From {shop} to your door"**. Applied in `apps/website/shop.js`, `apps/merchant/app/lib/shop-share-copy.ts` and `apps/mobile/src/ui/share/copy.ts`; the handoff (`packages/design/handoff/shop-share-v1/copy.ts`) is unchanged and still the record of the drawn copy.
+
+## D-131 · The restaurant sets its own usual prep time — APPROVED (owner, 2026-11-10)
+
+Owner: "lets allow businesses to set their own prep time". `Merchant.prepBaselineMinutes` already fed
+every customer ETA (browse cards, venue page, scheduled-order ring time) and the prep set on accept, but
+nothing let the business change it (it stayed null → the 20-minute default). The merchant-v2 handoff
+draws no control for it, so — like D-71's free-delivery switch — it is added to **Account → Taking
+orders** (owner only) in that page's existing card language: a "Usual prep time" card with a wrapping
+row of the kit's `m-chip`s (5, 10, 15, 20, 25, 30, 45, 60, 90 min; the selected one `m-on`), saved the
+moment one is tapped. Restaurants only: shops and pharmacies have no prep quote (merchant-v2 README).
+`PATCH /merchant/order-settings` takes `prepBaselineMinutes` (5–90); it applies to orders placed from
+then on. Busy mode still adds its +10 on top. Retire this entry when a handoff draws the control.
