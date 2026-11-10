@@ -150,10 +150,20 @@ export type SetMerchantBusyModeRequest = z.infer<typeof SetMerchantBusyModeReque
 
 /** `PATCH /merchant/order-settings` (owner) and `PATCH /admin/merchants/:id/order-settings` (ops):
  *  how the restaurant takes orders. Both fields optional; at least one must be sent. */
+/** Bounds and choices for the merchant's own usual prep time. */
+export const MERCHANT_PREP_MINUTES = { min: 5, max: 90, choices: [5, 10, 15, 20, 25, 30, 45, 60, 90] } as const;
+
 export const UpdateMerchantOrderSettingsRequest = z
-  .object({ autoAccept: z.boolean().optional(), showPhoneToCustomers: z.boolean().optional(), freeDelivery: z.boolean().optional() })
+  .object({
+    autoAccept: z.boolean().optional(),
+    showPhoneToCustomers: z.boolean().optional(),
+    freeDelivery: z.boolean().optional(),
+    /** The kitchen's usual prep time in minutes (`Merchant.prepBaselineMinutes`): the base of every
+     *  ETA the customer is quoted and of the prep set on accept. Applies to orders placed from now on. */
+    prepBaselineMinutes: z.number().int().min(MERCHANT_PREP_MINUTES.min).max(MERCHANT_PREP_MINUTES.max).optional(),
+  })
   .strict()
-  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined || v.freeDelivery !== undefined, {
+  .refine((v) => v.autoAccept !== undefined || v.showPhoneToCustomers !== undefined || v.freeDelivery !== undefined || v.prepBaselineMinutes !== undefined, {
     message: "Nothing to change",
   });
 export type UpdateMerchantOrderSettingsRequest = z.infer<typeof UpdateMerchantOrderSettingsRequest>;
@@ -222,6 +232,8 @@ export const MerchantProfileResponse = z
     showPhoneToCustomers: z.boolean().optional(),
     /** D-71: the venue pays the delivery fee on new cash orders (customers pay $0 delivery). */
     freeDelivery: z.boolean().optional(),
+    /** The kitchen's usual prep time in minutes; null until set (customers are quoted the default). */
+    prepBaselineMinutes: z.number().int().nullable().optional(),
     /** Order flow v2 (BRIEF §13): the CALLER may approve or decline prescriptions. Optional/additive. */
     myIsPharmacist: z.boolean().optional(),
     /** Admin console v2 §5: where the business is in its application, and the reject reason code

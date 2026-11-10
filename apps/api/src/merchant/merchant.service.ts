@@ -485,6 +485,8 @@ export class MerchantService {
         ...(body.showPhoneToCustomers !== undefined ? { showPhoneToCustomers: body.showPhoneToCustomers } : {}),
         // D-71: free delivery paid by the venue — applies to orders placed from now on, never in flight.
         ...(body.freeDelivery !== undefined ? { freeDelivery: body.freeDelivery } : {}),
+        // The usual prep time: read when an order is placed, so orders already in the kitchen keep theirs.
+        ...(body.prepBaselineMinutes !== undefined ? { prepBaselineMinutes: body.prepBaselineMinutes } : {}),
       },
       include: { ownerProfile: { select: { phone: true } } },
     });
@@ -1389,6 +1391,7 @@ export class MerchantService {
       autoAccept: merchant.autoAccept,
       showPhoneToCustomers: merchant.showPhoneToCustomers,
       freeDelivery: merchant.freeDelivery,
+      prepBaselineMinutes: merchant.prepBaselineMinutes ?? null,
       // Order flow v2 (BRIEF §13): whether the caller may approve/decline prescriptions.
       ...(me.myIsPharmacist !== undefined ? { myIsPharmacist: me.myIsPharmacist } : {}),
       // Admin console v2 §5: the application state and, while rejected, the reason code the business reads.

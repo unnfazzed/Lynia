@@ -68,6 +68,23 @@ describe("Taking orders (auto-accept, owner only)", () => {
     expect(screen.getAllByRole("switch")).toHaveLength(1);
   });
 
+  it("the restaurant sets its usual prep time (default 20 shown until set)", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ prepBaselineMinutes: null }));
+    vi.mocked(updateOrderSettings).mockResolvedValue(profile({ prepBaselineMinutes: 30 }));
+    open();
+    expect((await screen.findByRole("radio", { name: "20 min" })).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "30 min" }));
+    await vi.waitFor(() => expect(updateOrderSettings).toHaveBeenCalledWith({ prepBaselineMinutes: 30 }));
+    expect((await screen.findByRole("radio", { name: "30 min" })).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("a shop has no prep time to set", async () => {
+    vi.mocked(getMerchantProfile).mockResolvedValue(profile({ businessType: "shop", shopKind: "grocery" }));
+    open();
+    await screen.findByRole("switch", { name: "Free delivery" });
+    expect(screen.queryByRole("radiogroup", { name: "Usual prep time" })).toBeNull();
+  });
+
   it("staff see one plain line and no switches", async () => {
     vi.mocked(getMerchantProfile).mockResolvedValue(profile({ myRole: "staff" }));
     open();
