@@ -442,7 +442,7 @@ export function ShopStoreScreen({ service }: { service: ShopService }): React.Re
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <ScrollView ref={scrollRef} onScroll={onScroll} scrollEventThrottle={32} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad }}>
-        <StoreCover service={service} photoUrl={v.photoUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} onShare={share} shareLabel={fill(SH.customer.shareA11y, { shop: name })} />
+        <StoreCover service={service} photoUrl={v.photoUrl} thumbUrl={v.thumbUrl} narrow={narrow} onBack={() => router.back()} onSearch={() => setSearching(true)} searchLabel={fmt(B.store.searchIn, { v: name })} onShare={share} shareLabel={fill(SH.customer.shareA11y, { shop: name })} />
         <StoreLogo logoUrl={v.logoUrl} logoThumbUrl={v.logoThumbUrl} name={name} kind={v.kind} />
         <StoreTitle name={name} sub={v.sub} />
         {open && !closingStrip ? <OpenLine v={v} service={service} /> : null}

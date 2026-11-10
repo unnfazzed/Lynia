@@ -76,6 +76,9 @@ export function RemoteImage(props: {
   /** D7 review: tried once when `source` fails (a thumbnail that is recorded but missing falls back to
    *  the full photo); only if that fails too does `onError` fire. */
   fallbackUri?: string | null;
+  /** A small variant drawn at once (cropped like the photo) while `source` downloads. A big original
+   *  on a slow line otherwise paints top-down on iOS Safari: a strip of photo over a grey band. */
+  placeholderUri?: string | null;
 }): React.ReactElement {
   // Which source failed: a new `source` starts over from the primary.
   const [failedUri, setFailedUri] = useState<string | null>(null);
@@ -94,6 +97,8 @@ export function RemoteImage(props: {
       source={{ uri, cacheKey: imageCacheKey(uri) }}
       style={props.style as never}
       contentFit={contentFit}
+      placeholder={props.placeholderUri && props.placeholderUri !== uri ? { uri: props.placeholderUri, cacheKey: imageCacheKey(props.placeholderUri) } : undefined}
+      placeholderContentFit={contentFit}
       cachePolicy={props.cachePolicy ?? "memory-disk"}
       recyclingKey={props.recyclingKey}
       priority={props.priority ?? "normal"}

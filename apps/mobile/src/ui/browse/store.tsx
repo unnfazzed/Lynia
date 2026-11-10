@@ -28,6 +28,7 @@ import { HAIRLINE, HeaderCircles, IconButton, RADIO_OFF, SERVICE_TILE, SKELETON,
 export function StoreCover({
   service,
   photoUrl,
+  thumbUrl,
   narrow,
   onBack,
   onSearch,
@@ -37,6 +38,8 @@ export function StoreCover({
 }: {
   service: BrowseService;
   photoUrl: string | null;
+  /** D7: the cover's small variant, drawn while the original downloads. */
+  thumbUrl?: string | null;
   narrow: boolean;
   onBack: () => void;
   onSearch: () => void;
@@ -54,6 +57,7 @@ export function StoreCover({
         {photo ? (
           <RemoteImage
             source={{ uri: photoUrl! }}
+            placeholderUri={thumbUrl}
             onError={() => markFailed()}
             accessibilityElementsHidden
             importantForAccessibility="no"

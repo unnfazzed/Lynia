@@ -91,7 +91,7 @@ function setup(opts: { env?: Partial<Env>; draws?: string[] } = {}) {
   };
   const stored = new Map<string, Buffer>();
   const storage = {
-    readHead: async (key: string) => stored.get(key) ?? null,
+    readObject: async (key: string) => stored.get(key) ?? null,
     createReadUrl: async (key: string) => {
       signed.push(key);
       return `https://signed.example/${key}`;

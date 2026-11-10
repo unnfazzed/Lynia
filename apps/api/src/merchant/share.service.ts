@@ -163,7 +163,9 @@ export class ShareService {
   private async readThumb(photoKey: string | null | undefined, thumbKey: string | null | undefined): Promise<Buffer | null> {
     const key = currentThumbKey(photoKey, thumbKey);
     if (!key) return null;
-    return this.storage.readHead(key, CARD_PHOTO_MAX_BYTES).catch(() => null);
+    // readObject, not readHead: Azure's readHead(key, n) asks for exactly n bytes and throws ("stream drains")
+    // on any blob shorter than n, so with the 2 MB cap every real thumb failed and the card fell back to tints.
+    return this.storage.readObject(key, CARD_PHOTO_MAX_BYTES).catch(() => null);
   }
 
   /** The signed thumbnail of a photo, or null (no photo, no current thumb, or a signing hiccup: the card falls back). */
