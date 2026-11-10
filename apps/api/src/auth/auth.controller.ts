@@ -9,7 +9,9 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
 
 // `.strict()` rejects unknown keys outright (defense in depth on the unauthenticated auth surface),
 // rather than zod's default of silently stripping them.
-const RequestOtp = z.object({ phone: z.string().min(6).max(20) }).strict();
+// `app: "merchant"` (owner, 2026-11-10): the merchant sign-in has no per-phone code-request cap. The
+// per-IP and global spend caps still apply.
+const RequestOtp = z.object({ phone: z.string().min(6).max(20), app: z.enum(["merchant"]).optional() }).strict();
 const VerifyOtp = z.object({ phone: z.string().min(6).max(20), code: z.string().length(6) }).strict();
 const Refresh = z.object({ refreshToken: z.string().min(10) }).strict();
 // `pushToken` (optional — older apps omit it): this device's push token, unbound with the session.
@@ -36,7 +38,7 @@ export class AuthController {
 
   @Post("otp/request")
   request(@Body(new ZodBody(RequestOtp)) body: z.infer<typeof RequestOtp>, @Ip() ip: string) {
-    return this.auth.requestOtp(body.phone, ip);
+    return this.auth.requestOtp(body.phone, ip, { app: body.app });
   }
 
   // Unauthenticated + a code-guess surface: the live OTP record is capped at 5 attempts, but a

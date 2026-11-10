@@ -77,6 +77,13 @@ describe("AuthService.requestOtp", () => {
     await expect(svc.requestOtp("+263770000001", "1.1.1.1")).rejects.toMatchObject({ status: 429 });
   });
 
+  it("puts no per-phone cap on merchant sign-in (owner, 2026-11-10)", async () => {
+    const { svc } = make(baseEnv, {});
+    for (let i = 0; i < 8; i++) {
+      await expect(svc.requestOtp("+263770000021", "1.1.1.21", { app: "merchant" })).resolves.toMatchObject({ sent: true });
+    }
+  });
+
   it("returns devCode only on the console channel outside production", async () => {
     const { svc } = make(baseEnv, {});
     const res = await svc.requestOtp("+263770000002", "1.1.1.2");
