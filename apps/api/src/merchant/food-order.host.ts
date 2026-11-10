@@ -18,6 +18,7 @@ import type { Env } from "../config/env";
 import type { OrderScheduleService } from "./order-schedule.service";
 import type { PrescriptionService } from "./prescription.service";
 import type { OwnerAlertsService } from "../owner-alerts/owner-alerts.service";
+import type { MerchantWhatsAppService } from "../owner-alerts/merchant-whatsapp.service";
 import type { OrderStatus, Prisma } from "@prisma/client";
 import type { MerchantOrderResponse } from "@lynia/shared";
 import type { OrderWithItems, StampedRejectionReason } from "./food-order.helpers";
@@ -53,6 +54,7 @@ export interface FoodOrderHost {
   notifyQueue(merchantId: string | null | undefined, orderId: string): void;
   ownMerchantId(profileId: string): Promise<string>;
   readonly ownerAlerts?: OwnerAlertsService;
+  readonly merchantWhatsApp?: MerchantWhatsAppService;
   readonly paymentRail: PaymentRail;
   prescriptionService(): PrescriptionService;
   readonly prisma: PrismaService;
