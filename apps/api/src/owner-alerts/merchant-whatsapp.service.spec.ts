@@ -26,7 +26,7 @@ describe("MerchantWhatsAppService", () => {
     for (const env of envs) {
       const svc = new MerchantWhatsAppService(env);
       expect(svc.enabled).toBe(false);
-      svc.newOrder({ phone: "+263771234567", orderId: ORDER, total: 16.5 });
+      svc.newOrder({ phones: ["+263771234567"], orderId: ORDER, total: 16.5 });
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -34,14 +34,38 @@ describe("MerchantWhatsAppService", () => {
   it("skips a venue with no phone on file", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    new MerchantWhatsAppService(ARMED).newOrder({ phone: null, orderId: ORDER, total: 16.5 });
+    new MerchantWhatsAppService(ARMED).newOrder({ phones: [null, undefined, " "], orderId: ORDER, total: 16.5 });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("messages every team member once, even when the owner is also a member", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    vi.stubGlobal("fetch", fetchMock);
+    new MerchantWhatsAppService(ARMED).newOrder({
+      phones: ["+263771111111", "+263771111111", "+263772222222", null, "+263773333333"],
+      orderId: ORDER,
+      total: 5,
+    });
+    await settle();
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).to)).toEqual(["+263771111111", "+263772222222", "+263773333333"]);
+  });
+
+  it("one failed number doesn't stop the others", async () => {
+    vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("socket hang up"))
+      .mockResolvedValue({ ok: true, status: 202 });
+    vi.stubGlobal("fetch", fetchMock);
+    new MerchantWhatsAppService(ARMED).newOrder({ phones: ["+263771111111", "+263772222222"], orderId: ORDER, total: 5 });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("sends Bird's managed order template to the venue, with no `from`", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 });
     vi.stubGlobal("fetch", fetchMock);
-    new MerchantWhatsAppService(ARMED).newOrder({ phone: "+263771234567", orderId: ORDER, total: "16.5" });
+    new MerchantWhatsAppService(ARMED).newOrder({ phones: ["+263771234567"], orderId: ORDER, total: "16.5" });
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -58,7 +82,7 @@ describe("MerchantWhatsAppService", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202 });
     vi.stubGlobal("fetch", fetchMock);
     new MerchantWhatsAppService({ WHATSAPP_ORDER_ALERTS_ENABLED: "true", BIRD_ACCESS_KEY: "bk_us1_k" } as Env).newOrder({
-      phone: "+263771234567",
+      phones: ["+263771234567"],
       orderId: ORDER,
       total: 3,
     });
@@ -73,7 +97,7 @@ describe("MerchantWhatsAppService", () => {
       () => Promise.reject(new Error("socket hang up")),
     ]) {
       vi.stubGlobal("fetch", vi.fn().mockImplementation(impl));
-      expect(() => new MerchantWhatsAppService(ARMED).newOrder({ phone: "+263771234567", orderId: ORDER, total: 1 })).not.toThrow();
+      expect(() => new MerchantWhatsAppService(ARMED).newOrder({ phones: ["+263771234567"], orderId: ORDER, total: 1 })).not.toThrow();
       await settle();
     }
     expect(warn).toHaveBeenCalledTimes(2);
