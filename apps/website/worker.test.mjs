@@ -175,7 +175,7 @@ test("the canonical link renders the shop's landing with its preview tags", asyn
     assert.equal(res.headers.get("x-robots-tag"), "noindex");
     const html = await res.text();
     assert.match(html, /<title>From Chicken Inn Avondale to your door<\/title>/);
-    assert.match(html, /<meta property="og:image" content="https:\/\/lyniago.com\/s\/7KQ2MX\/card.jpg">/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/lyniago.com\/s\/7KQ2MX\/card.jpg\?v=[a-z0-9]+">/);
     assert.match(html, /og:description" content="See what’s on, order in a tap. From Chicken Inn Avondale to your door."/);
     assert.match(html, /og:url" content="https:\/\/lyniago.com\/s\/chicken-inn-avondale-7KQ2MX"/);
     assert.equal(calls[0], "https://api.test/share/7KQ2MX/card");
@@ -287,4 +287,13 @@ test("only /s/<one segment>[/card.jpg|/qr.svg] runs the shop route", async () =>
     const res = await get(path, UA.android);
     assert.equal(await res.text(), "asset", path);
   }
+});
+
+test("cardVersion: a new photo or name gives the WhatsApp image a new URL; a re-signed URL does not", async () => {
+  const { cardVersion } = await import("./shop.js");
+  const base = { name: "Shell'd", logoThumbUrl: "https://b/x/logo.jpg?sig=1", coverThumbUrl: null };
+  assert.equal(cardVersion(base), cardVersion({ ...base, logoThumbUrl: "https://b/x/logo.jpg?sig=2" }));
+  assert.notEqual(cardVersion(base), cardVersion({ ...base, coverThumbUrl: "https://b/x/cover.jpg?sig=1" }));
+  assert.notEqual(cardVersion(base), cardVersion({ ...base, name: "Shelld" }));
+  assert.match(cardVersion(base), /^[a-z0-9]{1,13}$/);
 });
