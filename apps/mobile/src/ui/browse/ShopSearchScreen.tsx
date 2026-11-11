@@ -5,7 +5,7 @@ import React, { useMemo, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { shopVenue, type VenueView } from "../../logic/browse";
-import { approxRoadKmLabel, etaRangeLabel } from "../../logic/eta";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { useHomeLocation } from "../../logic/home-location";
 import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
@@ -40,7 +40,7 @@ function GroupLabel({ text }: { text: string }): React.ReactElement {
 /** "30–40 min · $2.00 delivery · ~3 km" — only the parts a location makes honest (README §3). */
 function venueMeta(v: VenueView): string {
   const parts: string[] = [];
-  if (v.etaLow != null && v.etaHigh != null) parts.push(etaRangeLabel(v.etaLow, v.etaHigh));
+  if (v.etaLow != null && v.etaHigh != null) parts.push(`${v.etaLow}–${v.etaHigh} min`);
   if (v.feeUsd != null) parts.push(`${formatMoneyRange(v.feeLowUsd, v.feeUsd)} delivery`);
   if (v.km != null) parts.push(approxRoadKmLabel(v.km));
   return parts.length > 0 ? parts.join(" · ") : v.sub;

@@ -4,7 +4,7 @@ import React, { useRef } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
-import { approxRoadKmLabel, etaRangeParts } from "../../logic/eta";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { EmptyRow } from "../EmptyState";
@@ -173,8 +173,7 @@ export function InfoStrip({ v, onSetAddress }: { v: VenueView; onSetAddress?: ()
     },
   ];
   if (v.etaLow != null && v.etaHigh != null) {
-    const eta = etaRangeParts(v.etaLow, v.etaHigh);
-    cells.push({ key: "eta", value: <CellValue fit text={eta.value} />, label: eta.unit === "min" ? B.store.min : eta.unit });
+    cells.push({ key: "eta", value: <CellValue text={`${v.etaLow}–${v.etaHigh}`} />, label: B.store.min });
   }
   if (v.freeDelivery) cells.push({ key: "fee", value: <CellValue text={B.store.free} color={tokens.color.free} />, label: B.store.delivery });
   else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue fit text={formatMoneyRange(v.feeLowUsd, v.feeUsd)} />, label: B.store.delivery });
