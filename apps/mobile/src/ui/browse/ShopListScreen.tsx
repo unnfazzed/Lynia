@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { anyFreeDelivery, browseList, browseRange, DEFAULT_FILTERS, shopVenue, type BrowseFilters, type VenueView } from "../../logic/browse";
 import { deliverToLabel } from "../../logic/food-list";
+import { etaRangeLabel } from "../../logic/eta";
 import { useHomeLocation } from "../../logic/home-location";
 import { useNow } from "../../logic/use-now";
 import { useClaimOfflineBanner } from "../../net/offline-banner-owner";
@@ -232,7 +233,7 @@ export function ShopListScreen({ service }: { service: ShopService }): React.Rea
   };
 
   const count = total === 1 ? "1 place" : fmt(B.list.count, { n: total });
-  const right = hasLocation ? (range ? fmt(B.list.range, { a: range.a, b: range.b }) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
+  const right = hasLocation ? (range ? etaRangeLabel(range.a, range.b) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
   // B3b — only the kind is narrowing and it has no shops: say so and offer All shops.
   const kindNone = total === 0 && filters.category != null && !filters.free;
 

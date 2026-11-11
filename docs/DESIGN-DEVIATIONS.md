@@ -6283,3 +6283,23 @@ back. Since it's a [rough estimate] like we call it approx or plus .. what's the
   whole km above, with the "~" the app already puts on its estimates. One helper: `approxRoadKmLabel` (`src/logic/eta.ts`).
 - **Supersedes:** D-127.
 - **Upstream:** the handoff's distance strings should carry "~" and be a road estimate. The kit is not edited.
+
+## D-133 · Browse delivery price and time ranges read short: "$5–7", "¾–1¼ hr" — APPROVED (owner, 2026-11-11)
+
+**Owner (2026-11-11), on a screenshot of a shop's info strip ("$5.50–6.50 delivery", "48–58 min"):** *"the delivery fees
+there are filling up taking space .. let's round down the lower limit and round down the upper limit too .. for example
+5.5 becomes 5 to save space .. for minutes about 69 mins .. put format in hrs to save space"*
+
+| | Before (D-128, Browse v2) | App |
+|---|---|---|
+| Delivery price range (store strip, list cards, search, Home cards) | "$5.50–6.50" | Whole dollars: "$5–7" |
+| Delivery time range (store strip, list cards, search, list summary) | "48–69 min" | Under an hour unchanged ("48–58 min"); from an hour, quarter hours: "¾–1¼ hr" |
+
+- **Rounding:** the low end rounds down; the **high end rounds up**, not down as first asked. The high end is the default
+  "Pay no more than" (D-128), so "$5–6" for a $6.50 ceiling would show less than Review & place then asks. Rounding up
+  saves the same space and stays true. The time range follows the same rule to the quarter hour, so it never promises
+  sooner than the estimate.
+- **Scope:** display only. One exact price ("$1.50", no range) keeps its cents. Review & place, the order screen and the
+  merchant / admin faces are unchanged.
+- **Helpers:** `formatMoneyRange` (`src/logic/money.ts`), `etaRangeParts` / `etaRangeLabel` (`src/logic/eta.ts`).
+- **Upstream:** Browse v2 draws "{a}–{b} min" and one price. The kit is not edited.
