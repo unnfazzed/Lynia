@@ -17,11 +17,15 @@ export function formatMoney(value: string | number | null | undefined): string {
 }
 
 /**
- * A delivery price range for a tight row, as the ETA reads "37–47": "$2–2.50", "$2.50–3". A whole dollar drops
- * its ".00" so the store's four-cell strip fits at 320px. Equal ends, or no low end, read as one price: "$1.50".
+ * A delivery price range for a tight row, in whole dollars (D-133): "$5–7", never "$5.50–6.50". The low end rounds
+ * DOWN and the high end rounds UP, so the range still holds every price the customer can be asked to pay (the high
+ * end is the default "Pay no more than", D-128) and the store's four-cell strip fits at 320px. Equal ends, or no low
+ * end, read as one exact price: "$1.50".
  */
 export function formatMoneyRange(low: number | null | undefined, high: number): string {
   if (low == null || low === high) return formatMoney(high);
-  const short = (n: number): string => formatMoney(n).replace(/^\$/, "").replace(/\.00$/, "");
-  return `$${short(low)}–${short(high)}`;
+  // Cent-level float noise (5.000000001) must not push a whole dollar up a step.
+  const lo = Math.floor(Math.round(low * 100) / 100);
+  const hi = Math.ceil(Math.round(high * 100) / 100);
+  return lo === hi ? `$${lo}` : `$${lo}–${hi}`;
 }
