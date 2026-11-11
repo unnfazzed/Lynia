@@ -132,7 +132,7 @@ describe("popularNearYou (home 8c venue grid)", () => {
   });
 
   it("derives the ETA as prep + the delivery leg, from real coordinates", () => {
-    // 1.3 km straight line → 1.69 km of road at 22 km/h → ceil(4.6) = 5 minutes, + 20 prep.
+    // 1.3 km straight line → 1.56 km of road at 22 km/h → ceil(4.3) = 5 minutes, + 20 prep.
     expect(popularNearYou([venue({ km: 1.3 })], NOW, CUSTOMER)[0]?.etaMinutes).toBe(25);
     expect(popularNearYou([venue({ km: 1.3, prepBaselineMinutes: 25 })], NOW, CUSTOMER)[0]?.etaMinutes).toBe(30);
   });

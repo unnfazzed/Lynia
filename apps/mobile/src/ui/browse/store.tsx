@@ -4,6 +4,7 @@ import React, { useRef } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueView } from "../../logic/browse";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
 import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { EmptyRow } from "../EmptyState";
@@ -176,7 +177,8 @@ export function InfoStrip({ v, onSetAddress }: { v: VenueView; onSetAddress?: ()
   }
   if (v.freeDelivery) cells.push({ key: "fee", value: <CellValue text={B.store.free} color={tokens.color.free} />, label: B.store.delivery });
   else if (v.feeUsd != null) cells.push({ key: "fee", value: <CellValue fit text={formatMoneyRange(v.feeLowUsd, v.feeUsd)} />, label: B.store.delivery });
-  // No "km away" cell (D-127): the figure is a straight line, not the road distance.
+  // "~2.5 km away" (D-132): the straight line × the road-winding factor, marked "~" as the estimate it is.
+  if (v.km != null) cells.push({ key: "km", value: <CellValue fit text={approxRoadKmLabel(v.km)} />, label: B.store.away });
   if (onSetAddress) return <NoAddressStrip rating={cells[0]!} onPress={onSetAddress} />;
   return (
     <View style={{ flexDirection: "row", marginTop: 14, marginHorizontal: 16, borderRadius: 16, backgroundColor: tokens.color.surface }}>
