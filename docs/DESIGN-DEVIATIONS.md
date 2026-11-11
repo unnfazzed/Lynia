@@ -6279,7 +6279,7 @@ back. Since it's a [rough estimate] like we call it approx or plus .. what's the
 | List cards, food + shop search rows | "{km} km" | "~{road km} km" |
 
 - **Why:** D-127 dropped the cell because the straight line read shorter than the ride. The figure is now the straight
-  line × `ROAD_WINDING_FACTOR` (1.3, the factor the browse ETAs already use), rounded to 0.5 km under 10 km and to the
+  line × `ROAD_WINDING_FACTOR` (1.2 — owner, 2026-11-11, lowered from 1.3; the same factor every ETA uses), rounded to 0.5 km under 10 km and to the
   whole km above, with the "~" the app already puts on its estimates. One helper: `approxRoadKmLabel` (`src/logic/eta.ts`).
 - **Supersedes:** D-127.
 - **Upstream:** the handoff's distance strings should carry "~" and be a road estimate. The kit is not edited.

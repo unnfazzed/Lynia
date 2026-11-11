@@ -16,10 +16,10 @@ import type { MapPoint } from "../ui/LiveMap";
 /** Urban motorbike speed used to turn straight-line distance into minutes (matches the board's seed). */
 export const ETA_SPEED_KMH = 22;
 /**
- * Straight-line → road multiplier. Real roads wind, so a 2 km crow-flight leg is ~2.6 km ridden; without
+ * Straight-line → road multiplier. Real roads wind, so a 2 km crow-flight leg is ~2.4 km ridden; without
  * this the ETA reads optimistically low every time. A rough, honest inflation, not a routed truth.
  */
-export const ROAD_WINDING_FACTOR = 1.3;
+export const ROAD_WINDING_FACTOR = 1.2;
 
 export type EtaPhase = "to_pickup" | "to_dropoff";
 

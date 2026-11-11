@@ -45,7 +45,7 @@ describe("liveEta", () => {
   });
 
   it("bakes in the exact road-winding factor and average speed (TP-06)", () => {
-    expect(ROAD_WINDING_FACTOR).toBe(1.3);
+    expect(ROAD_WINDING_FACTOR).toBe(1.2); // owner, 2026-11-11 (was 1.3)
     expect(ETA_SPEED_KMH).toBe(22);
   });
 });
@@ -61,13 +61,13 @@ describe("etaHeadline", () => {
 
 describe("approxRoadKmLabel (D-132)", () => {
   it("inflates the straight line to road km and marks it as an estimate", () => {
-    expect(approxRoadKmLabel(1.9)).toBe("~2.5 km"); // 1.9 × 1.3 = 2.47
-    expect(approxRoadKmLabel(1.5)).toBe("~2 km"); // 1.95
+    expect(approxRoadKmLabel(1.9)).toBe("~2.5 km"); // 1.9 × 1.2 = 2.28
+    expect(approxRoadKmLabel(1.5)).toBe("~2 km"); // 1.8
   });
   it("never shows ~0 km for a venue next door", () => {
     expect(approxRoadKmLabel(0.1)).toBe("~0.5 km");
   });
   it("rounds to the whole km from 10 km up", () => {
-    expect(approxRoadKmLabel(9)).toBe("~12 km"); // 11.7
+    expect(approxRoadKmLabel(9)).toBe("~11 km"); // 10.8
   });
 });
