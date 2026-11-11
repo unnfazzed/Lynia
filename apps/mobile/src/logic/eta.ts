@@ -77,3 +77,14 @@ export function etaHeadline(eta: LiveEta): string {
   const where = eta.phase === "to_pickup" ? "pickup" : "drop-off";
   return `Arriving at ${where} in ~${eta.minutes} min`;
 }
+
+/**
+ * "~2.5 km" — a venue's distance as the road a biker rides, not the crow-flight line (D-127 / D-132).
+ * Straight-line km × ROAD_WINDING_FACTOR, rounded to the nearest 0.5 km under 10 km and to the whole km
+ * above, prefixed "~" like the ETA: an estimate shown as one, never a routed figure.
+ */
+export function approxRoadKmLabel(straightKm: number): string {
+  const road = straightKm * ROAD_WINDING_FACTOR;
+  const n = road < 10 ? Math.max(0.5, Math.round(road * 2) / 2) : Math.round(road);
+  return `~${Number.isInteger(n) ? n : n.toFixed(1)} km`;
+}

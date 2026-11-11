@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { restaurantVenue, shopVenue } from "../../logic/browse";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { useHomeLocation } from "../../logic/home-location";
 import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { loadRecentSearches, saveRecentSearches, withRecent } from "../../logic/recent-searches";
@@ -134,7 +135,7 @@ export function BrowseSearchScreen({ scope, initialQuery = "" }: { scope: Search
     const v = "shopKind" in r ? shopVenue(r, location.point, now, ceilingOn) : restaurantVenue(r, location.point, now, ceilingOn);
     const time = v.etaLow != null && v.etaHigh != null ? fmt(B.list.range, { a: v.etaLow, b: v.etaHigh }) : null;
     const fee = v.freeDelivery ? B.list.free : v.feeUsd != null ? `${formatMoneyRange(v.feeLowUsd, v.feeUsd)} ${B.store.delivery}` : null;
-    const km = v.km != null ? `${v.km.toFixed(1)} km` : null;
+    const km = v.km != null ? approxRoadKmLabel(v.km) : null;
     const sub = [v.kind, time, fee, v.kind ? null : km].filter(Boolean).join(" · ");
     return (
       <Row key={r.id} onPress={() => openVenue(`${base}/${r.id}`)} label={r.name}>

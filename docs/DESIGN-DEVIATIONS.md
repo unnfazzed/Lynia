@@ -6155,7 +6155,7 @@ A single live shop, Uptown Liquor, was on the Shops screen while Home said "Comi
   within 15 km of the venue.
 - **Upstream:** the handoff's rail rule and the `end` line should allow for one venue. The kit is not edited.
 
-## D-127 · The store page's info strip drops the "km away" cell — APPROVED (owner, 2026-11-06)
+## D-127 · The store page's info strip drops the "km away" cell — APPROVED (owner, 2026-11-06) — **superseded by D-132**
 
 **Owner (2026-11-06), on a screenshot of Uptown Liquor's page ("1.9 km away"):** *"remove the distance here as it’s
 misleading .. not true distance"*
@@ -6267,3 +6267,19 @@ row of the kit's `m-chip`s (5, 10, 15, 20, 25, 30, 45, 60, 90 min; the selected 
 moment one is tapped. Restaurants only: shops and pharmacies have no prep quote (merchant-v2 README).
 `PATCH /merchant/order-settings` takes `prepBaselineMinutes` (5–90); it applies to orders placed from
 then on. Busy mode still adds its +10 on top. Retire this entry when a handoff draws the control.
+
+## D-132 · Venue distance comes back as an estimated road distance, "~2.5 km" — APPROVED (owner, 2026-11-11)
+
+**Owner (2026-11-11), on a screenshot of Shell'd's page:** *"Previously we had distance in km there. Let's bring that
+back. Since it's a [rough estimate] like we call it approx or plus .. what's the best way based on other apps out there?"*
+
+| | Handoff (Browse v2 README §4b, §3) | App |
+|---|---|---|
+| Store / shop / pharmacy info strip (S1–S13) | "{km} km away" | "~{road km} km" / "away" — the cell D-127 removed, restored |
+| List cards, food + shop search rows | "{km} km" | "~{road km} km" |
+
+- **Why:** D-127 dropped the cell because the straight line read shorter than the ride. The figure is now the straight
+  line × `ROAD_WINDING_FACTOR` (1.3, the factor the browse ETAs already use), rounded to 0.5 km under 10 km and to the
+  whole km above, with the "~" the app already puts on its estimates. One helper: `approxRoadKmLabel` (`src/logic/eta.ts`).
+- **Supersedes:** D-127.
+- **Upstream:** the handoff's distance strings should carry "~" and be a road estimate. The kit is not edited.

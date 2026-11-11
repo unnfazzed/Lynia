@@ -5,6 +5,7 @@ import React, { useMemo, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { shopVenue, type VenueView } from "../../logic/browse";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { useHomeLocation } from "../../logic/home-location";
 import { formatMoney, formatMoneyRange } from "../../logic/money";
 import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../logic/use-debounced";
@@ -36,12 +37,12 @@ function GroupLabel({ text }: { text: string }): React.ReactElement {
   return <Text style={{ paddingTop: 20, paddingHorizontal: 16, paddingBottom: 4, fontSize: 11.5, letterSpacing: 0.6, fontWeight: tokens.font.weight.bold, color: tokens.color.muted }}>{text}</Text>;
 }
 
-/** "30–40 min · $2.00 delivery · 2.4 km" — only the parts a location makes honest (README §3). */
+/** "30–40 min · $2.00 delivery · ~3 km" — only the parts a location makes honest (README §3). */
 function venueMeta(v: VenueView): string {
   const parts: string[] = [];
   if (v.etaLow != null && v.etaHigh != null) parts.push(`${v.etaLow}–${v.etaHigh} min`);
   if (v.feeUsd != null) parts.push(`${formatMoneyRange(v.feeLowUsd, v.feeUsd)} delivery`);
-  if (v.km != null) parts.push(`${v.km.toFixed(1)} km`);
+  if (v.km != null) parts.push(approxRoadKmLabel(v.km));
   return parts.length > 0 ? parts.join(" · ") : v.sub;
 }
 

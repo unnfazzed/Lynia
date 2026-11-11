@@ -3,6 +3,7 @@ import React from "react";
 import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueOpening, VenueView } from "../../logic/browse";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { formatMoneyRange } from "../../logic/money";
 import { EmptyRow, EmptyState } from "../EmptyState";
 import { emptyCopy, fillEmpty } from "../emptyCopy";
@@ -407,7 +408,7 @@ function DeliveryMeta({ v }: { v: VenueView }): React.ReactElement | null {
       <Icon name="bike" size={14} color={tokens.color.muted} />
       <FeeText v={v} />
       <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: tokens.color.muted, ...TABULAR }}>
-        {` · ${v.km.toFixed(1)} km`}
+        {` · ${approxRoadKmLabel(v.km)}`}
       </Text>
     </View>
   );
