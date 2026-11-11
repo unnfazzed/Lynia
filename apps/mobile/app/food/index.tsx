@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { anyFreeDelivery, browseCategories, browseList, browseRange, DEFAULT_FILTERS, restaurantVenue, type BrowseFilters, type VenueView } from "../../src/logic/browse";
 import { deliverToLabel } from "../../src/logic/food-list";
-import { etaRangeLabel } from "../../src/logic/eta";
 import { useHomeLocation } from "../../src/logic/home-location";
 import { useNow } from "../../src/logic/use-now";
 import { useClaimOfflineBanner } from "../../src/net/offline-banner-owner";
@@ -232,7 +231,7 @@ export default function RestaurantListScreen(): React.ReactElement {
   // The count: "6 places" ("1 place" is drawn on B3a). Without a location there is no time range,
   // so the right-hand side reads "in Harare" — the tail of `summaryNoLoc`.
   const count = total === 1 ? "1 place" : fmt(B.list.count, { n: total });
-  const right = hasLocation ? (range ? etaRangeLabel(range.a, range.b) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
+  const right = hasLocation ? (range ? fmt(B.list.range, { a: range.a, b: range.b }) : null) : fmt(B.list.summaryNoLoc, { n: total }).replace(fmt(B.list.count, { n: total }), "").trim();
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.bg }}>

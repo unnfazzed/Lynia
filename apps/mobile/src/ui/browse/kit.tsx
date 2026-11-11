@@ -3,7 +3,7 @@ import React from "react";
 import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BrowseService, VenueOpening, VenueView } from "../../logic/browse";
-import { approxRoadKmLabel, etaRangeLabel } from "../../logic/eta";
+import { approxRoadKmLabel } from "../../logic/eta";
 import { formatMoneyRange } from "../../logic/money";
 import { EmptyRow, EmptyState } from "../EmptyState";
 import { emptyCopy, fillEmpty } from "../emptyCopy";
@@ -415,7 +415,7 @@ function DeliveryMeta({ v }: { v: VenueView }): React.ReactElement | null {
 }
 
 function etaText(v: VenueView): string | null {
-  return v.etaLow != null && v.etaHigh != null ? etaRangeLabel(v.etaLow, v.etaHigh) : null;
+  return v.etaLow != null && v.etaHigh != null ? `${fmt(B.list.range, { a: v.etaLow, b: v.etaHigh })}` : null;
 }
 
 function a11yFor(v: VenueView): string {

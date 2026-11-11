@@ -88,30 +88,3 @@ export function approxRoadKmLabel(straightKm: number): string {
   const n = road < 10 ? Math.max(0.5, Math.round(road * 2) / 2) : Math.round(road);
   return `~${Number.isInteger(n) ? n : n.toFixed(1)} km`;
 }
-
-/** Fractions for quarter hours: compact in a tight cell ("1¼"). */
-const QUARTERS = ["", "¼", "½", "¾"];
-
-function hoursText(quarters: number): string {
-  const whole = Math.floor(quarters / 4);
-  const frac = QUARTERS[quarters % 4]!;
-  return whole === 0 ? frac : `${whole}${frac}`;
-}
-
-/**
- * A delivery-time range for the store strip, list rows and search (D-133). Under an hour it stays in minutes,
- * "48–58" min. Once the top reaches an hour it reads in quarter hours, "¾–1¼" hr: the low end rounds down and the
- * high end rounds up to the quarter, so the range never promises sooner than the estimate.
- */
-export function etaRangeParts(low: number, high: number): { value: string; unit: "min" | "hr" } {
-  if (high < 60) return { value: `${low}–${high}`, unit: "min" };
-  const lo = Math.max(1, Math.floor(low / 15));
-  const hi = Math.max(lo + 1, Math.ceil(high / 15));
-  return { value: `${hoursText(lo)}–${hoursText(hi)}`, unit: "hr" };
-}
-
-/** The same range as one line: "48–58 min", "¾–1¼ hr". */
-export function etaRangeLabel(low: number, high: number): string {
-  const { value, unit } = etaRangeParts(low, high);
-  return `${value} ${unit}`;
-}
