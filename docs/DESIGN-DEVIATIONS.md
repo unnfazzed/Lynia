@@ -6360,6 +6360,6 @@ Deviations from the handoff (owner decision where marked; the rest are implement
 | Thumbnail / photo placeholder | Mint stripes | Mint fill with an image icon (the photo itself once taken this session) | No stripe pattern primitive; the app never downloads the sent photo |
 | B-todo-half body | "2 of 5 done…" | The biker's own count | The drawn "2" is a sample value |
 
-- **Open (README §6):** the licence format is 5–12 letters and digits until ops confirm Zimbabwe's pattern.
+- **Licence number format (README §6) — decided (owner, 2026-11-12):** keep 5–12 letters and digits, spaces stripped. No official Zimbabwe format is published (CVR holds it); a strict guessed pattern would block real bikers. Revisit only if ops report numbers outside it.
 - **Retired when:** the in-app camera ships (K*-cam rows), or a new export redraws the sign-up.
 - **Upstream:** none of the above edits the kit.
