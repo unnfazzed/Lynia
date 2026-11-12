@@ -13,6 +13,7 @@ import { kycScreenFor } from "../../../src/logic/kyc-outcome";
 import { resolveGate } from "../../../src/logic/rider-gate";
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 let mockSecureStore: Record<string, string> = {};
 
 const mockBack = jest.fn();
@@ -20,7 +21,7 @@ const mockDismissAll = jest.fn();
 let mockCanGoBack = true;
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, back: mockBack, dismissAll: mockDismissAll, canDismiss: () => mockCanGoBack, canGoBack: () => mockCanGoBack }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush, back: mockBack, dismissAll: mockDismissAll, canDismiss: () => mockCanGoBack, canGoBack: () => mockCanGoBack }),
   useLocalSearchParams: () => mockParams,
 }));
 /**
@@ -636,6 +637,15 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
       expect(takeKycLaunch()).toBeNull();
       act(() => tree.unmount());
     }
+  });
+
+  it("KB-02: manual review opens Bike & documents straight after registering (nothing was sent yet)", async () => {
+    mockMe = { ...NAMED, idNumber: null };
+    mockBecomeRider.mockResolvedValue({ kycStatus: "pending", mode: "manual" });
+    const tree = await mount();
+    await tapStart(tree);
+    expect(mockPush).toHaveBeenCalledWith("/rider/documents");
+    act(() => tree.unmount());
   });
 
   it("the biker side is saved BEFORE the check opens, so an app killed mid-check reopens on the biker side", async () => {

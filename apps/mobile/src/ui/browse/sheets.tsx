@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type BrowseService, type BrowseSort, BROWSE_SORTS, DISTANCE_SORTS } from "../../logic/browse";
 import { MAX_ITEM_QTY } from "../../logic/food-cart";
@@ -24,7 +25,7 @@ export function Sheet({ visible, onClose, children }: { visible: boolean; onClos
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1, justifyContent: "flex-end" }}>
         <Tappable accessibilityRole="button" accessibilityLabel={B.item.close} onPress={onClose} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: DIM }} />
         <View style={{ backgroundColor: tokens.color.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingHorizontal: 16, paddingBottom: 20 + insets.bottom, maxHeight: "92%" }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: GRAB, alignSelf: "center", marginBottom: 12 }} />

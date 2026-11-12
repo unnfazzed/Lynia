@@ -4,6 +4,7 @@
  * pin the board's live wiring — cards only when the board is actually shown, the offer route, your
  * offers / withdraw, always-online, the KYC walls' copy and action sets, and the mint header.
  */
+import { MK } from "../../../../src/ui/rider/manual-kyc-copy";
 import renderer, { act } from "react-test-renderer";
 import { controlInteractions, type InteractionControl } from "../../../../src/testing/interactions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -896,8 +897,8 @@ describe("biker board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     ["F3 unfinished — the biker's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, [KY.unfCta]],
     // R-3: a check held for a human review is F2 — not R2, no retry; WhatsApp only.
     ["F2 held for review — WhatsApp only", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }, [KY.help]],
-    // D-122 (manual KYC, design review 2026-11-04): F1 carries one soft "Add your documents" pill until all
-    // three document photos are in; with a complete set there is again nothing to press.
+    // D-122 / KB-02 (owner 2026-11-12): until the ID number and all three document photos are in, F1 is a to-do
+    // page whose one primary is "Add your documents" (not "In review"); once complete there is nothing to press.
     ["F1 manual review — only Add your documents", { kycStatus: "pending", kycMode: "manual" }, ["Add your documents"]],
     ["F1 manual review with all documents in — nothing to press", { kycStatus: "pending", kycMode: "manual", kycDocs: { idFront: true, licence: true, selfieId: true } }, []],
     ["F6 ID expired", { kycStatus: "expired" }, [KY.expCta]],
@@ -1441,11 +1442,21 @@ describe("biker board — the three KYC pending states (P0-1)", () => {
     }
   });
 
-  // First Run v2 F1: ops review — the rider waits, whatever the vendor's pending state says.
+  // First Run v2 F1: ops review — once everything review needs is in, the rider waits, whatever the vendor's
+  // pending state says.
   it("manual review is F1 'Our team is taking a look', whatever the pending state says", async () => {
-    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "unfinished" });
+    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "unfinished", kycDocs: { idFront: true, licence: true, selfieId: true } });
     expect(text).toContain(KY.reviewBody);
     expect(text).not.toContain(KY.unfBody);
+  });
+
+  // KB-02 (owner 2026-11-12): before the documents are in, nothing is "in review" — the page says what to do.
+  it("manual review with documents missing is a to-do page, never 'In review'", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "manual" });
+    expect(text).toContain(MK.todoBody);
+    expect(text).toContain(MK.addDocs);
+    expect(text).not.toContain(KY.reviewBody);
+    expect(text).not.toContain("In review");
   });
 });
 

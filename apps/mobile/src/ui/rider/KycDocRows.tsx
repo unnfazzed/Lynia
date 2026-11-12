@@ -4,21 +4,10 @@ import React, { useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import type { Me } from "../../api/auth";
 import type { UploadImageSource } from "../../logic/image-downscale";
-import {
-  formatLicenceExpiry,
-  isRefusedUpload,
-  KYC_DOC_SLOTS,
-  type KycDocSlot,
-  kycDocsComplete,
-  licenceExpiredOn,
-  parseLicenceExpiry,
-  pickKycDoc,
-  saveKycDoc,
-  saveLicenceDetails,
-} from "../../logic/manual-kyc";
+import { isRefusedUpload, KYC_DOC_SLOTS, type KycDocSlot, kycDocsComplete, pickKycDoc, saveKycDoc } from "../../logic/manual-kyc";
 import type { PhotoSource } from "../../logic/rider-documents";
 import { EVENTS, track } from "../../telemetry/events";
-import { Body, FrField, FrSheet, ListRow, PinnedFooter } from "../firstrun";
+import { Body, FrSheet, ListRow } from "../firstrun";
 import { BD } from "../firstrun/copy";
 import { useActionError } from "../Toast";
 import { MK } from "./manual-kyc-copy";
@@ -26,8 +15,11 @@ import { MK } from "./manual-kyc-copy";
 /**
  * Manual KYC document rows for Bike & documents (ledger D-122, design review 2026-11-04). Built exactly like
  * the E1 Photo row: a soft "+ Add" → the camera/gallery sheet (with the guide line) → an upload that runs on
- * its own per row (Uploading… → Change, or "didn't finish" + Try again). No Submit button. Plus the licence
- * details row (number + expiry), which drives the 30-day reminder and the expiry gate.
+ * its own per row (Uploading… → Change, or "didn't finish" + Try again). No Submit button.
+ *
+ * KB-02 (owner 2026-11-12, "Licence expiry not necessary"): the typed licence number + expiry row is gone.
+ * Ops read both off the licence photo; with no expiry on file the server's expiry gate and reminders stay
+ * inert (they only act on a stored date).
  */
 
 type UploadState = { kind: "uploading"; shot: UploadImageSource } | { kind: "failed"; shot: UploadImageSource };
@@ -96,17 +88,12 @@ export interface KycDocRowsProps {
   onBlocked: (from: PhotoSource) => void;
 }
 
-/** The three document rows and the licence-details row, plus their sheets. */
+/** The three document rows, plus their camera/gallery sheet. */
 export function KycDocRows({ rider, AddPill, onBlocked }: KycDocRowsProps): React.ReactElement {
   const qc = useQueryClient();
   const setError = useActionError();
   const live = useSyncExternalStore(subscribe, getUploads, getUploads);
   const [sheet, setSheet] = useState<KycDocSlot | null>(null);
-  const [licenceSheet, setLicenceSheet] = useState(false);
-  const [number, setNumber] = useState(rider.licenceNumber ?? "");
-  const [expiry, setExpiry] = useState(formatLicenceExpiry(rider.licenceExpiresOn));
-  const [numberErr, setNumberErr] = useState<string | null>(null);
-  const [expiryErr, setExpiryErr] = useState<string | null>(null);
   const docs = rider.kycDocs ?? { idFront: false, licence: false, selfieId: false };
 
   const open = (slot: KycDocSlot): void => {
@@ -123,22 +110,6 @@ export function KycDocRows({ rider, AddPill, onBlocked }: KycDocRowsProps): Reac
     if (shot === "denied" || shot == null) return;
     const res = await runKycDocUpload(qc, slot, shot);
     if (res === "refused") setError(BD.failBody);
-  };
-
-  const saveLicence = async (): Promise<void> => {
-    const n = number.trim();
-    const iso = parseLicenceExpiry(expiry);
-    setNumberErr(n.length >= 4 ? null : MK.licenceNumberBad);
-    setExpiryErr(iso ? (licenceExpiredOn(iso) ? MK.licenceExpired : null) : MK.licenceExpiryBad);
-    if (n.length < 4 || !iso || licenceExpiredOn(iso)) return;
-    try {
-      await saveLicenceDetails(n, iso);
-      qc.setQueryData<Me>(["me"], (cur) => (cur?.rider ? { ...cur, rider: { ...cur.rider, licenceNumber: n.replace(/\s+/g, " ").toUpperCase(), licenceExpiresOn: iso } } : cur));
-      void qc.invalidateQueries({ queryKey: ["me"] });
-      setLicenceSheet(false);
-    } catch {
-      setError();
-    }
   };
 
   const row = (slot: KycDocSlot): React.ReactElement => {
@@ -188,32 +159,9 @@ export function KycDocRows({ rider, AddPill, onBlocked }: KycDocRowsProps): Reac
     );
   };
 
-  const hasLicence = !!rider.licenceNumber && !!rider.licenceExpiresOn;
-  const expired = licenceExpiredOn(rider.licenceExpiresOn);
-
   return (
     <>
       {KYC_DOC_SLOTS.map(row)}
-      {hasLicence ? (
-        <ListRow
-          testID="row-licence-details"
-          icon="file-text"
-          iconTone={expired ? "bad" : "ok"}
-          title={MK.licenceDetails}
-          sub={expired ? MK.licenceExpired : `${rider.licenceNumber} · ${formatLicenceExpiry(rider.licenceExpiresOn)}`}
-          value={BD.edit}
-          onPress={() => setLicenceSheet(true)}
-        />
-      ) : (
-        <ListRow
-          testID="row-licence-details"
-          icon="file-text"
-          title={MK.licenceDetails}
-          sub={MK.licenceDetailsSub}
-          right={<AddPill onPress={() => setLicenceSheet(true)} testID="add-licence-details" />}
-          accessibilityLabel={`${MK.licenceDetails}, ${MK.licenceDetailsSub}`}
-        />
-      )}
 
       {/* E2a for a document: the guide line, then camera / gallery. */}
       <FrSheet visible={sheet != null} onClose={() => setSheet(null)} testID="doc-sheet">
@@ -225,41 +173,6 @@ export function KycDocRows({ rider, AddPill, onBlocked }: KycDocRowsProps): Reac
           <ListRow icon="camera" iconTone="ok" title={BD.camera} onPress={() => void choose("camera")} testID="doc-camera" />
           <ListRow icon="image" iconTone="ok" title={BD.gallery} onPress={() => void choose("gallery")} testID="doc-gallery" />
         </View>
-      </FrSheet>
-
-      {/* Licence details: the number and the expiry date the 30-day reminder and the expiry gate read. */}
-      <FrSheet visible={licenceSheet} onClose={() => setLicenceSheet(false)} testID="licence-sheet">
-        <Text accessibilityRole="header" style={{ marginBottom: 12, fontSize: 20, lineHeight: 26, fontWeight: tokens.font.weight.bold, color: tokens.color.ink }}>
-          {MK.licenceDetails}
-        </Text>
-        <FrField
-          testID="licence-number"
-          label={MK.licenceNumber}
-          value={number}
-          onChangeText={(v) => {
-            setNumber(v.toUpperCase());
-            setNumberErr(null);
-          }}
-          error={numberErr}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={30}
-        />
-        <FrField
-          testID="licence-expiry"
-          label={MK.licenceExpiry}
-          placeholder={MK.licenceExpiryPh}
-          value={expiry}
-          onChangeText={(v) => {
-            setExpiry(v);
-            setExpiryErr(null);
-          }}
-          error={expiryErr}
-          keyboardType="numbers-and-punctuation"
-          maxLength={10}
-          style={{ marginTop: 12 }}
-        />
-        <PinnedFooter inline primary={{ label: MK.save, onPress: () => void saveLicence(), testID: "licence-save" }} />
       </FrSheet>
     </>
   );

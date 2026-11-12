@@ -1,7 +1,8 @@
 import { COUNTRY_PICKER_ORDER, countryFlag, countryMatches, PINNED_COUNTRY_COUNT, type Country } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React, { useCallback, useMemo, useState } from "react";
-import { FlatList, KeyboardAvoidingView, type ListRenderItem, Modal, Platform, Text, TextInput, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, type ListRenderItem, Modal, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyRow } from "../EmptyState";
 import { SHEET_DIM } from "../firstrun/sheet";
@@ -116,7 +117,7 @@ export function CountrySheet({ selected, onSelect, onClose }: { selected: Countr
 
   return (
     <Modal visible transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1, justifyContent: "flex-end" }}>
         <Tappable
           accessibilityRole="button"
           accessibilityLabel={OB.countryClose}

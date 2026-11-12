@@ -46,7 +46,7 @@ import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "
 import { boardPollMs } from "../../../src/logic/board-poll";
 import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from "../../../src/logic/last-known-fix";
 import { EVENTS, track } from "../../../src/telemetry/events";
-import { kycDocsComplete } from "../../../src/logic/manual-kyc";
+import { manualSetupComplete } from "../../../src/logic/manual-kyc";
 import { refusedJobCommission, topUpGate } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
@@ -1268,7 +1268,7 @@ export default function RiderHome(): React.ReactElement {
           onRetry={rider?.kycMode === "manual" ? () => router.push("/rider/documents") : () => retryM.mutate()}
           retrying={!!pendingOrQueued(retryM)}
           onHelp={whatsappSupport}
-          onAddDocs={rider?.kycMode === "manual" && !kycDocsComplete(rider?.kycDocs) ? () => router.push("/rider/documents") : undefined}
+          onAddDocs={rider?.kycMode === "manual" && !manualSetupComplete(rider, meQ.data?.idNumber) ? () => router.push("/rider/documents") : undefined}
         />
         <KycCheckHost />
       </>

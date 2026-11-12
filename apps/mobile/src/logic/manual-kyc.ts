@@ -51,20 +51,25 @@ export async function saveKycDoc(slot: KycDocSlot, shot: UploadImageSource, onPr
 }
 
 /**
- * Bike & documents progress in manual mode ("N of 6"): the ID check, the three document photos, the biker
- * photo and the plate. Outside manual mode the E1 count ("N of 3") is unchanged.
+ * The biker's manual sign-up checklist ("N of 4", KB-02, owner 2026-11-12): only what review needs — the
+ * national ID number (or a passed ID check) and the three document photos. The biker photo and the plate
+ * are optional and are not counted, so the bars finish when the biker has done everything asked of them.
+ * (It used to count all six, including the ID check only ops can pass, so it could never reach the end.)
  */
-export function manualDocsProgress(rider: { kycStatus?: string | null; hasPhoto?: boolean; bikeReg?: string | null; kycDocs?: Partial<KycDocs> | null } | null | undefined): { done: number; total: number } {
-  if (!rider) return { done: 0, total: 6 };
+export function manualDocsProgress(
+  rider: { kycStatus?: string | null; kycDocs?: Partial<KycDocs> | null } | null | undefined,
+  idNumber?: string | null,
+): { done: number; total: number } {
+  if (!rider) return { done: 0, total: 4 };
   const d = rider.kycDocs ?? {};
-  const done =
-    (rider.kycStatus === "verified" ? 1 : 0) +
-    (d.idFront ? 1 : 0) +
-    (d.licence ? 1 : 0) +
-    (d.selfieId ? 1 : 0) +
-    (rider.hasPhoto ? 1 : 0) +
-    (rider.bikeReg?.trim() ? 1 : 0);
-  return { done, total: 6 };
+  const done = (rider.kycStatus === "verified" || !!idNumber?.trim() ? 1 : 0) + (d.idFront ? 1 : 0) + (d.licence ? 1 : 0) + (d.selfieId ? 1 : 0);
+  return { done, total: 4 };
+}
+
+/** Everything manual review needs is in: the ID number and all three photos. */
+export function manualSetupComplete(rider: { kycStatus?: string | null; kycDocs?: Partial<KycDocs> | null } | null | undefined, idNumber?: string | null): boolean {
+  const p = manualDocsProgress(rider, idNumber);
+  return p.done === p.total;
 }
 
 /** All three document photos are on file. */

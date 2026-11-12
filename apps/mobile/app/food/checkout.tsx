@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { BackHandler, Keyboard, KeyboardAvoidingView, Modal, ScrollView, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../../src/ui/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
@@ -606,7 +607,7 @@ export default function FoodReviewScreen(): React.ReactElement {
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface, paddingTop: insets.top }}>
       <ReviewHeader onBack={() => (editingAddr ? setEditingAddr(false) : router.back())} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1 }}>
         <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}>
           {editingAddr ? (
             <AddressEdit

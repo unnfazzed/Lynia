@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useMemo } from "react";
-import { KeyboardAvoidingView, Linking, Platform } from "react-native";
+import { KeyboardAvoidingView, Linking } from "react-native";
+import { KEYBOARD_LIFT } from "../../src/ui/keyboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getMe } from "../../src/api/auth";
 import { isRiderRow, paidFare } from "../../src/logic/rider-earnings";
@@ -53,7 +54,7 @@ export default function TopUpScreen(): React.ReactElement {
     // padded the top twice and left the bottom bare. The amount and phone fields lift with the keyboard.
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       <StatusBar style="dark" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_LIFT}>
         <TopUpFlow
           minTopUp={config?.minTopUp ?? COMMISSION.minTopUp}
           maxTopUp={config?.maxTopUp ?? COMMISSION.maxTopUp}

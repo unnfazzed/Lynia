@@ -1,12 +1,21 @@
-/** D-122 (manual KYC): the "N of 6" count, the licence date parsing and the expiry rule. */
-import { formatLicenceExpiry, kycDocsComplete, licenceExpiredOn, manualDocsProgress, parseLicenceExpiry } from "../manual-kyc";
+/** D-122 (manual KYC): the "N of 4" sign-up count (KB-02), the licence date parsing and the expiry rule. */
+import { formatLicenceExpiry, kycDocsComplete, licenceExpiredOn, manualDocsProgress, manualSetupComplete, parseLicenceExpiry } from "../manual-kyc";
 import { onlineGateReason } from "../gates";
 
 describe("manualDocsProgress", () => {
-  it("counts the ID check, three document photos, the biker photo and the plate out of 6", () => {
-    expect(manualDocsProgress(null)).toEqual({ done: 0, total: 6 });
-    expect(manualDocsProgress({ kycStatus: "pending", hasPhoto: true, bikeReg: "ABC 1234", kycDocs: { idFront: true, licence: false, selfieId: true } })).toEqual({ done: 4, total: 6 });
-    expect(manualDocsProgress({ kycStatus: "verified", hasPhoto: true, bikeReg: "ABC 1234", kycDocs: { idFront: true, licence: true, selfieId: true } })).toEqual({ done: 6, total: 6 });
+  // KB-02: only what review needs counts, so the bars reach the end when the biker has done their part.
+  it("counts the ID number and the three document photos out of 4", () => {
+    expect(manualDocsProgress(null)).toEqual({ done: 0, total: 4 });
+    expect(manualDocsProgress({ kycStatus: "pending", kycDocs: { idFront: true, licence: false, selfieId: true } })).toEqual({ done: 2, total: 4 });
+    expect(manualDocsProgress({ kycStatus: "pending", kycDocs: { idFront: true, licence: true, selfieId: true } }, "63-123456A78")).toEqual({ done: 4, total: 4 });
+    // A passed check stands in for the typed number.
+    expect(manualDocsProgress({ kycStatus: "verified", kycDocs: { idFront: true, licence: true, selfieId: true } })).toEqual({ done: 4, total: 4 });
+  });
+  it("sign-up is complete only with the ID number and all three photos", () => {
+    const all = { kycStatus: "pending", kycDocs: { idFront: true, licence: true, selfieId: true } };
+    expect(manualSetupComplete(all, null)).toBe(false);
+    expect(manualSetupComplete(all, "63-123456A78")).toBe(true);
+    expect(manualSetupComplete({ ...all, kycDocs: { idFront: true, licence: true, selfieId: false } }, "63-123456A78")).toBe(false);
   });
   it("a set is complete only with all three photos", () => {
     expect(kycDocsComplete({ idFront: true, licence: true, selfieId: false })).toBe(false);
