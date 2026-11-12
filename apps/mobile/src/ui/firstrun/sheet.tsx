@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Modal, ScrollView, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Tappable } from "../Tappable";
 
@@ -31,7 +32,7 @@ export function FrSheet({
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={() => (locked ? undefined : onClose())}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1, justifyContent: "flex-end" }}>
         <Tappable
           accessibilityRole="button"
           accessibilityLabel={closeLabel}

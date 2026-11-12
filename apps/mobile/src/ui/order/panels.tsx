@@ -1,7 +1,8 @@
 import { SOS_POLICY } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { RemoteImage } from "../RemoteImage";
@@ -228,7 +229,7 @@ export function ReportPanel({ visible, onClose, onSend }: { visible: boolean; on
   };
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(20,24,27,0.45)" }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(20,24,27,0.45)" }}>
         <Tappable style={{ flex: 1 }} onPress={close} accessibilityRole="button" accessibilityLabel={A.close} />
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: tokens.color.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 16, paddingBottom: 12 }}>
           <PanelGrabber />

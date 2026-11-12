@@ -1,9 +1,9 @@
 /**
  * iPhone keyboard behaviour (docs/APP-STORE-SUBMISSION.md B6).
  *
- * - iOS lays the keyboard over a `<Modal>` instead of resizing it; Android's Modal window resizes
- *   (`SOFT_INPUT_ADJUST_RESIZE`). So every modal sheet that holds a text field lifts itself by the
- *   keyboard's height on iOS, and leaves Android exactly as it was.
+ * - Neither platform resizes a `<Modal>` for the keyboard (and SDK 54's edge-to-edge Android window
+ *   no longer resizes at all), so every sheet that holds a text field lifts itself by the keyboard's
+ *   height on both (`KEYBOARD_LIFT`, KB-01).
  * - iOS number and phone pads have no return key, so `DismissKeyboardArea` closes the keyboard on a tap
  *   that nothing inside it took.
  */
@@ -85,9 +85,11 @@ describe.each(SHEETS)("the %s", (_name, open) => {
     });
   });
 
-  it("leaves Android to its resizing Modal window", () => {
+  // KB-01 (2026-11-12): an edge-to-edge Android window is not resized for the keyboard and a Modal never
+  // was, so Android lifts by padding too; the field being typed in used to sit behind the keyboard.
+  it("lifts above the keyboard on Android too", () => {
     withPlatform("android", () => {
-      expect(keyboardBehaviours(open())).toEqual([undefined]);
+      expect(keyboardBehaviours(open())).toEqual(["padding"]);
     });
   });
 });

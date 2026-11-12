@@ -44,6 +44,7 @@ export { FoodThumb, type FoodThumbCategory } from "./FoodThumb";
 export { isTestBuild } from "./test-build";
 export { haptic, hapticPattern, setHapticsEnabled, type HapticKind } from "./haptics";
 export { DismissKeyboardArea } from "./DismissKeyboardArea";
+export { KEYBOARD_LIFT } from "./keyboard";
 export { useDial } from "./useDial";
 export { ToastProvider, useToast, useActionError, useActionErrorEffect, pushToast, TOAST_DURATION_MS, type ToastTone } from "./Toast";
 export { Tappable, RIPPLE, RIPPLE_INK, RIPPLE_ON_DARK, PRESSED_OPACITY, type PressTone, type TappableProps } from "./Tappable";

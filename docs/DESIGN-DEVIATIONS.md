@@ -6302,3 +6302,28 @@ there are filling up taking space .. let's round down the lower limit and round 
   merchant / admin faces are unchanged.
 - **Helper:** `formatMoneyRange` (`src/logic/money.ts`).
 - **Upstream:** Browse v2 draws "{a}–{b} min" and one price. The kit is not edited.
+
+## D-134 · Manual biker sign-up: a to-do F1, a four-item checklist with Done, no typed licence — APPROVED (owner, 2026-11-12)
+
+**Owner (2026-11-12), with photos of a biker signing up:** *"Biker KYC process needs improvements … gets shown to screen
+already saying ID in review, no clear call to action … the process is confusing, let's streamline it, get it worked on
+by designer … Licence expiry not necessary … the steps are not moving, there is no exit when done."*
+
+An interim fix on top of D-122 until the designer's redraw lands (brief: `docs/design-briefs-2026-11-12/PROMPT.md`).
+
+| | D-122 | App |
+|---|---|---|
+| After "Start ID check" (manual) | The board's F1 "Our team is taking a look", "In review" | Bike & documents opens at once; the board is under it |
+| F1 before the documents are in | F1 + a soft "Add your documents" pill | F3's shell: "Almost there, {name}", step 2 "Next · ~2 min", one primary "Add your documents" → |
+| F1 once they're all in | F1 | F1, unchanged |
+| Bike & documents while unverified | ID, 3 photos, licence details, biker photo, plate; "N of 6" | ID number + 3 photos only; **"N of 4"**; photo and plate return once verified |
+| National ID row with a number saved | Neutral, no value | The number, with Edit |
+| Licence details (number + expiry) | A row and sheet | **Removed**. Ops read the licence photo; with no stored expiry the server's expiry gate and reminders stay inert |
+| All four in | No way out but Back | "Sent for review. Usually a few hours. We’ll notify you." + a **Done** (back to the board) |
+
+**New copy, awaiting the owner's word check** (`src/ui/rider/manual-kyc-copy.ts`): "Add your ID, your licence and a selfie
+with your ID. About 2 minutes.", "Sent for review. Usually a few hours. We’ll notify you.", "Done", "of 4". Reused:
+`KY.unfA` "Almost there,", `RO.stepIdTime` "~2 min", `MK.addDocs`.
+
+- **Retired when:** the designer's redraw of the biker sign-up is exported and aligned.
+- **Upstream:** First Run v2 should draw manual-review sign-up (see the brief). The kit is not edited.

@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, ScrollView, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFirstRunMetrics } from "./metrics";
 
@@ -33,7 +34,7 @@ export function FirstRunScreen({
   const insets = useSafeAreaInsets();
   const m = useFirstRunMetrics();
   return (
-    <KeyboardAvoidingView testID={testID} behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
+    <KeyboardAvoidingView testID={testID} behavior={KEYBOARD_LIFT} style={{ flex: 1, backgroundColor: tokens.color.bg }}>
       {header}
       <ScrollView
         style={{ flex: 1 }}

@@ -12,7 +12,8 @@ import { tokens } from "@lynia/shared/tokens";
 
 const TEST_METRICS = { insets: { top: 0, left: 0, right: 0, bottom: 0 }, frame: { x: 0, y: 0, width: 360, height: 720 } };
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: jest.fn() }) }));
+const mockBack = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, canGoBack: () => true, push: jest.fn(), replace: jest.fn() }) }));
 let mockRider: Record<string, unknown>;
 let mockIdNumber: string | null = null;
 const mockUpdateProfile = jest.fn();
@@ -438,14 +439,29 @@ describe("Bike & documents — the selfie re-check reminder (D-110)", () => {
 describe("D-122 · manual KYC (Didit unfunded)", () => {
   const manual = { kycStatus: "pending", kycMode: "manual", bikeReg: null, hasPhoto: false, kycDocs: { idFront: false, licence: false, selfieId: false }, licenceNumber: null, licenceExpiresOn: null };
 
-  it("adds the three document rows, licence details and a national-ID entry, and counts 'N of 6'", async () => {
+  // KB-02 (owner 2026-11-12): until verified this screen is the biker's sign-up — only what review needs.
+  it("shows only the ID number and the three document rows, and counts 'N of 4'", async () => {
     mockRider = { ...manual };
     const tree = render();
     await loaded(tree);
     const s = text(tree);
-    for (const k of ["ID card (front)", "Driver's licence", "Selfie holding your ID", "For your ID check", "Licence details", "of 6"]) expect(s).toContain(k);
-    expect(bars(tree)).toEqual({ done: 0, open: 6 });
-    for (const id of ["add-doc-idFront", "add-doc-licence", "add-doc-selfieId", "add-licence-details", "add-id-number"]) expect(has(tree, id)).toBe(true);
+    for (const k of ["ID card (front)", "Driver's licence", "Selfie holding your ID", "For your ID check", "of 4"]) expect(s).toContain(k);
+    expect(bars(tree)).toEqual({ done: 0, open: 4 });
+    for (const id of ["add-doc-idFront", "add-doc-licence", "add-doc-selfieId", "add-id-number"]) expect(has(tree, id)).toBe(true);
+    // The licence number + expiry row is gone, and the optional photo and plate wait until verified.
+    for (const id of ["row-licence-details", "add-licence-details", "row-photo", "row-plate", "documents-done"]) expect(has(tree, id)).toBe(false);
+  });
+
+  it("keeps the typed ID number in view with Edit, and offers Done once all four are in", async () => {
+    mockIdNumber = "63123456A78";
+    mockRider = { ...manual, kycDocs: { idFront: true, licence: true, selfieId: true } };
+    const tree = render();
+    await loaded(tree);
+    expect(text(tree)).toContain("63-123456A78");
+    expect(text(tree)).toContain("Sent for review.");
+    expect(bars(tree)).toEqual({ done: 4, open: 0 });
+    await press(tree, "documents-done");
+    expect(mockBack).toHaveBeenCalled();
   });
 
   it("outside manual mode nothing changes: no document rows and 'of 3'", async () => {
@@ -482,22 +498,5 @@ describe("D-122 · manual KYC (Didit unfunded)", () => {
     await press(tree, "row-doc-licence");
     expect(mockSaveDoc).toHaveBeenCalledTimes(2);
     expect(mockSaveDoc.mock.calls[1]).toEqual(["licence", { uri: "file:///lic.jpg", contentType: "image/jpeg" }]);
-  });
-
-  it("licence details refuse a bad date and save DD/MM/YYYY as an ISO day", async () => {
-    mockRider = { ...manual };
-    mockUpdateRider.mockResolvedValue({ hasPhoto: false, bikeReg: null });
-    const tree = render();
-    await loaded(tree);
-    await press(tree, "add-licence-details");
-    const field = (id: string) => tree.root.findAll((n) => n.props.testID === id && typeof n.props.onChangeText === "function")[0]!;
-    await act(async () => field("licence-number").props.onChangeText("ab 12345"));
-    await act(async () => field("licence-expiry").props.onChangeText("31/02/2028"));
-    await press(tree, "licence-save");
-    expect(text(tree)).toContain("Use the format DD/MM/YYYY");
-    expect(mockUpdateRider).not.toHaveBeenCalled();
-    await act(async () => field("licence-expiry").props.onChangeText("31/01/2028"));
-    await press(tree, "licence-save");
-    expect(mockUpdateRider).toHaveBeenCalledWith({ licenceNumber: "AB 12345", licenceExpiresOn: "2028-01-31" });
   });
 });

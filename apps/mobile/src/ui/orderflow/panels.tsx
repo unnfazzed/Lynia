@@ -1,6 +1,7 @@
 import { tokens } from "@lynia/shared/tokens";
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -18,7 +19,7 @@ const C = tokens.color;
 function ModalSheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }): React.ReactElement {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end", backgroundColor: ALPHA.scrim }}>
+      <KeyboardAvoidingView behavior={KEYBOARD_LIFT} style={{ flex: 1, justifyContent: "flex-end", backgroundColor: ALPHA.scrim }}>
         <Tappable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel={O.c.close} />
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
           <View style={{ height: 28, alignItems: "center", justifyContent: "center", marginHorizontal: -16 }}>

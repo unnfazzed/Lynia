@@ -22,6 +22,12 @@ export const MK = {
   licenceExpired: "This licence has expired",
   nationalIdSheet: "Your national ID number",
   save: "Save",
-  /** The manual-mode count beside the bars (E1's own string is "of 3"). */
-  progressOf6: "of 6",
+  /** The manual-mode count beside the bars (E1's own string is "of 3"). Was "of 6" (KB-02). */
+  progressOf4: "of 4",
+  // KB-02 (owner 2026-11-12, "streamline it"; ledger D-134, pending the owner's word check):
+  /** F1 before the documents are in: what to do, not "In review". */
+  todoBody: "Add your ID, your licence and a selfie with your ID. About 2 minutes.",
+  /** Bike & documents once all four are in, above the Done button. */
+  sent: "Sent for review. Usually a few hours. We’ll notify you.",
+  done: "Done",
 } as const;

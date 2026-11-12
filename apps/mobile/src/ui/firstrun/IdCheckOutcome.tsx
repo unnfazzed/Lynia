@@ -3,7 +3,7 @@ import type { KycOutcomeId } from "../../logic/kyc-outcome";
 import type { IconName } from "../Icon";
 import { RO } from "../onboarding/copy";
 import { KYF } from "../rider/copy";
-import { PinnedFooter, ExitButton, FrSoftPill, type PinnedFooterProps } from "./actions";
+import { PinnedFooter, ExitButton, type PinnedFooterProps } from "./actions";
 import { MK } from "../rider/manual-kyc-copy";
 import { TipChips, TriesMeter } from "./bits";
 import { KY, PD } from "./copy";
@@ -34,7 +34,11 @@ export interface IdCheckOutcomeProps {
   retrying?: boolean;
   /** WhatsApp: F2 / F4 / F7 link, F5 / F5dup CTA. */
   onHelp: () => void;
-  /** D-122 (manual KYC): F1's soft "Add your documents" pill → Bike & documents. Hidden when absent. */
+  /**
+   * Manual KYC (D-122, KB-02): the documents review needs are not all in yet. F1 then says what to do, not
+   * "In review": F3's "Almost there" with step 2 "Next" and one primary "Add your documents" → Bike &
+   * documents. (It used to say "Our team is taking a look" before anything had been sent.)
+   */
   onAddDocs?: () => void;
 }
 
@@ -144,10 +148,18 @@ function pageFor(id: KycOutcomeId, firstName: string | null | undefined, expired
   }
 }
 
+/** F1 while the manual-review documents are still missing (KB-02): F3's shell, the documents as the CTA. */
+function docsTodoPage(firstName: string | null | undefined): Page {
+  return { tone: "mint", icon: "id-card", a: KYF.unfA(firstName), b: KYF.unfName(firstName), body: MK.todoBody, checklist: { step2: "next", label: RO.stepIdTime } };
+}
+
 export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, onRetry, retrying, onHelp, onAddDocs }: IdCheckOutcomeProps): React.ReactElement {
-  const p = pageFor(id, firstName, expiredAt);
+  const todo = id === "F1" && !!onAddDocs;
+  const p = todo ? docsTodoPage(firstName) : pageFor(id, firstName, expiredAt);
   const footer: PinnedFooterProps = {};
-  if (p.primary && p.primaryLabel) {
+  if (todo && onAddDocs) {
+    footer.primary = { label: MK.addDocs, icon: "arrow-right", iconAfter: true, onPress: onAddDocs, testID: "outcome-add-docs" };
+  } else if (p.primary && p.primaryLabel) {
     footer.primary = {
       label: p.primaryLabel,
       icon: p.primaryIcon,
@@ -160,7 +172,7 @@ export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, on
   if (p.link) footer.link = { label: KY.help, icon: "message-circle", onPress: onHelp, testID: "outcome-help" };
   const hasFooter = !!(footer.primary || footer.link);
   return (
-    <FirstRunScreen testID={`kyc-outcome-${id}`} footer={hasFooter ? <PinnedFooter {...footer} /> : undefined}>
+    <FirstRunScreen testID={todo ? "kyc-outcome-F1-docs" : `kyc-outcome-${id}`} footer={hasFooter ? <PinnedFooter {...footer} /> : undefined}>
       <HeroPanel tone={p.tone} topLeft={<ExitButton onPress={onExit} />}>
         <HeroDisc icon={p.icon} spinner={p.spinner} />
       </HeroPanel>
@@ -170,7 +182,6 @@ export function IdCheckOutcome({ id, firstName, triesLeft, expiredAt, onExit, on
       {/* `KY.triesLeft` is the only drawn meter label ("1 try left"): a decline below the lock is always 1 left. */}
       {p.tries && triesLeft === 1 ? <TriesMeter left={1} label={KY.triesLeft} /> : null}
       {p.checklist ? <KycChecklist step2={p.checklist.step2} label={p.checklist.label} /> : null}
-      {id === "F1" && onAddDocs ? <FrSoftPill label={MK.addDocs} icon="id-card" onPress={onAddDocs} testID="outcome-add-docs" style={{ marginTop: 16, alignSelf: "flex-start" }} /> : null}
     </FirstRunScreen>
   );
 }

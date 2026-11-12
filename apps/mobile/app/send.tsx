@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { AppState, BackHandler, Keyboard, KeyboardAvoidingView, ScrollView, View } from "react-native";
+import { KEYBOARD_LIFT } from "../src/ui/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMe, type Me } from "../src/api/auth";
 import { ApiError, currentProfileId } from "../src/api/client";
@@ -624,9 +625,9 @@ export default function SendScreen(): React.ReactElement {
       <TestBuildBanner />
       <SendHeader step={step} bar={editing == null} onBack={() => void back()} />
 
-      {/* Android resizes the window for the keyboard (Expo's default adjustResize); iOS needs padding so
-          the CTA bar rides above the keyboard and the dropdown measures the space actually left. */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {/* The CTA bar rides above the keyboard and the dropdown measures the space actually left (KEYBOARD_LIFT:
+          padding on both platforms, as the edge-to-edge Android window no longer resizes). */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_LIFT}>
       {/* P36: the step-1 map stays mounted for the life of the screen — hidden, not torn down, on steps
           2–4 — so Back / Edit return to the same native map (its tiles, camera and two-pin fit) instead of
           a fresh one. Only the map is kept; the card and the CTA are step 1's alone. */}

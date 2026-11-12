@@ -5,7 +5,8 @@ import type { IssueType, ReportReason } from "@lynia/shared";
 import { useMutation } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import React, { useEffect, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { KEYBOARD_LIFT } from "./keyboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { raiseIssue, raiseSos, reportUser } from "../api/safety";
 import {
@@ -50,10 +51,9 @@ function Sheet({
 }): React.ReactElement {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {/* iOS lays the keyboard over a Modal instead of resizing it (Android's Modal does resize), so on
-          an iPhone the form fields would sit behind it. Lift the sheet by the keyboard's height there. */}
+      {/* A Modal is never resized for the keyboard (on either platform), so lift the sheet by its height. */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={KEYBOARD_LIFT}
         style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}
       >
         {/* Tap the dimmed backdrop to dismiss; the sheet itself sits below it. */}

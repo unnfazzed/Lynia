@@ -1,7 +1,8 @@
 import { formatPhoneDisplay } from "@lynia/shared";
 import { tokens } from "@lynia/shared/tokens";
 import React, { useRef } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, ScrollView, Text, TextInput, View } from "react-native";
+import { KEYBOARD_LIFT } from "../keyboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon, type IconName } from "../Icon";
 import { Tappable } from "../Tappable";
@@ -29,7 +30,7 @@ export function OnbScreen({
   const tabSpace = useTabBarSpace();
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: tokens.color.bg }} edges={tabSpace ? ["top"] : ["top", "bottom"]}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KEYBOARD_LIFT}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
           <View style={{ flex: 1, paddingTop: padTop }}>{children}</View>
           {footer ? <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 + tabSpace, gap: 12 }}>{footer}</View> : null}

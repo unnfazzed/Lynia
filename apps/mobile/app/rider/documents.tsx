@@ -48,7 +48,8 @@ import { RIDER_COPY as R } from "../../src/ui/rider/copy";
 import { SR } from "../../src/ui/rider/selfie-recheck-copy";
 import { KycDocRows } from "../../src/ui/rider/KycDocRows";
 import { MK } from "../../src/ui/rider/manual-kyc-copy";
-import { manualDocsProgress } from "../../src/logic/manual-kyc";
+import { manualDocsProgress, manualSetupComplete } from "../../src/logic/manual-kyc";
+import { replaceClearingStack } from "../../src/logic/nav";
 import { formatNationalId, NATIONAL_ID_RE } from "../../src/logic/national-id";
 import { PD } from "../../src/ui/firstrun/copy";
 
@@ -372,14 +373,28 @@ export default function DocumentsScreen(): React.ReactElement {
   // D-110: a reminder only — never a gate on going online.
   const selfieRecheck = idOk && rider?.selfieCheck === "recheck_requested";
   const hasPhoto = rider?.hasPhoto === true;
-  // D-122: manual KYC (Didit unfunded) — the biker's own ID-front, licence and selfie-with-ID photos and the
-  // typed licence join the list, and the count reads "N of 6". Shown while manual review is on, and to any
-  // biker who already has document photos on file (so a verified biker can renew their licence).
+  // D-122: manual KYC (Didit unfunded) — the biker's own ID-front, licence and selfie-with-ID photos join the
+  // list. Shown while manual review is on, and to any biker who already has document photos on file (so a
+  // verified biker can renew their licence).
   const docs = rider?.kycDocs;
   const manual = rider?.kycMode === "manual" || !!(docs?.idFront || docs?.licence || docs?.selfieId);
-  const progress = manual ? manualDocsProgress(rider) : bikeDocsProgress(rider);
-  const needsIdNumber = manual && !idOk && !me?.idNumber;
-  const allSet = !upload && progress.done === progress.total;
+  // KB-02 (owner 2026-11-12): until the biker is verified this screen IS their sign-up, so it shows only what
+  // review needs — the ID number and the three photos, "N of 4" — and a Done once they're all in. The biker
+  // photo and plate are optional and come back once verified.
+  const setup = manual && !idOk;
+  const progress = setup ? manualDocsProgress(rider, me?.idNumber) : bikeDocsProgress(rider);
+  const setupDone = setup && manualSetupComplete(rider, me?.idNumber);
+  const idNumber = me?.idNumber?.trim() || null;
+  const allSet = !setup && !upload && progress.done === progress.total;
+  const openIdSheet = (): void => {
+    setIdDraft(idNumber ? formatNationalId(idNumber) : "");
+    setIdError(null);
+    setIdSheet(true);
+  };
+  const finish = (): void => {
+    if (router.canGoBack()) router.back();
+    else replaceClearingStack(router, "/rider");
+  };
 
   const photoRow = upload ? (
     // E2d: the sub-line becomes a 4dp bar; the value reads "Uploading…".
@@ -424,17 +439,20 @@ export default function DocumentsScreen(): React.ReactElement {
       {selfieRecheck ? (
         <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={SR.rowSub} value={SR.redo} onPress={redoSelfie} accessibilityLabel={`${BD.id}, ${SR.rowSub}, ${SR.redo}`} />
       ) : (
-        needsIdNumber ? (
+        setup && !idNumber ? (
           // D-122: manual review compares the typed number with the ID photo, and the one-ID-one-account
           // check runs on it (PATCH /auth/me refuses a number another live account holds).
-          <ListRow testID="row-id" icon="id-card" title={BD.id} sub={MK.sub} right={<AddPill onPress={() => setIdSheet(true)} testID="add-id-number" />} accessibilityLabel={`${BD.id}, ${MK.sub}`} />
+          <ListRow testID="row-id" icon="id-card" title={BD.id} sub={MK.sub} right={<AddPill onPress={openIdSheet} testID="add-id-number" />} accessibilityLabel={`${BD.id}, ${MK.sub}`} />
+        ) : setup && idNumber ? (
+          // KB-02: the typed number stays in view (it used to vanish once saved), with Edit to fix a typo.
+          <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={formatNationalId(idNumber)} value={BD.edit} onPress={openIdSheet} accessibilityLabel={`${BD.id}, ${formatNationalId(idNumber)}, ${BD.edit}`} />
         ) : (
           <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
         )
       )}
       {manual && rider ? <KycDocRows rider={rider} AddPill={AddPill} onBlocked={setBlocked} /> : null}
-      {photoRow}
-      {plateRow}
+      {setup ? null : photoRow}
+      {setup ? null : plateRow}
     </ListCard>
   );
 
@@ -442,6 +460,8 @@ export default function DocumentsScreen(): React.ReactElement {
     <>
       <FirstRunScreen
         testID="documents"
+        // KB-02: the way out once everything review needs is in (there used to be none).
+        footer={setupDone ? <PinnedFooter primary={{ label: MK.done, onPress: finish, testID: "documents-done" }} /> : undefined}
         header={
           <>
             <BackHeader onBack={() => router.back()} />
@@ -469,8 +489,13 @@ export default function DocumentsScreen(): React.ReactElement {
           </View>
         ) : (
           <>
-            <ProgressBars done={progress.done} total={progress.total} label={manual ? MK.progressOf6 : BD.progress} />
+            <ProgressBars done={progress.done} total={progress.total} label={setup ? MK.progressOf4 : BD.progress} />
             {rows}
+            {setupDone ? (
+              <Text testID="documents-sent" style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>
+                {MK.sent}
+              </Text>
+            ) : null}
             {/* "Optional. You can take jobs now." is only true once the ID is verified. */}
             {idOk ? <Text style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{BD.optional}</Text> : null}
           </>
