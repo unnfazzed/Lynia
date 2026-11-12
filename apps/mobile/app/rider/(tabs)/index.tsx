@@ -48,6 +48,7 @@ import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from ".
 import { EVENTS, track } from "../../../src/telemetry/events";
 import { signupBoardFor, signupDone } from "../../../src/logic/biker-signup";
 import { extrasNeeded, holdExtrasThen } from "../../../src/logic/rider-extras";
+import { peekPendingTarget } from "../../../src/logic/pending-photo";
 import { SignupDeclinedPage, SignupHalfPage, SignupIntroPage } from "../../../src/ui/rider/signup/parts";
 import { refusedJobCommission, topUpGate } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
@@ -348,6 +349,19 @@ export default function RiderHome(): React.ReactElement {
       if (handed) setKycLaunch(handed);
     }, []),
   );
+  // KB-04: Android killed the app while a biker photo was being taken (low-memory phones). The board is where
+  // the app reopens, so send the biker back to the screen that takes that photo; it picks the photo up there.
+  useEffect(() => {
+    let live = true;
+    void peekPendingTarget().then((t) => {
+      if (!live || !t) return;
+      router.push(t === "riderPhoto" ? "/rider/documents" : "/rider/signup");
+    });
+    return () => {
+      live = false;
+    };
+  }, [router]);
+
   // Calm Mint v2 R3 (D-55): the first time this account opens the board verified, "You're verified"
   // takes the board's place once. `null` = still reading the flag (nothing shown, no flash).
   const profileId = meQ.data?.profileId ?? null;

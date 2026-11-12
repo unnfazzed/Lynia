@@ -8,6 +8,7 @@ import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { startSelfieRecheck, updateRiderProfile } from "../../src/api/riders";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
+import { recoverPendingPhoto } from "../../src/logic/pending-photo";
 import { endKycCheckHold, primeKycLaunch, runKycVerification } from "../../src/kyc/verify";
 import { KYC_RETRY_TRY_LATER } from "../../src/logic/gates";
 import { initials } from "../../src/logic/avatar";
@@ -203,6 +204,17 @@ export default function DocumentsScreen(): React.ReactElement {
       live = false;
     };
   }, [follow]);
+
+  // KB-04: a biker photo taken just before Android killed the app comes back on its E2c preview.
+  useEffect(() => {
+    let live = true;
+    void recoverPendingPhoto(["riderPhoto"]).then((r) => {
+      if (live && r) setStage({ kind: "preview", shot: r.shot, from: "camera" });
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // Android back on a full-screen step returns to the list instead of leaving the screen.
   useEffect(() => {

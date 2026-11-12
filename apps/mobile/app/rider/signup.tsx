@@ -21,6 +21,7 @@ import {
 import { saveSignupIdNumber, saveSignupLicenceNumber, sendSignupPhoto } from "../../src/logic/biker-signup-actions";
 import type { UploadImageSource } from "../../src/logic/image-downscale";
 import { pickKycDoc } from "../../src/logic/manual-kyc";
+import { recoverPendingPhoto } from "../../src/logic/pending-photo";
 import { formatNationalId } from "../../src/logic/national-id";
 import { replaceClearingStack } from "../../src/logic/nav";
 import { riderPhotoAllowed, type PhotoSource } from "../../src/logic/rider-documents";
@@ -130,15 +131,28 @@ export default function SignupScreen(): React.ReactElement {
 
   const [stage, setStage] = useState<Stage | null>(null);
   const [returnToCheck, setReturnToCheck] = useState(false);
+  // KB-04: a photo taken just before Android killed the app comes back first, on its own preview.
+  // `undefined` = still asking; null = nothing to recover.
+  const [recovered, setRecovered] = useState<{ item: PhotoItem; shot: UploadImageSource } | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void recoverPendingPhoto(["idFront", "licence", "selfieId"]).then((r) => {
+      if (live) setRecovered(r ? { item: r.target as PhotoItem, shot: r.shot } : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   // The first stage, once `me` is here: K0, the first step to (re)do, or Check & send.
   useEffect(() => {
-    if (stage || !me) return;
+    if (stage || !me || recovered === undefined) return;
+    if (recovered) return setStage({ k: "preview", item: recovered.item, shot: recovered.shot, from: "camera" });
     if (params.start === "intro" && !redo) return setStage({ k: "intro" });
     // A redo walks every declined step, even one still on file (the expired licence's number).
     if (redo) return setStage(stageFor(redo[0]!));
     const open = seq.find((i) => !done[i]);
     setStage(open ? stageFor(open) : { k: "check" });
-  }, [stage, me, params.start, redo, seq, done]);
+  }, [stage, me, recovered, params.start, redo, seq, done]);
 
   const exit = useCallback((): void => {
     if (router.canGoBack()) router.back();

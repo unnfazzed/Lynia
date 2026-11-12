@@ -1,4 +1,5 @@
 import { normalizeNationalId } from "@lynia/shared";
+import { clearPick, markPickStarted } from "./pending-photo";
 import * as ImagePicker from "expo-image-picker";
 import * as SecureStore from "expo-secure-store";
 import { updateRiderProfile } from "../api/riders";
@@ -76,7 +77,10 @@ export async function pickRiderPhoto(from: PhotoSource): Promise<UploadImageSour
   const perm = from === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return perm.canAskAgain === false ? "blocked" : "denied";
   const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 };
+  // KB-04: Android may kill the app while the picker is open — remember which photo this was for.
+  await markPickStarted("riderPhoto");
   const result = from === "camera" ? await ImagePicker.launchCameraAsync({ ...opts, cameraType: ImagePicker.CameraType.front }) : await ImagePicker.launchImageLibraryAsync(opts);
+  await clearPick();
   if (result.canceled) return null;
   const a = result.assets[0];
   if (!a) return null;
