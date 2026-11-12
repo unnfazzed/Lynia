@@ -247,10 +247,8 @@ export default function BecomeRiderScreen(): React.ReactElement {
       // opens, so the stand-in sheet (manual review, no session) goes before the board does.
       endKycCheckHold();
       await handOver(!stub);
-      // KB-02 (owner 2026-11-12): manual review has no check to open, so the next thing the biker must do is
-      // add their documents. Open Bike & documents over the board at once, instead of landing on a page that
-      // already said "In review" with nothing sent. Back from it lands on the board's to-do page.
-      if (res.mode === "manual") router.push("/rider/documents");
+      // Biker sign-up v1 (D-135): in manual review the board now opens on K0 "Become a biker in 5 steps", whose
+      // Start runs the sign-up — nothing else to open here.
     } catch (e) {
       // BH-04: a lost-response retry on `becomeRider` hits this exact 409 — the FIRST submit already
       // landed server-side (and since R-10 so does the loser of a double-tap race), so the board

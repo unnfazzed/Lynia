@@ -3,6 +3,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import { PrimaryButton } from "./actions";
 import { KY } from "./copy";
+import { KS } from "../rider/signup-copy";
 import { em } from "./metrics";
 
 /**
@@ -30,7 +31,7 @@ export function BecomeRiderCard({ onStart }: { onStart: () => void }): React.Rea
         {`${KY.becomeA}\n`}
         <Text style={{ color: tokens.color.riderAccent }}>{KY.becomeB}</Text>
       </Text>
-      <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 19.6, color: tokens.color.muted }}>{KY.becomeBody}</Text>
+      <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 19.6, color: tokens.color.muted }}>{KS.becomeBody}</Text>
       <View style={{ marginTop: 16 }}>
         <PrimaryButton label={KY.becomeCta} icon="arrow-right" iconAfter onPress={onStart} testID="become-rider-start" />
       </View>

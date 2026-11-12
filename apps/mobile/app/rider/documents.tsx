@@ -1,10 +1,10 @@
 import { tokens } from "@lynia/shared/tokens";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BackHandler, Image, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getMe, type Me, updateProfile } from "../../src/api/auth";
+import { getMe, type Me } from "../../src/api/auth";
 import { ApiError } from "../../src/api/client";
 import { startSelfieRecheck, updateRiderProfile } from "../../src/api/riders";
 import { KycCheckHost } from "../../src/kyc/KycCheckHost";
@@ -47,11 +47,6 @@ import { BD, KY, RP } from "../../src/ui/firstrun/copy";
 import { RIDER_COPY as R } from "../../src/ui/rider/copy";
 import { SR } from "../../src/ui/rider/selfie-recheck-copy";
 import { KycDocRows } from "../../src/ui/rider/KycDocRows";
-import { MK } from "../../src/ui/rider/manual-kyc-copy";
-import { manualDocsProgress, manualSetupComplete } from "../../src/logic/manual-kyc";
-import { replaceClearingStack } from "../../src/logic/nav";
-import { formatNationalId, NATIONAL_ID_RE } from "../../src/logic/national-id";
-import { PD } from "../../src/ui/firstrun/copy";
 
 /**
  * E1's in-row "+ Add" pill height. The handoff drew it 36, under the tap-target floor; the owner had the
@@ -169,9 +164,6 @@ export default function DocumentsScreen(): React.ReactElement {
   const [plateDraft, setPlateDraft] = useState("");
   const [plateError, setPlateError] = useState<string | null>(null);
   // D-122: the national ID number sheet (manual review).
-  const [idSheet, setIdSheet] = useState(false);
-  const [idDraft, setIdDraft] = useState("");
-  const [idError, setIdError] = useState<string | null>(null);
   const upload = useSyncExternalStore(subscribePhotoUpload, getPhotoUpload, getPhotoUpload);
   // FR-H2: camera / gallery access the phone will no longer ask for — the settings sheet, re-read on return.
   const [blocked, setBlocked] = useState<PhotoSource | null>(null);
@@ -182,22 +174,6 @@ export default function DocumentsScreen(): React.ReactElement {
       alive.current = false;
     };
   }, []);
-
-  /** D-122: save the typed national ID (PATCH /auth/me); a number on another live account is refused. */
-  const saveIdNumber = async (): Promise<void> => {
-    if (!NATIONAL_ID_RE.test(idDraft)) {
-      setIdError(PD.invalid);
-      return;
-    }
-    try {
-      const next = await updateProfile({ firstName: me?.firstName ?? "", lastName: me?.lastName ?? "", idNumber: idDraft });
-      qc.setQueryData(["me"], next);
-      setIdSheet(false);
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "id_in_use") setIdError(`${PD.takenA} ${PD.takenB}. ${PD.takenBody}`);
-      else setError();
-    }
-  };
 
   /** An upload's end, while this screen is up: E6 on a connection failure, the toast on a refusal. */
   const follow = useCallback(
@@ -349,6 +325,11 @@ export default function DocumentsScreen(): React.ReactElement {
     })();
   };
 
+  // Biker sign-up v1 (D-135): until a manual-review biker is verified, their documents are the sign-up — the
+  // flow, not this settings list (it retires D-134's "setup" list).
+  const signingUp = (rider?.kycMode === "manual" || !!(rider?.kycDocs?.idFront || rider?.kycDocs?.licence || rider?.kycDocs?.selfieId)) && !!rider && rider.kycStatus !== "verified";
+  if (signingUp) return <Redirect href="/rider/signup" />;
+
   if (stage.kind === "preview") {
     const { shot, from } = stage;
     return (
@@ -392,23 +373,8 @@ export default function DocumentsScreen(): React.ReactElement {
   // verified biker can renew their licence).
   const docs = rider?.kycDocs;
   const manual = rider?.kycMode === "manual" || !!(docs?.idFront || docs?.licence || docs?.selfieId);
-  // KB-02 (owner 2026-11-12): until the biker is verified this screen IS their sign-up, so it shows only what
-  // review needs — the ID number and the three photos, "N of 4" — and a Done once they're all in. The biker
-  // photo and plate are optional and come back once verified.
-  const setup = manual && !idOk;
-  const progress = setup ? manualDocsProgress(rider, me?.idNumber) : bikeDocsProgress(rider);
-  const setupDone = setup && manualSetupComplete(rider, me?.idNumber);
-  const idNumber = me?.idNumber?.trim() || null;
-  const allSet = !setup && !upload && progress.done === progress.total;
-  const openIdSheet = (): void => {
-    setIdDraft(idNumber ? formatNationalId(idNumber) : "");
-    setIdError(null);
-    setIdSheet(true);
-  };
-  const finish = (): void => {
-    if (router.canGoBack()) router.back();
-    else replaceClearingStack(router, "/rider");
-  };
+  const progress = bikeDocsProgress(rider);
+  const allSet = !upload && progress.done === progress.total;
 
   const photoRow = upload ? (
     // E2d: the sub-line becomes a 4dp bar; the value reads "Uploading…".
@@ -453,20 +419,11 @@ export default function DocumentsScreen(): React.ReactElement {
       {selfieRecheck ? (
         <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={SR.rowSub} value={SR.redo} onPress={redoSelfie} accessibilityLabel={`${BD.id}, ${SR.rowSub}, ${SR.redo}`} />
       ) : (
-        setup && !idNumber ? (
-          // D-122: manual review compares the typed number with the ID photo, and the one-ID-one-account
-          // check runs on it (PATCH /auth/me refuses a number another live account holds).
-          <ListRow testID="row-id" icon="id-card" title={BD.id} sub={MK.sub} right={<AddPill onPress={openIdSheet} testID="add-id-number" />} accessibilityLabel={`${BD.id}, ${MK.sub}`} />
-        ) : setup && idNumber ? (
-          // KB-02: the typed number stays in view (it used to vanish once saved), with Edit to fix a typo.
-          <ListRow testID="row-id" icon="id-card" iconTone="ok" title={BD.id} sub={formatNationalId(idNumber)} value={BD.edit} onPress={openIdSheet} accessibilityLabel={`${BD.id}, ${formatNationalId(idNumber)}, ${BD.edit}`} />
-        ) : (
-          <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
-        )
+        <ListRow testID="row-id" icon="id-card" iconTone={idOk ? "ok" : "n"} title={BD.id} value={idOk ? BD.verified : null} valueOk />
       )}
       {manual && rider ? <KycDocRows rider={rider} AddPill={AddPill} onBlocked={setBlocked} /> : null}
-      {setup ? null : photoRow}
-      {setup ? null : plateRow}
+      {photoRow}
+      {plateRow}
     </ListCard>
   );
 
@@ -474,8 +431,6 @@ export default function DocumentsScreen(): React.ReactElement {
     <>
       <FirstRunScreen
         testID="documents"
-        // KB-02: the way out once everything review needs is in (there used to be none).
-        footer={setupDone ? <PinnedFooter primary={{ label: MK.done, onPress: finish, testID: "documents-done" }} /> : undefined}
         header={
           <>
             <BackHeader onBack={() => router.back()} />
@@ -503,13 +458,8 @@ export default function DocumentsScreen(): React.ReactElement {
           </View>
         ) : (
           <>
-            <ProgressBars done={progress.done} total={progress.total} label={setup ? MK.progressOf4 : BD.progress} />
+            <ProgressBars done={progress.done} total={progress.total} label={BD.progress} />
             {rows}
-            {setupDone ? (
-              <Text testID="documents-sent" style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>
-                {MK.sent}
-              </Text>
-            ) : null}
             {/* "Optional. You can take jobs now." is only true once the ID is verified. */}
             {idOk ? <Text style={{ marginTop: 12, marginHorizontal: 4, fontSize: 13, lineHeight: 18.2, color: tokens.color.muted }}>{BD.optional}</Text> : null}
           </>
@@ -548,27 +498,6 @@ export default function DocumentsScreen(): React.ReactElement {
         <PinnedFooter inline primary={{ label: BD.plateSave, onPress: savePlate, testID: "plate-save" }} />
       </FrSheet>
 
-      {/* D-122 — the national ID number, for manual review. */}
-      <FrSheet visible={idSheet} onClose={() => setIdSheet(false)} testID="id-sheet">
-        <SheetTitle>{MK.nationalIdSheet}</SheetTitle>
-        <FrField
-          testID="id-field"
-          value={idDraft}
-          onChangeText={(v) => {
-            setIdDraft(formatNationalId(v));
-            setIdError(null);
-          }}
-          placeholder={PD.idPh}
-          error={idError}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          autoComplete="off"
-          maxLength={14}
-          returnKeyType="done"
-          onSubmitEditing={() => void saveIdNumber()}
-        />
-        <PinnedFooter inline primary={{ label: MK.save, onPress: () => void saveIdNumber(), testID: "id-save" }} />
-      </FrSheet>
 
       {/* FR-H2 — access the phone won't ask for again: open phone settings; it re-reads on return. */}
       <FrSheet visible={blocked != null} onClose={() => setBlocked(null)} testID="photo-blocked">

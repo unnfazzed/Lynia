@@ -218,6 +218,12 @@ flag-off and proof-of-pickup now HAVE mocks and must be aligned, not improvised)
   lyniago.com `/s/` landing and preview card align to `packages/design/handoff/shop-share-v1/` (ledger D-129, owner
   2026-11-08). Its `README.md` wins over the drawings. Links carry the shop's name (`lyniago.com/s/<name>-<CODE>`, plan
   O6, `packages/shared/src/shop-link.ts`). Strings come from its `copy.ts`, verbatim.
+- **Biker sign-up follows its own handoff (`handoff/biker-signup-v1/`).** The manual-review sign-up (`app/rider/signup.tsx`,
+  K0–K6), the board's sign-up pages (K0, B-todo-half, B-wait = F1, B-decl-*) and the optional extras after R3
+  (`app/rider/extras.tsx`, X1/X2) align to `packages/design/handoff/biker-signup-v1/` (ledger D-135, owner 2026-11-12; it
+  retires D-134 and D-122's licence-details row). Its `README.md` wins over the drawings. The live in-app camera (K*-cam)
+  waits for a store build; until then "Take photo" opens the phone's camera (D-135). Strings come from
+  `src/ui/rider/signup-copy.ts` (the handoff's `copy.ts`, verbatim).
 - **Never align to a retired screen.** Retired ids are listed in `packages/design/EXPORT-README.md`
   and the `gallery-map.js` header — chiefly `LJ home_launcher` and nine `RJ` rider screens.
 - **The interactive mobile kit is stale for RIDER.** `ui_kits/mobile/app.js` still runs the pre-July

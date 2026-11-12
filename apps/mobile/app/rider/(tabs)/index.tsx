@@ -46,7 +46,9 @@ import { markRiderWelcomeSeen, riderWelcomeSeen, riderWelcomeSeenCached } from "
 import { boardPollMs } from "../../../src/logic/board-poll";
 import { isRecentFix, LAST_KNOWN_MAX_ACCURACY_M, LAST_KNOWN_MAX_AGE_MS } from "../../../src/logic/last-known-fix";
 import { EVENTS, track } from "../../../src/telemetry/events";
-import { manualSetupComplete } from "../../../src/logic/manual-kyc";
+import { signupBoardFor, signupDone } from "../../../src/logic/biker-signup";
+import { extrasNeeded, holdExtrasThen } from "../../../src/logic/rider-extras";
+import { SignupDeclinedPage, SignupHalfPage, SignupIntroPage } from "../../../src/ui/rider/signup/parts";
 import { refusedJobCommission, topUpGate } from "../../../src/logic/topup";
 import { useSettled } from "../../../src/logic/use-settled";
 import { RIDER_PERM_ROUTES, startRiderPermFlow } from "../../../src/logic/rider-perm-flow";
@@ -1251,6 +1253,18 @@ export default function RiderHome(): React.ReactElement {
       </SafeAreaView>
     );
   }
+  // Biker sign-up v1 (D-135): while ID review is manual, the board draws the sign-up's own pages — K0 before
+  // anything is sent, B-todo-half to resume, F1 once all five steps are in, B-decl-* to fix only what's wrong.
+  const signupBoard = kycScreen?.kind === "outcome" ? signupBoardFor({ idNumber: meQ.data?.idNumber, rider }) : null;
+  if (signupBoard?.kind === "intro") {
+    return <SignupIntroPage testID="board-signup-intro" onExit={exitToCustomer} onStart={() => router.push("/rider/signup")} />;
+  }
+  if (signupBoard?.kind === "half") {
+    return <SignupHalfPage firstName={meQ.data?.firstName} done={signupDone({ idNumber: meQ.data?.idNumber, rider })} onExit={exitToCustomer} onContinue={() => router.push("/rider/signup")} />;
+  }
+  if (signupBoard?.kind === "declined") {
+    return <SignupDeclinedPage decline={signupBoard.decline} items={signupBoard.items} onExit={exitToCustomer} onFix={() => router.push("/rider/signup?redo=1")} onHelp={whatsappSupport} />;
+  }
   // F1–F8 (First Run v2, D-82): one full-screen shell, the ✕ its only way out. KycCheckHost presents the ID
   // check that "Try again" / "Finish ID check" / "Re-verify my ID" reopen.
   if (kycScreen?.kind === "outcome") {
@@ -1263,12 +1277,11 @@ export default function RiderHome(): React.ReactElement {
           // F6 "Expired 2 Oct 2026" (D-82 §4): `rider.kycExpiredOn`; an older server omits it and F6 drops the date.
           expiredAt={parseIsoDay(rider?.kycExpiredOn)}
           onExit={exitToCustomer}
-          // D-122 (manual KYC): there is no check to reopen — a decline is fixed by retaking the photos in
-          // Bike & documents (a complete set puts the biker back in the review queue).
-          onRetry={rider?.kycMode === "manual" ? () => router.push("/rider/documents") : () => retryM.mutate()}
+          // D-122 (manual KYC): there is no check to reopen — a decline the sign-up can't name (B-decl-*) is
+          // fixed in the sign-up's redo (D-135).
+          onRetry={rider?.kycMode === "manual" ? () => router.push("/rider/signup?redo=1") : () => retryM.mutate()}
           retrying={!!pendingOrQueued(retryM)}
           onHelp={whatsappSupport}
-          onAddDocs={rider?.kycMode === "manual" && !manualSetupComplete(rider, meQ.data?.idNumber) ? () => router.push("/rider/documents") : undefined}
         />
         <KycCheckHost />
       </>
@@ -1310,6 +1323,12 @@ export default function RiderHome(): React.ReactElement {
           // Stored NOW, not from P13's callback: the flow marks itself done when P13 shows, so an app killed
           // mid-flow came back to R3 (and its flow again). The in-memory hold stays until P13 goes online.
           if (profileId) void markRiderWelcomeSeen(profileId);
+          // Biker sign-up v1 X1/X2 (D-135): the optional photo and plate come first, once, then the flow.
+          if (extrasNeeded(rider)) {
+            holdExtrasThen(() => setWelcomeSeen(true));
+            router.push("/rider/extras");
+            return;
+          }
           void startRiderPermFlow(router, () => setWelcomeSeen(true));
         }}
         onPapers={() => router.push("/rider/documents")}
