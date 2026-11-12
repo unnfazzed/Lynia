@@ -1,0 +1,169 @@
+name: Reset biker to customer (Azure)
+
+# Owner request (2026-11-12): run apps/api/scripts/reset-bikers-to-customers.ts against PRODUCTION from
+# the GitHub app, with no shell. Turns one biker back into a plain customer (keeps the profile, phone
+# and customer orders; drops the riders row; revokes sessions; writes an audit row) so they can go
+# through become-biker and the KYC check again.
+#
+# How it runs: the same OIDC login as release-azure.yml (environment: production, main only), then the
+# in-VNet migrate job (caj-lynia-migrate) is pointed at the image the API serves NOW and started with the
+# reset command. The job already holds DATABASE_URL through its Key Vault reference, so the runner never
+# sees a database credential. Afterwards the job's command goes back to `prisma migrate deploy` (every
+# release sets it again anyway). Shares the release-azure concurrency group so it never races a release
+# for the migrate job.
+#
+# Dry run by default. Tick `apply` only after a dry run printed WOULD RESET. The script SKIPS (and this
+# run fails) anyone it can't match exactly once or who has real biker activity — orders, offers, a
+# wallet balance, top-ups, referrals. `force_test` detaches that activity instead: use it ONLY when all of
+# it is test data.
+#
+# Logs are public: the name and digits are masked and the script runs with --redact ("target 1").
+# Never write `${{ }}` inside a run: block here (inputs arrive through env:).
+
+on:
+  workflow_dispatch:
+    inputs:
+      first_name:
+        description: "First name, as on the account"
+        required: true
+        type: string
+      last_name:
+        description: "Last name, as on the account"
+        required: true
+        type: string
+      phone_last4:
+        description: "Last four digits of the phone number"
+        required: true
+        type: string
+      apply:
+        description: "Apply (leave unticked for a dry run that changes nothing)"
+        required: false
+        type: boolean
+        default: false
+      force_test:
+        description: "Force-test: detach biker activity. ONLY if all of it is test data"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    if: ${{ vars.AZ_DEPLOY_ENABLED == 'true' }}
+    environment: production
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC token azure/login exchanges for the deploy identity
+    env:
+      RG: ${{ vars.AZ_RESOURCE_GROUP }}
+      APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+      MIGRATE_JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate inputs
+        id: args
+        env:
+          FIRST: ${{ inputs.first_name }}
+          LAST: ${{ inputs.last_name }}
+          LAST4: ${{ inputs.phone_last4 }}
+        run: |
+          set -euo pipefail
+          FIRST="$(printf '%s' "$FIRST" | xargs)"; LAST="$(printf '%s' "$LAST" | xargs)"; LAST4="$(printf '%s' "$LAST4" | tr -d ' ')"
+          echo "::add-mask::$FIRST"; echo "::add-mask::$LAST"; echo "::add-mask::$LAST4"
+          [[ "$FIRST" =~ ^[A-Za-z\'-]{1,40}$ ]] || { echo "::error::First name: letters, ' and - only."; exit 1; }
+          [[ "$LAST" =~ ^[A-Za-z\'-]{1,40}$ ]] || { echo "::error::Last name: letters, ' and - only."; exit 1; }
+          [[ "$LAST4" =~ ^[0-9]{4}$ ]] || { echo "::error::Phone: exactly the last four digits."; exit 1; }
+          echo "target=--target=$FIRST,$LAST,$LAST4" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login (OIDC, production)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run the reset in the migrate job
+        id: run
+        env:
+          TARGET: ${{ steps.args.outputs.target }}
+          APPLY: ${{ inputs.apply }}
+          FORCE_TEST: ${{ inputs.force_test }}
+        run: |
+          set -euo pipefail
+          IMAGE="$(az containerapp show -n "$APP" -g "$RG" --query 'properties.template.containers[0].image' -o tsv)"
+          [ -n "$IMAGE" ] || { echo "::error::Could not read the image $APP serves."; exit 1; }
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Using the image the API serves now: $IMAGE"
+          args=(scripts/reset-bikers-to-customers.ts "$TARGET" --redact)
+          [ "$APPLY" = "true" ] && args+=(--apply)
+          [ "$FORCE_TEST" = "true" ] && args+=(--force-test)
+          echo "Mode: $([ "$APPLY" = "true" ] && echo APPLY || echo 'DRY RUN')$([ "$FORCE_TEST" = "true" ] && echo ' + force-test')"
+          # WORKDIR is /repo/apps/api; the image ships the workspace with dev deps, so tsx is local.
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE" \
+            --command /repo/apps/api/node_modules/.bin/tsx --args "${args[@]}" -o none
+          EXECUTION="$(az containerapp job start -n "$MIGRATE_JOB" -g "$RG" --query name -o tsv)"
+          [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
+          echo "execution=$EXECUTION" >> "$GITHUB_OUTPUT"
+          echo "Started $MIGRATE_JOB execution $EXECUTION"
+          deadline=$((SECONDS + 900))
+          while :; do
+            status="$(az containerapp job execution show -n "$MIGRATE_JOB" -g "$RG" --job-execution-name "$EXECUTION" \
+              --query properties.status -o tsv 2>/dev/null || echo Unknown)"
+            echo "execution $EXECUTION: $status"
+            case "$status" in Succeeded|Failed|Stopped|Degraded) break ;; esac
+            [ "$SECONDS" -lt "$deadline" ] || { status=Timeout; break; }
+            sleep 10
+          done
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Script output
+        if: ${{ always() && steps.run.outputs.execution != '' }}
+        env:
+          EXECUTION: ${{ steps.run.outputs.execution }}
+        run: |
+          set -uo pipefail
+          CONTAINER="$(az containerapp job show -n "$MIGRATE_JOB" -g "$RG" --query 'properties.template.containers[0].name' -o tsv)"
+          # Console logs can take a minute to reach the log stream after the execution ends.
+          for _ in 1 2 3 4 5 6; do
+            out="$(az containerapp job logs show -n "$MIGRATE_JOB" -g "$RG" --execution "$EXECUTION" \
+              --container "$CONTAINER" --format text --tail 200 2>/dev/null || true)"
+            if printf '%s' "$out" | grep -qE 'RESET|SKIP|Dry run|Applied|Error'; then break; fi
+            sleep 20
+          done
+          if [ -n "${out:-}" ]; then
+            printf '%s\n' "$out"
+          else
+            echo "::warning::No console output came back. Read it in the Azure Portal: $MIGRATE_JOB → Execution history → $EXECUTION → Console logs."
+          fi
+
+      - name: Restore the migrate job's command
+        if: ${{ always() && steps.run.outputs.image != '' }}
+        env:
+          IMAGE: ${{ steps.run.outputs.image }}
+        run: |
+          set -euo pipefail
+          az containerapp job update -n "$MIGRATE_JOB" -g "$RG" --image "$IMAGE" \
+            --command /repo/apps/api/node_modules/.bin/prisma --args migrate deploy -o none
+          echo "$MIGRATE_JOB is back to prisma migrate deploy."
+
+      - name: Result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          if [ "$STATUS" = "Succeeded" ]; then
+            if [ "$APPLY" = "true" ]; then echo "Done: the account is a customer again and can start Become a biker."; else echo "Dry run OK. If it said WOULD RESET, run again with apply ticked."; fi
+          else
+            echo "::error::The script ended $STATUS. A SKIP (no single match, or real biker activity) ends this way: read 'Script output' above. Nothing was changed for a skipped account."
+            exit 1
+          fi
