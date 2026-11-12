@@ -11,23 +11,6 @@ export const MK = {
   guideDoc: "Lay it flat, all four corners in view, no glare.",
   guideSelfie: "Hold your ID next to your face.",
   addDocs: "Add your documents",
-  // New in PR 1 (ledger D-122, pending the owner's sign-off on the exact words):
-  licenceDetails: "Licence details",
-  licenceDetailsSub: "Number and expiry date",
-  licenceNumber: "Licence number",
-  licenceExpiry: "Expiry date",
-  licenceExpiryPh: "DD/MM/YYYY",
-  licenceExpiryBad: "Use the format DD/MM/YYYY",
-  licenceNumberBad: "Enter your licence number",
-  licenceExpired: "This licence has expired",
-  nationalIdSheet: "Your national ID number",
-  save: "Save",
-  /** The manual-mode count beside the bars (E1's own string is "of 3"). Was "of 6" (KB-02). */
-  progressOf4: "of 4",
-  // KB-02 (owner 2026-11-12, "streamline it"; ledger D-134, pending the owner's word check):
-  /** F1 before the documents are in: what to do, not "In review". */
-  todoBody: "Add your ID, your licence and a selfie with your ID. About 2 minutes.",
-  /** Bike & documents once all four are in, above the Done button. */
-  sent: "Sent for review. Usually a few hours. We’ll notify you.",
-  done: "Done",
+  // The licence-details row, the ID-number sheet and D-134's sign-up list are retired by Biker sign-up v1
+  // (D-135); its strings live in signup-copy.ts.
 } as const;

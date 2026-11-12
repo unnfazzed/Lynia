@@ -6,6 +6,7 @@
  * someone who doesn't; and that neither is drawn until `me` resolves — a stale session role used to
  * flash "Become a rider" on a rider's own account (MOB-BOOT-02-SIB-3).
  */
+import { KS } from "../../../src/ui/rider/signup-copy";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import renderer, { act } from "react-test-renderer";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -171,7 +172,8 @@ describe("customer Account (Biker v2 C6–C11)", () => {
     await settle();
     // First Run v2 G2 (D-82): the violet card, KY's words, "Start" → R1.
     expect(hasBecomeCard(tree)).toBe(true);
-    expect(has(tree, KY.becomeBody)).toBe(true);
+    // Biker sign-up v1 (D-135): "Five quick steps. About 2 minutes."
+    expect(has(tree, KS.becomeBody)).toBe(true);
     expect(has(tree, "Biker")).toBe(false);
     press(tree, KY.becomeCta);
     expect(mockPush).toHaveBeenCalledWith("/rider/become");

@@ -4,7 +4,7 @@
  * pin the board's live wiring — cards only when the board is actually shown, the offer route, your
  * offers / withdraw, always-online, the KYC walls' copy and action sets, and the mint header.
  */
-import { MK } from "../../../../src/ui/rider/manual-kyc-copy";
+import { KS } from "../../../../src/ui/rider/signup-copy";
 import renderer, { act } from "react-test-renderer";
 import { controlInteractions, type InteractionControl } from "../../../../src/testing/interactions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -897,10 +897,10 @@ describe("biker board (owner 2026-08-16: no manual refresh; bridge scoped, not r
     ["F3 unfinished — the biker's move", { kycStatus: "pending", kycMode: "auto", kycPendingState: "unfinished" }, [KY.unfCta]],
     // R-3: a check held for a human review is F2 — not R2, no retry; WhatsApp only.
     ["F2 held for review — WhatsApp only", { kycStatus: "pending", kycMode: "auto", kycPendingState: "in_flight", kycHeld: true }, [KY.help]],
-    // D-122 / KB-02 (owner 2026-11-12): until the ID number and all three document photos are in, F1 is a to-do
-    // page whose one primary is "Add your documents" (not "In review"); once complete there is nothing to press.
-    ["F1 manual review — only Add your documents", { kycStatus: "pending", kycMode: "manual" }, ["Add your documents"]],
-    ["F1 manual review with all documents in — nothing to press", { kycStatus: "pending", kycMode: "manual", kycDocs: { idFront: true, licence: true, selfieId: true } }, []],
+    // Biker sign-up v1 (D-135): nothing sent → K0's "Start"; part way → B-todo-half's "Continue"; all five in →
+    // F1 with nothing to press.
+    ["B-todo-half manual sign-up part done — only Continue", { kycStatus: "pending", kycMode: "manual", kycDocs: { idFront: true, licence: false, selfieId: false } }, [KS.cont]],
+    ["F1 manual review with all five in — nothing to press", { kycStatus: "pending", kycMode: "manual", licenceNumber: "AB12345", kycDocs: { idFront: true, licence: true, selfieId: true } }, []],
     ["F6 ID expired", { kycStatus: "expired" }, [KY.expCta]],
     ["F4d declined", { kycStatus: "failed", kycAttempts: 1 }, [KY.tryAgain, KY.help]],
     ["F5 locked", { kycStatus: "failed", kycAttempts: 2 }, [KY.msg]],
@@ -932,8 +932,8 @@ describe("biker board (owner 2026-08-16: no manual refresh; bridge scoped, not r
  * that renders the right buttons under the wrong sentence is exactly the failure being fixed.
  */
 describe("biker board — the three KYC pending states (P0-1)", () => {
-  async function wall(patch: Parameters<typeof meFixture>[0]): Promise<string> {
-    mockGetMe.mockResolvedValue(meFixture(patch));
+  async function wall(patch: Parameters<typeof meFixture>[0], top: Partial<Me> = {}): Promise<string> {
+    mockGetMe.mockResolvedValue({ ...meFixture(patch), ...top });
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
     activeTree = renderScreen();
@@ -1442,21 +1442,27 @@ describe("biker board — the three KYC pending states (P0-1)", () => {
     }
   });
 
-  // First Run v2 F1: ops review — once everything review needs is in, the rider waits, whatever the vendor's
+  // First Run v2 F1: ops review — once all five sign-up steps are in, the rider waits, whatever the vendor's
   // pending state says.
   it("manual review is F1 'Our team is taking a look', whatever the pending state says", async () => {
-    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "unfinished", kycDocs: { idFront: true, licence: true, selfieId: true } });
+    const text = await wall({ kycStatus: "pending", kycMode: "manual", kycPendingState: "unfinished", licenceNumber: "AB12345", kycDocs: { idFront: true, licence: true, selfieId: true } });
     expect(text).toContain(KY.reviewBody);
     expect(text).not.toContain(KY.unfBody);
   });
 
-  // KB-02 (owner 2026-11-12): before the documents are in, nothing is "in review" — the page says what to do.
-  it("manual review with documents missing is a to-do page, never 'In review'", async () => {
-    const text = await wall({ kycStatus: "pending", kycMode: "manual" });
-    expect(text).toContain(MK.todoBody);
-    expect(text).toContain(MK.addDocs);
+  // D-135: before anything is sent, nothing is "in review" — K0 "Become a biker in 5 steps".
+  it("manual review with nothing sent is K0, never 'In review'", async () => {
+    const text = await wall({ kycStatus: "pending", kycMode: "manual" }, { idNumber: null });
+    expect(text).toContain(KS.introB);
     expect(text).not.toContain(KY.reviewBody);
     expect(text).not.toContain("In review");
+  });
+
+  it("a manual photo decline is B-decl with only that step to redo", async () => {
+    const text = await wall({ kycStatus: "failed", kycMode: "manual", kycAttempts: 0, kycDeclineReason: "selfie_unclear", licenceNumber: "AB12345", kycDocs: { idFront: true, licence: true, selfieId: false } });
+    expect(text).toContain(KS.dSelB);
+    expect(text).toContain(KS.redo);
+    expect(text).toContain(KS.dSelCta);
   });
 });
 
@@ -1704,7 +1710,7 @@ describe("biker board — the 8c mint header (owner 2026-08-17)", () => {
 /** Calm Mint v2 R3 (D-55): "You're verified" takes the board's place once, for a new rider only. */
 describe("biker board — R3 'You're verified' (Calm Mint v2)", () => {
   it("a verified biker with no trips yet sees R3; 'Go online' starts the biker permission flow (D-82 §2 #5)", async () => {
-    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0, hasPhoto: true }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
     activeTree = renderScreen();
@@ -1725,6 +1731,23 @@ describe("biker board — R3 'You're verified' (Calm Mint v2)", () => {
     expect(mockPush).not.toHaveBeenCalledWith("/permissions?from=flow");
     expect(treeText(activeTree)).not.toContain("You’re verified");
     expect(mockSetOnline).toHaveBeenCalledWith(true, { lat: -17.83, lng: 31.05 });
+  });
+
+  // Biker sign-up v1 X1/X2 (D-135): with the photo or plate missing, R3's Go online offers them first, once.
+  it("R3's 'Go online' opens the optional photo and plate first when either is missing", async () => {
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0, hasPhoto: false }));
+    mockGetActiveOrder.mockResolvedValue(null);
+    mockGetOpenOrders.mockResolvedValue([]);
+    activeTree = renderScreen();
+    await settle();
+    await settle();
+    const tree = activeTree;
+    await renderer.act(async () => {
+      tree.root.find((n) => n.props.label === "Go online" && typeof n.props.onPress === "function").props.onPress();
+    });
+    await settle();
+    expect(mockPush).toHaveBeenCalledWith("/rider/extras");
+    expect(mockSetOnline).not.toHaveBeenCalled();
   });
 
   it("D-70: R3 draws the 'Commission-free jobs · 5 of 5 left' meter the server reports", async () => {
@@ -1960,10 +1983,10 @@ describe("biker board — startup review 2026-10-06", () => {
   });
 
   it("R-7: the biker is not put online behind R3 — its 'Go online' hands over to the permission flow first", async () => {
-    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0, hasPhoto: true }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
-    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture({ kycStatus: "verified", tripsCount: 0 })));
+    activeTree = renderScreen((qc) => qc.setQueryData(["me"], meFixture({ kycStatus: "verified", tripsCount: 0, hasPhoto: true })));
     await settle();
     await settle();
     expect(treeText(activeTree)).toContain("You’re verified");
@@ -2516,7 +2539,7 @@ describe("biker board — getting online (2026-10-12)", () => {
 
   it("R3's 'Go online' stores the welcome as seen at once — a kill mid permission flow doesn't bring R3 back", async () => {
     mockNotifGranted = false; // something is missing, so R3 hands over to the flow (P13 never reached here)
-    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0 }));
+    mockGetMe.mockResolvedValue(meFixture({ kycStatus: "verified", tripsCount: 0, hasPhoto: true }));
     mockGetActiveOrder.mockResolvedValue(null);
     mockGetOpenOrders.mockResolvedValue([]);
     activeTree = renderScreen();

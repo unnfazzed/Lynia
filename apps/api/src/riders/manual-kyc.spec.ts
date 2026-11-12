@@ -9,7 +9,7 @@ import { licenceExpired, onlineRefusalReason } from "./online-gate";
 import { RiderProfileService, UpdateRiderProfile } from "./rider-profile.service";
 
 /** D-122 (manual KYC, owner 2026-11-04): document photos, typed licence, the owner's Telegram alert. */
-function build(rider: Record<string, unknown>) {
+function build(rider: Record<string, unknown>, licenceHolders = 0) {
   const row: Record<string, unknown> = {
     photoUrl: null,
     bikeReg: null,
@@ -28,6 +28,7 @@ function build(rider: Record<string, unknown>) {
   const prisma = {
     rider: {
       findUnique: vi.fn(async () => ({ ...row })),
+      count: vi.fn(async () => licenceHolders),
       update: vi.fn(async (a: { data: Record<string, unknown> }) => Object.assign(row, a.data)),
     },
     auditLog: { create: vi.fn(async () => ({})) },
@@ -42,12 +43,14 @@ function build(rider: Record<string, unknown>) {
     { deleteObject } as unknown as StorageAdapter,
     { notify } as unknown as OwnerAlertsService,
   );
-  return { svc, row, verify, deleteObject, notify };
+  return { svc, row, verify, deleteObject, notify, prisma };
 }
 
 describe("UpdateRiderProfile: D-122 fields", () => {
   it("accepts document keys, a licence number (normalized) and a real calendar date", () => {
-    expect(UpdateRiderProfile.parse({ licenceNumber: "  ab  12345 " })).toEqual({ licenceNumber: "AB 12345" });
+    // D-135: spaces are dropped, so "ab 12345" and "AB12345" are one licence for the duplicate check.
+    expect(UpdateRiderProfile.parse({ licenceNumber: "  ab  12345 " })).toEqual({ licenceNumber: "AB12345" });
+    expect(UpdateRiderProfile.safeParse({ licenceNumber: " a b " }).success).toBe(false);
     expect(UpdateRiderProfile.safeParse({ licenceExpiresOn: "2027-02-28" }).success).toBe(true);
     expect(UpdateRiderProfile.safeParse({ licenceExpiresOn: "2027-02-31" }).success).toBe(false);
     expect(UpdateRiderProfile.safeParse({ idFrontKey: "kyc/r1/a.jpg" }).success).toBe(true);
@@ -119,5 +122,20 @@ describe("decline reasons: D-122", () => {
     expect(KYC_PHOTO_RETAKE_REASONS.photos_unreadable).toEqual(["idFront", "licence", "selfieId"]);
     expect(KYC_PHOTO_RETAKE_REASONS.id_unreadable).toBeUndefined();
     expect(KYC_PHOTO_RETAKE_REASONS.face_mismatch).toBeUndefined();
+  });
+
+  // D-135 (Biker sign-up v1, K3-num-dup): one licence, one account.
+  it("refuses a licence number another live account holds (409 licence_in_use) and writes nothing", async () => {
+    const { svc, row, prisma } = build({}, 1);
+    await expect(svc.updateProfile("r1", { licenceNumber: "AB12345" })).rejects.toMatchObject({ response: { reason: "licence_in_use" } });
+    expect(row.licenceNumber).toBeNull();
+    const where = ((prisma.rider as { count: { mock: { calls: [{ where: Record<string, unknown> }][] } } }).count.mock.calls[0][0]).where;
+    expect(where).toMatchObject({ licenceNumber: "AB12345", profileId: { not: "r1" }, profile: { NOT: { phone: { startsWith: "erased:" } } } });
+  });
+
+  it("saves a licence number nobody else holds", async () => {
+    const { svc, row } = build({}, 0);
+    await svc.updateProfile("r1", { licenceNumber: "AB12345" });
+    expect(row.licenceNumber).toBe("AB12345");
   });
 });

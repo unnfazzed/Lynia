@@ -639,12 +639,13 @@ describe("BecomeRiderScreen — the hand-over to the board (startup review 2026-
     }
   });
 
-  it("KB-02: manual review opens Bike & documents straight after registering (nothing was sent yet)", async () => {
+  it("D-135: manual review hands over to the board (its K0 runs the sign-up) and opens nothing else", async () => {
     mockMe = { ...NAMED, idNumber: null };
     mockBecomeRider.mockResolvedValue({ kycStatus: "pending", mode: "manual" });
     const tree = await mount();
     await tapStart(tree);
-    expect(mockPush).toHaveBeenCalledWith("/rider/documents");
+    expect(mockReplace).toHaveBeenCalledWith(BOARD);
+    expect(mockPush).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional } from "@nestjs/common";
 import { PlateStatus, UploadObjectKey } from "@lynia/shared";
 import { z } from "zod";
 import { auditData } from "../admin/admin.shared";
@@ -18,13 +18,16 @@ export const KYC_DOC_SLOTS = {
 export type KycDocSlot = keyof typeof KYC_DOC_SLOTS;
 const SLOT_NAMES = Object.keys(KYC_DOC_SLOTS) as KycDocSlot[];
 
-/** A driving licence number as typed: trimmed, single spaces, upper-case, 4–30 characters. */
+/**
+ * A driving licence number as typed: upper-case with every space removed, 4–30 characters. Biker sign-up v1
+ * (D-135) sends letters and digits only; spaces are dropped here too so "ab 12345" and "AB12345" are one
+ * licence for the one-licence-one-account check.
+ */
 export const LicenceNumberSchema = z
   .string()
   .trim()
-  .min(4)
-  .max(30)
-  .transform((v) => v.replace(/\s+/g, " ").toUpperCase());
+  .transform((v) => v.replace(/\s+/g, "").toUpperCase())
+  .pipe(z.string().min(4).max(30));
 
 /** A calendar date "YYYY-MM-DD" that really exists (no 2026-02-31). */
 export const IsoDateSchema = z
@@ -145,6 +148,17 @@ export class RiderProfileService {
     if (data.licenceNumber !== undefined && data.licenceNumber !== rider.licenceNumber) changed.push("licence_number");
     const expiry = data.licenceExpiresOn !== undefined ? new Date(`${data.licenceExpiresOn}T00:00:00Z`) : undefined;
     if (expiry && expiry.getTime() !== rider.licenceExpiresOn?.getTime()) changed.push("licence_expiry");
+
+    // Biker sign-up v1 (D-135, K3-num-dup): one licence, one account, like the national ID. Erased accounts
+    // (phone `erased:<id>`) don't hold a number against a returning biker.
+    if (changed.includes("licence_number") && data.licenceNumber) {
+      const taken = await this.prisma.rider.count({
+        where: { licenceNumber: data.licenceNumber, profileId: { not: profileId }, profile: { NOT: { phone: { startsWith: "erased:" } } } },
+      });
+      if (taken > 0) {
+        throw new ConflictException({ reason: "licence_in_use", message: "This driving licence is already linked to another account. Contact support if it's yours." });
+      }
+    }
 
     const docs: KycDocsState = {
       idFront: (data.idFrontKey ?? rider.kycIdFrontKey) != null,

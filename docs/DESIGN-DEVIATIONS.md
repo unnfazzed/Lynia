@@ -6303,7 +6303,7 @@ there are filling up taking space .. let's round down the lower limit and round 
 - **Helper:** `formatMoneyRange` (`src/logic/money.ts`).
 - **Upstream:** Browse v2 draws "{a}–{b} min" and one price. The kit is not edited.
 
-## D-134 · Manual biker sign-up: a to-do F1, a four-item checklist with Done, no typed licence — APPROVED (owner, 2026-11-12)
+## D-134 · Manual biker sign-up: a to-do F1, a four-item checklist with Done, no typed licence — APPROVED (owner, 2026-11-12) · RETIRED by D-135 the same day
 
 **Owner (2026-11-12), with photos of a biker signing up:** *"Biker KYC process needs improvements … gets shown to screen
 already saying ID in review, no clear call to action … the process is confusing, let's streamline it, get it worked on
@@ -6327,3 +6327,39 @@ with your ID. About 2 minutes.", "Sent for review. Usually a few hours. We’ll 
 
 - **Retired when:** the designer's redraw of the biker sign-up is exported and aligned.
 - **Upstream:** First Run v2 should draw manual-review sign-up (see the brief). The kit is not edited.
+
+## D-135 · Biker sign-up v1 adopted (`handoff/biker-signup-v1/`) — APPROVED (owner, 2026-11-12)
+
+**Owner (2026-11-12):** the designer's answer to the brief in `docs/design-briefs-2026-11-12/PROMPT.md`, sent with
+*"execute this"*. Its `README.md` wins over the drawings. It **retires D-134** (the E1 list in sign-up mode, the F1/F3
+to-do) and D-122's licence-details row, ID-number sheet and F1 "Add your documents" pill. Strings:
+`apps/mobile/src/ui/rider/signup-copy.ts` (the handoff's `copy.ts`, verbatim; "rider" reads "biker", D-101).
+
+What shipped:
+- **K0–K6** (`app/rider/signup.tsx`): one thing per screen, five required steps (ID number · ID card · licence number ·
+  licence photo · selfie with ID), the step header counting only those five, K5 Check & send, K6 Sent.
+- **The board** (`app/rider/(tabs)/index.tsx`): K0 before anything is sent, B-todo-half to resume, F1 (unchanged) once
+  all five are on file, B-decl-* naming only the steps to redo, `?redo=1` walking only those ("N to fix", "New", "Send again").
+- **Licence number typed again** (owner, in the handoff), with a server one-licence-one-account check: `PATCH /riders/me`
+  answers 409 `licence_in_use` (erased accounts excluded), and stores the number upper-case with every space removed.
+  No expiry is asked.
+- **X1/X2** (`app/rider/extras.tsx`): after R3, the optional biker photo then the plate, each "Skip for now", once,
+  before the rider permission flow. Skipped when both are already on file.
+- "Earn with your bike" body: "Five quick steps. About 2 minutes."
+- Bike & documents sends an unverified manual-review biker to the sign-up.
+
+Deviations from the handoff (owner decision where marked; the rest are implementation limits, logged for the designer):
+
+| | Handoff | App | Why |
+|---|---|---|---|
+| K2/K3/K4-cam | Live in-app camera: card/face frame, "Hold still" / "Too dark" hints, Gallery pill | "Take photo" opens the phone's own camera (front for the selfie); gallery from the guide | **Owner, 2026-11-12:** ship over the air now, the in-app camera in a later store build (it needs a native camera module) |
+| K5 "Send for review" | Submits | Confirms: each photo and number already reached review when sent; the board shows F1 once all five are on file | The server takes items as they're sent (D-122); a biker who stops at K5 is already in the queue |
+| §5 state | Persisted (AsyncStorage) with local photo URIs | Derived from `/auth/me` on any phone; a failed photo is kept for this session only | The server is the record; resume works after a reinstall |
+| §5 decline payload | `declined{fields}` | Derived: the photo slots the decline reopened, plus the licence number for `licence_expired` | No server change needed (`KYC_PHOTO_RETAKE_REASONS` already reopens exactly those slots) |
+| R1 → K0 | Account card Start → K0 | Account card → Calm Mint R1 "Why ride" → board K0 | R1 is what registers the biker; removing it is a separate change |
+| Thumbnail / photo placeholder | Mint stripes | Mint fill with an image icon (the photo itself once taken this session) | No stripe pattern primitive; the app never downloads the sent photo |
+| B-todo-half body | "2 of 5 done…" | The biker's own count | The drawn "2" is a sample value |
+
+- **Open (README §6):** the licence format is 5–12 letters and digits until ops confirm Zimbabwe's pattern.
+- **Retired when:** the in-app camera ships (K*-cam rows), or a new export redraws the sign-up.
+- **Upstream:** none of the above edits the kit.
