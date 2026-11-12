@@ -63,6 +63,9 @@ export const ADD_PILL_HEIGHT = tokens.touchTargetMin;
 /** E2c's preview title: drawn as "Looking **good**" in `fr-states.js` (not in copy.ts), used verbatim. */
 const PREVIEW_TITLE = { a: "Looking", b: "good" } as const;
 
+/** How long E2b's guide (a fade-out Modal) takes to go before the camera opens over the screen (KB-03). */
+export const GUIDE_CLOSE_MS = 350;
+
 /** The E2b capture guide's translucent chip fill and the dashed oval (drawn values, on the dark ink). */
 const GUIDE_CHIP_BG = "rgba(255,255,255,0.12)";
 const GUIDE_OVAL = "rgba(255,255,255,0.7)";
@@ -266,6 +269,17 @@ export default function DocumentsScreen(): React.ReactElement {
       pick(from);
     });
   });
+
+  /**
+   * KB-03 (field report 2026-11-12, Samsung S25 / Android 16): E2b's shutter opened the phone's camera while
+   * the guide's full-screen `<Modal>` was still up. Android draws a Modal as its own dialog window, and the
+   * camera activity launched from under it did not show, or its photo never came back, so the shutter looked
+   * dead. Close the guide first, then open the camera once the dialog has gone; the shot lands on E2c as before.
+   */
+  const shoot = (): void => {
+    setStage({ kind: "list" });
+    setTimeout(() => pick("camera"), GUIDE_CLOSE_MS);
+  };
 
   const choose = (from: PhotoSource): void => {
     setPhotoSheet(false);
@@ -563,7 +577,7 @@ export default function DocumentsScreen(): React.ReactElement {
       </FrSheet>
 
       {/* E2b — the capture guide. */}
-      <CaptureGuide visible={stage.kind === "guide"} onClose={() => setStage({ kind: "list" })} onShoot={() => pick("camera")} />
+      <CaptureGuide visible={stage.kind === "guide"} onClose={() => setStage({ kind: "list" })} onShoot={shoot} />
 
       {/* D-110: presents the in-app ID-check sheet for the selfie re-check (src/kyc). */}
       <KycCheckHost />

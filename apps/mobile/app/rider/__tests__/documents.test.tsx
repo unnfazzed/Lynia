@@ -54,7 +54,7 @@ jest.mock("../../../src/logic/rider-documents", () => ({
 }));
 
 import { AppState, Linking } from "react-native";
-import DocumentsScreen, { __resetPhotoUploadForTest, ADD_PILL_HEIGHT } from "../documents";
+import DocumentsScreen, { __resetPhotoUploadForTest, ADD_PILL_HEIGHT, GUIDE_CLOSE_MS } from "../documents";
 import { __resetKycDocUploadsForTest } from "../../../src/ui/rider/KycDocRows";
 
 const trees: renderer.ReactTestRenderer[] = [];
@@ -85,6 +85,14 @@ const tick = async (n = 3): Promise<void> => {
 };
 const press = async (t: renderer.ReactTestRenderer, id: string): Promise<void> => {
   await act(async () => byId(t, id)!.props.onPress());
+  await tick();
+};
+/** E2b's shutter closes the guide, then opens the camera once it has gone (KB-03). */
+const shutter = async (t: renderer.ReactTestRenderer): Promise<void> => {
+  await press(t, "guide-shutter");
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, GUIDE_CLOSE_MS + 50));
+  });
   await tick();
 };
 async function loaded(tree: renderer.ReactTestRenderer): Promise<void> {
@@ -165,6 +173,13 @@ describe("E2 · photo", () => {
     const s = text(tree);
     for (const k of ["Face the", "camera", "Good light", "No helmet or cap", "Plain background"]) expect(s).toContain(k);
     await press(tree, "guide-shutter");
+    // KB-03: the guide's Modal is gone BEFORE the camera opens (from under it, Android never showed the camera).
+    expect(mockPick).not.toHaveBeenCalled();
+    expect(has(tree, "capture-guide")).toBe(false);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, GUIDE_CLOSE_MS + 50));
+    });
+    await tick();
     expect(mockPick).toHaveBeenCalledWith("camera");
     expect(has(tree, "documents-preview")).toBe(true);
     expect(text(tree)).toContain("Use photo");
@@ -234,7 +249,7 @@ describe("biker audit — Bike & documents", () => {
     await press(tree, "add-photo");
     await press(tree, "photo-camera");
     expect(has(tree, "capture-guide")).toBe(true);
-    await press(tree, "guide-shutter");
+    await shutter(tree);
     const guide = tree.root.findAll((n) => n.props.visible !== undefined && n.props.onRequestClose !== undefined && n.props.animationType === "fade")[0];
     expect(guide?.props.visible).toBe(false);
   });
@@ -253,7 +268,7 @@ describe("biker audit — Bike & documents", () => {
     await loaded(tree);
     await press(tree, "add-photo");
     await press(tree, "photo-camera");
-    await press(tree, "guide-shutter");
+    await shutter(tree);
     expect(text(tree)).toContain("Allow camera and photo access in your phone's settings, then try again.");
     await press(tree, "photo-settings");
     expect(openSettings).toHaveBeenCalled();
