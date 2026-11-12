@@ -32,6 +32,9 @@ jest.mock("../../../src/logic/manual-kyc", () => ({
   saveKycDoc: (slot: string, shot: unknown, onProgress?: (n: number) => void) => mockSaveDoc(slot, shot, onProgress),
 }));
 
+const mockRecover = jest.fn(async (_only?: readonly string[]) => null as unknown);
+jest.mock("../../../src/logic/pending-photo", () => ({ recoverPendingPhoto: (only?: readonly string[]) => mockRecover(only) }));
+
 import { ApiError } from "../../../src/api/client";
 import SignupScreen, { __resetSignupForTest } from "../signup";
 
@@ -237,5 +240,21 @@ describe("redo after a decline", () => {
     expect(has(tree, "signup-check")).toBe(true);
     expect(text(tree)).toContain("Send again");
     expect(text(tree)).toContain("New");
+  });
+});
+
+describe("KB-04 · a photo taken just before Android killed the app", () => {
+  it("opens on that photo's 'Can you read it?' preview, and Use photo sends it", async () => {
+    mockIdNumber = "63482913K07";
+    mockRecover.mockResolvedValueOnce({ target: "licence", shot });
+    mockSaveDoc.mockResolvedValue({ ...none, licence: true });
+    const tree = render();
+    await loaded(tree);
+    expect(mockRecover).toHaveBeenCalledWith(["idFront", "licence", "selfieId"]);
+    expect(has(tree, "signup-preview-licence")).toBe(true);
+    await press(tree, "signup-use");
+    await tick();
+    expect(mockSaveDoc.mock.calls[0]![0]).toBe("licence");
+    expect(mockSaveDoc.mock.calls[0]![1]).toEqual(shot);
   });
 });

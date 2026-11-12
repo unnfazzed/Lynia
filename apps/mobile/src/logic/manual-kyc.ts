@@ -3,6 +3,7 @@ import { ApiError } from "../api/client";
 import { requestKycPhotoUpload, uploadImage } from "../api/uploads";
 import { updateRiderProfile } from "../api/riders";
 import { downscaleForUpload, type UploadImageSource } from "./image-downscale";
+import { clearPick, markPickStarted } from "./pending-photo";
 import type { PhotoSource } from "./rider-documents";
 
 /**
@@ -24,7 +25,10 @@ export async function pickKycDoc(slot: KycDocSlot, from: PhotoSource): Promise<U
   if (!perm.granted) return perm.canAskAgain === false ? "blocked" : "denied";
   const opts = { mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 };
   const cameraType = slot === "selfieId" ? ImagePicker.CameraType.front : ImagePicker.CameraType.back;
+  // KB-04: Android may kill the app while the picker is open — remember which photo this was for.
+  await markPickStarted(slot);
   const result = from === "camera" ? await ImagePicker.launchCameraAsync({ ...opts, cameraType }) : await ImagePicker.launchImageLibraryAsync(opts);
+  await clearPick();
   if (result.canceled) return null;
   const a = result.assets[0];
   if (!a) return null;
