@@ -48,7 +48,7 @@ export const DOMAIN_ERROR_REASONS = [
   "fleet_biker", "fleet_disabled", "fleet_off", "fleet_paused", "handed_to_required", "handover_link_invalid",
   "handover_link_unavailable", "id_in_use", "idempotency_key_reused", "invalid_request", "invite_expired",
   "items_changed", "kyc", "kyc_daily_limit", "kyc_in_progress", "kyc_in_review", "kyc_locked", "kyc_mint_limit",
-  "licence_incomplete", "licence_not_verified", "line_removed", "location_required", "member_elsewhere",
+  "licence_in_use", "licence_incomplete", "licence_not_verified", "line_removed", "location_required", "member_elsewhere",
   "merchant_order_fare", "name_required", "no_account", "no_cash_on_delivery", "no_ceiling", "no_items_left", "no_licence",
   "no_live_dishes", "no_location", "no_nudge", "no_prescription", "no_selfie_recheck", "not_a_biker",
   "not_a_member", "not_a_merchant", "not_a_pharmacy", "not_a_shop", "not_approved", "not_assigned",
