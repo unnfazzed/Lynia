@@ -5,6 +5,7 @@
  *
  *   pnpm --filter @lynia/api bikers:reset-to-customer                # DRY RUN (default) — reports, writes nothing
  *   pnpm --filter @lynia/api bikers:reset-to-customer -- --apply     # APPLY
+ *   pnpm --filter @lynia/api bikers:reset-to-customer -- --target=First,Last,1234 [--apply]   # someone else
  *
  * --force-test (owner, 2026-10-18: "detach") is for accounts whose biker activity is all TEST data: instead of
  * skipping, it detaches their orders (riderId / dispatchOfferedRiderId → null; the customers' order history
@@ -27,13 +28,30 @@ const APPLY = process.argv.includes("--apply");
 const FORCE_TEST = process.argv.includes("--force-test");
 const REDACT = process.argv.includes("--redact");
 
-const TARGETS = [
+// The original five (2026-10-18, already reset). Used only when no --target is given.
+const DEFAULT_TARGETS = [
   { firstName: "Benson", lastName: "Musendarudzi", last4: "4780" },
   { firstName: "Nobuhle", lastName: "Matewee", last4: "3688" },
   { firstName: "Blessed", lastName: "Mahupa", last4: "1985" },
   { firstName: "Takunda", lastName: "Tkay", last4: "0659" },
   { firstName: "givemore", lastName: "sadu", last4: "4856" },
 ];
+
+// --target=First,Last,1234 (repeatable): reset these people instead of DEFAULT_TARGETS, so a later
+// one-off (e.g. re-running biker onboarding on a test account) needs no code change. Same matching rules.
+function parseTargets(argv: string[]): typeof DEFAULT_TARGETS {
+  const raw = argv.filter((a) => a.startsWith("--target=")).map((a) => a.slice("--target=".length));
+  if (!raw.length) return DEFAULT_TARGETS;
+  return raw.map((spec) => {
+    const [firstName, lastName, last4] = spec.split(",").map((s) => s.trim());
+    if (!firstName || !lastName || !/^\d{4}$/.test(last4 ?? "")) {
+      throw new Error(`Bad --target "${spec}": expected --target=First,Last,1234 (last four phone digits)`);
+    }
+    return { firstName, lastName, last4 };
+  });
+}
+
+const TARGETS = parseTargets(process.argv);
 
 const ACTION = "rider.reset_to_customer";
 const ACTOR = "system:reset-bikers-script";
