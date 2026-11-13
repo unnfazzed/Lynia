@@ -1,0 +1,5 @@
+# Times are UTC (Harare is UTC+2). Same schedule as the Azure jobs in infra/azure/jobs.tf.
+# min hour dom mon dow  command
+0     1    *   *   *    /usr/local/bin/scheduler.sh /admin/retention/purge > /proc/1/fd/1 2>&1
+0     2    *   *   *    /usr/local/bin/scheduler.sh /admin/wallet/integrity-check > /proc/1/fd/1 2>&1
+30    0    *   *   *    /usr/local/bin/backup.sh > /proc/1/fd/1 2>&1

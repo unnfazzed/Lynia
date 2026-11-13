@@ -48,16 +48,49 @@ Both ask for the passphrase. Restore the database into an empty Postgres 16 with
 pg_restore --no-owner --no-privileges --dbname "postgresql://lynia:PASSWORD@localhost:5432/lynia" lynia-db.dump
 ```
 
-## Step 2 — the new home (in progress)
+## Step 2 — the new home
 
-- Oracle Cloud account, home region **South Africa Central (Johannesburg)**, one Ampere A1 server
-  (4 OCPU / 24 GB, Ubuntu). The card check needs a small temporary hold (~$1) on the card.
-- Cloudflare: R2 bucket for media, Zero Trust (Tunnel + Access) for `api.` and `admin.`.
-- Code: an R2 storage adapter, admin sign-in through Cloudflare Access instead of Azure Easy Auth,
-  a shared-secret scheduler token instead of Entra, `docker-compose.prod.yml`, and a deploy workflow
-  replacing `release-azure.yml`.
+The code is ready (`CLOUD_PROVIDER=cloudflare`, `SCHEDULER_AUTH=secret`, admin login through Cloudflare
+Access) and the server runs `infra/selfhost/docker-compose.yml`: API, admin, Postgres 16 + PostGIS,
+Redis, a cron container (the two nightly jobs + an encrypted database backup to R2) and `cloudflared`.
+No port is open to the internet; everything comes in through the Cloudflare Tunnel.
+`.github/workflows/deploy-selfhost.yml` builds the images and updates the server.
+
+### Copy the keys out of Key Vault first
+
+In the Azure portal: **Key vaults → the Lynia vault → Objects → Secrets**. For each of
+`PII-ENCRYPTION-KEY`, `JWT-SIGNING-SECRET`, `TOKEN-HASH-SECRET`, `ADMIN-API-TOKEN` and every vendor key
+you use (Didit, Bird, WhatsApp, Paynow, Telegram, Sentry, FCM), open the current version → **Show Secret
+Value** and save it in your password manager. **`PII-ENCRYPTION-KEY` is the only way to read the stored
+national IDs.**
+
+### Owner checklist
+
+1. **Oracle Cloud**: home region *South Africa Central (Johannesburg)*. Create a VM: *Ampere A1*, 4 OCPU,
+   24 GB, Ubuntu 24.04. At "Add SSH keys" choose *Generate a key pair for me* and download the private key.
+2. **Cloudflare R2**: create buckets `lynia-media` and `lynia-backups`. *Manage R2 API tokens → Create*:
+   Object Read & Write on those two buckets. Note the account id, access key id and secret.
+   On `lynia-media` → *Settings → CORS policy*, allow `PUT` and `GET` from `https://app.lyniago.com` and
+   `https://merchant.lyniago.com` with headers `content-type` and `if-none-match`.
+3. **Cloudflare Zero Trust** (free plan):
+   - *Networks → Tunnels → Create a tunnel* (cloudflared). Copy the token. Public hostnames:
+     `api.lyniago.com` → `http://api:3000`, `admin.lyniago.com` → `http://admin:8080`. (Add them at
+     switch-over: they take the names over from Azure.)
+   - *Access → Applications → Self-hosted* for `admin.lyniago.com`, policy *Allow* your email. Copy the
+     *Application Audience (AUD) Tag* and your team domain (`<team>.cloudflareaccess.com`).
+4. **GitHub** → repo *Settings → Secrets and variables → Actions*:
+   - Secret `SELFHOST_SSH_KEY`: the private key from step 1.
+   - Secret `SELFHOST_ENV`: `infra/selfhost/.env.example`, filled in.
+   - Variables `SELFHOST_ENABLED=true`, `SELFHOST_HOST=<the VM's public IP>`, `SELFHOST_USER=ubuntu`.
+5. **Actions → "Deploy (self-hosted server)" → Run workflow.** The first run installs Docker, prints the
+   server's host key (save it as Variable `SELFHOST_KNOWN_HOSTS`), migrates an empty database and starts
+   everything. Nothing public points at it yet.
 
 ## Step 3 — switch over
 
-Final export → restore → point `api.lyniago.com` / `admin.lyniago.com` at the tunnel → smoke checks →
-turn Azure off. The apps call `api.lyniago.com`, so no app update or store release is needed.
+1. Run the data export one last time.
+2. On the server: restore the dump into the empty database and copy the photos into `lynia-media`
+   (the decrypt commands are in Step 1; the media tarball's folders are the object keys).
+3. Add the two public hostnames to the tunnel. Cloudflare moves `api.` and `admin.` from Azure to it.
+4. Check `https://api.lyniago.com/healthz`, sign in on the app, open the admin console.
+5. Turn Azure off. The apps call `api.lyniago.com`, so no app update or store release is needed.
