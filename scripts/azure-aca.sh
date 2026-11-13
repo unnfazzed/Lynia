@@ -19,6 +19,7 @@
 #   env-names     <app> <rg>                     env var NAMES of the first container (never values)
 #   healthz       <url>                          print status/db/redis/queues; exit 0 iff status=="ok"
 #   wait-job      <job> <rg> <execution> [timeout_s]  wait for a job execution to succeed
+#   wait-job-provisioned <job> <rg> [timeout_s]  wait until no change to the job is still being applied
 #   easy-auth     <app> <rg>                     exit 0 iff Easy Auth (authConfigs) is enabled on the app
 #   auth-gate     <app> <rg>                     G-ADM: exit 0 iff a forged X-MS-CLIENT-PRINCIPAL-NAME
 #                                                sent to the live app is NOT taken as an identity
@@ -215,6 +216,25 @@ cmd_wait_job() {
   done
 }
 
+# A job accepts one change at a time: while one is still being applied, the next is refused with
+# ContainerAppsJobOperationInProgress (azure-db-export run 43442546372). A PATCH through `az rest`
+# returns before the change is applied, so callers wait here after every change.
+cmd_wait_job_provisioned() {
+  local job="$1" rg="$2" timeout="${3:-600}" deadline state
+  deadline=$((SECONDS + timeout))
+  sleep 5
+  while :; do
+    state="$(az containerapp job show -n "$job" -g "$rg" --query properties.provisioningState -o tsv 2>/dev/null || echo Unknown)"
+    case "$state" in
+      Succeeded) return 0 ;;
+      Failed|Canceled) die "Job $job provisioning ended $state." ;;
+    esac
+    echo "job $job provisioning: $state"
+    [ "$SECONDS" -lt "$deadline" ] || die "Job $job still provisioning ($state) after ${timeout}s."
+    sleep 5
+  done
+}
+
 # Easy Auth state of an app (authConfigs "current"). While platform.enabled is true the platform strips
 # any client-sent X-MS-CLIENT-PRINCIPAL-* header and sets its own, which is the ONLY thing that makes
 # the admin console's proxy-header mode safe (plan S3). A missing config, an API error or an unreadable
@@ -273,7 +293,8 @@ case "$command" in
   env-names) cmd_env_names "$@" ;;
   healthz) cmd_healthz "$@" ;;
   wait-job) cmd_wait_job "$@" ;;
+  wait-job-provisioned) cmd_wait_job_provisioned "$@" ;;
   easy-auth) cmd_easy_auth "$@" ;;
   auth-gate) cmd_auth_gate "$@" ;;
-  *) die "usage: azure-aca.sh {serving|pin|wait-ready|label-url|route|prune|require-secrets|env-names|healthz|wait-job|easy-auth|auth-gate} ..." ;;
+  *) die "usage: azure-aca.sh {serving|pin|wait-ready|label-url|route|prune|require-secrets|env-names|healthz|wait-job|wait-job-provisioned|easy-auth|auth-gate} ..." ;;
 esac
