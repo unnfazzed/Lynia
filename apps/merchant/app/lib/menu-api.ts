@@ -150,12 +150,12 @@ export async function uploadPhotoBlob(
     throw new Error("The upload timed out — check your connection and try again.", { cause: err });
   }
   getReachabilityStore(API_BASE_URL).reportReachable();
-  // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 (the blob
+  // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 on Azure / 412 on R2 (the blob
   // exists). The bytes are there, and attach verifies them, so that is a success (E13).
-  if (!res.ok && res.status !== 409) throw new Error(`Photo upload failed (${res.status}).`);
+  if (!res.ok && res.status !== 409 && res.status !== 412) throw new Error(`Photo upload failed (${res.status}).`);
 }
 
-/** `uploadPhotoBlob`'s XHR twin: the same timeout, reachability reports, 409-is-success rule and messages. */
+/** `uploadPhotoBlob`'s XHR twin: the same timeout, reachability reports, 409/412-is-success rule and messages. */
 function putWithProgress(uploadUrl: string, blob: Blob, headers: Record<string, string>, timeoutMs: number, onProgress: (percent: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -173,7 +173,7 @@ function putWithProgress(uploadUrl: string, blob: Blob, headers: Record<string, 
     xhr.addEventListener("timeout", unreachable);
     xhr.addEventListener("load", () => {
       getReachabilityStore(API_BASE_URL).reportReachable();
-      if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 409) resolve();
+      if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 409 || xhr.status === 412) resolve();
       else reject(new Error(`Photo upload failed (${xhr.status}).`));
     });
     xhr.send(blob);

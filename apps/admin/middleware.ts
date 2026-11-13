@@ -6,6 +6,7 @@ import {
   parseOperatorAllowlist,
   resolveProxyOperator,
 } from "./app/lib/console-auth";
+import { verifyCfAccessAssertion } from "./app/lib/cf-access-jwt";
 import { verifyIapAssertion } from "./app/lib/iap-jwt";
 
 /** One-shot guard so the unverified-proxy-mode warning logs once per isolate, not per request. */
@@ -19,7 +20,10 @@ let warnedProxyFallback = false;
  * identity asserted by an upstream identity-aware proxy (GCP IAP / OAuth2 proxy) before any page or
  * server action runs, and refuses to serve at all in production when none is present.
  *
- * Two trust modes (see app/lib/console-auth.ts + app/lib/iap-jwt.ts):
+ * Three trust modes (see app/lib/console-auth.ts, app/lib/iap-jwt.ts and app/lib/cf-access-jwt.ts):
+ *   - Cloudflare Access JWT (self-hosted, docs/AZURE-EXIT.md): when ADMIN_CONSOLE_CF_ACCESS_TEAM_DOMAIN
+ *     and ADMIN_CONSOLE_CF_ACCESS_AUD are set, the operator is the verified `email` of
+ *     `cf-access-jwt-assertion` (signature + issuer + audience). Plaintext headers are not trusted.
  *   - IAP-JWT (recommended): when ADMIN_CONSOLE_IAP_AUDIENCE is set, the operator is derived from the
  *     cryptographically-verified `x-goog-iap-jwt-assertion` (signature + issuer + audience). The
  *     plaintext email header is NOT trusted, so a request that reaches the service without a valid IAP
@@ -29,6 +33,8 @@ let warnedProxyFallback = false;
  *
  * Config:
  *   - ADMIN_CONSOLE_REQUIRE_AUTH  — "true"/"false" to force the gate on/off (default: on in production).
+ *   - ADMIN_CONSOLE_CF_ACCESS_TEAM_DOMAIN + ADMIN_CONSOLE_CF_ACCESS_AUD — enable Cloudflare Access mode
+ *                                   (team domain, e.g. lynia.cloudflareaccess.com, and the app's AUD tag).
  *   - ADMIN_CONSOLE_IAP_AUDIENCE  — enables IAP-JWT mode; the LB backend-service audience string.
  *   - ADMIN_CONSOLE_PROXY_HEADER  — header the proxy sets in proxy-header mode (default IAP's header;
  *                                   `x-ms-client-principal-name` on Azure Easy Auth).
@@ -60,7 +66,17 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   let easyAuth = false;
   if (consoleAuthRequired({ nodeEnv, requireAuthOverride, pathname })) {
     const iapAudience = process.env.ADMIN_CONSOLE_IAP_AUDIENCE;
-    if (iapAudience && iapAudience.trim() !== "") {
+    const cfTeam = process.env.ADMIN_CONSOLE_CF_ACCESS_TEAM_DOMAIN;
+    const cfAud = process.env.ADMIN_CONSOLE_CF_ACCESS_AUD;
+    if ((cfTeam && cfTeam.trim() !== "") || (cfAud && cfAud.trim() !== "")) {
+      // Either half set selects this mode, so a half-configured Access gate fails closed (null → 401)
+      // instead of silently dropping to the plaintext proxy-header mode.
+      operator = await verifyCfAccessAssertion({
+        assertion: req.headers.get("cf-access-jwt-assertion"),
+        teamDomain: cfTeam,
+        audience: cfAud,
+      });
+    } else if (iapAudience && iapAudience.trim() !== "") {
       operator = await verifyIapAssertion({
         assertion: req.headers.get("x-goog-iap-jwt-assertion"),
         audience: iapAudience,

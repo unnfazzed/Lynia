@@ -78,7 +78,8 @@ export const envSchema = z.object({
   MICRO_CACHE_TTL_MS_MERCHANT_PHOTO_URL: z.coerce.number().int().min(0).max(50_400_000).optional(),
   // Selects the storage adapter (adapters/storage/storage.module.ts selectStorage, C1). "gcp" = GCS V4
   // signed URLs; "azure" = Blob Storage user-delegation SAS (docs/plans/2026-09-24-gcp-to-azure-migration.md).
-  CLOUD_PROVIDER: z.enum(["gcp", "azure"]).default("gcp"),
+  // "cloudflare" = Cloudflare R2 through S3 presigned URLs (docs/AZURE-EXIT.md); the bucket is STORAGE_BUCKET.
+  CLOUD_PROVIDER: z.enum(["gcp", "azure", "cloudflare"]).default("gcp"),
   STORAGE_BUCKET: z.string().default("lynia-media"),
   // GCS signing: project id for the Storage client. Signing creds come from ADC on Cloud Run
   // (the attached SA + IAM signBlob), so no private key lives in env.
@@ -89,6 +90,11 @@ export const envSchema = z.object({
   AZURE_STORAGE_ACCOUNT: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AZURE_STORAGE_CONTAINER: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AZURE_CLIENT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Cloudflare R2 (CLOUD_PROVIDER=cloudflare). The account id is plain config; the key pair is an R2 API
+  // token's S3 credentials, scoped to Object Read & Write on STORAGE_BUCKET only — a secret.
+  R2_ACCOUNT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().regex(/^[a-f0-9]{32}$/, "a 32-character hex Cloudflare account id").optional()),
+  R2_ACCESS_KEY_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  R2_SECRET_ACCESS_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   OTEL_SERVICE_NAME: z.string().default("lynia-api"),
   // --- Crash / error reporting (Sentry, roadmap 1.1 / LR20) ---
@@ -378,7 +384,11 @@ export const envSchema = z.object({
   // OIDC token pinned by SCHEDULER_SERVICE_ACCOUNT above; "azure" = an Entra managed-identity token
   // from the Container Apps cron job, pinned by the three SCHEDULER_* ids below (the boot-guard
   // requires all three when azure is selected). "" coerces to the google default.
-  SCHEDULER_AUTH: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["google", "azure"]).default("google")),
+  // "secret" = a shared bearer secret (SCHEDULER_SECRET) sent by the self-hosted server's own cron
+  // (docs/AZURE-EXIT.md), limited to the same two scheduler routes.
+  SCHEDULER_AUTH: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["google", "azure", "secret"]).default("google")),
+  // SCHEDULER_AUTH=secret only: at least 32 characters (e.g. `openssl rand -hex 32`). A secret.
+  SCHEDULER_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(32, "at least 32 characters").optional()),
   // Entra tenant (directory) id the cron job's token must be issued by (`iss` + `tid`).
   SCHEDULER_TENANT_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().uuid().optional()),
   // App-ID URI of the dedicated scheduler app registration (the token's `aud`).
@@ -522,6 +532,14 @@ export const envSchema = z.object({
     }
   }
 
+  // Boot-guard: the R2 adapter can't sign a single URL without its account and token, in any environment.
+  if (env.CLOUD_PROVIDER === "cloudflare") {
+    const breaks = "every photo upload and read URL fails (nothing to sign R2 URLs with)";
+    if (!env.R2_ACCOUNT_ID) reject("R2_ACCOUNT_ID", `Missing R2_ACCOUNT_ID: ${breaks}. Fix: set it to the Cloudflare account id (plain config).`);
+    if (!env.R2_ACCESS_KEY_ID) reject("R2_ACCESS_KEY_ID", `Missing R2_ACCESS_KEY_ID: ${breaks}. Fix: set it from an R2 API token scoped to STORAGE_BUCKET.`);
+    if (!env.R2_SECRET_ACCESS_KEY) reject("R2_SECRET_ACCESS_KEY", `Missing R2_SECRET_ACCESS_KEY: ${breaks}. Fix: set it from the same R2 API token (a secret).`);
+  }
+
   // Boot-guard: a Paynow rail with half its wiring missing can't sign, can't hear back, or can't charge.
   // Checked in every environment (a dead config anywhere), so `PAYMENT_RAIL=paynow` is all-or-nothing.
   if (env.PAYMENT_RAIL === "paynow") {
@@ -621,6 +639,13 @@ export const envSchema = z.object({
     if (!env.SCHEDULER_PRINCIPAL_ID) {
       reject("SCHEDULER_PRINCIPAL_ID", `Missing SCHEDULER_PRINCIPAL_ID: ${breaks}. Fix: set it to the cron job managed identity's object id, or set SCHEDULER_AUTH=google`);
     }
+  }
+
+  if (env.SCHEDULER_AUTH === "secret" && !env.SCHEDULER_SECRET) {
+    reject(
+      "SCHEDULER_SECRET",
+      "Missing SCHEDULER_SECRET: SCHEDULER_AUTH=secret has nothing to check the cron's token against, so the scheduled retention purge and wallet integrity check would 401. Fix: set it (32+ characters, a secret), or pick another SCHEDULER_AUTH",
+    );
   }
 
   // Play-review demo account (docs/PLAY-STORE-SUBMISSION.md §7.1). Validated in EVERY environment, not

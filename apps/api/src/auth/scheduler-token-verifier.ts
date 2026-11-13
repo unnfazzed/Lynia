@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import type { JWTVerifyGetKey } from "jose" with { "resolution-mode": "import" };
 import type { Env } from "../config/env";
@@ -116,8 +117,29 @@ export class EntraVerifier implements SchedulerTokenVerifier {
   }
 }
 
+/** A shared secret (self-hosted server, docs/AZURE-EXIT.md): the server's own cron sends
+ *  `Authorization: Bearer <SCHEDULER_SECRET>` from the same host. Like the Entra path the token can't
+ *  bind a route, so the same two-route allowlist applies. The comparison hashes both sides first so it
+ *  is constant-time whatever their lengths. */
+export class SharedSecretVerifier implements SchedulerTokenVerifier {
+  constructor(private readonly secret: string | undefined) {}
+
+  async verify(token: string, req: SchedulerRequest): Promise<boolean> {
+    const method = (req.method ?? "").toUpperCase();
+    const path = pathOf(req);
+    if (!ENTRA_SCHEDULER_ROUTES.some((r) => r.method === method && r.path === path)) return false;
+    const secret = this.secret;
+    if (!secret || secret.length < 32) return false; // fail closed on a missing or weak secret
+    const digest = (v: string): Buffer => createHash("sha256").update(v, "utf8").digest();
+    if (!timingSafeEqual(digest(token), digest(secret))) return false;
+    req.user = { sub: "scheduler:cron", role: "admin" };
+    return true;
+  }
+}
+
 /** The verifier `SCHEDULER_AUTH` selects. The env boot-guard guarantees the azure config is complete. */
 export function schedulerVerifierFor(env: Env): SchedulerTokenVerifier {
+  if (env.SCHEDULER_AUTH === "secret") return new SharedSecretVerifier(env.SCHEDULER_SECRET);
   if (env.SCHEDULER_AUTH === "azure") {
     return new EntraVerifier({
       tenantId: env.SCHEDULER_TENANT_ID ?? "",

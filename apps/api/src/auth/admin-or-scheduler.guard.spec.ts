@@ -3,7 +3,7 @@ import type { JWTPayload, JWTVerifyGetKey } from "jose" with { "resolution-mode"
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Env } from "../config/env";
 import { AdminOrSchedulerGuard } from "./admin-or-scheduler.guard";
-import { EntraVerifier, GoogleOidcVerifier } from "./scheduler-token-verifier";
+import { EntraVerifier, GoogleOidcVerifier, SharedSecretVerifier } from "./scheduler-token-verifier";
 import { TokenService } from "./token.service";
 
 const SCHEDULER_SA = "lynia-run@lynia-500911.iam.gserviceaccount.com";
@@ -278,5 +278,43 @@ describe("AdminOrSchedulerGuard — Entra managed-identity verifier", () => {
     await expect(entraGuard().canActivate(ctxFor(admin))).resolves.toBe(true);
     const cust: FakeRequest = { headers: { authorization: `Bearer ${tokens.signAccess("cust-1", "customer")}` }, method: "POST", url: PURGE_URL };
     await expect(entraGuard().canActivate(ctxFor(cust))).rejects.toThrow("Admin only");
+  });
+});
+
+// Shared secret (self-hosted server, docs/AZURE-EXIT.md): the server's own cron sends the secret.
+describe("AdminOrSchedulerGuard — shared-secret verifier", () => {
+  const SECRET = "s".repeat(16) + "0123456789abcdef"; // 32 chars
+  const secretEnv = { ...env, SCHEDULER_AUTH: "secret", SCHEDULER_SECRET: SECRET } as Env;
+  const call = (token: string, method = "POST", url = PURGE_URL): FakeRequest =>
+    onHost({ headers: { authorization: `Bearer ${token}` }, method, url });
+
+  it("is selected by SCHEDULER_AUTH=secret", () => {
+    expect(new AdminOrSchedulerGuard(tokens, secretEnv).verifier).toBeInstanceOf(SharedSecretVerifier);
+  });
+
+  it("admits the exact secret on both scheduler routes, as the cron identity", async () => {
+    const guard = new AdminOrSchedulerGuard(tokens, secretEnv);
+    const purge = call(SECRET);
+    await expect(guard.canActivate(ctxFor(purge))).resolves.toBe(true);
+    expect(purge.user).toEqual({ sub: "scheduler:cron", role: "admin" });
+    await expect(guard.canActivate(ctxFor(call(SECRET, "POST", "/admin/wallet/integrity-check")))).resolves.toBe(true);
+  });
+
+  it("refuses a wrong, truncated or padded secret", async () => {
+    const guard = new AdminOrSchedulerGuard(tokens, secretEnv);
+    for (const bad of [SECRET.slice(0, -1), `${SECRET}x`, SECRET.replace(/s/, "t"), ""]) {
+      await expect(guard.canActivate(ctxFor(call(bad)))).rejects.toThrow();
+    }
+  });
+
+  it("refuses the right secret on any other route or method", async () => {
+    const guard = new AdminOrSchedulerGuard(tokens, secretEnv);
+    await expect(guard.canActivate(ctxFor(call(SECRET, "POST", "/admin/riders")))).rejects.toThrow();
+    await expect(guard.canActivate(ctxFor(call(SECRET, "GET", PURGE_URL)))).rejects.toThrow();
+  });
+
+  it("fails closed when the configured secret is missing or under 32 characters", async () => {
+    await expect(new SharedSecretVerifier(undefined).verify("x".repeat(40), call(""))).resolves.toBe(false);
+    await expect(new SharedSecretVerifier("short").verify("short", call("short"))).resolves.toBe(false);
   });
 });
