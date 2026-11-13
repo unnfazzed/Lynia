@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.57.0](https://github.com/unnfazzed/Lynia/compare/v0.56.0...v0.57.0) (2026-11-13)
+
+
+### Features
+
+* **biker:** Own bikers lane C PR 1 — joining, the fleet board and the fleet offer (OB-R1–R7) ([#1268](https://github.com/unnfazzed/Lynia/issues/1268)) ([dd4e2e1](https://github.com/unnfazzed/Lynia/commit/dd4e2e14dc337c471314df7a3ce71db5b33f7918))
+* **biker:** Own bikers lane C PR 2 — the fleet job, Done, Money, Leave and the end of the fleet (OB-R8–R13) ([#1271](https://github.com/unnfazzed/Lynia/issues/1271)) ([d38a058](https://github.com/unnfazzed/Lynia/commit/d38a05853732608b43c47c31994d0465a16efca9))
+* **browse:** venue distance back as "~2.5 km" road estimate; road factor 1.2 (D-132) ([#1342](https://github.com/unnfazzed/Lynia/issues/1342)) ([0beddde](https://github.com/unnfazzed/Lynia/commit/0beddde61f37684b31316de63146316f71f95493))
+* delivery price ceiling for merchant orders (D-125), behind DELIVERY_CEILING_ENABLED ([#1320](https://github.com/unnfazzed/Lynia/issues/1320)) ([51780fa](https://github.com/unnfazzed/Lynia/commit/51780fa203b0437565dde4ca3ea01e5e0f2c66ce))
+* live in Harare and Bulawayo — copy, 25 km parcel reach, app follows the user's town (D-120) ([#1286](https://github.com/unnfazzed/Lynia/issues/1286)) ([42e22d1](https://github.com/unnfazzed/Lynia/commit/42e22d14cecf57ac1cb2caf60a7ddb31eeab2c1c))
+* manual KYC while Didit is unfunded: in-app document photos, licence tracking, owner alerts (D-122) ([#1313](https://github.com/unnfazzed/Lynia/issues/1313)) ([ddec215](https://github.com/unnfazzed/Lynia/commit/ddec2150dd19189755cac6595361b913dd755adb))
+* **mobile:** report JS-thread stalls to PostHog to locate the Android white screen (MOB-WHITE-01) ([#1314](https://github.com/unnfazzed/Lynia/issues/1314)) ([aaa1dc4](https://github.com/unnfazzed/Lynia/commit/aaa1dc4bf5a4b03e8fc3ccfe931f7abe8685a64a))
+* **ops:** run off Azure — R2 storage, Cloudflare Access admin login, shared-secret scheduler ([#1352](https://github.com/unnfazzed/Lynia/issues/1352)) ([b924f56](https://github.com/unnfazzed/Lynia/commit/b924f56a8eb79416284decca427c233623e653c1))
+* **own-bikers:** launch for every business — no launch switch, commission billing, /j/ links, Preferred riders retired ([#1275](https://github.com/unnfazzed/Lynia/issues/1275)) ([9fd9a46](https://github.com/unnfazzed/Lynia/commit/9fd9a46f215112eb6dd237f92675c002ed7409eb))
+* **pricing:** adopt the delivery price ceiling, show a price range (D-128) ([#1323](https://github.com/unnfazzed/Lynia/issues/1323)) ([ef61ce2](https://github.com/unnfazzed/Lynia/commit/ef61ce297447bafd13c7ce8d7779f9307fcda99e))
+* **rider:** biker sign-up v1, five steps one per screen (D-135) ([#1348](https://github.com/unnfazzed/Lynia/issues/1348)) ([f0dbfa9](https://github.com/unnfazzed/Lynia/commit/f0dbfa98939acc542dd94072a15ae40fc4808083))
+* **rider:** make the parcel pickup photo optional (D-118) ([#1278](https://github.com/unnfazzed/Lynia/issues/1278)) ([468435c](https://github.com/unnfazzed/Lynia/commit/468435cfc462d1b39b6885c08c823a003ca27454))
+* **share:** finish lane C: no-address strip, Order.shareCode, install tip hold ([#1331](https://github.com/unnfazzed/Lynia/issues/1331)) ([853d1dd](https://github.com/unnfazzed/Lynia/commit/853d1dd9570a566cf3356178a4df2d224189398c))
+* **share:** open shop share links in the app (lane C, the way in) ([#1330](https://github.com/unnfazzed/Lynia/issues/1330)) ([b017958](https://github.com/unnfazzed/Lynia/commit/b017958eb8b23d63e92dda2095795f876c067710))
+* **share:** the share buttons (lane D): store Share disc, merchant Share your shop + counter QR ([#1332](https://github.com/unnfazzed/Lynia/issues/1332)) ([68f2c8c](https://github.com/unnfazzed/Lynia/commit/68f2c8cb539a87b4dc811047a759e4f33c811413))
+
+
+### Bug Fixes
+
+* **browse:** drop the misleading "km away" cell from the store page ([#1324](https://github.com/unnfazzed/Lynia/issues/1324)) ([194eeca](https://github.com/unnfazzed/Lynia/commit/194eeca041f82bafb4fb9f1d78302b0da676b6ce))
+* **mobile:** ask customers for notifications right after location on Android ([#1316](https://github.com/unnfazzed/Lynia/issues/1316)) ([9fffb23](https://github.com/unnfazzed/Lynia/commit/9fffb23c29a95e0ba762cbd0d7617772131efd8f))
+* **mobile:** Home shows every live venue, from one, with or without an address (D-126) ([#1318](https://github.com/unnfazzed/Lynia/issues/1318)) ([7485501](https://github.com/unnfazzed/Lynia/commit/7485501d11602ca263faadb628b1c05051d3e32e))
+* **mobile:** pin the Expo native layer back so OTA reaches installed phones again (REL-05) ([#1321](https://github.com/unnfazzed/Lynia/issues/1321)) ([65938ff](https://github.com/unnfazzed/Lynia/commit/65938ffd5888cbba2f6216d278bfbca27fea17ec))
+* **mobile:** retry a store photo when its URL changes, so covers come back after a cold start ([#1327](https://github.com/unnfazzed/Lynia/issues/1327)) ([5bd0619](https://github.com/unnfazzed/Lynia/commit/5bd0619e8b208b022ba854e8fcff07803d971f71))
+* **mobile:** solid tab bar everywhere, mint pill always shows, no ring after a tap (D-123, MOB-WHITE-01) ([#1315](https://github.com/unnfazzed/Lynia/issues/1315)) ([9dea686](https://github.com/unnfazzed/Lynia/commit/9dea68633f550ad904aad3074cf6dcc903bb804c))
+* **mobile:** web polish — one focus ring on Send, no flag-off retries, typed pickup kept (QA-B05/B06/B07) ([#1287](https://github.com/unnfazzed/Lynia/issues/1287)) ([657dff1](https://github.com/unnfazzed/Lynia/commit/657dff1b728a428d8d5921466dd50c4c63d84102))
+* **rider:** recover the photo when Android kills the app mid-camera (KB-04); ledger: keep the licence check ([#1349](https://github.com/unnfazzed/Lynia/issues/1349)) ([7dd9cc2](https://github.com/unnfazzed/Lynia/commit/7dd9cc254a68258a404329a2913c2bbdb2367a59))
+* **rider:** streamline manual biker sign-up; keyboard no longer covers fields; biker-photo shutter works ([#1347](https://github.com/unnfazzed/Lynia/issues/1347)) ([72adcb0](https://github.com/unnfazzed/Lynia/commit/72adcb0d81340280f670b49e57baf7bc56d175d8))
+* shop share card and storefront cover photos ([#1336](https://github.com/unnfazzed/Lynia/issues/1336)) ([7ff28f9](https://github.com/unnfazzed/Lynia/commit/7ff28f9b8856bb4f838f56fdffcdf337a4833418))
+
 ## [0.56.0](https://github.com/unnfazzed/Lynia/compare/v0.55.0...v0.56.0) (2026-10-19)
 
 
