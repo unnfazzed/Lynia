@@ -1,0 +1,134 @@
+# Lynia on one self-hosted server (docs/AZURE-EXIT.md). Everything the Azure resource group ran:
+#   api       the NestJS API (image built by .github/workflows/deploy-selfhost.yml)
+#   admin     the admin console (Next.js), behind Cloudflare Access
+#   postgres  Postgres 16 + PostGIS, data in the pgdata volume
+#   redis     queues, rate limits, Socket.IO fan-out
+#   cron      retention purge + wallet integrity check (same schedule as Azure) + nightly R2 backup
+#   tunnel    cloudflared: the only way in. No port is published to the internet; Cloudflare routes
+#             api.lyniago.com → http://api:3000 and admin.lyniago.com → http://admin:8080 (set in the
+#             Zero Trust dashboard, Networks → Tunnels → Public hostnames).
+#
+# Config lives in ./.env (written by the deploy workflow from the SELFHOST_ENV secret; see .env.example).
+# IMAGE_TAG picks the build: the deploy sets it to the commit SHA.
+
+name: lynia
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    <<: *restart
+    build: ./postgres
+    image: lynia-postgres:16-postgis
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 256mb
+
+  redis:
+    <<: *restart
+    image: redis:7.4-alpine
+    # Append-only so queued jobs survive a restart. Only reachable on the compose network.
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-off: `docker compose run --rm migrate` (the deploy runs it before starting the new API).
+  migrate:
+    image: ghcr.io/unnfazzed/lynia-api:${IMAGE_TAG}
+    profiles: ["tools"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["/repo/apps/api/node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *restart
+    image: ghcr.io/unnfazzed/lynia-api:${IMAGE_TAG}
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      CLOUD_PROVIDER: cloudflare
+      SCHEDULER_AUTH: secret
+      # One trusted hop: cloudflared. Cloudflare's edge appends the real client to X-Forwarded-For.
+      TRUST_PROXY: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  admin:
+    <<: *restart
+    image: ghcr.io/unnfazzed/lynia-admin:${IMAGE_TAG}
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: http://api:3000
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN}
+      ADMIN_CONSOLE_REQUIRE_AUTH: "true"
+      ADMIN_CONSOLE_CF_ACCESS_TEAM_DOMAIN: ${ADMIN_CONSOLE_CF_ACCESS_TEAM_DOMAIN}
+      ADMIN_CONSOLE_CF_ACCESS_AUD: ${ADMIN_CONSOLE_CF_ACCESS_AUD}
+      ADMIN_CONSOLE_ALLOWED_OPERATORS: ${ADMIN_CONSOLE_ALLOWED_OPERATORS:-}
+      ADMIN_SENTRY_DSN: ${ADMIN_SENTRY_DSN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  cron:
+    <<: *restart
+    build: ./cron
+    image: lynia-cron:local
+    environment:
+      SCHEDULER_SECRET: ${SCHEDULER_SECRET}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-lynia-backups}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  tunnel:
+    <<: *restart
+    image: cloudflare/cloudflared:2025.4.0
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

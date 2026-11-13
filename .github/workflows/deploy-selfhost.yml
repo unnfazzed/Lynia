@@ -1,0 +1,239 @@
+name: Deploy (self-hosted server)
+
+# Leaving Azure (docs/AZURE-EXIT.md): builds the API and admin images for ARM, pushes them to GitHub's
+# container registry, and updates the one server running infra/selfhost/docker-compose.yml over SSH:
+# write .env → pull images → migrate → start → wait for a healthy API.
+#
+# Dispatch-only until the move is done. Gated on the repo Variable SELFHOST_ENABLED=true.
+#
+# Needs (repo Settings → Secrets and variables → Actions):
+#   Secrets   SELFHOST_SSH_KEY     private key of a deploy key whose public half is in the server's
+#                                  ~/.ssh/authorized_keys
+#             SELFHOST_ENV         the filled-in infra/selfhost/.env.example (all the secret lines)
+#   Variables SELFHOST_ENABLED     true
+#             SELFHOST_HOST        the server's public IP or name
+#             SELFHOST_USER        the SSH user (ubuntu on Oracle's Ubuntu image)
+#             SELFHOST_KNOWN_HOSTS the server's host key line. Optional on the FIRST deploy, which trusts the
+#                                  key it sees and prints the line to pin; every later deploy refuses a
+#                                  server that shows any other key.
+# Plain settings come from the same Variables release-azure.yml reads.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-selfhost
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build images (arm64)
+    if: ${{ vars.SELFHOST_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GitHub's container registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push the API and admin images
+        run: |
+          set -euo pipefail
+          docker buildx create --use >/dev/null
+          for app in api admin; do
+            img="ghcr.io/unnfazzed/lynia-${app}"
+            docker buildx build --platform linux/arm64 \
+              -f "apps/${app}/Dockerfile" \
+              --cache-from "type=registry,ref=${img}:buildcache" \
+              --cache-to "type=registry,ref=${img}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+              -t "${img}:${GITHUB_SHA}" --push .
+          done
+
+  deploy:
+    name: deploy to the server
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      HOST: ${{ vars.SELFHOST_HOST }}
+      USER_: ${{ vars.SELFHOST_USER || 'ubuntu' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: SSH setup (pinned host key)
+        env:
+          KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+          KNOWN: ${{ vars.SELFHOST_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [ -n "$HOST" ] || { echo "::error::Set the repo Variable SELFHOST_HOST."; exit 1; }
+          [ -n "$KEY" ] || { echo "::error::Set the repo secret SELFHOST_SSH_KEY."; exit 1; }
+          install -d -m 700 ~/.ssh
+          if [ -z "$KNOWN" ]; then
+            # First deploy only: trust the key the server shows now, and print it so it can be pinned.
+            KNOWN="$(ssh-keyscan -t ed25519 "$HOST" 2>/dev/null)"
+            [ -n "$KNOWN" ] || { echo "::error::Could not reach $HOST on port 22."; exit 1; }
+            echo "::warning::SELFHOST_KNOWN_HOSTS is not set, so this run trusted the server's current host key. Pin it: add a repo Variable SELFHOST_KNOWN_HOSTS with this exact line: $KNOWN"
+          fi
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          printf 'Host lynia\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' "$HOST" "$USER_" > ~/.ssh/config
+
+      # The secret lines come from SELFHOST_ENV; the plain settings from the repo Variables, as on Azure.
+      # Single-quoted so docker compose takes each value literally (no $ interpolation).
+      - name: Build the server's .env
+        env:
+          SELFHOST_ENV: ${{ secrets.SELFHOST_ENV }}
+          OTP_CHANNEL: ${{ vars.OTP_CHANNEL || 'whatsapp' }}
+          OTP_TEST_PHONES: ${{ vars.OTP_TEST_PHONES }}
+          KYC_PROVIDER: ${{ vars.KYC_PROVIDER || 'didit' }}
+          KYC_MODE: ${{ vars.KYC_MODE || 'auto' }}
+          PUSH_PROVIDER: ${{ vars.PUSH_PROVIDER || 'noop' }}
+          FCM_PROJECT_ID: ${{ vars.FCM_PROJECT_ID }}
+          MIN_SUPPORTED_APP_VERSION: ${{ vars.MIN_SUPPORTED_APP_VERSION }}
+          MIN_SUPPORTED_APP_VERSION_IOS: ${{ vars.MIN_SUPPORTED_APP_VERSION_IOS }}
+          RECOMMENDED_APP_VERSION: ${{ vars.RECOMMENDED_APP_VERSION }}
+          RECOMMENDED_APP_VERSION_IOS: ${{ vars.RECOMMENDED_APP_VERSION_IOS }}
+          APP_WHATS_NEW: ${{ vars.APP_WHATS_NEW }}
+          REFRESH_TTL_SECONDS: ${{ vars.REFRESH_TTL_SECONDS }}
+          OTP_ALLOWED_COUNTRY_CODES: ${{ vars.OTP_ALLOWED_COUNTRY_CODES }}
+          OTP_RL_PHONE_MAX: ${{ vars.OTP_RL_PHONE_MAX }}
+          OTP_RL_IP_MAX: ${{ vars.OTP_RL_IP_MAX }}
+          OTP_RL_GLOBAL_MAX: ${{ vars.OTP_RL_GLOBAL_MAX }}
+          OTP_RL_SMS_GLOBAL_MAX: ${{ vars.OTP_RL_SMS_GLOBAL_MAX }}
+          RESTAURANTS_ENABLED: ${{ vars.RESTAURANTS_ENABLED }}
+          MERCHANT_DISPATCH_AUTO_ENABLED: ${{ vars.MERCHANT_DISPATCH_AUTO_ENABLED }}
+          MERCHANT_WALLET_ENABLED: ${{ vars.MERCHANT_WALLET_ENABLED }}
+          SHOPS_ENABLED: ${{ vars.SHOPS_ENABLED || 'true' }}
+          PHARMACY_ENABLED: ${{ vars.PHARMACY_ENABLED || 'true' }}
+          RX_ENABLED: ${{ vars.RX_ENABLED || 'true' }}
+          DELIVERY_CEILING_ENABLED: ${{ vars.DELIVERY_CEILING_ENABLED || 'true' }}
+          WHATSAPP_ORDER_ALERTS_ENABLED: ${{ vars.WHATSAPP_ORDER_ALERTS_ENABLED || 'false' }}
+          PENALTIES_SUSPENDED: ${{ vars.PENALTIES_SUSPENDED || 'true' }}
+          MICRO_CACHE_REDIS_L2: ${{ vars.MICRO_CACHE_REDIS_L2 }}
+          MERCHANT_DASHBOARD_ORIGIN: ${{ vars.MERCHANT_DASHBOARD_ORIGIN }}
+          CORS_EXTRA_ORIGINS: ${{ vars.CORS_EXTRA_ORIGINS }}
+          DIDIT_ENABLED: ${{ vars.DIDIT_ENABLED }}
+          DIDIT_WORKFLOW_ID: ${{ vars.DIDIT_WORKFLOW_ID }}
+          DIDIT_CALLBACK_URL: ${{ vars.DIDIT_CALLBACK_URL }}
+          WHATSAPP_ENABLED: ${{ vars.WHATSAPP_ENABLED }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_TEMPLATE_NAME: ${{ vars.WHATSAPP_TEMPLATE_NAME }}
+          WHATSAPP_TEMPLATE_LANG: ${{ vars.WHATSAPP_TEMPLATE_LANG }}
+          BIRD_ENABLED: ${{ vars.BIRD_ENABLED }}
+          BIRD_SMS_FROM: ${{ vars.BIRD_SMS_FROM }}
+          BIRD_BASE_URL: ${{ vars.BIRD_BASE_URL }}
+          BIRD_BRAND_NAME: ${{ vars.BIRD_BRAND_NAME }}
+          BIRD_ANDROID_SMS_HASH: ${{ vars.BIRD_ANDROID_SMS_HASH }}
+          BIRD_WEBHOOK_ENABLED: ${{ vars.BIRD_WEBHOOK_ENABLED }}
+          BIRD_VERIFY_ENABLED: ${{ vars.BIRD_VERIFY_ENABLED }}
+          LOCAL_SMS_ENABLED: ${{ vars.LOCAL_SMS_ENABLED }}
+          LOCAL_SMS_API_URL: ${{ vars.LOCAL_SMS_API_URL }}
+          LOCAL_SMS_SENDER_ID: ${{ vars.LOCAL_SMS_SENDER_ID }}
+          LOCAL_SMS_ANDROID_HASH: ${{ vars.LOCAL_SMS_ANDROID_HASH }}
+          PAYNOW_ENABLED: ${{ vars.PAYNOW_ENABLED }}
+          PAYNOW_INTEGRATION_ID: ${{ vars.PAYNOW_INTEGRATION_ID }}
+          PAYNOW_AUTH_EMAIL: ${{ vars.PAYNOW_AUTH_EMAIL }}
+          PAYNOW_RESULT_URL: ${{ vars.PAYNOW_RESULT_URL }}
+          PAYNOW_FEE_MODE: ${{ vars.PAYNOW_FEE_MODE }}
+          TOPUP_FEE_PCT: ${{ vars.TOPUP_FEE_PCT }}
+          SENTRY_ENABLED: ${{ vars.SENTRY_ENABLED }}
+          SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
+          DEMO_ACCOUNT_ENABLED: ${{ vars.DEMO_ACCOUNT_ENABLED }}
+          APNS_ENABLED: ${{ vars.APNS_ENABLED }}
+          APNS_KEY_ID: ${{ vars.APNS_KEY_ID }}
+          APNS_TEAM_ID: ${{ vars.APNS_TEAM_ID }}
+          OWNER_ALERTS_ENABLED: ${{ vars.OWNER_ALERTS_ENABLED }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$SELFHOST_ENV" ] || { echo "::error::Set the repo secret SELFHOST_ENV (the filled-in infra/selfhost/.env.example)."; exit 1; }
+          umask 077
+          out="$RUNNER_TEMP/server.env"
+          printf '%s\n' "$SELFHOST_ENV" > "$out"
+          for k in POSTGRES_PASSWORD PII_ENCRYPTION_KEY JWT_SIGNING_SECRET TOKEN_HASH_SECRET R2_ACCOUNT_ID R2_ACCESS_KEY_ID \
+                   R2_SECRET_ACCESS_KEY TUNNEL_TOKEN SCHEDULER_SECRET BACKUP_PASSPHRASE ADMIN_CONSOLE_CF_ACCESS_AUD; do
+            grep -qE "^${k}=.+" "$out" || { echo "::error::SELFHOST_ENV has no value for ${k} (see infra/selfhost/.env.example)."; exit 1; }
+          done
+          {
+            echo "# --- plain settings from the repo Variables (deploy-selfhost.yml) ---"
+            for k in OTP_CHANNEL OTP_TEST_PHONES KYC_PROVIDER KYC_MODE PUSH_PROVIDER FCM_PROJECT_ID \
+                     MIN_SUPPORTED_APP_VERSION MIN_SUPPORTED_APP_VERSION_IOS RECOMMENDED_APP_VERSION RECOMMENDED_APP_VERSION_IOS \
+                     APP_WHATS_NEW REFRESH_TTL_SECONDS OTP_ALLOWED_COUNTRY_CODES OTP_RL_PHONE_MAX OTP_RL_IP_MAX OTP_RL_GLOBAL_MAX \
+                     OTP_RL_SMS_GLOBAL_MAX RESTAURANTS_ENABLED MERCHANT_DISPATCH_AUTO_ENABLED MERCHANT_WALLET_ENABLED SHOPS_ENABLED \
+                     PHARMACY_ENABLED RX_ENABLED DELIVERY_CEILING_ENABLED WHATSAPP_ORDER_ALERTS_ENABLED PENALTIES_SUSPENDED \
+                     MICRO_CACHE_REDIS_L2 MERCHANT_DASHBOARD_ORIGIN CORS_EXTRA_ORIGINS DIDIT_ENABLED DIDIT_WORKFLOW_ID \
+                     DIDIT_CALLBACK_URL WHATSAPP_ENABLED WHATSAPP_PHONE_NUMBER_ID WHATSAPP_TEMPLATE_NAME WHATSAPP_TEMPLATE_LANG \
+                     BIRD_ENABLED BIRD_SMS_FROM BIRD_BASE_URL BIRD_BRAND_NAME BIRD_ANDROID_SMS_HASH BIRD_WEBHOOK_ENABLED \
+                     BIRD_VERIFY_ENABLED LOCAL_SMS_ENABLED LOCAL_SMS_API_URL LOCAL_SMS_SENDER_ID LOCAL_SMS_ANDROID_HASH \
+                     PAYNOW_ENABLED PAYNOW_INTEGRATION_ID PAYNOW_AUTH_EMAIL PAYNOW_RESULT_URL PAYNOW_FEE_MODE TOPUP_FEE_PCT \
+                     SENTRY_ENABLED SENTRY_TRACES_SAMPLE_RATE DEMO_ACCOUNT_ENABLED APNS_ENABLED APNS_KEY_ID APNS_TEAM_ID \
+                     OWNER_ALERTS_ENABLED TELEGRAM_CHAT_ID; do
+              v="${!k:-}"
+              [ -n "$v" ] || continue
+              case "$v" in *"'"*|*$'\n'*) echo "::error::Variable $k contains a quote or newline; the .env cannot carry it."; exit 1 ;; esac
+              printf "%s='%s'\n" "$k" "$v"
+            done
+            echo "IMAGE_TAG=${GITHUB_SHA}"
+          } >> "$out"
+          echo "server .env: $(grep -cE '^[A-Z_]+=' "$out") settings (names: $(grep -oE '^[A-Z_]+' "$out" | tr '\n' ' '))"
+
+      - name: Install Docker on the server (first deploy only)
+        run: |
+          set -euo pipefail
+          ssh lynia 'command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && exit 0
+            curl -fsSL https://get.docker.com | sudo sh
+            sudo usermod -aG docker "$USER"
+            sudo systemctl enable --now docker'
+          ssh lynia 'docker compose version'
+
+      - name: Copy the stack to the server
+        run: |
+          set -euo pipefail
+          ssh lynia 'mkdir -p ~/lynia && chmod 700 ~/lynia'
+          tar -C infra/selfhost --exclude=.env.example -czf - . | ssh lynia 'tar -C ~/lynia -xzf -'
+          ssh lynia 'umask 077 && cat > ~/lynia/.env' < "$RUNNER_TEMP/server.env"
+          rm -f "$RUNNER_TEMP/server.env"
+
+      - name: Pull, migrate, start
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # The token reaches the server on stdin only, for one login, and is logged out again.
+          printf '%s\n' "$GH_TOKEN" | ssh lynia "cd ~/lynia && docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null \
+            && docker compose pull api admin migrate \
+            && docker compose build postgres cron \
+            && docker compose up -d postgres redis \
+            && docker compose run --rm migrate \
+            && docker compose up -d --remove-orphans; rc=\$?; docker logout ghcr.io >/dev/null; exit \$rc"
+
+      - name: Wait for a healthy API
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 40); do
+            state="$(ssh lynia "docker inspect -f '{{.State.Health.Status}}' \$(cd ~/lynia && docker compose ps -q api)" 2>/dev/null || echo unknown)"
+            echo "api: $state"
+            if [ "$state" = "healthy" ]; then
+              ssh lynia 'cd ~/lynia && docker compose ps --format "table {{.Service}}\t{{.Status}}"' | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 6
+          done
+          ssh lynia 'cd ~/lynia && docker compose logs --tail 60 api' || true
+          echo "::error::The API did not become healthy. Its last log lines are above."
+          exit 1
