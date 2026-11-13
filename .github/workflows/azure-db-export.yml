@@ -1,0 +1,211 @@
+name: Azure Data Export (leaving Azure)
+
+# Gets Lynia's data OUT of Azure before the subscription is disabled (docs/AZURE-EXIT.md).
+# Dispatch-only. Postgres has no public endpoint, so the dump runs INSIDE Azure as a one-off execution
+# of the migrate job (it is in the VNet and already holds DATABASE_URL + the API identity); the job runs
+# scripts/azure-export-job.sh, which encrypts everything with the DB_EXPORT_PASSPHRASE secret and
+# uploads it to a DRAFT GitHub release (visible only to people with push access; AES-256 on top
+# because this repo is public). This workflow then downloads the database file, decrypts it on the
+# runner and checks it is a readable dump, so a green run means "restorable", not just "uploaded".
+#
+# S8: nothing here reads a secret value from Azure. The passphrase and the token reach the job as env
+# vars for the length of one execution and are removed from the job afterwards (always()).
+#
+# Before the first run: add the repository SECRET `DB_EXPORT_PASSPHRASE` (24+ characters) and keep a
+# copy somewhere safe outside GitHub. Without it the export cannot be decrypted. Ever.
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_media:
+        description: "Also export the photos and documents (blob storage)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Shares the migrate job with release-azure.yml: never run both at once.
+concurrency:
+  group: azure-migrate-job
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: export database + media (production)
+    runs-on: ubuntu-latest
+    if: ${{ vars.AZ_DEPLOY_ENABLED == 'true' }}
+    environment: production
+    timeout-minutes: 75
+    permissions:
+      contents: write # create the draft release and let the job upload to it
+      id-token: write # OIDC for azure/login
+    env:
+      RG: ${{ vars.AZ_RESOURCE_GROUP }}
+      API_APP: ${{ vars.AZ_CONTAINERAPP_API || 'ca-lynia-api' }}
+      JOB: ${{ vars.AZ_MIGRATE_JOB || 'caj-lynia-migrate' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the passphrase secret
+        env:
+          PASS: ${{ secrets.DB_EXPORT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ "${#PASS}" -lt 24 ]; then
+            echo "::error::Add the repository secret DB_EXPORT_PASSPHRASE (at least 24 characters) first: Settings → Secrets and variables → Actions → New repository secret. Keep a copy outside GitHub — it is the only way to decrypt the export."
+            exit 1
+          fi
+          [ -n "$RG" ] || { echo "::error::Repository Variable AZ_RESOURCE_GROUP is not set."; exit 1; }
+
+      - name: Create the draft release
+        id: release
+        run: |
+          set -euo pipefail
+          TAG="data-export-$(date -u +%Y%m%d-%H%M%S)"
+          ID="$(gh api -X POST "repos/${GH_REPO}/releases" \
+            -f tag_name="$TAG" -f target_commitish="${GITHUB_SHA}" -f name="$TAG (encrypted data export — do not publish)" \
+            -F draft=true -f body="Encrypted Lynia data export from Azure. Draft on purpose: never publish it. Decrypt with DB_EXPORT_PASSPHRASE — see docs/AZURE-EXIT.md." \
+            --jq .id)"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Draft release $TAG (id $ID)"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PRODUCTION }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the media container and the identity that reads it
+        id: media
+        run: |
+          set -euo pipefail
+          az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors >/dev/null 2>&1 || true
+          # Plain config values on the API app (account + container names), never secrets.
+          ACCOUNT="$(az containerapp show -n "$API_APP" -g "$RG" -o json \
+            | jq -r '[.properties.template.containers[0].env[]? | select(.name=="AZURE_STORAGE_ACCOUNT") | .value] | first // ""')"
+          CONTAINER="$(az containerapp show -n "$API_APP" -g "$RG" -o json \
+            | jq -r '[.properties.template.containers[0].env[]? | select(.name=="AZURE_STORAGE_CONTAINER") | .value] | first // ""')"
+          # The migrate job runs as the API identity (infra/azure/jobs.tf), which has Blob Data
+          # Contributor on the media container.
+          CLIENT_ID="$(az containerapp job show -n "$JOB" -g "$RG" -o json \
+            | jq -r '[.identity.userAssignedIdentities // {} | .[] | .clientId] | first // ""')"
+          echo "media account=${ACCOUNT:-<unset>} container=${CONTAINER:-<unset>} identity=${CLIENT_ID:-<unset>}"
+          {
+            echo "account=$ACCOUNT"
+            echo "container=${CONTAINER:-lynia-media}"
+            echo "client_id=$CLIENT_ID"
+          } >> "$GITHUB_OUTPUT"
+
+      # The job's template is changed with a JSON PATCH rather than `az containerapp job update`:
+      # the container needs `sh -c`, which that command's argument parser can take for its own flag,
+      # and the passphrase then travels in a request body rather than on a command line. The
+      # original container is saved first so the cleanup step puts the job back exactly as it was.
+      - name: Run the export inside Azure
+        env:
+          PASS: ${{ secrets.DB_EXPORT_PASSPHRASE }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+          INCLUDE_MEDIA: ${{ inputs.include_media }}
+          MEDIA_ACCOUNT: ${{ steps.media.outputs.account }}
+          MEDIA_CONTAINER: ${{ steps.media.outputs.container }}
+          MEDIA_CLIENT_ID: ${{ steps.media.outputs.client_id }}
+        run: |
+          set -euo pipefail
+          JOB_ID="$(az containerapp job show -n "$JOB" -g "$RG" --query id -o tsv)"
+          echo "$JOB_ID" > "$RUNNER_TEMP/job-id"
+          az rest --method get --url "${JOB_ID}?api-version=2024-03-01" -o json \
+            | jq '.properties.template' > "$RUNNER_TEMP/orig-template.json"
+          SCRIPT_B64="$(base64 -w0 scripts/azure-export-job.sh)"
+          # 2 vCPU / 4 GiB gives the execution the largest ephemeral disk on the Consumption profile.
+          # The job keeps its DATABASE_URL secretRef; the export's inputs are appended to its env.
+          jq --arg script "$SCRIPT_B64" --arg pass "$PASS" --arg tok "$GH_TOKEN" --arg repo "$GH_REPO" \
+             --arg rel "$RELEASE_ID" --arg media "$INCLUDE_MEDIA" --arg acct "$MEDIA_ACCOUNT" \
+             --arg cont "$MEDIA_CONTAINER" --arg cid "$MEDIA_CLIENT_ID" '
+            .containers[0] |= (
+              .image = "docker.io/library/alpine:3.21"
+              | .command = ["/bin/sh", "-c", "echo \"$EXPORT_SCRIPT_B64\" | base64 -d > /tmp/export.sh && sh /tmp/export.sh"]
+              | .args = []
+              | .resources = {cpu: 2, memory: "4Gi"}
+              | .env = ([.env[]? | select(.name == "DATABASE_URL")] + [
+                  {name: "EXPORT_SCRIPT_B64", value: $script},
+                  {name: "EXPORT_PASSPHRASE", value: $pass},
+                  {name: "GH_TOKEN", value: $tok},
+                  {name: "GH_REPO", value: $repo},
+                  {name: "GH_RELEASE_ID", value: $rel},
+                  {name: "EXPORT_MEDIA", value: $media},
+                  {name: "MEDIA_ACCOUNT", value: $acct},
+                  {name: "MEDIA_CONTAINER", value: $cont},
+                  {name: "MEDIA_CLIENT_ID", value: $cid},
+                  {name: "MEDIA_MAX_BYTES", value: "5368709120"}
+                ])
+            ) | {properties: {template: .}}' "$RUNNER_TEMP/orig-template.json" > "$RUNNER_TEMP/export-patch.json"
+          jq -e '.properties.template.containers[0].env[] | select(.name == "DATABASE_URL")' "$RUNNER_TEMP/export-patch.json" >/dev/null \
+            || { echo "::error::The migrate job has no DATABASE_URL env (expected a Key Vault secretRef, infra/azure/jobs.tf)."; exit 1; }
+          az rest --method patch --url "${JOB_ID}?api-version=2024-03-01" --body "@$RUNNER_TEMP/export-patch.json" -o none
+          rm -f "$RUNNER_TEMP/export-patch.json"
+          az containerapp job update -n "$JOB" -g "$RG" --replica-timeout 3600 -o none
+          for _ in $(seq 1 60); do
+            state="$(az containerapp job show -n "$JOB" -g "$RG" --query properties.provisioningState -o tsv)"
+            [ "$state" = "Succeeded" ] && break
+            echo "job provisioning: $state"; sleep 5
+          done
+          EXECUTION="$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)"
+          [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
+          echo "Started $JOB execution $EXECUTION"
+          bash scripts/azure-aca.sh wait-job "$JOB" "$RG" "$EXECUTION" 3600
+
+      # Always: put the job's container back exactly as it was (image, command, env, size), which
+      # also takes the passphrase and the token back off it.
+      - name: Restore the migrate job
+        if: always()
+        run: |
+          set -uo pipefail
+          [ -s "$RUNNER_TEMP/orig-template.json" ] || { echo "Nothing was changed on the job."; exit 0; }
+          JOB_ID="$(cat "$RUNNER_TEMP/job-id")"
+          jq '{properties: {template: .}}' "$RUNNER_TEMP/orig-template.json" > "$RUNNER_TEMP/restore.json"
+          if az rest --method patch --url "${JOB_ID}?api-version=2024-03-01" --body "@$RUNNER_TEMP/restore.json" -o none \
+             && az containerapp job update -n "$JOB" -g "$RG" --replica-timeout 1800 -o none; then
+            echo "Migrate job restored."
+          else
+            echo "::warning::Could not restore $JOB. In the portal, remove EXPORT_PASSPHRASE and GH_TOKEN from its env; the next release-azure run resets its image and command."
+          fi
+
+      - name: Verify the database export decrypts and restores
+        env:
+          PASS: ${{ secrets.DB_EXPORT_PASSPHRASE }}
+          TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/verify && cd /tmp/verify
+          # By asset id: a draft release cannot be looked up by its tag.
+          gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | select(.name | test("manifest\\.txt$|^lynia-db-.*\\.dump\\.enc$")) | "\(.id) \(.name)"' \
+            | while read -r aid name; do
+                gh api -H "Accept: application/octet-stream" "repos/${GH_REPO}/releases/assets/${aid}" > "$name"
+              done
+          ls -l
+          cat ./*.manifest.txt
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:PASS -in lynia-db-*.dump.enc -out db.dump
+          want="$(sed -n 's/^  plain sha256 *//p' ./*.manifest.txt)"
+          got="$(sha256sum db.dump | cut -d' ' -f1)"
+          [ "$want" = "$got" ] || { echo "::error::Decrypted dump checksum $got does not match the manifest ($want)."; exit 1; }
+          tables="$(docker run --rm -v "$PWD:/d" postgres:16-alpine pg_restore --list /d/db.dump | grep -c ' TABLE DATA ' || true)"
+          echo "pg_restore reads the dump: ${tables} tables with data."
+          [ "$tables" -gt 0 ] || { echo "::error::The dump lists no table data."; exit 1; }
+          rm -f db.dump
+          {
+            echo "### Data export ready"
+            echo
+            echo "Draft release **${TAG}**: Releases page → Drafts. Do not publish it."
+            echo
+            echo "Database dump decrypted and verified (checksum matches, ${tables} tables with data)."
+            echo
+            echo '```'
+            cat ./*.manifest.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
