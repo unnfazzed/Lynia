@@ -117,6 +117,8 @@ jobs:
           set -euo pipefail
           JOB_ID="$(az containerapp job show -n "$JOB" -g "$RG" --query id -o tsv)"
           echo "$JOB_ID" > "$RUNNER_TEMP/job-id"
+          # A change left half-applied by an earlier run must settle before anything else is sent.
+          bash scripts/azure-aca.sh wait-job-provisioned "$JOB" "$RG"
           az rest --method get --url "${JOB_ID}?api-version=2024-03-01" -o json \
             | jq '.properties.template' > "$RUNNER_TEMP/orig-template.json"
           SCRIPT_B64="$(base64 -w0 scripts/azure-export-job.sh)"
@@ -147,31 +149,38 @@ jobs:
             || { echo "::error::The migrate job has no DATABASE_URL env (expected a Key Vault secretRef, infra/azure/jobs.tf)."; exit 1; }
           az rest --method patch --url "${JOB_ID}?api-version=2024-03-01" --body "@$RUNNER_TEMP/export-patch.json" -o none
           rm -f "$RUNNER_TEMP/export-patch.json"
+          bash scripts/azure-aca.sh wait-job-provisioned "$JOB" "$RG"
           az containerapp job update -n "$JOB" -g "$RG" --replica-timeout 3600 -o none
-          for _ in $(seq 1 60); do
-            state="$(az containerapp job show -n "$JOB" -g "$RG" --query properties.provisioningState -o tsv)"
-            [ "$state" = "Succeeded" ] && break
-            echo "job provisioning: $state"; sleep 5
-          done
+          bash scripts/azure-aca.sh wait-job-provisioned "$JOB" "$RG"
           EXECUTION="$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)"
           [ -n "$EXECUTION" ] || { echo "::error::az containerapp job start returned no execution name."; exit 1; }
           echo "Started $JOB execution $EXECUTION"
           bash scripts/azure-aca.sh wait-job "$JOB" "$RG" "$EXECUTION" 3600
 
-      # Always: put the job's container back exactly as it was (image, command, env, size), which
-      # also takes the passphrase and the token back off it.
+      # Always: put the job's container back as it was (image, command, size), and in every case take
+      # the export's env vars (the passphrase, the token) off it. The saved template is filtered too:
+      # if an earlier run failed to restore, "as it was" still carries that run's export settings.
       - name: Restore the migrate job
         if: always()
         run: |
           set -uo pipefail
           [ -s "$RUNNER_TEMP/orig-template.json" ] || { echo "Nothing was changed on the job."; exit 0; }
           JOB_ID="$(cat "$RUNNER_TEMP/job-id")"
-          jq '{properties: {template: .}}' "$RUNNER_TEMP/orig-template.json" > "$RUNNER_TEMP/restore.json"
-          if az rest --method patch --url "${JOB_ID}?api-version=2024-03-01" --body "@$RUNNER_TEMP/restore.json" -o none \
-             && az containerapp job update -n "$JOB" -g "$RG" --replica-timeout 1800 -o none; then
-            echo "Migrate job restored."
+          jq '.containers[0] |= (
+                .env = [.env[]? | select(.name | IN("EXPORT_SCRIPT_B64","EXPORT_PASSPHRASE","GH_TOKEN","GH_REPO",
+                  "GH_RELEASE_ID","EXPORT_MEDIA","MEDIA_ACCOUNT","MEDIA_CONTAINER","MEDIA_CLIENT_ID","MEDIA_MAX_BYTES") | not)]
+                | .resources = {cpu: 0.5, memory: "1Gi"}
+              ) | {properties: {template: .}}' "$RUNNER_TEMP/orig-template.json" > "$RUNNER_TEMP/restore.json"
+          ok=true
+          bash scripts/azure-aca.sh wait-job-provisioned "$JOB" "$RG" || ok=false
+          az rest --method patch --url "${JOB_ID}?api-version=2024-03-01" --body "@$RUNNER_TEMP/restore.json" -o none || ok=false
+          bash scripts/azure-aca.sh wait-job-provisioned "$JOB" "$RG" || ok=false
+          az containerapp job update -n "$JOB" -g "$RG" --replica-timeout 1800 -o none || ok=false
+          if $ok; then
+            echo "Migrate job restored; no export settings left on it."
           else
-            echo "::warning::Could not restore $JOB. In the portal, remove EXPORT_PASSPHRASE and GH_TOKEN from its env; the next release-azure run resets its image and command."
+            echo "::warning::Could not fully restore $JOB. Re-run this workflow, or in the portal remove EXPORT_PASSPHRASE and GH_TOKEN from its env; the next release-azure run resets its image and command."
+            exit 1
           fi
 
       - name: Verify the database export decrypts and restores
