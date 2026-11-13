@@ -88,6 +88,12 @@ describe("the upload URL is create-only (E13)", () => {
     await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {})).resolves.toBeUndefined();
   });
 
+  it("treats a 412 (R2's If-None-Match: * on a retried PUT) as success", async () => {
+    const { uploadPhotoBlob } = await import("./menu-api");
+    fetchMock.mockResolvedValue({ ok: false, status: 412 } as Response);
+    await expect(uploadPhotoBlob("https://upload", new Blob(["x"]), {})).resolves.toBeUndefined();
+  });
+
   it("still fails any other non-ok status", async () => {
     const { uploadPhotoBlob } = await import("./menu-api");
     fetchMock.mockResolvedValue({ ok: false, status: 403 } as Response);

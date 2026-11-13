@@ -2,7 +2,7 @@
  * Storage seam (D7). The adapter abstracts time-limited URL *generation* — signed-URL APIs and
  * semantics differ per provider, so the rest of the app only ever sees this interface.
  */
-export type CloudProvider = "gcp" | "azure";
+export type CloudProvider = "gcp" | "azure" | "cloudflare";
 
 export interface UploadTarget {
   /** Pre-authorized URL the client PUTs the object to. */

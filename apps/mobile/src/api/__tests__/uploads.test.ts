@@ -80,6 +80,11 @@ describe("uploadImage", () => {
     await expect(uploadImage("https://storage.example/put", "file:///photo.jpg", { "Content-Type": "image/jpeg" })).resolves.toBeUndefined();
   });
 
+  it("treats a 412 as success too: R2's create-only PUT (If-None-Match: *) answers 412 on a retry", async () => {
+    stubStatus(412);
+    await expect(uploadImage("https://storage.example/put", "file:///photo.jpg", { "Content-Type": "image/jpeg", "If-None-Match": "*" })).resolves.toBeUndefined();
+  });
+
   it("still fails any other non-ok status", async () => {
     stubStatus(403);
     await expect(uploadImage("https://storage.example/put", "file:///photo.jpg", { "Content-Type": "image/jpeg" })).rejects.toThrow("Photo upload failed (403)");

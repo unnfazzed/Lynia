@@ -189,8 +189,8 @@ async function uploadShopFrontPhoto(merchantId: string, photo: File): Promise<{ 
       body: Buffer.from(await photo.arrayBuffer()),
       signal: AbortSignal.timeout(PHOTO_PUT_TIMEOUT_MS),
     });
-    // The upload URL is create-only: 409 means the bytes already landed (as on the merchant web, E13).
-    if (!res.ok && res.status !== 409) return { ok: false, message: `The photo didn't upload (${res.status}). Try again.` };
+    // The upload URL is create-only: 409 (Azure) or 412 (R2) means the bytes already landed (as on the merchant web, E13).
+    if (!res.ok && res.status !== 409 && res.status !== 412) return { ok: false, message: `The photo didn't upload (${res.status}). Try again.` };
   } catch {
     return { ok: false, message: "The photo didn't upload. Try again." };
   }

@@ -498,3 +498,33 @@ describe("Paynow top-up rail settings (docs/plans/2026-10-paynow-biker-wallet.md
     expect(() => loadEnv({ ...base, TOPUP_RAILS: "ecocash,visa" })).toThrow(/Invalid environment configuration/);
   });
 });
+
+describe("loadEnv — leaving Azure (docs/AZURE-EXIT.md)", () => {
+  const r2 = {
+    ...base,
+    CLOUD_PROVIDER: "cloudflare",
+    R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+    R2_ACCESS_KEY_ID: "akid",
+    R2_SECRET_ACCESS_KEY: "secret",
+  } as NodeJS.ProcessEnv;
+
+  it("accepts CLOUD_PROVIDER=cloudflare with the full R2 config", () => {
+    expect(loadEnv(r2).CLOUD_PROVIDER).toBe("cloudflare");
+  });
+
+  it("refuses CLOUD_PROVIDER=cloudflare missing any R2 value, in any environment", () => {
+    for (const k of ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
+      expect(() => loadEnv({ ...r2, [k]: "" })).toThrow(new RegExp(k));
+    }
+  });
+
+  it("refuses an R2 account id that is not 32 hex characters", () => {
+    expect(() => loadEnv({ ...r2, R2_ACCOUNT_ID: "not-an-account" })).toThrow(/R2_ACCOUNT_ID/);
+  });
+
+  it("SCHEDULER_AUTH=secret needs a SCHEDULER_SECRET of 32+ characters", () => {
+    expect(() => loadEnv({ ...base, SCHEDULER_AUTH: "secret" })).toThrow(/SCHEDULER_SECRET/);
+    expect(() => loadEnv({ ...base, SCHEDULER_AUTH: "secret", SCHEDULER_SECRET: "short" })).toThrow(/SCHEDULER_SECRET/);
+    expect(loadEnv({ ...base, SCHEDULER_AUTH: "secret", SCHEDULER_SECRET: "x".repeat(32) }).SCHEDULER_AUTH).toBe("secret");
+  });
+});

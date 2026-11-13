@@ -74,6 +74,12 @@ export async function uploadImage(
     signal?.removeEventListener("abort", cancel);
   }
   // The upload URL is create-only: a transport retry of a PUT that already landed answers 409 (the blob
-  // exists). The bytes are there, and attach verifies them, so that is a success (E13).
-  if (!res.ok && res.status !== 409) throw new Error(`Photo upload failed (${res.status})`);
+  // exists; Cloudflare R2 answers 412 to the signed `If-None-Match: *`). The bytes are there, and attach
+  // verifies them, so that is a success (E13).
+  if (!res.ok && !alreadyStored(res.status)) throw new Error(`Photo upload failed (${res.status})`);
+}
+
+/** A create-only PUT whose object already exists: Azure Blob answers 409, R2 (and S3) 412. */
+export function alreadyStored(status: number): boolean {
+  return status === 409 || status === 412;
 }

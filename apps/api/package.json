@@ -24,6 +24,8 @@
     "bikers:reset-to-customer": "tsx scripts/reset-bikers-to-customers.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1168.0",
+    "@aws-sdk/s3-request-presigner": "^3.1168.0",
     "@azure/identity": "^4.14.1",
     "@azure/storage-blob": "^12.34.0",
     "@google-cloud/storage": "^8.4.0",
