@@ -259,13 +259,22 @@ jobs:
             fi
             sleep 6
           done
-          ssh lynia 'cd ~/lynia && docker compose logs --tail 60 api' || true
-          echo "::error::The API did not become healthy. Its last log lines are above."
+          echo "::error::The API did not become healthy. The next step names the settings it rejected."
           exit 1
 
-      # When "Pull, migrate, start" itself fails (the API exits before compose reports it healthy), the wait
-      # step above is skipped, so print why here. The boot guards (env.ts) name the setting, not its value.
+      # Why the API did not start, without leaking anything: this repo's Actions logs are PUBLIC, and a boot
+      # error can quote a rejected value (it printed the demo OTP code on the first deploy). So never print the
+      # API log here; print the container states and only the NAMES of the settings env.ts rejected. The full
+      # log stays on the server: ssh in and run `cd ~/lynia && docker compose logs --tail 40 api`.
       - name: Show why the API did not start
         if: failure()
         run: |
-          ssh lynia 'cd ~/lynia && docker compose ps -a --format "table {{.Service}}\t{{.Status}}" && docker compose logs --no-color --tail 40 api' || true
+          ssh lynia 'cd ~/lynia && docker compose ps -a --format "table {{.Service}}\t{{.Status}}"' || true
+          names="$(ssh lynia 'cd ~/lynia && docker compose logs --no-color --tail 200 api 2>&1' \
+            | grep -o 'Invalid environment configuration: {.*' | tail -1 \
+            | grep -oE '"[A-Z][A-Z0-9_]*":\[' | tr -d '":[' | sort -u | tr '\n' ' ' || true)"
+          if [ -n "$names" ]; then
+            echo "::error::The API rejected these SELFHOST_ENV / Variable settings: ${names}(the server's API log says why: cd ~/lynia && docker compose logs --tail 40 api)"
+          else
+            echo "::error::The API did not start for a reason other than a rejected setting. Read its log on the server: cd ~/lynia && docker compose logs --tail 40 api"
+          fi
