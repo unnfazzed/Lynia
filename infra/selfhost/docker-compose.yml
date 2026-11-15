@@ -121,7 +121,7 @@ services:
 
   tunnel:
     <<: *restart
-    image: cloudflare/cloudflared:2025.4.0
+    image: cloudflare/cloudflared:2026.10.7
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
