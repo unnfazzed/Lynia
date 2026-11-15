@@ -1725,13 +1725,21 @@ representation that they are (or will be) met:
    is not a designated DPO. It must also be a live inbox: `lyniago.com` had **no MX records** on
    2026-09-28, so mail to it bounces until a mailbox or forwarding (e.g. Cloudflare Email Routing,
    since the zone is on Cloudflare) is set up.
-3. **Notify POTRAZ of the cross-border transfer.** The primary region is `africa-south1`
-   (Johannesburg), so **every row, image and backup lives in South Africa, not Zimbabwe**
-   (`infra/terraform/variables.tf`). Under the Act that is a continuous cross-border transfer needing
-   an adequacy determination or another ground plus notification. §4 of the notice discloses it
-   plainly and relies on necessity-for-the-contract; counsel should confirm that ground and make the
-   filing. *Do not "fix" this by quietly deleting the disclosure — the transfer is real, and an
-   undisclosed one is the worse violation.*
+3. **Notify POTRAZ of the cross-border transfer.** Since the move off Azure (2026-11-15,
+   `docs/AZURE-EXIT.md`), **no row, image or backup is in Zimbabwe**: the servers and database run at
+   **Hetzner in Nuremberg, Germany**, and uploaded images (including rider ID and face photos) and encrypted
+   backups are in **Cloudflare R2, eastern United States** (before that: Azure South Africa North; before
+   that, GCP `africa-south1`). Under the Act that is a continuous cross-border transfer needing an adequacy
+   determination or another ground plus notification. §4 of the notice (updated 2026-11-15, wording approved
+   by the owner's lawyer) discloses it plainly and relies on necessity-for-the-contract. *Do not "fix" this
+   by quietly deleting the disclosure — the transfer is real, and an undisclosed one is the worse violation.*
+   Status 2026-11-15, all **owner actions** (nothing here is code):
+   - [ ] **POTRAZ notification** of the new destinations (Germany, United States). A draft letter was
+         handed to the owner on 2026-11-15; counsel fills in the sections of the Act relied on, and it goes
+         with the controller registration (item 1) if that is still outstanding.
+   - [ ] **Hetzner DPA** concluded in accounts.hetzner.com (*Data protection*), PDF kept with company records.
+   - [ ] **Cloudflare Customer DPA** (part of the Self-Serve Subscription Agreement, nothing to sign) saved
+         with company records; counsel confirms a by-reference DPA suffices.
 4. **Be able to meet the 24-hour breach-notification duty.** The notice commits to notifying POTRAZ
    within 24 hours of becoming aware of a breach. `docs/IR-RUNBOOK.md` should carry POTRAZ as a named
    notification target with that clock, alongside the existing technical response steps.
