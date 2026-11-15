@@ -163,7 +163,10 @@ jobs:
           [ -n "$SELFHOST_ENV" ] || { echo "::error::Set the repo secret SELFHOST_ENV (the filled-in infra/selfhost/.env.example)."; exit 1; }
           umask 077
           out="$RUNNER_TEMP/server.env"
-          printf '%s\n' "$SELFHOST_ENV" > "$out"
+          # Strip CR: a secret typed in Windows Notepad and pasted into GitHub can carry CRLF line endings, and a
+          # trailing \r glued onto PII_ENCRYPTION_KEY / JWT_SIGNING_SECRET would silently change the key (stored
+          # national IDs unreadable, every session invalid). No real value contains a carriage return.
+          printf '%s\n' "$SELFHOST_ENV" | tr -d '\r' > "$out"
           for k in POSTGRES_PASSWORD PII_ENCRYPTION_KEY JWT_SIGNING_SECRET TOKEN_HASH_SECRET R2_ACCOUNT_ID R2_ACCESS_KEY_ID \
                    R2_SECRET_ACCESS_KEY TUNNEL_TOKEN SCHEDULER_SECRET BACKUP_PASSPHRASE ADMIN_CONSOLE_CF_ACCESS_AUD; do
             grep -qE "^${k}=.+" "$out" || { echo "::error::SELFHOST_ENV has no value for ${k} (see infra/selfhost/.env.example)."; exit 1; }
