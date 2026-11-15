@@ -117,8 +117,10 @@ stores. Check it worked: the second request for a menu within a minute answers `
 ## Step 3 — switch over
 
 1. Run the data export one last time.
-2. On the server: restore the dump into the empty database and copy the photos into `lynia-media`
-   (the decrypt commands are in Step 1; the media tarball's folders are the object keys).
+2. **Actions → "Restore Azure export onto the self-hosted server" → Run workflow**, type `REPLACE`.
+   It takes the newest export draft, replaces the server's database with it, checks every table's row
+   count against the dump (any difference fails the run: do not switch traffic then), copies the photos
+   into the R2 media bucket, migrates and waits for a healthy API (`.github/workflows/selfhost-restore.yml`).
 3. Add the two public hostnames to the tunnel. Cloudflare moves `api.` and `admin.` from Azure to it.
 4. Check `https://api.lyniago.com/healthz`, sign in on the app, open the admin console.
 5. Turn Azure off. The apps call `api.lyniago.com`, so no app update or store release is needed.
