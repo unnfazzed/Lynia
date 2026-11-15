@@ -184,12 +184,34 @@ jobs:
                      OWNER_ALERTS_ENABLED TELEGRAM_CHAT_ID; do
               v="${!k:-}"
               [ -n "$v" ] || continue
-              case "$v" in *"'"*|*$'\n'*) echo "::error::Variable $k contains a quote or newline; the .env cannot carry it."; exit 1 ;; esac
+              case "$v" in *"'"*|*$'\n'*) echo "::error::Variable $k contains a quote or newline; the .env cannot carry it." >&2; exit 1 ;; esac
               printf "%s='%s'\n" "$k" "$v"
             done
+
+            echo "# --- derived exactly as release-azure.yml derives them ---"
+            # CORS (apps/api/src/common/cors.ts, KNOWN_BUGS OPS-CORS-01): without this list the API refuses every
+            # browser origin, so the merchant web app and app.lyniago.com could not call it. The merchant origin is
+            # always present, CORS_EXTRA_ORIGINS appends; same bare-origin validation as release-azure.yml.
+            CORS_ORIGINS="${MERCHANT_DASHBOARD_ORIGIN:-https://merchant.lyniago.com}"
+            if [ -n "${CORS_EXTRA_ORIGINS:-}" ]; then CORS_ORIGINS="${CORS_ORIGINS},${CORS_EXTRA_ORIGINS}"; fi
+            CORS_ORIGINS="$(printf '%s' "$CORS_ORIGINS" | tr -d '[:space:]')"
+            IFS=',' read -ra _origins <<< "$CORS_ORIGINS" || true
+            for _o in "${_origins[@]:-}"; do
+              [ -z "$_o" ] && continue
+              case "$_o" in
+                https://*/*|http://*/*) echo "::error::CORS origin '$_o' has a path or trailing slash — use scheme://host[:port] only" >&2; exit 1 ;;
+                https://?*|http://?*) ;;
+                *) echo "::error::CORS origin '$_o' must be an absolute origin starting with https://" >&2; exit 1 ;;
+              esac
+            done
+            printf "CORS_ALLOWED_ORIGINS='%s'\n" "$CORS_ORIGINS"
+            # Paynow top-ups: PAYNOW_ENABLED arms the rail (env.ts PAYMENT_RAIL, default stub).
+            if [ "${PAYNOW_ENABLED:-}" = "true" ]; then echo "PAYMENT_RAIL=paynow"; fi
+            # Sentry: keep the new server's errors separable from Azure's.
+            if [ "${SENTRY_ENABLED:-}" = "true" ]; then echo "SENTRY_ENVIRONMENT=production-selfhost"; fi
             echo "IMAGE_TAG=${GITHUB_SHA}"
           } >> "$out"
-          echo "server .env: $(grep -cE '^[A-Z_]+=' "$out") settings (names: $(grep -oE '^[A-Z_]+' "$out" | tr '\n' ' '))"
+          echo "server .env: $(grep -cE '^[A-Z0-9_]+=' "$out") settings (names: $(grep -oE '^[A-Z0-9_]+' "$out" | tr '\n' ' '))"
 
       - name: Install Docker on the server (first deploy only)
         run: |
