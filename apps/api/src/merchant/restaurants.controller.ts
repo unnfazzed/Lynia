@@ -2,6 +2,7 @@ import { Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards }
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../common/current-user.decorator";
 import { CUSTOMER_VISIBLE_RESTAURANT } from "./merchant-lookup.util";
+import { EdgeCache } from "../common/edge-cache.decorator";
 import { MerchantService } from "./merchant.service";
 import { RestaurantReopenService } from "./restaurant-reopen.service";
 import { RestaurantsEnabledGuard } from "./restaurants-enabled.guard";
@@ -22,6 +23,7 @@ export class RestaurantsController {
 
   /** B-O10: `cursor` (opaque, the last id from a previous page's `nextCursor`) pages through the
    *  corridor's catalog instead of one unbounded fetch. */
+  @EdgeCache()
   @Get()
   // The cursor is a merchant @db.Uuid id: a malformed one is a clean 400, not a Prisma uuid-cast 500 (DRS-03).
   list(@Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string) {
@@ -30,12 +32,14 @@ export class RestaurantsController {
 
   /** #673 cross-restaurant search — PLACES (restaurant name) + DISHES (menu items corridor-wide).
    *  Declared before `:id/*` so the static `search` segment can't be captured as an `:id`. */
+  @EdgeCache()
   @Get("search")
   search(@Query("q") q?: string) {
     return this.merchant.searchRestaurants(q);
   }
 
   /** Browse v2 X1 (D-57): the "Popular near you" search chips. Before `:id/*`, like `search`. */
+  @EdgeCache()
   @Get("search/popular")
   searchPopular() {
     return this.merchant.searchPopular();
@@ -43,11 +47,13 @@ export class RestaurantsController {
 
   /** Ledger D-72: the live restaurants ranked by recent delivered orders ("Popular restaurants" on Home,
    *  the "Recommended" sort in browse). Empty on a thin corridor — the phone keeps nearest-open then. */
+  @EdgeCache()
   @Get("popular")
   popular() {
     return this.merchant.popularVenues(CUSTOMER_VISIBLE_RESTAURANT, "restaurants");
   }
 
+  @EdgeCache()
   @Get(":id/menu")
   menu(@Param("id", ParseUUIDPipe) id: string) {
     return this.merchant.getRestaurantMenu(id);

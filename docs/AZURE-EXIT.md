@@ -86,6 +86,34 @@ national IDs.**
    server's host key (save it as Variable `SELFHOST_KNOWN_HOSTS`), migrates an empty database and starts
    everything. Nothing public points at it yet.
 
+## Latency: cache the browse screens at Cloudflare
+
+The server is in Germany, so every API call from Zimbabwe adds ~150–200 ms. The catalogue reads are the
+same for every customer, so Cloudflare keeps a copy at its edge (Harare/Johannesburg) for 60 seconds
+(owner decision 2026-11-15, option A: menus, prices and catalogues become readable without signing in).
+
+The API marks exactly nine routes shareable (`@EdgeCache()`, `apps/api/src/common/edge-cache.decorator.ts`;
+the spec fails if it appears anywhere else): `GET /restaurants`, `/restaurants/search`,
+`/restaurants/search/popular`, `/restaurants/popular`, `/restaurants/:id/menu`, `/shops`, `/shops/search`,
+`/shops/popular`, `/shops/:id/catalogue`. Only a successful response is marked; a 404 or a kill-switch
+503 keeps `private, no-cache`. Phones still revalidate every time (`max-age=0`).
+
+Cloudflare does not cache JSON on its own. At switch-over, add one rule: Cloudflare dashboard →
+`lyniago.com` → **Caching → Cache Rules → Create rule**, *Edit expression*:
+
+```
+(http.host eq "api.lyniago.com" and http.request.method eq "GET" and (
+  http.request.uri.path in {"/restaurants" "/restaurants/search" "/restaurants/search/popular" "/restaurants/popular" "/shops" "/shops/search" "/shops/popular"}
+  or (starts_with(http.request.uri.path, "/restaurants/") and ends_with(http.request.uri.path, "/menu"))
+  or (starts_with(http.request.uri.path, "/shops/") and ends_with(http.request.uri.path, "/catalogue"))
+))
+```
+
+Then: **Cache eligibility → Eligible for cache**, **Edge TTL → Use cache-control header if present**.
+Leave the cache key at its default (scheme, host, path, query string, `Origin`). Everything else under
+`/restaurants` (orders, schedule slots, reminders) is per-user and sends `private`, which Cloudflare never
+stores. Check it worked: the second request for a menu within a minute answers `cf-cache-status: HIT`.
+
 ## Step 3 — switch over
 
 1. Run the data export one last time.
