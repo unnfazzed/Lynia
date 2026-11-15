@@ -25,8 +25,9 @@ Where things are, for whoever looks next:
 | Edge cache | Cloudflare → lyniago.com → Cache Rules → *API browse cache* (see "Latency" below) |
 
 **Still to do:** switch off the Azure workflows (merges still start *Release (Azure)*: do not approve it),
-then delete the Azure resource groups (stops the bill), and publish the updated privacy notice once a lawyer
-has reviewed it (hosting moved from South Africa to Germany + the United States).
+then delete the Azure resource groups (stops the bill). The privacy notice naming Germany + the United States
+is live since 2026-11-15 (lawyer-approved); the owner's POTRAZ notification and the Hetzner/Cloudflare DPAs are
+tracked in `docs/PLAY-STORE-SUBMISSION.md` §7.3.
 
 ## Step 1 — get the data out (do this first)
 
