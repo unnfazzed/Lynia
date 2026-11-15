@@ -262,3 +262,10 @@ jobs:
           ssh lynia 'cd ~/lynia && docker compose logs --tail 60 api' || true
           echo "::error::The API did not become healthy. Its last log lines are above."
           exit 1
+
+      # When "Pull, migrate, start" itself fails (the API exits before compose reports it healthy), the wait
+      # step above is skipped, so print why here. The boot guards (env.ts) name the setting, not its value.
+      - name: Show why the API did not start
+        if: failure()
+        run: |
+          ssh lynia 'cd ~/lynia && docker compose ps -a --format "table {{.Service}}\t{{.Status}}" && docker compose logs --no-color --tail 40 api' || true
