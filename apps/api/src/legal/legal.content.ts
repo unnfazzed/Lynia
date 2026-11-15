@@ -43,7 +43,7 @@
  */
 
 /** Stamped on both pages. Bump when the copy materially changes (Play re-reviews on listing update). */
-export const LEGAL_LAST_UPDATED = "19 October 2026";
+export const LEGAL_LAST_UPDATED = "15 November 2026";
 
 /** Stamped on the terms page. Bump when the terms materially change, and tell users in the app. */
 export const TERMS_LAST_UPDATED = "12 October 2026";
@@ -70,21 +70,24 @@ export const LEGAL_CONTACT_EMAIL = "hello@lyniago.com";
 export const ANDROID_PACKAGE = "zw.co.lynia";
 
 /**
- * Where personal data physically sits. The service is hosted on **Microsoft Azure, South Africa North
- * (Johannesburg)** — the lowest-latency Azure region to Harare (docs/plans/2026-09-24-gcp-to-azure-migration.md
- * C6) — which means every database row, storage object and backup lives in **South Africa, outside
- * Zimbabwe**.
+ * Where personal data physically sits (since the move off Azure, 2026-11-15, docs/AZURE-EXIT.md):
+ *  - the **servers** (the API, the database and its live copy) run at **Hetzner in Nuremberg, Germany**;
+ *  - **uploaded images** (menu, ID, face and delivery photos) and the **encrypted database backups** are in
+ *    **Cloudflare R2, eastern United States** (the bucket's location; it is not chosen per object);
+ *  - all traffic passes through **Cloudflare's** network, which keeps short-lived copies of shared, non-personal
+ *    screens (restaurant and shop menus) near the user.
  *
- * That makes ordinary operation a continuous cross-border transfer under the CDPA, which permits it
- * only where the destination affords adequate protection or another ground (such as the data
- * subject's consent, or necessity for a contract they are party to) applies, and requires POTRAZ to
- * be notified. Disclosing it is the part this file can do; establishing the ground and making the
- * filing is a founder action (docs/PLAY-STORE-SUBMISSION.md §7.3). Hiding it would be the one thing
- * guaranteed to be wrong — a notice that implies local-only storage while the database runs in
- * Johannesburg is a misrepresentation to every user and to the regulator.
+ * So every row and every image lives **outside Zimbabwe**, and ordinary operation is a continuous cross-border
+ * transfer under the CDPA, which permits it only where the destination affords adequate protection or another
+ * ground (such as the data subject's consent, or necessity for a contract they are party to) applies, and
+ * requires POTRAZ to be notified. Disclosing it is the part this file can do; establishing the ground and
+ * making the filing is a founder action (docs/PLAY-STORE-SUBMISSION.md §7.3). Naming the wrong country is a
+ * misrepresentation to every user and to the regulator: keep these in step with where the data really is.
  */
-export const HOSTING_COUNTRY = "South Africa";
-export const HOSTING_REGION = "South Africa North (Johannesburg)";
+export const HOSTING_COUNTRY = "Germany";
+export const HOSTING_REGION = "Nuremberg, Germany";
+/** Where uploaded images and backups are stored (Cloudflare R2 bucket location). */
+export const STORAGE_COUNTRY = "the United States";
 
 /**
  * The data categories this notice declares, in the same shape as the Play Data safety form.
@@ -324,8 +327,13 @@ const SHARING: readonly { readonly who: string; readonly what: string }[] = [
     what: "Push notifications are delivered via Firebase; maps and address search are rendered by Google Maps Platform.",
   },
   {
-    who: "Microsoft (Azure)",
-    what: "The service, its database and its backups run on Microsoft Azure.",
+    who: "Hetzner",
+    what: "Our servers, including the database, run on Hetzner Cloud in Germany.",
+  },
+  {
+    who: "Cloudflare",
+    what:
+      "All traffic to our service passes through Cloudflare's network. Uploaded images and our encrypted backups are stored with Cloudflare R2, and Cloudflare protects the sign-in to our staff console.",
   },
   {
     who: "Our identity-verification provider",
@@ -450,7 +458,7 @@ Regulatory Authority of Zimbabwe (POTRAZ).</p>
   <strong>The short version.</strong> We collect what an order needs — who you are, where it is going,
   and where the biker is while carrying it — and nothing to sell on. We do not process payment for
   your goods or your food: you pay the biker or the restaurant directly. Our servers are in
-  ${HOSTING_COUNTRY}. You can delete your account and its personal data from inside the app at any
+  ${HOSTING_COUNTRY}, and uploaded images and backups are stored in ${STORAGE_COUNTRY}. You can delete your account and its personal data from inside the app at any
   time: <strong>Account → Settings → Delete account</strong>.
 </div>
 
@@ -519,10 +527,13 @@ ${sharing}
 </ul>
 
 <h2>4. Where your data is stored, and transfers outside Zimbabwe</h2>
-<p>LyniaGo runs on Microsoft Azure in the <strong>${HOSTING_REGION}</strong> region. That means your
-personal data — the database, uploaded images, and backups — is stored in
-<strong>${HOSTING_COUNTRY}</strong>, not in Zimbabwe. We use that region because it is the closest
-to Harare, which makes the app faster and cheaper to use on a mobile connection.</p>
+<p>LyniaGo's servers run at Hetzner in <strong>${HOSTING_REGION}</strong>: the database and the app's
+processing live there. Uploaded images (menu photos, ID and face photos, delivery photos) and our encrypted
+backups are stored with Cloudflare R2 in <strong>${STORAGE_COUNTRY}</strong>. All traffic between the app
+and our service passes through Cloudflare's network, which may keep a short-lived copy of shared,
+non-personal screens such as restaurant menus close to you so they load faster. That means your personal
+data is stored in <strong>${HOSTING_COUNTRY}</strong> and <strong>${STORAGE_COUNTRY}</strong>,
+not in Zimbabwe.</p>
 <p>Some of our providers (for push notifications, crash reporting and analytics) also process data
 outside Zimbabwe. This is a <strong>cross-border transfer of personal data</strong> under the Act. It
 is necessary to provide the service you asked us for, our providers are bound by contract to protect

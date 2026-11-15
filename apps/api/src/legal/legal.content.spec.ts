@@ -5,6 +5,7 @@ import {
   ANDROID_PACKAGE,
   HOSTING_COUNTRY,
   HOSTING_REGION,
+  STORAGE_COUNTRY,
   LEGAL_CONTACT_EMAIL,
   LEGAL_DATA_CATEGORIES,
   privacyPolicyHtml,
@@ -85,14 +86,19 @@ describe("privacy notice page", () => {
 
   it("discloses that data leaves Zimbabwe, naming the hosting country", () => {
     // The single claim most likely to be quietly dropped in a future edit, and the one that would
-    // turn this notice into a misrepresentation: the database runs in Azure South Africa North, so
-    // ordinary operation is a continuous cross-border transfer under the Act.
+    // turn this notice into a misrepresentation: since 2026-11-15 the servers run at Hetzner in Germany
+    // and images + backups sit in Cloudflare R2 in the United States, so ordinary operation is a
+    // continuous cross-border transfer under the Act.
     expect(html).toContain(HOSTING_COUNTRY);
     expect(html).toContain(HOSTING_REGION);
-    // Pinned literally (C6), so the constants can't drift back to the pre-migration host unnoticed.
-    expect(HOSTING_COUNTRY).toBe("South Africa");
-    expect(HOSTING_REGION).toBe("South Africa North (Johannesburg)");
-    expect(html).toContain("LyniaGo runs on Microsoft Azure in the");
+    expect(html).toContain(STORAGE_COUNTRY);
+    // Pinned literally, so the constants can't drift back to a previous host unnoticed.
+    expect(HOSTING_COUNTRY).toBe("Germany");
+    expect(HOSTING_REGION).toBe("Nuremberg, Germany");
+    expect(STORAGE_COUNTRY).toBe("the United States");
+    expect(html).toContain("servers run at Hetzner in");
+    expect(html).toContain("Cloudflare R2");
+    expect(html).not.toMatch(/Microsoft|Azure|South Africa|Johannesburg/);
     expect(html).not.toMatch(/Google Cloud|africa-south1/);
     // Google stays named for what it still does: push (FCM) and maps.
     expect(html).toContain("Firebase Cloud Messaging");
