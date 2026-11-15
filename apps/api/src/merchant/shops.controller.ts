@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ENV } from "../config/config.module";
 import type { Env } from "../config/env";
 import { customerVisibleShop, shopServiceEnabled } from "./merchant-lookup.util";
+import { EdgeCache } from "../common/edge-cache.decorator";
 import { MerchantService } from "./merchant.service";
 import { ShopsEnabledGuard } from "./shops-enabled.guard";
 
@@ -25,6 +26,7 @@ export class ShopsController {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
+  @EdgeCache()
   @Get()
   // The cursor is a merchant @db.Uuid id: a malformed one is a clean 400, not a Prisma uuid-cast 500 (DRS-03).
   list(@Query("service") service?: string, @Query("cursor", new ParseUUIDPipe({ optional: true })) cursor?: string) {
@@ -32,6 +34,7 @@ export class ShopsController {
   }
 
   /** Declared before `:id/*` so the static `search` segment can't be captured as an `:id`. */
+  @EdgeCache()
   @Get("search")
   search(@Query("service") service?: string, @Query("q") q?: string) {
     return this.merchant.searchShops(this.visible(service), q);
@@ -39,6 +42,7 @@ export class ShopsController {
 
   /** Ledger D-72: one section's live shops ranked by recent delivered orders ("Popular shops" on Home, the
    *  "Recommended" sort). Empty on a thin section — the phone keeps nearest-open then. */
+  @EdgeCache()
   @Get("popular")
   popular(@Query("service") service?: string) {
     const where = this.visible(service);
@@ -46,6 +50,7 @@ export class ShopsController {
   }
 
   /** Either section's shop, while its section is on. */
+  @EdgeCache()
   @Get(":id/catalogue")
   catalogue(@Param("id", ParseUUIDPipe) id: string) {
     return this.merchant.getShopCatalogue(customerVisibleShop(this.env), id);
