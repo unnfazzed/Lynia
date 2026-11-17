@@ -30,12 +30,8 @@ name: Deploy Staging (Azure)
 # NOTE: the first armed run can fail the smoke step while the staging DNS record + managed cert are
 # still being issued (E11) — re-run once the Azure Diagnose Recap shows the cert as Succeeded.
 
+# Retired 2026-11-15: Lynia left Azure (docs/AZURE-EXIT.md). No automatic trigger any more; dispatch by hand only.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   workflow_dispatch: {}
 
 concurrency:
