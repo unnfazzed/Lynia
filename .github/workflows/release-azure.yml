@@ -49,12 +49,8 @@ name: Release (Azure)
 # would. Never write `${{ }}` inside a run: block in this file — inputs, Variables and step outputs
 # arrive through env: (shell-injection sink, and KB-CI-EXPR-EMPTY).
 
+# Retired 2026-11-15: Lynia left Azure (docs/AZURE-EXIT.md). No automatic trigger any more; dispatch by hand only.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   workflow_dispatch: {}
 
 concurrency:

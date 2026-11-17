@@ -24,8 +24,8 @@ Where things are, for whoever looks next:
 | Secrets | GitHub secret `SELFHOST_ENV` (copied from Key Vault `kv-lynia-37420b`); SSH key `SELFHOST_SSH_KEY` |
 | Edge cache | Cloudflare → lyniago.com → Cache Rules → *API browse cache* (see "Latency" below) |
 
-**Still to do:** switch off the Azure workflows (merges still start *Release (Azure)*: do not approve it),
-then delete the Azure resource groups (stops the bill). The privacy notice naming Germany + the United States
+**Still to do:** delete the Azure resource groups (stops the bill). The Azure workflows lost their automatic
+triggers on 2026-11-17 (Release, Deploy Staging, Deploy Admin, Drift Detect: dispatch-only now). The privacy notice naming Germany + the United States
 is live since 2026-11-15 (lawyer-approved); the owner's POTRAZ notification and the Hetzner/Cloudflare DPAs are
 tracked in `docs/PLAY-STORE-SUBMISSION.md` §7.3.
 
